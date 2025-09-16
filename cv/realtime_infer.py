@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default="models/feature_dim.txt",
         help="Файл с размерностью признака (из тренировки)",
     )
-    p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
+    p.add_argument("--window", type=int, default=10, help="Длина окна (кадров) для усреднения")
     p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
     p.add_argument("--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек")
@@ -61,6 +61,15 @@ def main() -> None:
     clf = joblib.load(args.model)
     classes = json.loads(Path(args.classes).read_text())
     feature_dim = int(Path(args.feature_dim_file).read_text().strip())
+
+    # Автонастройка режима рук по размерности признака
+    # 42 = одна рука (21×2), 84 = две руки (42×2)
+    if feature_dim == 84 and not args.two_hands:
+        print("[i] Обнаружена размерность 84 → переключаюсь в режим двух рук (--two-hands)")
+        args.two_hands = True
+    elif feature_dim == 42 and args.two_hands:
+        print("[i] Обнаружена размерность 42 → отключаю режим двух рук (ожидается одна рука)")
+        args.two_hands = False
 
     # Подготовка TTS (при необходимости)
     tts_engine = None
