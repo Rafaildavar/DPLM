@@ -1,0 +1,56 @@
+DPLM: Gesture Assistant — Отчёт по проекту
+Этап 0 — Инициализация проекта
+
+Цели этапа:
+- Создание структуры каталогов проекта.
+- Подготовка базовых файлов (.gitignore, README.md, requirements.txt).
+- Инициализация Git-репозитория, создание ветки dev, первый коммит и тег v0.1.0.
+
+Структура каталогов:
+- app/ — исходники приложения (GUI, логика)
+- cv/ — модули CV/ML (детекция, нормализация, классификация)
+- data/ — пользовательские данные/словарь жестов
+- models/ — сериализованные модели/веса
+- scripts/ — сервисные скрипты
+- tests/ — тесты
+
+Созданные файлы:
+- .gitignore
+- README.md
+- requirements.txt
+- app/__init__.py
+- cv/__init__.py
+- scripts/__init__.py
+- tests/__init__.py
+
+Ключевые правила .gitignore:
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+.venv/
+.pytest_cache/
+data/**/*.npy
+/data/**/*.csv
+models/**
+
+Начальный requirements.txt:
+opencv-python
+mediapipe
+numpy
+pyttsx3
+SpeechRecognition
+vosk
+scikit-learn
+PySide6
+python-docx
+
+Выполненные команды Git:
+- git init
+- git checkout -b dev
+- git add .
+- git commit -m "chore: init repo structure"
+- git tag v0.1.0
+
+Примечания:
+- macOS (Apple Silicon, M1). Установка зависимостей рекомендуется в виртуальном окружении (python3 -m venv .venv; source .venv/bin/activate).
