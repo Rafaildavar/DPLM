@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default="models/feature_dim.txt",
         help="Файл с размерностью признака (из тренировки)",
     )
-    p.add_argument("--window", type=int, default=10, help="Длина окна (кадров) для усреднения")
+    p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
     p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
     p.add_argument("--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек")
