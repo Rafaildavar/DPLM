@@ -1,0 +1,8 @@
+opencv-python
+mediapipe
+numpy
+pyttsx3
+SpeechRecognition
+vosk
+scikit-learn
+PySide6
