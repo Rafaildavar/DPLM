@@ -1,8 +1,28 @@
+# Computer Vision
 opencv-python
 mediapipe
 numpy
+
+# Machine Learning
+scikit-learn
+
+# Voice Assistant
 pyttsx3
 SpeechRecognition
 vosk
-scikit-learn
+
+# GUI Framework
 PySide6
+PySide6-Addons
+
+# Database
+pg_embed
+psycopg2-binary
+sqlalchemy
+alembic
+
+# Command Execution
+pyautogui
+
+# Development
+joblib

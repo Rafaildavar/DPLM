@@ -1,9 +1,40 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# IDE
 .DS_Store
+.idea/
+.vscode/
+
+# Virtual Environments
 venv/
 .venv/
+
+# Testing
 .pytest_cache/
+
+# Data
 data/**/*.npy
 data/**/*.csv
-models/**
+app/data/
+
+# Models (trained ML models)
+models/*.pkl
+models/*.joblib
+models/user_gestures/
+
+# Database
+.db_data/
+*.sqlite
+*.db
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Temporary files
+*.tmp
+*.log
+~$*
