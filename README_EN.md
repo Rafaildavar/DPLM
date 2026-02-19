@@ -31,6 +31,14 @@ Intelligent computer control system using gestures and voice commands. Key featu
    - Material Design 3 (QML + Qt Quick)
    - Visual feedback during recognition
 
+## Implemented So Far (Current State)
+
+- ✅ Added **resilient startup** via `python -m app.start` (dependency preflight with actionable diagnostics instead of hard crash).
+- ✅ CV pipeline for gesture recording/training/realtime inference is available (`cv/record_gestures.py`, `cv/train_classifier.py`, `cv/realtime_infer.py`).
+- ✅ Feature improvements are integrated: hand geometry, deterministic Left/Right ordering, hand-presence masks, EMA smoothing, and stable-window voting.
+- ✅ Training now uses `StandardScaler + KNN(weights="distance")` and stores baseline metrics in `models/train_metrics.json`.
+- ⚠️ Full GUI (`app.main`) requires full dependency stack (`PySide6`, CV/ML packages, DB packages).
+
 ## Architecture
 
 ```
@@ -86,13 +94,17 @@ pip install -r requirements.txt
 ### Running
 
 ```bash
-# Run GUI (new version)
+# Recommended startup (resilient bootstrap + environment preflight)
+python -m app.start
+
+# Direct GUI startup (only when all dependencies are installed)
 python -m app.main
 
-# Run old version (for comparison)
-git checkout v0.6.0-old
-python -m app.gui_main
+# Shell launcher
+bash scripts/launch_app.sh
 ```
+
+If dependencies are missing, `app.start` will not crash; it prints install guidance and runs environment diagnostics.
 
 ## Workflow
 
@@ -121,6 +133,19 @@ python -m app.gui_main
 - [Commands List](docs/COMMANDS.md) (in development)
 - [CV Models Comparison](docs/CV_COMPARISON.md) (in development)
 - [Testing](docs/TESTING.md) (in development)
+
+## Health Check
+
+```bash
+# Environment diagnostics
+python scripts/check_env.py
+
+# Bootstrap smoke run
+python -m app.start
+
+# Startup-layer unit tests
+pytest -q -o addopts='' tests/unit/test_start_launcher.py
+```
 
 ## Development
 

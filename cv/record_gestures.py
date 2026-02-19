@@ -1,11 +1,13 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import cv2
 import numpy as np
 import mediapipe as mp
+
+from cv.gesture_features import build_frame_feature
 
 
 # -----------------------------------------------
@@ -17,21 +19,6 @@ MACOS_BACKEND = cv2.CAP_AVFOUNDATION
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 mp_styles = mp.solutions.drawing_styles
-
-
-def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
-    """Нормализация относительно запястья и масштаба (21×2)."""
-    pts = np.asarray(landmarks_xy, dtype=np.float32)
-    if pts.shape != (21, 2):
-        raise ValueError("Ожидалось 21 точка")
-    wrist = pts[0].copy()
-    pts -= wrist
-    d = np.linalg.norm(pts, axis=1)
-    scale = float(np.max(d))
-    if scale < 1e-6:
-        scale = 1.0
-    pts /= scale
-    return pts
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,7 +60,7 @@ def main() -> None:
     print(f"Метка жеста: {label}; нужно семплов: {target_samples}; длина семпла: {seq_len} кадров")
 
     recording = False
-    buffer: List[np.ndarray] = []  # список кадров (21×2) или конкатенация рук
+    buffer: List[np.ndarray] = []  # список кадров (D,)
     saved = 0
 
     try:
@@ -88,9 +75,11 @@ def main() -> None:
             results = hands.process(frame_rgb)
 
             landmarks_this_frame: List[np.ndarray] = []
+            handedness_labels: List[str] = []
 
             if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
+                handedness = results.multi_handedness or []
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
                     mp_drawing.draw_landmarks(
                         image=frame_bgr,
                         landmark_list=hand_landmarks,
@@ -98,28 +87,23 @@ def main() -> None:
                         landmark_drawing_spec=mp_styles.get_default_hand_landmarks_style(),
                         connection_drawing_spec=mp_styles.get_default_hand_connections_style(),
                     )
-                    pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
-                    pts_norm = normalize_landmarks(pts)  # (21×2)
-                    landmarks_this_frame.append(pts_norm)
+                    pts = np.asarray([(lm.x, lm.y) for lm in hand_landmarks.landmark], dtype=np.float32)
+                    landmarks_this_frame.append(pts)
 
-            # Если две руки и запрошен режим two-hands, кадр будет иметь форму (42×2) — конкатенация
-            if args.two_hands:
-                if len(landmarks_this_frame) == 2:
-                    frame_vec = np.concatenate(landmarks_this_frame, axis=0)  # (42,2)
-                elif len(landmarks_this_frame) == 1:
-                    # если только одна рука в кадре — добиваем нулями вторую
-                    frame_vec = np.concatenate(
-                        [landmarks_this_frame[0], np.zeros((21, 2), dtype=np.float32)],
-                        axis=0,
-                    )
-                else:
-                    frame_vec = np.zeros((42, 2), dtype=np.float32)
-            else:
-                # одна рука: если нет руки — нули
-                if len(landmarks_this_frame) >= 1:
-                    frame_vec = landmarks_this_frame[0]
-                else:
-                    frame_vec = np.zeros((21, 2), dtype=np.float32)
+                    hand_label = ""
+                    if idx < len(handedness):
+                        try:
+                            hand_label = handedness[idx].classification[0].label
+                        except Exception:
+                            hand_label = ""
+                    handedness_labels.append(hand_label)
+
+            frame_vec = build_frame_feature(
+                hand_landmarks=landmarks_this_frame,
+                handedness_labels=handedness_labels,
+                two_hands=args.two_hands,
+                include_presence_mask=True,
+            )
 
             # Режим записи: собираем кадры в буфер до длины seq_len
             if recording and frame_vec is not None:

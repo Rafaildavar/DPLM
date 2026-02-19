@@ -27,4 +27,4 @@ fi
 
 # Запуск приложения
 echo "Запуск DPLM..."
-python3 -m app.main
+python3 -m app.start

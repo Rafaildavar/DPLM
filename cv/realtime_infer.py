@@ -1,9 +1,11 @@
 import argparse
+import csv
 import json
 import sys
-from collections import deque
+import time
+from collections import Counter, deque
 from pathlib import Path
-from typing import Deque, List, Tuple
+from typing import Deque, List
 
 import cv2
 import joblib
@@ -11,11 +13,8 @@ import mediapipe as mp
 import numpy as np
 import pyttsx3
 
+from cv.gesture_features import build_frame_feature
 
-# ----------------------------------------------
-# Онлайн‑классификация жестов + опциональный TTS
-# Комментарии на русском
-# ----------------------------------------------
 
 MACOS_BACKEND = cv2.CAP_AVFOUNDATION
 mp_hands = mp.solutions.hands
@@ -23,76 +22,79 @@ mp_drawing = mp.solutions.drawing_utils
 mp_styles = mp.solutions.drawing_styles
 
 
-def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
-    """Нормализация относительно запястья и масштаба (21×2)."""
-    pts = np.asarray(landmarks_xy, dtype=np.float32)
-    if pts.shape != (21, 2):
-        raise ValueError("Ожидалось 21 точка (x, y)")
-    wrist = pts[0].copy()
-    pts -= wrist
-    d = np.linalg.norm(pts, axis=1)
-    scale = float(np.max(d))
-    if scale < 1e-6:
-        scale = 1.0
-    pts /= scale
-    return pts
-
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Онлайн‑классификация жестов (KNN) + TTS")
     p.add_argument("--model", default="models/knn.pkl", help="Путь к модели KNN (joblib)")
     p.add_argument("--classes", default="models/classes.json", help="JSON со списком классов")
-    p.add_argument(
-        "--feature-dim-file",
-        default="models/feature_dim.txt",
-        help="Файл с размерностью признака (из тренировки)",
-    )
-    p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
-    p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
+    p.add_argument("--feature-dim-file", default="models/feature_dim.txt", help="Файл с размерностью признака")
+    p.add_argument("--window", type=int, default=12, help="Размер окна для стабильного класса")
+    p.add_argument("--stable-threshold", type=int, default=8, help="Минимум повторений класса в окне")
+    p.add_argument("--ema-alpha", type=float, default=0.3, help="Коэффициент EMA по признакам")
+    p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку")
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
     p.add_argument("--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек")
+    p.add_argument("--log-csv", default="", help="CSV для логирования fps и latency")
+    p.add_argument("--no-draw", action="store_true", help="Не рисовать ландмарки и подписи")
     return p.parse_args()
+
+
+def _fit_feature_dim(feat: np.ndarray, feature_dim: int) -> np.ndarray:
+    if feat.shape[0] > feature_dim:
+        return feat[:feature_dim]
+    if feat.shape[0] < feature_dim:
+        return np.concatenate([feat, np.zeros(feature_dim - feat.shape[0], dtype=feat.dtype)], axis=0)
+    return feat
 
 
 def main() -> None:
     args = parse_args()
 
-    # Загрузка модели и метаданных
     clf = joblib.load(args.model)
     classes = json.loads(Path(args.classes).read_text())
     feature_dim = int(Path(args.feature_dim_file).read_text().strip())
 
-    # Автонастройка режима рук по размерности признака
-    # 42 = одна рука (21×2), 84 = две руки (42×2)
-    if feature_dim == 84 and not args.two_hands:
-        print("[i] Обнаружена размерность 84 → переключаюсь в режим двух рук (--two-hands)")
+    if feature_dim > 60 and not args.two_hands:
+        print("[i] Обнаружена размерность для двух рук → включаю режим --two-hands")
         args.two_hands = True
-    elif feature_dim == 42 and args.two_hands:
-        print("[i] Обнаружена размерность 42 → отключаю режим двух рук (ожидается одна рука)")
-        args.two_hands = False
 
-    # Подготовка TTS (при необходимости)
     tts_engine = None
     last_spoken_label = None
     last_spoken_ts = 0.0
     if args.tts:
         try:
             tts_engine = pyttsx3.init()
-            # Можно подобрать голос/скорость при желании
-        except Exception as e:
-            print(f"[!] Не удалось инициализировать TTS: {e}")
+        except Exception as exc:
+            print(f"[!] Не удалось инициализировать TTS: {exc}")
             args.tts = False
 
-    # Очередь кадров для окна
-    window: Deque[np.ndarray] = deque(maxlen=max(1, args.window))
+    pred_window: Deque[str] = deque(maxlen=max(1, args.window))
+    ema_feat: np.ndarray | None = None
+
+    csv_writer = None
+    csv_file = None
+    if args.log_csv:
+        log_path = Path(args.log_csv)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        csv_file = log_path.open("w", newline="", encoding="utf-8")
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow([
+            "timestamp",
+            "fps",
+            "t_capture_ms",
+            "t_mediapipe_ms",
+            "t_features_ms",
+            "t_predict_ms",
+            "t_draw_ms",
+            "t_total_ms",
+            "predicted_class",
+        ])
 
     cap = cv2.VideoCapture(0, MACOS_BACKEND)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     cap.set(cv2.CAP_PROP_FPS, 30)
-
     if not cap.isOpened():
-        print("Ошибка открытия камеры (проверьте доступ в Privacy & Security → Camera)")
+        print("Ошибка открытия камеры")
         sys.exit(1)
 
     hands = mp_hands.Hands(
@@ -104,85 +106,109 @@ def main() -> None:
     )
 
     print("Старт онлайн‑инференса. Нажмите 'q' для выхода.")
-
     try:
         while True:
+            loop_t0 = time.perf_counter()
+
+            cap_t0 = time.perf_counter()
             ok, frame_bgr = cap.read()
+            t_capture = (time.perf_counter() - cap_t0) * 1000.0
             if not ok:
-                print("[w] Кадр не прочитан")
                 continue
 
             frame_bgr = cv2.flip(frame_bgr, 1)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+            mp_t0 = time.perf_counter()
             results = hands.process(frame_rgb)
+            t_mediapipe = (time.perf_counter() - mp_t0) * 1000.0
 
-            landmarks_frames: List[np.ndarray] = []
+            feat_t0 = time.perf_counter()
+            hand_points: List[np.ndarray] = []
+            handedness_labels: List[str] = []
             if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    mp_drawing.draw_landmarks(
-                        image=frame_bgr,
-                        landmark_list=hand_landmarks,
-                        connections=mp_hands.HAND_CONNECTIONS,
-                        landmark_drawing_spec=mp_styles.get_default_hand_landmarks_style(),
-                        connection_drawing_spec=mp_styles.get_default_hand_connections_style(),
-                    )
-                    pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
-                    pts_norm = normalize_landmarks(pts)
-                    landmarks_frames.append(pts_norm)
+                handedness = results.multi_handedness or []
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    if not args.no_draw:
+                        mp_drawing.draw_landmarks(
+                            image=frame_bgr,
+                            landmark_list=hand_landmarks,
+                            connections=mp_hands.HAND_CONNECTIONS,
+                            landmark_drawing_spec=mp_styles.get_default_hand_landmarks_style(),
+                            connection_drawing_spec=mp_styles.get_default_hand_connections_style(),
+                        )
+                    hand_points.append(np.asarray([(lm.x, lm.y) for lm in hand_landmarks.landmark], dtype=np.float32))
+                    label = ""
+                    if idx < len(handedness):
+                        try:
+                            label = handedness[idx].classification[0].label
+                        except Exception:
+                            label = ""
+                    handedness_labels.append(label)
 
-            # Формирование вектора признака кадра согласно feature_dim
-            if args.two_hands:
-                if len(landmarks_frames) == 2:
-                    frame_vec = np.concatenate(landmarks_frames, axis=0)  # (42,2)
-                elif len(landmarks_frames) == 1:
-                    frame_vec = np.concatenate(
-                        [landmarks_frames[0], np.zeros((21, 2), dtype=np.float32)], axis=0
-                    )
-                else:
-                    frame_vec = np.zeros((42, 2), dtype=np.float32)
+            feat = build_frame_feature(
+                hand_landmarks=hand_points,
+                handedness_labels=handedness_labels,
+                two_hands=args.two_hands,
+                include_presence_mask=True,
+            )
+            feat = _fit_feature_dim(feat, feature_dim)
+            t_features = (time.perf_counter() - feat_t0) * 1000.0
+
+            if ema_feat is None:
+                ema_feat = feat.copy()
             else:
-                frame_vec = landmarks_frames[0] if landmarks_frames else np.zeros((21, 2), dtype=np.float32)
+                ema_feat = args.ema_alpha * feat + (1.0 - args.ema_alpha) * ema_feat
 
-            # Разворачиваем до (D,)
-            feat = frame_vec.reshape(-1)
+            pred_t0 = time.perf_counter()
+            pred_idx = int(clf.predict(ema_feat.reshape(1, -1))[0])
+            raw_label = classes[pred_idx] if 0 <= pred_idx < len(classes) else str(pred_idx)
+            pred_window.append(raw_label)
+            counts = Counter(pred_window)
+            stable_label = max(counts, key=counts.get)
+            if counts[stable_label] < args.stable_threshold:
+                stable_label = "..."
+            t_predict = (time.perf_counter() - pred_t0) * 1000.0
 
-            # Если ожидалась другая размерность (например, модель обучена на одну руку)
-            if feat.shape[0] != feature_dim:
-                # подгоняем: либо обрезаем/дополняем нулями
-                if feat.shape[0] > feature_dim:
-                    feat = feat[:feature_dim]
-                else:
-                    pad = np.zeros(feature_dim - feat.shape[0], dtype=feat.dtype)
-                    feat = np.concatenate([feat, pad], axis=0)
+            draw_t0 = time.perf_counter()
+            if not args.no_draw:
+                cv2.putText(frame_bgr, f"Pred: {stable_label}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                cv2.imshow("Realtime Inference — press 'q' to quit", frame_bgr)
+            t_draw = (time.perf_counter() - draw_t0) * 1000.0
 
-            window.append(feat)
-
-            # Предсказание по усреднению окна
-            avg_feat = np.mean(np.stack(window, axis=0), axis=0).reshape(1, -1)
-            pred_idx = int(clf.predict(avg_feat)[0])
-            label = classes[pred_idx] if 0 <= pred_idx < len(classes) else str(pred_idx)
-
-            # Рисуем предсказание
-            cv2.putText(frame_bgr, f"Pred: {label}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
-
-            # Озвучка при смене класса с дебаунсом
-            if args.tts:
-                import time
+            if args.tts and stable_label != "...":
                 now = time.time()
-                if label != last_spoken_label and (now - last_spoken_ts) >= args.min_say_interval:
+                if stable_label != last_spoken_label and (now - last_spoken_ts) >= args.min_say_interval:
                     try:
-                        tts_engine.say(label)
+                        tts_engine.say(stable_label)
                         tts_engine.runAndWait()
-                        last_spoken_label = label
+                        last_spoken_label = stable_label
                         last_spoken_ts = now
-                    except Exception as e:
-                        print(f"[w] TTS error: {e}")
+                    except Exception as exc:
+                        print(f"[w] TTS error: {exc}")
 
-            cv2.imshow("Realtime Inference — press 'q' to quit", frame_bgr)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            t_total = (time.perf_counter() - loop_t0) * 1000.0
+            fps = 1000.0 / max(t_total, 1e-6)
+
+            if csv_writer:
+                csv_writer.writerow([
+                    time.time(),
+                    round(fps, 3),
+                    round(t_capture, 3),
+                    round(t_mediapipe, 3),
+                    round(t_features, 3),
+                    round(t_predict, 3),
+                    round(t_draw, 3),
+                    round(t_total, 3),
+                    stable_label,
+                ])
+
+            if not args.no_draw and (cv2.waitKey(1) & 0xFF == ord("q")):
                 break
 
     finally:
+        if csv_file:
+            csv_file.close()
         hands.close()
         cap.release()
         cv2.destroyAllWindows()

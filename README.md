@@ -31,6 +31,14 @@
    - Material Design 3 (QML + Qt Quick)
    - Визуальная обратная связь при распознавании
 
+## Что уже реализовано (актуально)
+
+- ✅ Добавлен **устойчивый запуск** через `python -m app.start` (bootstrap-проверка зависимостей с понятной диагностикой вместо падения).
+- ✅ Есть рабочий CV-конвейер для записи/обучения/инференса жестов (`cv/record_gestures.py`, `cv/train_classifier.py`, `cv/realtime_infer.py`).
+- ✅ Добавлены улучшения признаков: геометрия кисти, фиксированный порядок рук Left/Right, маски присутствия рук, сглаживание EMA и стабилизация предсказаний по окну.
+- ✅ В обучении применён `StandardScaler + KNN(weights="distance")` и сохранение базовых метрик в `models/train_metrics.json`.
+- ⚠️ Полный GUI (`app.main`) требует установленных зависимостей (`PySide6`, CV/ML стек, БД-стек).
+
 ## Архитектура
 
 ```
@@ -86,13 +94,17 @@ pip install -r requirements.txt
 ### Запуск
 
 ```bash
-# Запуск GUI (новая версия)
+# Рекомендуемый запуск (устойчивый bootstrap с проверкой окружения)
+python -m app.start
+
+# Прямой запуск GUI (только если все зависимости уже установлены)
 python -m app.main
 
-# Запуск старой версии (для сравнения)
-git checkout v0.6.0-old
-python -m app.gui_main
+# Альтернативно через shell-скрипт
+bash scripts/launch_app.sh
 ```
+
+Если не хватает зависимостей, `app.start` не падает, а показывает что установить и запускает диагностику окружения.
 
 ## Рабочий процесс
 
@@ -121,6 +133,19 @@ python -m app.gui_main
 - [Список команд](docs/COMMANDS.md) (в разработке)
 - [Сравнение CV моделей](docs/CV_COMPARISON.md) (в разработке)
 - [Тестирование](docs/TESTING.md) (в разработке)
+
+## Проверка работоспособности
+
+```bash
+# Проверка окружения
+python scripts/check_env.py
+
+# Smoke-test bootstrap запуска
+python -m app.start
+
+# Точечные тесты bootstrap-слоя
+pytest -q -o addopts='' tests/unit/test_start_launcher.py
+```
 
 ## Разработка
 
