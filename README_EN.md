@@ -170,7 +170,7 @@ Developed as part of GUAP diploma project (2025)
 ## Contact
 
 - GitHub Issues: [issues and suggestions]
-- Email: your-email@example.com
+- Email: rafaildavar@gmail.com
 
 ---
 

@@ -1,0 +1,38 @@
+[run]
+# Конфигурация coverage.py для измерения покрытия кода
+# coverage.py configuration for code coverage measurement
+
+source = app,cv
+omit =
+    */tests/*
+    */__pycache__/*
+    */venv/*
+    */.venv/*
+    */site-packages/*
+    */dist-packages/*
+    */setup.py
+    */conftest.py
+    */__init__.py
+
+[report]
+# Минимальный порог покрытия / Minimum coverage threshold
+fail_under = 90
+
+# Показывать только файлы без 100% покрытия / Show only files without 100% coverage
+skip_covered = False
+
+# Исключить строки с этими паттернами / Exclude lines with these patterns
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+
+[html]
+directory = htmlcov
+title = DPLM Code Coverage Report
+

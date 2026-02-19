@@ -170,7 +170,7 @@ MIT License (см. LICENSE)
 ## Связь
 
 - GitHub Issues: [проблемы и предложения]
-- Email: your-email@example.com
+- Email: rafaildavar@gmail.com
 
 ---
 

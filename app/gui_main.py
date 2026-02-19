@@ -1,9 +1,12 @@
 import sys
 import subprocess
 from pathlib import Path
-
 import cv2
+import os
+
 import numpy as np
+import PySide6
+
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
@@ -22,13 +25,19 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialogButtonBox,
 )
+import os
+import PySide6
 
-
+# Найдите точный путь к плагинам
+plugin_path = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+print(f"Plugin path: {plugin_path}")  # Для отладки
 # ----------------------------------------------
 # PySide6 GUI каркас: превью камеры + кнопки и запуск скриптов
 # Комментарии на русском
 # ----------------------------------------------
-
+import os
+os.environ['QT_QPA_PLATFORM'] = 'cocoa'
 MACOS_BACKEND = cv2.CAP_AVFOUNDATION  # стабильный для macOS (M1)
 
 
@@ -169,7 +178,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Внимание", "Label не может быть пустым")
                 return
             py = sys.executable
-            script = str(Path("cv/record_gestures.py").resolve())
+            script = str(Path("../cv/record_gestures.py").resolve())
             args = [
                 py,
                 script,

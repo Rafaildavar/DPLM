@@ -15,6 +15,7 @@ venv/
 
 # Testing
 .pytest_cache/
+.coverage
 
 # Data
 data/**/*.npy
@@ -33,6 +34,11 @@ models/user_gestures/
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Documents (not for git)
+*.doc
+*.docx
+*.pdf
 
 # Temporary files
 *.tmp

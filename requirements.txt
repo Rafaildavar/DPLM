@@ -26,3 +26,9 @@ pyautogui
 
 # Development
 joblib
+
+# Testing
+pytest
+pytest-cov
+pytest-qt  # для тестирования Qt/QML
+pytest-mock
