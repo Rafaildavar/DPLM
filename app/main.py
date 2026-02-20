@@ -8,80 +8,60 @@ Main entry point for DPLM application
 """
 import sys
 import os
+import site
 from pathlib import Path
 from typing import Optional
 
+
+def _resolve_pyside6_paths() -> tuple[Optional[Path], Optional[Path]]:
+    """Вернуть (plugins_path, platforms_path) для установленного PySide6."""
+    candidates = []
+
+    for site_dir in site.getsitepackages():
+        candidates.append(Path(site_dir) / "PySide6")
+
+    user_site = site.getusersitepackages()
+    if user_site:
+        candidates.append(Path(user_site) / "PySide6")
+
+    for base in candidates:
+        plugins = base / "Qt" / "plugins"
+        platforms = plugins / "platforms"
+        if plugins.exists():
+            return plugins.resolve(), (platforms.resolve() if platforms.exists() else None)
+
+    return None, None
+
+
+def _configure_qt_environment_for_macos() -> None:
+    """Настроить Qt plugin paths для macOS до импорта PySide6."""
+    if sys.platform != "darwin":
+        return
+
+    plugins_path, platforms_path = _resolve_pyside6_paths()
+    if plugins_path:
+        os.environ["QT_PLUGIN_PATH"] = str(plugins_path)
+        print(f"[i] Qt plugins path: {plugins_path}")
+    else:
+        print("[!] Warning: Qt plugins path not found (PySide6/Qt/plugins)")
+
+    if platforms_path:
+        os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platforms_path)
+        print(f"[i] Qt platform plugins path: {platforms_path}")
+
+    # Явно указываем платформу, если не задано пользователем.
+    os.environ.setdefault("QT_QPA_PLATFORM", "cocoa")
+
+
 # ВАЖНО: Настройка Qt окружения ДО импорта PySide6
 # IMPORTANT: Setup Qt environment BEFORE importing PySide6
-if sys.platform == "darwin":
-    try:
-        # Импортируем PySide6 только для получения пути
-        # Import PySide6 only to get the path
-        import PySide6
-        # Используем __path__ если __file__ недоступен
-        # Use __path__ if __file__ is not available
-        if hasattr(PySide6, '__file__') and PySide6.__file__:
-            pyside6_path = Path(PySide6.__file__).parent
-        elif hasattr(PySide6, '__path__') and PySide6.__path__:
-            pyside6_path = Path(PySide6.__path__[0])
-        else:
-            # Fallback: используем site-packages
-            # Fallback: use site-packages
-            import site
-            site_packages = site.getsitepackages()[0] if site.getsitepackages() else None
-            if site_packages:
-                pyside6_path = Path(site_packages) / "PySide6"
-            else:
-                raise ValueError("Cannot find PySide6 path")
-        
-        plugins_path = pyside6_path / "Qt" / "plugins"
-        if plugins_path.exists():
-            plugin_path_str = str(plugins_path.resolve())
-            os.environ['QT_PLUGIN_PATH'] = plugin_path_str
-            print(f"[i] Qt plugins path: {plugin_path_str}")
-        else:
-            print(f"[!] Warning: Qt plugins path not found: {plugins_path}")
-    except Exception as e:
-        print(f"[!] Warning: Could not set Qt plugin path: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Установить платформу / Set platform
-    if 'QT_QPA_PLATFORM' not in os.environ:
-        os.environ['QT_QPA_PLATFORM'] = 'cocoa'
+_configure_qt_environment_for_macos()
 
 # Теперь можно импортировать PySide6
 # Now we can import PySide6
 from PySide6.QtCore import QCoreApplication, QUrl, QObject, Slot, Signal, Property
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
-
-# Установка путей к библиотекам Qt после импорта QCoreApplication
-# Set Qt library paths after importing QCoreApplication
-if sys.platform == "darwin":
-    try:
-        import PySide6
-        # Используем __path__ если __file__ недоступен
-        # Use __path__ if __file__ is not available
-        if hasattr(PySide6, '__file__') and PySide6.__file__:
-            pyside6_path = Path(PySide6.__file__).parent
-        elif hasattr(PySide6, '__path__') and PySide6.__path__:
-            pyside6_path = Path(PySide6.__path__[0])
-        else:
-            import site
-            site_packages = site.getsitepackages()[0] if site.getsitepackages() else None
-            if site_packages:
-                pyside6_path = Path(site_packages) / "PySide6"
-            else:
-                raise ValueError("Cannot find PySide6 path")
-        
-        plugins_path = pyside6_path / "Qt" / "plugins"
-        if plugins_path.exists():
-            plugin_path_str = str(plugins_path.resolve())
-            QCoreApplication.setLibraryPaths([plugin_path_str])
-            print(f"[i] Qt library paths set: {QCoreApplication.libraryPaths()}")
-    except Exception as e:
-        print(f"[!] Warning: Could not set Qt library paths: {e}")
 
 # Импорт сервисов / Import services
 try:
@@ -467,18 +447,10 @@ def main():
     # Установка путей к библиотекам Qt перед созданием приложения
     # Set Qt library paths before creating application
     if sys.platform == "darwin":
-        try:
-            import PySide6
-            pyside6_path = Path(PySide6.__file__).parent
-            plugins_path = pyside6_path / "Qt" / "plugins"
-            if plugins_path.exists():
-                plugin_path_str = str(plugins_path.resolve())
-                # Используем QCoreApplication для установки путей
-                # Use QCoreApplication to set library paths
-                QCoreApplication.setLibraryPaths([plugin_path_str])
-                print(f"[i] Qt plugins path set: {plugin_path_str}")
-        except Exception as e:
-            print(f"[!] Warning: Could not set Qt plugin path: {e}")
+        plugins_path, _ = _resolve_pyside6_paths()
+        if plugins_path:
+            QCoreApplication.setLibraryPaths([str(plugins_path)])
+            print(f"[i] Qt library paths set: {QCoreApplication.libraryPaths()}")
     
     # Создание приложения / Create application
     app = QGuiApplication(sys.argv)

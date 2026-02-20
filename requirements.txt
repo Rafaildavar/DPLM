@@ -14,6 +14,7 @@ vosk
 # GUI Framework
 PySide6
 PySide6-Addons
+shiboken6  # Явно фиксируем runtime-библиотеку, чтобы избежать битой установки на macOS
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)

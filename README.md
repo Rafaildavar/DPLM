@@ -94,6 +94,30 @@ git checkout v0.6.0-old
 python -m app.gui_main
 ```
 
+### Если PySide6 не запускается на macOS
+
+Иногда `pip` оставляет повреждённую установку `PySide6` (пропадают `.dylib`/`.qm` файлы, например `libshiboken6...dylib`).
+В таком случае полностью переустановите Qt-стек в активном venv:
+
+```bash
+pip uninstall -y PySide6 PySide6-Addons shiboken6
+pip cache purge
+pip install --no-cache-dir -r requirements.txt
+python scripts/check_env.py
+python -m app.main
+```
+
+Если проблема повторяется, пересоздайте виртуальное окружение (`rm -rf .venv && python -m venv .venv`).
+
+Для ошибки `Could not find the Qt platform plugin "cocoa"` дополнительно очистите конфликтующие переменные окружения и запустите снова:
+
+```bash
+unset QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH
+python -m app.main
+```
+
+(Приложение теперь выставляет корректные пути автоматически при запуске на macOS.)
+
 ## Рабочий процесс
 
 1. **Создание команды**
