@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
-import QtGraphicalEffects
 
 /**
  * Главное окно приложения DPLM - современный интерфейс
@@ -53,17 +52,6 @@ Window {
                 GradientStop { position: 1.0; color: Material.primary }
             }
             
-            // Тень / Shadow
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 4
-                radius: 12
-                samples: 17
-                color: "#40000000"
-            }
-            
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 20
@@ -82,16 +70,6 @@ Window {
                         loops: Animation.Infinite
                         NumberAnimation { to: 1.1; duration: 800; easing.type: Easing.InOutQuad }
                         NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
-                    }
-                    
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        transparentBorder: true
-                        horizontalOffset: 0
-                        verticalOffset: 2
-                        radius: 8
-                        samples: 17
-                        color: appController.isRecognizing ? "#804CAF50" : "#40000000"
                     }
                     
                     Text {
@@ -279,16 +257,6 @@ Window {
             radius: 16
             color: "#2a2a3e"
             
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 4
-                radius: 12
-                samples: 17
-                color: "#30000000"
-            }
-            
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 16
@@ -309,16 +277,6 @@ Window {
                             position: 1.0
                             color: appController.isRecognizing ? "#d32f2f" : "#388E3C"
                         }
-                    }
-                    
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        transparentBorder: true
-                        horizontalOffset: 0
-                        verticalOffset: 2
-                        radius: 8
-                        samples: 17
-                        color: appController.isRecognizing ? "#80f44336" : "#804CAF50"
                     }
                     
                     Text {
@@ -433,16 +391,6 @@ Window {
         gradient: Gradient {
             GradientStop { position: 0.0; color: Material.accent }
             GradientStop { position: 1.0; color: Material.primary }
-        }
-        
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true
-            horizontalOffset: 0
-            verticalOffset: 4
-            radius: 16
-            samples: 17
-            color: "#60000000"
         }
         
         property string message: ""

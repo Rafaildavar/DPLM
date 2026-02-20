@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import QtGraphicalEffects
 
 /**
  * Панель управления командами - современный дизайн
@@ -39,16 +38,6 @@ Item {
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: Material.accent }
                     GradientStop { position: 1.0; color: Material.primary }
-                }
-                
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 2
-                    radius: 8
-                    samples: 17
-                    color: "#40000000"
                 }
                 
                 Text {
@@ -115,17 +104,6 @@ Item {
                     radius: 16
                     color: "#2a2a3e"
                     
-                    // Тень / Shadow
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        transparentBorder: true
-                        horizontalOffset: 0
-                        verticalOffset: 2
-                        radius: 12
-                        samples: 17
-                        color: "#30000000"
-                    }
-                    
                     // Градиент при наведении / Gradient on hover
                     Rectangle {
                         anchors.fill: parent
@@ -161,16 +139,6 @@ Item {
                             gradient: Gradient {
                                 GradientStop { position: 0.0; color: Material.accent }
                                 GradientStop { position: 1.0; color: Material.primary }
-                            }
-                            
-                            layer.enabled: true
-                            layer.effect: DropShadow {
-                                transparentBorder: true
-                                horizontalOffset: 0
-                                verticalOffset: 2
-                                radius: 8
-                                samples: 17
-                                color: "#40000000"
                             }
                             
                             Text {
@@ -210,16 +178,6 @@ Item {
                                 radius: 22
                                 color: "#4CAF50"
                                 
-                                layer.enabled: true
-                                layer.effect: DropShadow {
-                                    transparentBorder: true
-                                    horizontalOffset: 0
-                                    verticalOffset: 2
-                                    radius: 6
-                                    samples: 17
-                                    color: "#404CAF50"
-                                }
-                                
                                 Text {
                                     anchors.centerIn: parent
                                     text: "▶"
@@ -254,16 +212,6 @@ Item {
                                 Layout.preferredHeight: 44
                                 radius: 22
                                 color: "#2196F3"
-                                
-                                layer.enabled: true
-                                layer.effect: DropShadow {
-                                    transparentBorder: true
-                                    horizontalOffset: 0
-                                    verticalOffset: 2
-                                    radius: 6
-                                    samples: 17
-                                    color: "#402196F3"
-                                }
                                 
                                 Text {
                                     anchors.centerIn: parent
@@ -425,16 +373,6 @@ Item {
             height: 300
             radius: 20
             color: "#2a2a3e"
-            
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 8
-                radius: 24
-                samples: 17
-                color: "#60000000"
-            }
             
             ColumnLayout {
                 anchors.fill: parent

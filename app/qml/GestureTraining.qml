@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import QtGraphicalEffects
 
 /**
  * Интерфейс обучения жестам - современный дизайн
@@ -44,16 +43,6 @@ Item {
             
             border.color: isRecording ? Material.accent : Material.color(Material.Grey, Material.Shade700)
             border.width: isRecording ? 3 : 2
-            
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 4
-                radius: 16
-                samples: 17
-                color: isRecording ? "#40" + Material.accent.toString().substring(1) : "#30000000"
-            }
             
             // Анимация пульсации при записи / Pulsing animation when recording
             SequentialAnimation on scale {
@@ -111,16 +100,6 @@ Item {
             Layout.preferredHeight: 120
             radius: 16
             color: "#2a2a3e"
-            
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 2
-                radius: 12
-                samples: 17
-                color: "#30000000"
-            }
             
             ColumnLayout {
                 anchors.fill: parent
@@ -202,16 +181,6 @@ Item {
             radius: 16
             color: "#2a2a3e"
             
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 2
-                radius: 12
-                samples: 17
-                color: "#30000000"
-            }
-            
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 16
@@ -291,16 +260,6 @@ Item {
                     }
                 }
                 
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 2
-                    radius: 12
-                    samples: 17
-                    color: isRecording ? "#80f44336" : "#40000000"
-                }
-                
                 Text {
                     anchors.centerIn: parent
                     text: isRecording ? qsTr("Остановить запись") : qsTr("Начать запись")
@@ -353,16 +312,6 @@ Item {
                     GradientStop { position: 1.0; color: "#388E3C" }
                 }
                 
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 2
-                    radius: 12
-                    samples: 17
-                    color: "#404CAF50"
-                }
-                
                 opacity: (samplesRecorded >= targetSamples && !isRecording) ? 1.0 : 0.5
                 
                 Text {
@@ -403,16 +352,6 @@ Item {
                 Layout.preferredHeight: 60
                 radius: 16
                 color: "#757575"
-                
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    transparentBorder: true
-                    horizontalOffset: 0
-                    verticalOffset: 2
-                    radius: 12
-                    samples: 17
-                    color: "#30000000"
-                }
                 
                 opacity: isRecording ? 0.5 : 1.0
                 
@@ -461,16 +400,6 @@ Item {
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Material.accent }
                 GradientStop { position: 1.0; color: Material.primary }
-            }
-            
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 4
-                radius: 16
-                samples: 17
-                color: "#60000000"
             }
             
             RowLayout {
@@ -580,16 +509,6 @@ Item {
             height: 250
             radius: 20
             color: "#2a2a3e"
-            
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                horizontalOffset: 0
-                verticalOffset: 8
-                radius: 24
-                samples: 17
-                color: "#60000000"
-            }
             
             ColumnLayout {
                 anchors.fill: parent

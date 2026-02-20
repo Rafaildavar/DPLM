@@ -27,8 +27,8 @@ class TestVoiceAssistant:
     @pytest.fixture
     def assistant(self):
         """Создать экземпляр помощника / Create assistant instance"""
-        with patch('app.services.voice_assistant.pyttsx3') as mock_tts, \
-             patch('app.services.voice_assistant.sr') as mock_sr:
+        with patch('app.services.voice_assistant.pyttsx3', create=True) as mock_tts, \
+             patch('app.services.voice_assistant.sr', create=True) as mock_sr:
             mock_tts.init.return_value = Mock()
             mock_sr.Recognizer.return_value = Mock()
             mock_sr.Microphone.return_value = Mock()
@@ -143,8 +143,8 @@ class TestCommandHandlers:
     @pytest.fixture
     def assistant(self):
         """Создать помощника для тестов / Create assistant for tests"""
-        with patch('app.services.voice_assistant.pyttsx3'), \
-             patch('app.services.voice_assistant.sr'):
+        with patch('app.services.voice_assistant.pyttsx3', create=True), \
+             patch('app.services.voice_assistant.sr', create=True):
             return VoiceAssistant(
                 language=Language.RUSSIAN,
                 wake_word_enabled=False,

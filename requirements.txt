@@ -16,7 +16,7 @@ PySide6
 PySide6-Addons
 
 # Database
-pg_embed
+# pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)
 psycopg2-binary
 sqlalchemy
 alembic
