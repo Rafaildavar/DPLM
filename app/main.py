@@ -8,6 +8,8 @@ Main entry point for DPLM application
 """
 import sys
 import os
+import signal
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -114,7 +116,14 @@ class AppController(QObject):
         super().__init__()
         self._status = "Idle"
         self._is_recognizing = False
-        
+        self._recognition_process: Optional[subprocess.Popen] = None
+        self._recognition_pid_file = Path.home() / ".dplm" / "gesture_infer.pid"
+        self._recognition_log_file = Path.home() / ".dplm" / "gesture_infer.log"
+        self._recognition_pid_file.parent.mkdir(parents=True, exist_ok=True)
+        if self._is_recognition_pid_active():
+            self._is_recognizing = True
+            self._status = "Recognizing in background"
+
         # Голосовой помощник / Voice assistant
         self._voice_assistant: Optional[VoiceAssistant] = None
         self._voice_assistant_enabled = False
@@ -147,11 +156,37 @@ class AppController(QObject):
         Запустить распознавание жестов в реальном времени
         Start real-time gesture recognition
         """
-        print("[i] Запуск распознавания жестов...")
-        self._is_recognizing = True
-        self.status = "Recognizing..."
-        # TODO: интеграция с cv/realtime_infer.py
-        # TODO: integration with cv/realtime_infer.py
+        if self._is_recognition_pid_active():
+            print("[i] Распознавание уже запущено в фоне")
+            self._is_recognizing = True
+            self.status = "Recognizing in background"
+            return
+
+        print("[i] Запуск фонового распознавания жестов...")
+        infer_script = Path(__file__).parent.parent / "cv" / "realtime_infer.py"
+        cmd = [
+            sys.executable,
+            str(infer_script.resolve()),
+            "--tts",
+        ]
+
+        try:
+            log_handle = self._recognition_log_file.open("a", encoding="utf-8")
+            self._recognition_process = subprocess.Popen(
+                cmd,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self._save_recognition_pid(self._recognition_process.pid)
+            self._is_recognizing = True
+            self.status = "Recognizing in background"
+            print(f"[✓] Фоновое распознавание запущено, PID={self._recognition_process.pid}")
+        except Exception as e:
+            print(f"[!] Ошибка запуска распознавания: {e}")
+            self._is_recognizing = False
+            self.status = "Recognition start failed"
     
     @Slot()
     def stopRecognition(self):
@@ -160,8 +195,47 @@ class AppController(QObject):
         Stop gesture recognition
         """
         print("[i] Остановка распознавания жестов...")
+        pid = self._read_recognition_pid()
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"[✓] Процесс распознавания остановлен, PID={pid}")
+            except ProcessLookupError:
+                print(f"[w] Процесс PID={pid} уже завершён")
+            except Exception as e:
+                print(f"[!] Ошибка остановки PID={pid}: {e}")
+
+        self._remove_recognition_pid_file()
+        self._recognition_process = None
         self._is_recognizing = False
         self.status = "Stopped"
+
+    def _save_recognition_pid(self, pid: int):
+        self._recognition_pid_file.write_text(str(pid), encoding="utf-8")
+
+    def _read_recognition_pid(self) -> Optional[int]:
+        if not self._recognition_pid_file.exists():
+            return None
+        try:
+            return int(self._recognition_pid_file.read_text(encoding="utf-8").strip())
+        except Exception:
+            return None
+
+    def _remove_recognition_pid_file(self):
+        if self._recognition_pid_file.exists():
+            self._recognition_pid_file.unlink()
+
+    def _is_recognition_pid_active(self) -> bool:
+        pid = self._read_recognition_pid()
+        if pid is None:
+            return False
+
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            self._remove_recognition_pid_file()
+            return False
     
     @Slot(str)
     def startGestureTraining(self, gesture_label):
@@ -519,4 +593,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

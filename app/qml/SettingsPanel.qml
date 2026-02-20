@@ -362,6 +362,22 @@ Rectangle {
                             font.pixelSize: 14
                             checked: true
                         }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 62
+                            radius: 10
+                            color: "#1f3b4d"
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                text: qsTr("Как использовать: нажмите 'Запустить', затем скажите 'ассистент' + команду. Команды: привет, помощь, статус, открыть браузер.")
+                                color: "#E1F5FE"
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 12
+                            }
+                        }
                         
                         // Кнопки управления / Control buttons
                         RowLayout {

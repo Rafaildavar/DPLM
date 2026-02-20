@@ -23,6 +23,7 @@ def test_qml_files_exist():
         "CommandsPanel.qml",
         "GestureTraining.qml",
         "SettingsPanel.qml",
+        "VoiceAssistantPanel.qml",
     ]
     
     for filename in required_files:
@@ -39,7 +40,7 @@ def test_app_controller_instantiation(qapp):
     
     controller = AppController()
     assert controller is not None
-    assert controller.status == "Idle"
+    assert controller.status in ("Idle", "Recognizing in background")
 
 
 def test_qml_engine_context_property(qapp):

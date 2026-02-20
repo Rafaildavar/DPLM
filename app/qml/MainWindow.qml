@@ -12,6 +12,11 @@ import QtQuick.Window
  */
 Window {
     id: mainWindow
+
+    QtObject {
+        id: tabBar
+        property int currentIndex: 0
+    }
     
     // Настройки окна / Window settings
     width: 450
@@ -214,6 +219,31 @@ Window {
                         onClicked: tabBar.currentIndex = 1
                     }
                 }
+
+                // Кнопка "Помощник" / "Assistant" button
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 10
+                    color: tabBar.currentIndex === 2 ? Material.accent : "transparent"
+
+                    Behavior on color {
+                        ColorAnimation { duration: 300 }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("Помощник")
+                        font.pixelSize: 15
+                        font.bold: tabBar.currentIndex === 2
+                        color: tabBar.currentIndex === 2 ? "white" : Material.foreground
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: tabBar.currentIndex = 2
+                    }
+                }
             }
         }
         
@@ -239,6 +269,14 @@ Window {
                 Item {
                     GestureTraining {
                         id: gestureTraining
+                        anchors.fill: parent
+                    }
+                }
+
+                // Вкладка "Помощник" / "Assistant" tab
+                Item {
+                    VoiceAssistantPanel {
+                        id: voiceAssistantPanel
                         anchors.fill: parent
                     }
                 }
@@ -279,12 +317,26 @@ Window {
                         }
                     }
                     
-                    Text {
+                    Column {
                         anchors.centerIn: parent
-                        text: appController.isRecognizing ? qsTr("Остановить") : qsTr("Начать распознавание")
-                        font.pixelSize: 16
-                        font.bold: true
-                        color: "white"
+                        spacing: 2
+
+                        Text {
+                            text: appController.isRecognizing ? qsTr("Остановить") : qsTr("Начать распознавание")
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: "white"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Text {
+                            text: appController.isRecognizing
+                                  ? qsTr("Фоновый режим активен: жесты считываются даже при закрытом окне")
+                                  : qsTr("Запустите, чтобы включить глобальное распознавание")
+                            font.pixelSize: 11
+                            color: "#ECEFF1"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
                     }
                     
                     MouseArea {
@@ -374,6 +426,11 @@ Window {
         function onCommandExecuted(command) {
             console.log("[QML] Выполнена команда:", command)
             statusNotification.show("Команда выполнена: " + command)
+        }
+
+        function onVoiceCommandReceived(command) {
+            console.log("[QML] Голосовая команда:", command)
+            statusNotification.show("Голосовая команда: " + command)
         }
     }
     
