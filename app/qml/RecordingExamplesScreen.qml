@@ -13,6 +13,7 @@ Item {
     property string gestureName: ""
     property var navRoot
     property var pitchHost
+    property var gestureCatalog
 
     property bool isRecording: false
     property int samplesRecorded: 0

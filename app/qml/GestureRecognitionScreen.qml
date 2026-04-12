@@ -4,26 +4,30 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 /**
- * Экран 2. Распознавание: кадр, оверлей ключевых точек, имя жеста, уверенность, команда.
+ * Экран 2. Распознавание: кадр OpenCV, оверлей MediaPipe, жест и уверенность из KNN (как cv/realtime_infer.py).
  */
 Item {
     id: root
 
     required property StackView gestStack
     property var pitchHost
+    property var gestureCatalog
+    property var navRoot
 
     property string gestureName: qsTr("—")
-    property double confidence: 0
     property string executedCommand: qsTr("—")
 
-    Timer {
-        interval: 900
-        repeat: true
-        running: appController.isRecognizing
-        onTriggered: {
-            confidence = 0.55 + Math.random() * 0.4
-            gestureName = [qsTr("Свайп вправо"), qsTr("Большой палец"), qsTr("Кулак")][Math.floor(Math.random() * 3)]
-        }
+    // Подключение CV при показе экрана в StackView
+    StackView.onStatusChanged: {
+        if (StackView.status === StackView.Active)
+            appController.startEmbeddedGestureRecognition()
+        else if (StackView.status === StackView.Deactivating || StackView.status === StackView.Inactive)
+            appController.stopEmbeddedGestureRecognition()
+    }
+
+    Component.onCompleted: {
+        if (StackView.view && StackView.status === StackView.Active)
+            appController.startEmbeddedGestureRecognition()
     }
 
     Connections {
@@ -31,11 +35,14 @@ Item {
 
         function onGestureDetected(gesture) {
             gestureName = gesture
-            confidence = 0.92
         }
 
         function onCommandExecuted(command) {
             executedCommand = command
+        }
+
+        function onEmbeddedLandmarksJsonChanged() {
+            handOverlay.requestPaint()
         }
     }
 
@@ -76,34 +83,61 @@ Item {
             Canvas {
                 id: handOverlay
                 anchors.fill: parent
-                opacity: 0.85
+                opacity: 0.9
                 onPaint: {
                     const ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = Qt.rgba(0, 0.85, 0.95, 0.9)
-                    ctx.lineWidth = 3
+                    let pts = []
+                    try {
+                        pts = JSON.parse(appController.embeddedLandmarksJson || "[]")
+                    } catch (e) {
+                        pts = []
+                    }
+                    if (!pts.length)
+                        return
                     const w = width
                     const h = height
-                    const cx = w * 0.45
-                    const cy = h * 0.42
-                    const pts = [
-                        [cx, cy],
-                        [cx - 30, cy + 50],
-                        [cx + 25, cy + 45],
-                        [cx - 20, cy + 100],
-                        [cx + 35, cy + 95],
-                        [cx, cy + 30],
-                        [cx + 15, cy + 75]
+                    const edges = [
+                        [0, 1],
+                        [1, 2],
+                        [2, 3],
+                        [3, 4],
+                        [0, 5],
+                        [5, 6],
+                        [6, 7],
+                        [7, 8],
+                        [0, 9],
+                        [9, 10],
+                        [10, 11],
+                        [11, 12],
+                        [0, 13],
+                        [13, 14],
+                        [14, 15],
+                        [15, 16],
+                        [0, 17],
+                        [17, 18],
+                        [18, 19],
+                        [19, 20],
+                        [5, 9],
+                        [9, 13],
+                        [13, 17]
                     ]
+                    ctx.strokeStyle = Qt.rgba(0, 0.85, 0.95, 0.92)
+                    ctx.lineWidth = 2.5
                     ctx.beginPath()
-                    ctx.moveTo(pts[0][0], pts[0][1])
-                    for (let i = 1; i < pts.length; i++)
-                        ctx.lineTo(pts[i][0], pts[i][1])
+                    for (let e = 0; e < edges.length; e++) {
+                        const a = edges[e][0]
+                        const b = edges[e][1]
+                        if (a < pts.length && b < pts.length) {
+                            ctx.moveTo(pts[a][0] * w, pts[a][1] * h)
+                            ctx.lineTo(pts[b][0] * w, pts[b][1] * h)
+                        }
+                    }
                     ctx.stroke()
+                    ctx.fillStyle = "#00E5FF"
                     for (let i = 0; i < pts.length; i++) {
                         ctx.beginPath()
-                        ctx.arc(pts[i][0], pts[i][1], 5, 0, 6.28)
-                        ctx.fillStyle = "#00E5FF"
+                        ctx.arc(pts[i][0] * w, pts[i][1] * h, 4, 0, 6.28)
                         ctx.fill()
                     }
                 }
@@ -116,10 +150,11 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.margins: 6
-                text: qsTr("Оверлей руки — демо; кадр — OpenCV при включённой камере")
+                text: appController.isCameraActive
+                      ? qsTr("Кадр: OpenCV · скелет: MediaPipe · класс: KNN (models/knn.pkl)")
+                      : qsTr("Запускается камера…")
                 font.pixelSize: 10
                 color: "#aaa"
-                visible: appController.isCameraActive
             }
         }
 
@@ -144,11 +179,11 @@ Item {
                 Layout.fillWidth: true
                 from: 0
                 to: 1
-                value: confidence
+                value: appController.embeddedRecognitionConfidence
             }
 
             Label {
-                text: Math.round(confidence * 100) + "%"
+                text: Math.round(appController.embeddedRecognitionConfidence * 100) + "%"
                 font.bold: true
                 color: Material.accent
             }
@@ -170,10 +205,10 @@ Item {
         }
 
         Text {
-            text: qsTr("Нижняя панель главного окна запускает фоновое распознавание (cv/realtime_infer.py).")
+            text: qsTr("Экран использует тот же конвейер, что cv/realtime_infer.py (MediaPipe Hands + окно кадров + KNN), внутри приложения без отдельного окна.")
             font.pixelSize: 11
             color: Material.color(Material.Grey, Material.Shade500)
-            wrapMode: Text.WordWrap
+            wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
 

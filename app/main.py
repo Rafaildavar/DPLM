@@ -12,7 +12,7 @@ import site
 import signal
 import subprocess
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 
 def _resolve_pyside6_paths() -> Tuple[Optional[Path], Optional[Path]]:
@@ -116,6 +116,10 @@ class AppController(QObject):
     voiceCommandReceived = Signal(str)  # Получена голосовая команда / Voice command received
     cameraActiveChanged = Signal()
     cameraPreviewRevisionChanged = Signal()
+    isRecognizingChanged = Signal()
+    isVoiceAssistantActiveChanged = Signal()
+    embeddedRecognitionConfidenceChanged = Signal()
+    embeddedLandmarksJsonChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -128,6 +132,7 @@ class AppController(QObject):
         if self._is_recognition_pid_active():
             self._is_recognizing = True
             self._status = "Recognizing in background"
+            self.isRecognizingChanged.emit()
 
         # Голосовой помощник / Voice assistant
         self._voice_assistant: Optional[VoiceAssistant] = None
@@ -148,6 +153,13 @@ class AppController(QObject):
         self._camera_timer.setInterval(33)
         self._camera_timer.timeout.connect(self._update_camera_frame)
 
+        # Встроенное CV на экране распознавания (MediaPipe + KNN, без subprocess)
+        self._embedded_infer: Optional[Any] = None
+        self._embedded_infer_active = False
+        self._last_embedded_label = ""
+        self._embedded_recognition_confidence = 0.0
+        self._embedded_landmarks_json = "[]"
+
     @Property(str, notify=statusChanged)
     def status(self):
         """Текущий статус системы / Current system status"""
@@ -159,7 +171,7 @@ class AppController(QObject):
             self._status = value
             self.statusChanged.emit(value)
     
-    @Property(bool)
+    @Property(bool, notify=isRecognizingChanged)
     def isRecognizing(self):
         """Активно ли распознавание / Is recognition active"""
         return self._is_recognizing
@@ -171,6 +183,14 @@ class AppController(QObject):
     @Property(int, notify=cameraPreviewRevisionChanged)
     def cameraPreviewRevision(self) -> int:
         return self._camera_preview_revision
+
+    @Property(float, notify=embeddedRecognitionConfidenceChanged)
+    def embeddedRecognitionConfidence(self) -> float:
+        return self._embedded_recognition_confidence
+
+    @Property(str, notify=embeddedLandmarksJsonChanged)
+    def embeddedLandmarksJson(self) -> str:
+        return self._embedded_landmarks_json
 
     def camera_preview_for_provider(self) -> QImage:
         if self._preview_qimage is None or self._preview_qimage.isNull():
@@ -249,6 +269,28 @@ class AppController(QObject):
         bytes_per_line = ch * w
         qimg = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
         self._preview_qimage = qimg
+
+        if self._embedded_infer_active and self._embedded_infer is not None:
+            try:
+                out = self._embedded_infer.process_frame_rgb(frame_rgb)
+            except Exception as e:
+                print(f"[!] embedded CV frame error: {e}")
+                out = {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
+            label = (out.get("label") or "").strip()
+            conf = float(out.get("confidence") or 0.0)
+            lj = out.get("landmarks_json") or "[]"
+
+            if label and label != self._last_embedded_label:
+                self._last_embedded_label = label
+                self.gestureDetected.emit(label)
+
+            if self._embedded_recognition_confidence != conf:
+                self._embedded_recognition_confidence = conf
+                self.embeddedRecognitionConfidenceChanged.emit()
+            if self._embedded_landmarks_json != lj:
+                self._embedded_landmarks_json = lj
+                self.embeddedLandmarksJsonChanged.emit()
+
         self._camera_preview_revision += 1
         self.cameraPreviewRevisionChanged.emit()
 
@@ -262,6 +304,7 @@ class AppController(QObject):
         if self._is_recognition_pid_active():
             print("[i] Распознавание уже запущено в фоне")
             self._is_recognizing = True
+            self.isRecognizingChanged.emit()
             self.status = "Recognizing in background"
             return
 
@@ -284,13 +327,82 @@ class AppController(QObject):
             )
             self._save_recognition_pid(self._recognition_process.pid)
             self._is_recognizing = True
+            self.isRecognizingChanged.emit()
             self.status = "Recognizing in background"
             print(f"[✓] Фоновое распознавание запущено, PID={self._recognition_process.pid}")
         except Exception as e:
             print(f"[!] Ошибка запуска распознавания: {e}")
             self._is_recognizing = False
+            self.isRecognizingChanged.emit()
             self.status = "Recognition start failed"
     
+    @Slot()
+    def startEmbeddedGestureRecognition(self) -> None:
+        """
+        Режим «камера в приложении + MediaPipe/KNN» для экрана распознавания.
+        Не использует отдельный процесс realtime_infer.py (освобождает камеру 0).
+        """
+        if self._embedded_infer_active:
+            return
+        self.stopRecognition()
+        try:
+            from app.gesture_online_infer import GestureOnlineInfer
+
+            self._embedded_infer = GestureOnlineInfer()
+        except Exception as e:
+            print(f"[!] Встроенное CV: не удалось создать движок: {e}")
+            self.status = f"CV init error: {e}"
+            self._embedded_infer = None
+            return
+
+        if self._embedded_infer.init_error:
+            print(f"[!] Встроенное CV: {self._embedded_infer.init_error}")
+            self.status = f"CV: {self._embedded_infer.init_error}"
+            self._embedded_infer.close()
+            self._embedded_infer = None
+            return
+
+        if self._embedded_infer.model_error:
+            print(f"[i] Встроенное CV (без классификатора): {self._embedded_infer.model_error}")
+
+        self._embedded_infer_active = True
+        self._last_embedded_label = ""
+        self._embedded_recognition_confidence = 0.0
+        self._embedded_landmarks_json = "[]"
+        self.embeddedRecognitionConfidenceChanged.emit()
+        self.embeddedLandmarksJsonChanged.emit()
+        if not self._is_camera_active:
+            self.startCamera()
+        self.status = "CV: embedded gesture recognition"
+        print("[✓] Встроенное распознавание жестов (камера + MediaPipe) включено")
+
+    @Slot()
+    def stopEmbeddedGestureRecognition(self) -> None:
+        """Выключить встроенный пайплайн (камеру не останавливаем — ей управляет UI)."""
+        if not self._embedded_infer_active and self._embedded_infer is None:
+            return
+        self._embedded_infer_active = False
+        self._last_embedded_label = ""
+        if self._embedded_recognition_confidence != 0.0:
+            self._embedded_recognition_confidence = 0.0
+            self.embeddedRecognitionConfidenceChanged.emit()
+        if self._embedded_landmarks_json != "[]":
+            self._embedded_landmarks_json = "[]"
+            self.embeddedLandmarksJsonChanged.emit()
+        if self._embedded_infer is not None:
+            self._embedded_infer.close()
+            self._embedded_infer = None
+        if self._status.startswith("CV: embedded"):
+            self.status = "Idle"
+        print("[i] Встроенное распознавание жестов выключено")
+
+    @Slot()
+    def shutdownCvPipeline(self) -> None:
+        """Полная остановка камеры, встроенного CV и фонового infer при выходе."""
+        self.stopEmbeddedGestureRecognition()
+        self.stopRecognition()
+        self.stopCamera()
+
     @Slot()
     def stopRecognition(self):
         """
@@ -311,6 +423,7 @@ class AppController(QObject):
         self._remove_recognition_pid_file()
         self._recognition_process = None
         self._is_recognizing = False
+        self.isRecognizingChanged.emit()
         self.status = "Stopped"
 
     def _save_recognition_pid(self, pid: int):
@@ -465,6 +578,7 @@ class AppController(QObject):
                 self._voice_assistant.start_listening_loop()
                 self._voice_assistant_enabled = True
                 self.voiceAssistantStateChanged.emit("active")
+                self.isVoiceAssistantActiveChanged.emit()
                 self.status = "Voice Assistant Active"
                 return True
             else:
@@ -485,9 +599,10 @@ class AppController(QObject):
             self._voice_assistant = None
             self._voice_assistant_enabled = False
             self.voiceAssistantStateChanged.emit("idle")
+            self.isVoiceAssistantActiveChanged.emit()
             self.status = "Voice Assistant Stopped"
     
-    @Property(bool)
+    @Property(bool, notify=isVoiceAssistantActiveChanged)
     def isVoiceAssistantActive(self):
         """Активен ли голосовой помощник / Is voice assistant active"""
         return self._voice_assistant_enabled and self._voice_assistant is not None
@@ -657,7 +772,7 @@ def main():
     controller = AppController()
     engine.addImageProvider("dplmcam", DplmCameraImageProvider(controller))
     engine.rootContext().setContextProperty("appController", controller)
-    app.aboutToQuit.connect(controller.stopCamera)
+    app.aboutToQuit.connect(controller.shutdownCvPipeline)
     
     # Загрузка главного QML файла / Load main QML file
     qml_file = Path(__file__).parent / "qml" / "MainWindow.qml"

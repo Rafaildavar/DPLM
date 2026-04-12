@@ -49,6 +49,7 @@ Item {
                 }
                 
                 MouseArea {
+                    id: addCmdMouse
                     anchors.fill: parent
                     onClicked: {
                         addCommandDialog.open()
@@ -56,7 +57,7 @@ Item {
                     
                     states: State {
                         name: "pressed"
-                        when: parent.pressed
+                        when: addCmdMouse.pressed
                         PropertyChanges {
                             target: parent.parent
                             scale: 0.95
@@ -186,6 +187,7 @@ Item {
                                 }
                                 
                                 MouseArea {
+                                    id: execCmdMouse
                                     anchors.fill: parent
                                     onClicked: {
                                         appController.executeCommand(model.name)
@@ -193,7 +195,7 @@ Item {
                                     
                                     states: State {
                                         name: "pressed"
-                                        when: parent.pressed
+                                        when: execCmdMouse.pressed
                                         PropertyChanges {
                                             target: parent.parent
                                             scale: 0.9
@@ -221,6 +223,7 @@ Item {
                                 }
                                 
                                 MouseArea {
+                                    id: editCmdMouse
                                     anchors.fill: parent
                                     onClicked: {
                                         console.log("Редактирование команды:", model.name)
@@ -229,7 +232,7 @@ Item {
                                     
                                     states: State {
                                         name: "pressed"
-                                        when: parent.pressed
+                                        when: editCmdMouse.pressed
                                         PropertyChanges {
                                             target: parent.parent
                                             scale: 0.9

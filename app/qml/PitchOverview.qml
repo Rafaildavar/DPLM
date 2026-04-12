@@ -8,6 +8,8 @@ import QtQuick.Controls.Material
 Item {
     required property StackView gestStack
     property var pitchHost
+    property var gestureCatalog
+    property var navRoot
 
     Label {
         anchors.centerIn: parent

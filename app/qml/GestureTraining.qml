@@ -269,6 +269,7 @@ Item {
                 }
                 
                 MouseArea {
+                    id: gtRecordMouse
                     anchors.fill: parent
                     enabled: gestureNameField.text.length > 0
                     onClicked: {
@@ -288,7 +289,7 @@ Item {
                     
                     states: State {
                         name: "pressed"
-                        when: parent.pressed
+                        when: gtRecordMouse.pressed
                         PropertyChanges {
                             target: parent.parent
                             scale: 0.95
@@ -323,6 +324,7 @@ Item {
                 }
                 
                 MouseArea {
+                    id: gtTrainMouse
                     anchors.fill: parent
                     enabled: samplesRecorded >= targetSamples && !isRecording
                     onClicked: {
@@ -333,7 +335,7 @@ Item {
                     
                     states: State {
                         name: "pressed"
-                        when: parent.pressed
+                        when: gtTrainMouse.pressed
                         PropertyChanges {
                             target: parent.parent
                             scale: 0.95
@@ -364,6 +366,7 @@ Item {
                 }
                 
                 MouseArea {
+                    id: gtResetMouse
                     anchors.fill: parent
                     enabled: !isRecording
                     onClicked: {
@@ -375,7 +378,7 @@ Item {
                     
                     states: State {
                         name: "pressed"
-                        when: parent.pressed
+                        when: gtResetMouse.pressed
                         PropertyChanges {
                             target: parent.parent
                             scale: 0.95

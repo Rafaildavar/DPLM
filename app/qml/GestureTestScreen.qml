@@ -11,6 +11,8 @@ Item {
 
     required property StackView gestStack
     property var pitchHost
+    property var gestureCatalog
+    property var navRoot
 
     property string lastGesture: "—"
     property string mappedCommand: "—"
