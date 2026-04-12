@@ -11,6 +11,7 @@ Item {
 
     required property StackView gestStack
     property var gestureCatalog
+    property var navRoot
     property var pitchHost
 
     ColumnLayout {

@@ -1,10 +1,14 @@
 """
 Онлайн-распознавание жестов в процессе приложения (MediaPipe + KNN).
-Логика согласована с cv/realtime_infer.py, без отдельного окна OpenCV.
+Совместимость: legacy mp.solutions (mediapipe < 0.10.31) и Tasks API (новые версии).
 """
 from __future__ import annotations
 
 import json
+import os
+import urllib.error
+import urllib.request
+from abc import ABC, abstractmethod
 from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
@@ -12,6 +16,12 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Официальная модель Hand Landmarker (Tasks), ~10 MB
+_HAND_TASK_URL = (
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+    "hand_landmarker/float16/1/hand_landmarker.task"
+)
 
 
 def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
@@ -29,6 +39,161 @@ def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
     return pts
 
 
+def _hand_task_cache_path() -> Path:
+    return Path.home() / ".dplm" / "hand_landmarker.task"
+
+
+def _resolve_hand_landmarker_task_path() -> Path:
+    env = os.environ.get("MEDIAPIPE_HAND_TASK", "").strip()
+    if env:
+        p = Path(env).expanduser()
+        if p.is_file():
+            return p.resolve()
+        raise FileNotFoundError(f"MEDIAPIPE_HAND_TASK не найден: {p}")
+
+    bundled = PROJECT_ROOT / "models" / "hand_landmarker.task"
+    if bundled.is_file():
+        return bundled.resolve()
+
+    cache = _hand_task_cache_path()
+    if cache.is_file():
+        return cache.resolve()
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".task.part")
+    try:
+        print(f"[i] Загрузка Hand Landmarker → {cache}")
+        req = urllib.request.Request(
+            _HAND_TASK_URL,
+            headers={"User-Agent": "DPLM/1.0 (gesture_online_infer)"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+        tmp.write_bytes(data)
+        tmp.replace(cache)
+    except (urllib.error.URLError, OSError) as e:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        raise RuntimeError(
+            f"Не удалось скачать hand_landmarker.task ({e}). "
+            "Задайте MEDIAPIPE_HAND_TASK=путь к .task или установите mediapipe<0.10.31."
+        ) from e
+    return cache.resolve()
+
+
+class _HandDetector(ABC):
+    @abstractmethod
+    def close(self) -> None:
+        ...
+
+    @abstractmethod
+    def detect(
+        self, frame_rgb: np.ndarray
+    ) -> Tuple[List[np.ndarray], List[List[float]]]:
+        """
+        Returns:
+            landmarks_frames: список нормализованных (21,2) на каждую руку
+            overlay_pts: точки [[x,y],...] первой руки для QML, норм. 0..1
+        """
+        ...
+
+
+class _LegacySolutionsHands(_HandDetector):
+    def __init__(self, two_hands: bool) -> None:
+        import mediapipe as mp
+
+        self._hands = mp.solutions.hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2 if two_hands else 1,
+            model_complexity=1,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
+
+    def close(self) -> None:
+        if self._hands is not None:
+            try:
+                self._hands.close()
+            except Exception:
+                pass
+            self._hands = None
+
+    def detect(self, frame_rgb: np.ndarray) -> Tuple[List[np.ndarray], List[List[float]]]:
+        landmarks_frames: List[np.ndarray] = []
+        overlay_pts: List[List[float]] = []
+        results = self._hands.process(frame_rgb)
+        if not results.multi_hand_landmarks:
+            return landmarks_frames, overlay_pts
+        for hand_landmarks in results.multi_hand_landmarks:
+            pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
+            try:
+                landmarks_frames.append(normalize_landmarks(pts))
+            except Exception:
+                continue
+            if not overlay_pts:
+                overlay_pts = [[float(lm.x), float(lm.y)] for lm in hand_landmarks.landmark]
+        return landmarks_frames, overlay_pts
+
+
+class _TasksApiHands(_HandDetector):
+    def __init__(self, task_path: str, two_hands: bool) -> None:
+        import mediapipe as mp
+
+        BaseOptions = mp.tasks.BaseOptions
+        HandLandmarker = mp.tasks.vision.HandLandmarker
+        HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+        VisionRunningMode = mp.tasks.vision.RunningMode
+
+        options = HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=task_path),
+            running_mode=VisionRunningMode.VIDEO,
+            num_hands=2 if two_hands else 1,
+            min_hand_detection_confidence=0.6,
+            min_hand_presence_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
+        self._mp = mp
+        self._landmarker = HandLandmarker.create_from_options(options)
+        self._ts_ms = 0
+
+    def close(self) -> None:
+        if self._landmarker is not None:
+            try:
+                self._landmarker.close()
+            except Exception:
+                pass
+            self._landmarker = None
+
+    def detect(self, frame_rgb: np.ndarray) -> Tuple[List[np.ndarray], List[List[float]]]:
+        landmarks_frames: List[np.ndarray] = []
+        overlay_pts: List[List[float]] = []
+        if self._landmarker is None:
+            return landmarks_frames, overlay_pts
+
+        rgb = np.ascontiguousarray(frame_rgb)
+        mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
+        self._ts_ms += 33
+        result = self._landmarker.detect_for_video(mp_image, self._ts_ms)
+
+        if not result.hand_landmarks:
+            return landmarks_frames, overlay_pts
+
+        for lm_list in result.hand_landmarks:
+            pts = [(float(lm.x), float(lm.y)) for lm in lm_list]
+            if len(pts) != 21:
+                continue
+            try:
+                landmarks_frames.append(normalize_landmarks(pts))
+            except Exception:
+                continue
+            if not overlay_pts:
+                overlay_pts = [[float(lm.x), float(lm.y)] for lm in lm_list]
+        return landmarks_frames, overlay_pts
+
+
 class GestureOnlineInfer:
     """
     Один кадр RGB → ключевые точки + (опционально) класс жеста и уверенность.
@@ -43,13 +208,12 @@ class GestureOnlineInfer:
     ) -> None:
         self._init_error = ""
         self._model_error = ""
-        self._hands: Any = None
+        self._detector: Optional[_HandDetector] = None
         self._clf: Any = None
         self._classes: List[str] = []
         self._feature_dim = 42
         self._two_hands = False
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
-        self._mp_hands = None
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -57,8 +221,6 @@ class GestureOnlineInfer:
 
         try:
             import mediapipe as mp
-
-            self._mp_hands = mp.solutions.hands
         except ImportError as e:
             self._init_error = f"mediapipe: {e}"
             return
@@ -92,16 +254,16 @@ class GestureOnlineInfer:
                 self._model_error = "Нет models/knn.pkl"
 
         try:
-            self._hands = self._mp_hands.Hands(
-                static_image_mode=False,
-                max_num_hands=2 if self._two_hands else 1,
-                model_complexity=1,
-                min_detection_confidence=0.6,
-                min_tracking_confidence=0.6,
-            )
+            if hasattr(mp, "solutions") and hasattr(mp.solutions, "hands"):
+                self._detector = _LegacySolutionsHands(self._two_hands)
+            elif hasattr(mp, "tasks"):
+                task_p = str(_resolve_hand_landmarker_task_path())
+                self._detector = _TasksApiHands(task_p, self._two_hands)
+            else:
+                self._init_error = "mediapipe: нет ни solutions, ни tasks"
         except Exception as e:
-            self._init_error = f"Hands: {e}"
-            self._hands = None
+            self._init_error = str(e)
+            self._detector = None
 
     @property
     def init_error(self) -> str:
@@ -113,19 +275,19 @@ class GestureOnlineInfer:
 
     @property
     def ready(self) -> bool:
-        return self._hands is not None
+        return self._detector is not None
 
     @property
     def has_classifier(self) -> bool:
         return self._clf is not None and bool(self._classes)
 
     def close(self) -> None:
-        if self._hands is not None:
+        if self._detector is not None:
             try:
-                self._hands.close()
+                self._detector.close()
             except Exception:
                 pass
-            self._hands = None
+            self._detector = None
         self._window.clear()
 
     def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
@@ -135,30 +297,15 @@ class GestureOnlineInfer:
         Returns:
             label, confidence [0..1], landmarks_json (список точек первой руки [[x,y],...] в 0..1).
         """
-        empty = {
+        empty: Dict[str, Any] = {
             "label": "",
             "confidence": 0.0,
             "landmarks_json": "[]",
         }
-        if self._hands is None or frame_rgb is None or frame_rgb.size == 0:
+        if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
             return empty
 
-        results = self._hands.process(frame_rgb)
-
-        landmarks_frames: List[np.ndarray] = []
-        overlay_pts: List[List[float]] = []
-
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
-                try:
-                    pts_norm = normalize_landmarks(pts)
-                    landmarks_frames.append(pts_norm)
-                except Exception:
-                    continue
-                if not overlay_pts:
-                    overlay_pts = [[float(lm.x), float(lm.y)] for lm in hand_landmarks.landmark]
-
+        landmarks_frames, overlay_pts = self._detector.detect(frame_rgb)
         landmarks_json = json.dumps(overlay_pts, separators=(",", ":"))
 
         if self._two_hands:

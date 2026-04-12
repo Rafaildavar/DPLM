@@ -96,7 +96,12 @@ class DplmCameraImageProvider(QQuickImageProvider):
         # Сигнатура Qt 6 / PySide6: (id, size*, requestedSize) -> QImage; size — out-параметр
         img = self._controller.camera_preview_for_provider()
         if img.isNull():
-            return QImage()
+            # Пустой QImage даёт в QML "Failed to get image from provider"
+            placeholder = QImage(2, 2, QImage.Format_RGB32)
+            placeholder.fill(0xFF16161E)
+            size.setWidth(placeholder.width())
+            size.setHeight(placeholder.height())
+            return placeholder
         size.setWidth(img.width())
         size.setHeight(img.height())
         return img
