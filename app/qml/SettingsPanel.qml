@@ -661,11 +661,11 @@ Rectangle {
                     // Reset all settings
                     console.log("[QML] Сброс настроек по умолчанию")
                     cameraCombo.currentIndex = 0
-                    ttsLanguageCombo.currentIndex = 0
-                    speechRateSlider.value = 1.0
+                    assistantLanguageCombo.currentIndex = 0
+                    speechRateSlider.value = 150
                     detectionQualitySlider.value = 1
                     enableTTSCheckbox.checked = true
-                    enableSTTCheckbox.checked = false
+                    enableWakeWordCheckbox.checked = true
                     enableAvatarCheckbox.checked = false
                     smoothingWindowSpinBox.value = 30
                 }
@@ -701,9 +701,9 @@ Rectangle {
                     console.log("[QML] Сохранение настроек")
                     console.log("  - Камера:", cameraCombo.currentText)
                     console.log("  - TTS:", enableTTSCheckbox.checked)
-                    console.log("  - Язык:", ttsLanguageCombo.currentText)
+                    console.log("  - Язык:", assistantLanguageCombo.currentText)
                     console.log("  - Скорость речи:", speechRateSlider.value)
-                    console.log("  - STT:", enableSTTCheckbox.checked)
+                    console.log("  - Wake word:", enableWakeWordCheckbox.checked)
                     console.log("  - Аватар:", enableAvatarCheckbox.checked)
                     console.log("  - Окно сглаживания:", smoothingWindowSpinBox.value)
                     

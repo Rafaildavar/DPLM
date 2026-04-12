@@ -1,0 +1,85 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Layouts
+
+/**
+ * Экран 3. Добавление нового жеста: имя, создание класса, переход к записи примеров.
+ */
+Item {
+    id: root
+
+    required property StackView gestStack
+    property var gestureCatalog
+    property var navRoot
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 14
+
+        RowLayout {
+            Layout.fillWidth: true
+
+            ToolButton {
+                text: "←"
+                font.pixelSize: 18
+                onClicked: gestStack.pop()
+            }
+
+            Text {
+                text: qsTr("Новый жест (3)")
+                font.pixelSize: 18
+                font.bold: true
+                color: Material.foreground
+                Layout.fillWidth: true
+            }
+        }
+
+        Label {
+            text: qsTr("Название жеста")
+            font.bold: true
+            color: Material.foreground
+        }
+
+        TextField {
+            id: gestureNameField
+            Layout.fillWidth: true
+            placeholderText: qsTr("Например: wave_hello")
+        }
+
+        Button {
+            Layout.fillWidth: true
+            text: qsTr("Создать новый класс")
+            highlighted: true
+            onClicked: {
+                if (gestureNameField.text.trim().length === 0)
+                    return
+                if (gestureCatalog) {
+                    gestureCatalog.append({
+                                            "name": gestureNameField.text.trim(),
+                                            "samples": 0,
+                                            "readyStr": qsTr("Нет примеров")
+                                        })
+                }
+            }
+        }
+
+        Button {
+            Layout.fillWidth: true
+            text: qsTr("Записать обучающие примеры")
+            onClicked: {
+                if (gestureNameField.text.trim().length === 0)
+                    return
+                gestStack.push(Qt.resolvedUrl("RecordingExamplesScreen.qml"), {
+                                   "gestStack": gestStack,
+                                   "gestureName": gestureNameField.text.trim(),
+                                   "navRoot": navRoot
+                               })
+            }
+        }
+
+        Item {
+            Layout.fillHeight: true
+        }
+    }
+}

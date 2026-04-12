@@ -208,7 +208,7 @@ Window {
                     
                     Text {
                         anchors.centerIn: parent
-                        text: qsTr("Обучение")
+                        text: qsTr("Жесты")
                         font.pixelSize: 15
                         font.bold: tabBar.currentIndex === 1
                         color: tabBar.currentIndex === 1 ? "white" : Material.foreground
@@ -265,10 +265,10 @@ Window {
                     }
                 }
                 
-                // Вкладка "Обучение" / "Training" tab
+                // Вкладка «Жесты»: 5 экранов по ТЗ (StackView)
                 Item {
-                    GestureTraining {
-                        id: gestureTraining
+                    GestureNavigation {
+                        id: gestureNavigation
                         anchors.fill: parent
                     }
                 }
@@ -338,32 +338,7 @@ Window {
                             horizontalAlignment: Text.AlignHCenter
                         }
                     }
-                    
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            if (appController.isRecognizing) {
-                                appController.stopRecognition()
-                            } else {
-                                appController.startRecognition()
-                            }
-                        }
-                    }
-                    
-                    // Эффект нажатия / Press effect
-                    states: State {
-                        name: "pressed"
-                        when: mouseArea.pressed
-                        PropertyChanges {
-                            target: parent
-                            scale: 0.95
-                        }
-                    }
-                    
-                    transitions: Transition {
-                        NumberAnimation { properties: "scale"; duration: 100 }
-                    }
-                    
+
                     MouseArea {
                         id: mouseArea
                         anchors.fill: parent
@@ -375,6 +350,22 @@ Window {
                             }
                         }
                     }
+
+                    states: State {
+                        name: "pressed"
+                        when: mouseArea.pressed
+                        PropertyChanges {
+                            target: parent
+                            scale: 0.95
+                        }
+                    }
+
+                    transitions: Transition {
+                        NumberAnimation {
+                            properties: "scale"
+                            duration: 100
+                        }
+                    }
                 }
             }
         }
@@ -384,19 +375,26 @@ Window {
     SettingsPanel {
         id: settingsPanel
         visible: false
+        opacity: 0
+        scale: 0.9
         width: Math.min(parent.width * 0.95, 600)
         height: Math.min(parent.height * 0.95, 800)
         x: (parent.width - width) / 2
         y: (parent.height - height) / 2
-        
+
         Behavior on opacity {
-            NumberAnimation { duration: 300 }
+            NumberAnimation {
+                duration: 300
+            }
         }
-        
+
         Behavior on scale {
-            NumberAnimation { duration: 300; easing.type: Easing.OutBack }
+            NumberAnimation {
+                duration: 300
+                easing.type: Easing.OutBack
+            }
         }
-        
+
         states: State {
             name: "visible"
             when: settingsPanel.visible
@@ -405,12 +403,6 @@ Window {
                 opacity: 1
                 scale: 1
             }
-        }
-        
-        PropertyChanges {
-            target: settingsPanel
-            opacity: 0
-            scale: 0.9
         }
     }
     

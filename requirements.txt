@@ -1,5 +1,5 @@
-# Computer Vision
-opencv-python
+# Computer Vision (headless on macOS to avoid Qt/GUI conflicts)
+opencv-python-headless
 mediapipe
 numpy
 

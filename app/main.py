@@ -8,82 +8,60 @@ Main entry point for DPLM application
 """
 import sys
 import os
+import site
 import signal
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
+
+
+def _resolve_pyside6_paths() -> Tuple[Optional[Path], Optional[Path]]:
+    """Вернуть (plugins_path, platforms_path) для установленного PySide6 (без импорта PySide6)."""
+    candidates = []
+    for site_dir in site.getsitepackages():
+        candidates.append(Path(site_dir) / "PySide6")
+    user_site = site.getusersitepackages()
+    if user_site:
+        candidates.append(Path(user_site) / "PySide6")
+    for base in candidates:
+        plugins = base / "Qt" / "plugins"
+        platforms = plugins / "platforms"
+        if plugins.exists():
+            return plugins.resolve(), (platforms.resolve() if platforms.exists() else None)
+    return None, None
+
+
+def _configure_qt_environment_for_macos() -> None:
+    """Настроить Qt plugin paths для macOS до импорта PySide6."""
+    if sys.platform != "darwin":
+        return
+    plugins_path, platforms_path = _resolve_pyside6_paths()
+    if plugins_path:
+        os.environ["QT_PLUGIN_PATH"] = str(plugins_path)
+        print(f"[i] Qt plugins path: {plugins_path}")
+    else:
+        print("[!] Warning: Qt plugins path not found (PySide6/Qt/plugins)")
+    if platforms_path:
+        os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platforms_path)
+        print(f"[i] Qt platform plugins path: {platforms_path}")
+    os.environ.setdefault("QT_QPA_PLATFORM", "cocoa")
+
 
 # ВАЖНО: Настройка Qt окружения ДО импорта PySide6
-# IMPORTANT: Setup Qt environment BEFORE importing PySide6
-if sys.platform == "darwin":
-    try:
-        # Импортируем PySide6 только для получения пути
-        # Import PySide6 only to get the path
-        import PySide6
-        # Используем __path__ если __file__ недоступен
-        # Use __path__ if __file__ is not available
-        if hasattr(PySide6, '__file__') and PySide6.__file__:
-            pyside6_path = Path(PySide6.__file__).parent
-        elif hasattr(PySide6, '__path__') and PySide6.__path__:
-            pyside6_path = Path(PySide6.__path__[0])
-        else:
-            # Fallback: используем site-packages
-            # Fallback: use site-packages
-            import site
-            site_packages = site.getsitepackages()[0] if site.getsitepackages() else None
-            if site_packages:
-                pyside6_path = Path(site_packages) / "PySide6"
-            else:
-                raise ValueError("Cannot find PySide6 path")
-        
-        plugins_path = pyside6_path / "Qt" / "plugins"
-        if plugins_path.exists():
-            plugin_path_str = str(plugins_path.resolve())
-            os.environ['QT_PLUGIN_PATH'] = plugin_path_str
-            print(f"[i] Qt plugins path: {plugin_path_str}")
-        else:
-            print(f"[!] Warning: Qt plugins path not found: {plugins_path}")
-    except Exception as e:
-        print(f"[!] Warning: Could not set Qt plugin path: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Установить платформу / Set platform
-    if 'QT_QPA_PLATFORM' not in os.environ:
-        os.environ['QT_QPA_PLATFORM'] = 'cocoa'
+_configure_qt_environment_for_macos()
 
 # Теперь можно импортировать PySide6
-# Now we can import PySide6
-from PySide6.QtCore import QCoreApplication, QUrl, QObject, Slot, Signal, Property
-from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtCore import QCoreApplication, QUrl, QObject, Slot, Signal, Property, QTimer, QSize
+from PySide6.QtGui import QGuiApplication, QIcon, QImage
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickImageProvider
 
 # Установка путей к библиотекам Qt после импорта QCoreApplication
-# Set Qt library paths after importing QCoreApplication
 if sys.platform == "darwin":
-    try:
-        import PySide6
-        # Используем __path__ если __file__ недоступен
-        # Use __path__ if __file__ is not available
-        if hasattr(PySide6, '__file__') and PySide6.__file__:
-            pyside6_path = Path(PySide6.__file__).parent
-        elif hasattr(PySide6, '__path__') and PySide6.__path__:
-            pyside6_path = Path(PySide6.__path__[0])
-        else:
-            import site
-            site_packages = site.getsitepackages()[0] if site.getsitepackages() else None
-            if site_packages:
-                pyside6_path = Path(site_packages) / "PySide6"
-            else:
-                raise ValueError("Cannot find PySide6 path")
-        
-        plugins_path = pyside6_path / "Qt" / "plugins"
-        if plugins_path.exists():
-            plugin_path_str = str(plugins_path.resolve())
-            QCoreApplication.setLibraryPaths([plugin_path_str])
-            print(f"[i] Qt library paths set: {QCoreApplication.libraryPaths()}")
-    except Exception as e:
-        print(f"[!] Warning: Could not set Qt library paths: {e}")
+    plugins_path, _ = _resolve_pyside6_paths()
+    if plugins_path:
+        QCoreApplication.setLibraryPaths([str(plugins_path)])
+        print(f"[i] Qt library paths set: {QCoreApplication.libraryPaths()}")
 
 # Импорт сервисов / Import services
 try:
@@ -98,6 +76,31 @@ except ImportError as e:
     create_voice_assistant = None
     get_executor = None
 
+try:
+    import cv2  # noqa: F401
+    import numpy as np  # noqa: F401
+
+    _CV2_AVAILABLE = True
+except ImportError:
+    _CV2_AVAILABLE = False
+
+
+class DplmCameraImageProvider(QQuickImageProvider):
+    """Поставляет последний кадр превью камеры в QML (image://dplmcam/preview)."""
+
+    def __init__(self, controller: "AppController"):
+        super().__init__(QQuickImageProvider.Image)
+        self._controller = controller
+
+    def requestImage(self, path_id: str, size: QSize, requested_size: QSize) -> QImage:
+        # Сигнатура Qt 6 / PySide6: (id, size*, requestedSize) -> QImage; size — out-параметр
+        img = self._controller.camera_preview_for_provider()
+        if img.isNull():
+            return QImage()
+        size.setWidth(img.width())
+        size.setHeight(img.height())
+        return img
+
 
 class AppController(QObject):
     """
@@ -111,7 +114,9 @@ class AppController(QObject):
     commandExecuted = Signal(str)  # Команда выполнена / Command executed
     voiceAssistantStateChanged = Signal(str)  # Состояние голосового помощника / Voice assistant state
     voiceCommandReceived = Signal(str)  # Получена голосовая команда / Voice command received
-    
+    cameraActiveChanged = Signal()
+    cameraPreviewRevisionChanged = Signal()
+
     def __init__(self):
         super().__init__()
         self._status = "Idle"
@@ -133,7 +138,16 @@ class AppController(QObject):
             self._command_executor = get_executor()
         else:
             self._command_executor = None
-    
+
+        # Превью камеры (OpenCV → QML, те же настройки, что cv/realtime_infer.py)
+        self._camera_cap: Optional[object] = None
+        self._preview_qimage: Optional[QImage] = None
+        self._is_camera_active = False
+        self._camera_preview_revision = 0
+        self._camera_timer = QTimer(self)
+        self._camera_timer.setInterval(33)
+        self._camera_timer.timeout.connect(self._update_camera_frame)
+
     @Property(str, notify=statusChanged)
     def status(self):
         """Текущий статус системы / Current system status"""
@@ -149,13 +163,102 @@ class AppController(QObject):
     def isRecognizing(self):
         """Активно ли распознавание / Is recognition active"""
         return self._is_recognizing
-    
+
+    @Property(bool, notify=cameraActiveChanged)
+    def isCameraActive(self) -> bool:
+        return self._is_camera_active
+
+    @Property(int, notify=cameraPreviewRevisionChanged)
+    def cameraPreviewRevision(self) -> int:
+        return self._camera_preview_revision
+
+    def camera_preview_for_provider(self) -> QImage:
+        if self._preview_qimage is None or self._preview_qimage.isNull():
+            return QImage()
+        return self._preview_qimage
+
+    @Slot()
+    def startCamera(self) -> None:
+        """Открыть камеру для превью в QML (тот же захват, что в cv/realtime_infer.py)."""
+        if self._is_camera_active:
+            return
+        if not _CV2_AVAILABLE:
+            self.status = "Camera: OpenCV not installed"
+            print("[!] OpenCV (cv2) недоступен — превью камеры отключено")
+            return
+        if self._is_recognizing:
+            print("[w] Запущено фоновое распознавание (realtime_infer.py); оно может занять камеру 0.")
+        try:
+            from app.cv_camera import open_default_capture
+
+            cap = open_default_capture()
+        except Exception as e:
+            print(f"[!] Ошибка открытия камеры: {e}")
+            self.status = f"Camera error: {e}"
+            return
+        if not cap.isOpened():
+            self.status = "Camera: open failed (check macOS Privacy → Camera)"
+            print("[!] cv2.VideoCapture не открыл устройство")
+            try:
+                cap.release()
+            except Exception:
+                pass
+            return
+        self._camera_cap = cap
+        self._is_camera_active = True
+        self.cameraActiveChanged.emit()
+        self._camera_timer.start()
+        self.status = "Camera: streaming (QML preview)"
+        print("[✓] Камера открыта для превью в интерфейсе")
+
+    @Slot()
+    def stopCamera(self) -> None:
+        """Остановить превью и освободить камеру."""
+        self._camera_timer.stop()
+        self._preview_qimage = None
+        if self._camera_cap is not None:
+            try:
+                self._camera_cap.release()
+            except Exception:
+                pass
+            self._camera_cap = None
+        if self._is_camera_active:
+            self._is_camera_active = False
+            self.cameraActiveChanged.emit()
+        self._camera_preview_revision += 1
+        self.cameraPreviewRevisionChanged.emit()
+        if self._is_recognition_pid_active():
+            self.status = "Recognizing in background"
+        elif self._status.startswith("Camera:"):
+            self.status = "Stopped"
+        print("[i] Превью камеры остановлено")
+
+    def _update_camera_frame(self) -> None:
+        if not self._camera_cap or not self._is_camera_active:
+            return
+        ok, frame_bgr = self._camera_cap.read()
+        if not ok:
+            return
+        import cv2
+        import numpy as np
+
+        frame_bgr = cv2.flip(frame_bgr, 1)
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        h, w, ch = frame_rgb.shape
+        frame_rgb = np.ascontiguousarray(frame_rgb)
+        bytes_per_line = ch * w
+        qimg = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
+        self._preview_qimage = qimg
+        self._camera_preview_revision += 1
+        self.cameraPreviewRevisionChanged.emit()
+
     @Slot()
     def startRecognition(self):
         """
         Запустить распознавание жестов в реальном времени
         Start real-time gesture recognition
         """
+        self.stopCamera()
         if self._is_recognition_pid_active():
             print("[i] Распознавание уже запущено в фоне")
             self._is_recognizing = True
@@ -538,22 +641,7 @@ def main():
     Главная функция запуска приложения
     Main application launch function
     """
-    # Установка путей к библиотекам Qt перед созданием приложения
-    # Set Qt library paths before creating application
-    if sys.platform == "darwin":
-        try:
-            import PySide6
-            pyside6_path = Path(PySide6.__file__).parent
-            plugins_path = pyside6_path / "Qt" / "plugins"
-            if plugins_path.exists():
-                plugin_path_str = str(plugins_path.resolve())
-                # Используем QCoreApplication для установки путей
-                # Use QCoreApplication to set library paths
-                QCoreApplication.setLibraryPaths([plugin_path_str])
-                print(f"[i] Qt plugins path set: {plugin_path_str}")
-        except Exception as e:
-            print(f"[!] Warning: Could not set Qt plugin path: {e}")
-    
+    # Пути Qt заданы до импорта PySide6 и при загрузке модуля
     # Создание приложения / Create application
     app = QGuiApplication(sys.argv)
     app.setApplicationName("DPLM")
@@ -567,7 +655,9 @@ def main():
     # Создание контроллера и регистрация в QML
     # Create controller and register in QML
     controller = AppController()
+    engine.addImageProvider("dplmcam", DplmCameraImageProvider(controller))
     engine.rootContext().setContextProperty("appController", controller)
+    app.aboutToQuit.connect(controller.stopCamera)
     
     # Загрузка главного QML файла / Load main QML file
     qml_file = Path(__file__).parent / "qml" / "MainWindow.qml"
