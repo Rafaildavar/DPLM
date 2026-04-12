@@ -19,9 +19,9 @@ Window {
     }
     
     // Настройки окна / Window settings
-    width: 450
-    height: 700
-    minimumWidth: 400
+    width: 920
+    height: 720
+    minimumWidth: 640
     minimumHeight: 600
     visible: true
     title: "DPLM - Gesture & Voice Assistant"
@@ -184,7 +184,7 @@ Window {
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("Команды")
-                        font.pixelSize: 15
+                        font.pixelSize: 14
                         font.bold: tabBar.currentIndex === 0
                         color: tabBar.currentIndex === 0 ? "white" : Material.foreground
                     }
@@ -209,7 +209,7 @@ Window {
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("Жесты")
-                        font.pixelSize: 15
+                        font.pixelSize: 14
                         font.bold: tabBar.currentIndex === 1
                         color: tabBar.currentIndex === 1 ? "white" : Material.foreground
                     }
@@ -234,7 +234,7 @@ Window {
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("Помощник")
-                        font.pixelSize: 15
+                        font.pixelSize: 14
                         font.bold: tabBar.currentIndex === 2
                         color: tabBar.currentIndex === 2 ? "white" : Material.foreground
                     }
@@ -242,6 +242,31 @@ Window {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: tabBar.currentIndex = 2
+                    }
+                }
+
+                // Вкладка «Питч диплома»: все 12 экранов слева списком
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 10
+                    color: tabBar.currentIndex === 3 ? Material.accent : "transparent"
+
+                    Behavior on color {
+                        ColorAnimation { duration: 300 }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("Питч")
+                        font.pixelSize: 14
+                        font.bold: tabBar.currentIndex === 3
+                        color: tabBar.currentIndex === 3 ? "white" : Material.foreground
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: tabBar.currentIndex = 3
                     }
                 }
             }
@@ -277,6 +302,14 @@ Window {
                 Item {
                     VoiceAssistantPanel {
                         id: voiceAssistantPanel
+                        anchors.fill: parent
+                    }
+                }
+
+                // Вкладка «Питч диплома» / Diploma pitch tab
+                Item {
+                    DiplomaPitchPanel {
+                        id: diplomaPitchPanel
                         anchors.fill: parent
                     }
                 }

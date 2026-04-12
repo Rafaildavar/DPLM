@@ -10,6 +10,7 @@ Item {
     id: root
 
     required property StackView gestStack
+    property var pitchHost
 
     property string gestureName: qsTr("—")
     property double confidence: 0
@@ -49,7 +50,7 @@ Item {
             ToolButton {
                 text: "←"
                 font.pixelSize: 18
-                onClicked: gestStack.pop()
+                onClicked: (pitchHost && pitchHost.handleBack) ? pitchHost.handleBack(gestStack) : gestStack.pop()
             }
 
             Text {

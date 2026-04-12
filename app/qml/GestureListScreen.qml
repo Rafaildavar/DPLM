@@ -11,6 +11,7 @@ Item {
 
     required property StackView gestStack
     property var gestureCatalog
+    property var pitchHost
 
     ColumnLayout {
         anchors.fill: parent
@@ -22,7 +23,7 @@ Item {
             ToolButton {
                 text: "←"
                 font.pixelSize: 18
-                onClicked: gestStack.pop()
+                onClicked: (pitchHost && pitchHost.handleBack) ? pitchHost.handleBack(gestStack) : gestStack.pop()
             }
 
             Text {
