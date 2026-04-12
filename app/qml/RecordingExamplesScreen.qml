@@ -12,6 +12,7 @@ Item {
     required property StackView gestStack
     property string gestureName: ""
     property var navRoot
+    property var pitchHost
 
     property bool isRecording: false
     property int samplesRecorded: 0
@@ -31,7 +32,10 @@ Item {
                     finalizeRecording()
                     recordingTimer.stop()
                     isRecording = false
-                    gestStack.pop()
+                    if (pitchHost && pitchHost.handleBack)
+                        pitchHost.handleBack(gestStack)
+                    else
+                        gestStack.pop()
                 }
             }
 

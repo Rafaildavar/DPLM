@@ -104,9 +104,7 @@ Item {
                 Button {
                     width: parent.width
                     text: qsTr("4. Запись обучающих примеров")
-                    onClicked: gestStack.push(Qt.resolvedUrl("RecordingExamplesScreen.qml"), root.navArgs({
-                                                                                                             "gestureName": ""
-                                                                                                         }))
+                    onClicked: gestStack.push(Qt.resolvedUrl("RecordingExamplesScreen.qml"), root.navArgs({ "gestureName": "" }))
                 }
 
                 Button {
