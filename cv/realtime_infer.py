@@ -1,45 +1,41 @@
+"""
+Онлайн-классификация жестов (KNN) + опциональный TTS.
+
+С mediapipe>=0.10.33 используется Tasks API через общий хелпер
+``cv.hand_landmarker.HandLandmarkerVideo``.
+"""
+from __future__ import annotations
+
 import argparse
 import json
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Deque, List, Tuple
+from typing import Deque, List
 
 import cv2
 import joblib
-import mediapipe as mp
 import numpy as np
 import pyttsx3
 
+# При запуске как ``python cv/realtime_infer.py`` корень проекта не в sys.path.
+_THIS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _THIS_DIR.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ----------------------------------------------
-# Онлайн‑классификация жестов + опциональный TTS
-# Комментарии на русском
-# ----------------------------------------------
+from cv.hand_landmarker import (  # noqa: E402
+    HandLandmarkerVideo,
+    draw_hand_overlay_bgr,
+    normalize_landmarks,
+)
+
 
 MACOS_BACKEND = cv2.CAP_AVFOUNDATION
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-mp_styles = mp.solutions.drawing_styles
-
-
-def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
-    """Нормализация относительно запястья и масштаба (21×2)."""
-    pts = np.asarray(landmarks_xy, dtype=np.float32)
-    if pts.shape != (21, 2):
-        raise ValueError("Ожидалось 21 точка (x, y)")
-    wrist = pts[0].copy()
-    pts -= wrist
-    d = np.linalg.norm(pts, axis=1)
-    scale = float(np.max(d))
-    if scale < 1e-6:
-        scale = 1.0
-    pts /= scale
-    return pts
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Онлайн‑классификация жестов (KNN) + TTS")
+    p = argparse.ArgumentParser(description="Онлайн-классификация жестов (KNN) + TTS")
     p.add_argument("--model", default="models/knn.pkl", help="Путь к модели KNN (joblib)")
     p.add_argument("--classes", default="models/classes.json", help="JSON со списком классов")
     p.add_argument(
@@ -50,14 +46,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
     p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
-    p.add_argument("--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек")
+    p.add_argument(
+        "--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек"
+    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    # Загрузка модели и метаданных
     clf = joblib.load(args.model)
     classes = json.loads(Path(args.classes).read_text())
     feature_dim = int(Path(args.feature_dim_file).read_text().strip())
@@ -68,22 +65,19 @@ def main() -> None:
         print("[i] Обнаружена размерность 84 → переключаюсь в режим двух рук (--two-hands)")
         args.two_hands = True
     elif feature_dim == 42 and args.two_hands:
-        print("[i] Обнаружена размерность 42 → отключаю режим двух рук (ожидается одна рука)")
-        args.two_hands = False
+        print("[i] feature_dim=42, но запрошен --two-hands: вторая рука будет нарисована, "
+              "но в признак подаётся только первая.")
 
-    # Подготовка TTS (при необходимости)
     tts_engine = None
     last_spoken_label = None
     last_spoken_ts = 0.0
     if args.tts:
         try:
             tts_engine = pyttsx3.init()
-            # Можно подобрать голос/скорость при желании
         except Exception as e:
             print(f"[!] Не удалось инициализировать TTS: {e}")
             args.tts = False
 
-    # Очередь кадров для окна
     window: Deque[np.ndarray] = deque(maxlen=max(1, args.window))
 
     cap = cv2.VideoCapture(0, MACOS_BACKEND)
@@ -95,11 +89,10 @@ def main() -> None:
         print("Ошибка открытия камеры (проверьте доступ в Privacy & Security → Camera)")
         sys.exit(1)
 
-    hands = mp_hands.Hands(
-        static_image_mode=False,
-        max_num_hands=2 if args.two_hands else 1,
-        model_complexity=1,
+    detector = HandLandmarkerVideo(
+        num_hands=2 if args.two_hands else 1,
         min_detection_confidence=0.6,
+        min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
     )
 
@@ -114,41 +107,32 @@ def main() -> None:
 
             frame_bgr = cv2.flip(frame_bgr, 1)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            results = hands.process(frame_rgb)
+            hands = detector.detect_for_video_rgb(frame_rgb)
 
-            landmarks_frames: List[np.ndarray] = []
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    mp_drawing.draw_landmarks(
-                        image=frame_bgr,
-                        landmark_list=hand_landmarks,
-                        connections=mp_hands.HAND_CONNECTIONS,
-                        landmark_drawing_spec=mp_styles.get_default_hand_landmarks_style(),
-                        connection_drawing_spec=mp_styles.get_default_hand_connections_style(),
-                    )
-                    pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
-                    pts_norm = normalize_landmarks(pts)
-                    landmarks_frames.append(pts_norm)
+            normalized: List[np.ndarray] = []
+            for h in hands:
+                draw_hand_overlay_bgr(frame_bgr, h, label=h.handedness)
+                try:
+                    normalized.append(normalize_landmarks(h.landmarks))
+                except Exception:
+                    continue
 
-            # Формирование вектора признака кадра согласно feature_dim
             if args.two_hands:
-                if len(landmarks_frames) == 2:
-                    frame_vec = np.concatenate(landmarks_frames, axis=0)  # (42,2)
-                elif len(landmarks_frames) == 1:
+                if len(normalized) >= 2:
+                    frame_vec = np.concatenate(normalized[:2], axis=0)
+                elif len(normalized) == 1:
                     frame_vec = np.concatenate(
-                        [landmarks_frames[0], np.zeros((21, 2), dtype=np.float32)], axis=0
+                        [normalized[0], np.zeros((21, 2), dtype=np.float32)], axis=0
                     )
                 else:
                     frame_vec = np.zeros((42, 2), dtype=np.float32)
             else:
-                frame_vec = landmarks_frames[0] if landmarks_frames else np.zeros((21, 2), dtype=np.float32)
+                frame_vec = (
+                    normalized[0] if normalized else np.zeros((21, 2), dtype=np.float32)
+                )
 
-            # Разворачиваем до (D,)
             feat = frame_vec.reshape(-1)
-
-            # Если ожидалась другая размерность (например, модель обучена на одну руку)
             if feat.shape[0] != feature_dim:
-                # подгоняем: либо обрезаем/дополняем нулями
                 if feat.shape[0] > feature_dim:
                     feat = feat[:feature_dim]
                 else:
@@ -157,17 +141,23 @@ def main() -> None:
 
             window.append(feat)
 
-            # Предсказание по усреднению окна
             avg_feat = np.mean(np.stack(window, axis=0), axis=0).reshape(1, -1)
             pred_idx = int(clf.predict(avg_feat)[0])
             label = classes[pred_idx] if 0 <= pred_idx < len(classes) else str(pred_idx)
 
-            # Рисуем предсказание
-            cv2.putText(frame_bgr, f"Pred: {label}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+            cv2.putText(
+                frame_bgr,
+                f"Pred: {label}  hands={len(hands)}",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (0, 255, 0),
+                2,
+            )
 
-            # Озвучка при смене класса с дебаунсом
             if args.tts:
                 import time
+
                 now = time.time()
                 if label != last_spoken_label and (now - last_spoken_ts) >= args.min_say_interval:
                     try:
@@ -183,7 +173,7 @@ def main() -> None:
                 break
 
     finally:
-        hands.close()
+        detector.close()
         cap.release()
         cv2.destroyAllWindows()
 

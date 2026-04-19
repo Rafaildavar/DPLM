@@ -8,9 +8,11 @@ Main entry point for DPLM application
 """
 import sys
 import os
+import json
 import site
 import signal
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -51,7 +53,17 @@ def _configure_qt_environment_for_macos() -> None:
 _configure_qt_environment_for_macos()
 
 # Теперь можно импортировать PySide6
-from PySide6.QtCore import QCoreApplication, QUrl, QObject, Slot, Signal, Property, QTimer, QSize
+from PySide6.QtCore import (
+    QCoreApplication,
+    QObject,
+    Property,
+    QTimer,
+    QUrl,
+    QSize,
+    Qt,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QGuiApplication, QIcon, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
@@ -121,10 +133,12 @@ class AppController(QObject):
     voiceCommandReceived = Signal(str)  # Получена голосовая команда / Voice command received
     cameraActiveChanged = Signal()
     cameraPreviewRevisionChanged = Signal()
+    cameraFrameSizeChanged = Signal()
     isRecognizingChanged = Signal()
     isVoiceAssistantActiveChanged = Signal()
     embeddedRecognitionConfidenceChanged = Signal()
     embeddedLandmarksJsonChanged = Signal()
+    twoHandsModeChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -154,6 +168,8 @@ class AppController(QObject):
         self._preview_qimage: Optional[QImage] = None
         self._is_camera_active = False
         self._camera_preview_revision = 0
+        self._camera_frame_width = 0
+        self._camera_frame_height = 0
         self._camera_timer = QTimer(self)
         self._camera_timer.setInterval(33)
         self._camera_timer.timeout.connect(self._update_camera_frame)
@@ -164,6 +180,9 @@ class AppController(QObject):
         self._last_embedded_label = ""
         self._embedded_recognition_confidence = 0.0
         self._embedded_landmarks_json = "[]"
+        # Режим распознавания двух рук (UI-переключатель). Применяется к
+        # встроенному пайплайну и пробрасывается в subprocess realtime_infer.
+        self._two_hands_mode = False
 
     @Property(str, notify=statusChanged)
     def status(self):
@@ -189,6 +208,14 @@ class AppController(QObject):
     def cameraPreviewRevision(self) -> int:
         return self._camera_preview_revision
 
+    @Property(int, notify=cameraFrameSizeChanged)
+    def cameraFrameWidth(self) -> int:
+        return self._camera_frame_width
+
+    @Property(int, notify=cameraFrameSizeChanged)
+    def cameraFrameHeight(self) -> int:
+        return self._camera_frame_height
+
     @Property(float, notify=embeddedRecognitionConfidenceChanged)
     def embeddedRecognitionConfidence(self) -> float:
         return self._embedded_recognition_confidence
@@ -196,6 +223,45 @@ class AppController(QObject):
     @Property(str, notify=embeddedLandmarksJsonChanged)
     def embeddedLandmarksJson(self) -> str:
         return self._embedded_landmarks_json
+
+    @Property(bool, notify=twoHandsModeChanged)
+    def twoHandsMode(self) -> bool:
+        """Включён ли режим распознавания двух рук."""
+        return self._two_hands_mode
+
+    @Slot(bool)
+    def setTwoHandsMode(self, enabled: bool) -> None:
+        """
+        Включить/выключить режим двух рук в реальном времени.
+
+        - Применяется к запущенному встроенному пайплайну (без переоткрытия камеры).
+        - Если в этот момент работает фоновое subprocess-распознавание, оно
+          будет перезапущено с актуальным флагом ``--two-hands``.
+        """
+        target = bool(enabled)
+        if target == self._two_hands_mode:
+            return
+        self._two_hands_mode = target
+        self.twoHandsModeChanged.emit()
+
+        if self._embedded_infer is not None:
+            try:
+                self._embedded_infer.set_two_hands(target)
+                self._last_embedded_label = ""
+                if self._embedded_recognition_confidence != 0.0:
+                    self._embedded_recognition_confidence = 0.0
+                    self.embeddedRecognitionConfidenceChanged.emit()
+                if self._embedded_landmarks_json != "[]":
+                    self._embedded_landmarks_json = "[]"
+                    self.embeddedLandmarksJsonChanged.emit()
+                print(f"[i] Режим двух рук: {'ON' if target else 'OFF'}")
+            except Exception as e:
+                print(f"[!] Не удалось переключить режим двух рук: {e}")
+
+        if self._is_recognition_pid_active():
+            print("[i] Перезапуск фонового распознавания с обновлённым флагом two-hands")
+            self.stopRecognition()
+            self.startRecognition()
 
     def camera_preview_for_provider(self) -> QImage:
         if self._preview_qimage is None or self._preview_qimage.isNull():
@@ -241,6 +307,10 @@ class AppController(QObject):
         """Остановить превью и освободить камеру."""
         self._camera_timer.stop()
         self._preview_qimage = None
+        if self._camera_frame_width != 0 or self._camera_frame_height != 0:
+            self._camera_frame_width = 0
+            self._camera_frame_height = 0
+            self.cameraFrameSizeChanged.emit()
         if self._camera_cap is not None:
             try:
                 self._camera_cap.release()
@@ -270,6 +340,10 @@ class AppController(QObject):
         frame_bgr = cv2.flip(frame_bgr, 1)
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         h, w, ch = frame_rgb.shape
+        if self._camera_frame_width != w or self._camera_frame_height != h:
+            self._camera_frame_width = w
+            self._camera_frame_height = h
+            self.cameraFrameSizeChanged.emit()
         frame_rgb = np.ascontiguousarray(frame_rgb)
         bytes_per_line = ch * w
         qimg = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
@@ -277,24 +351,35 @@ class AppController(QObject):
 
         if self._embedded_infer_active and self._embedded_infer is not None:
             try:
-                out = self._embedded_infer.process_frame_rgb(frame_rgb)
+                infer_rgb = frame_rgb
+                ih, iw = infer_rgb.shape[:2]
+                max_w = 640
+                if iw > max_w:
+                    scale = max_w / float(iw)
+                    nh = max(1, int(round(ih * scale)))
+                    infer_rgb = np.ascontiguousarray(
+                        cv2.resize(infer_rgb, (max_w, nh), interpolation=cv2.INTER_AREA)
+                    )
+                out = self._embedded_infer.process_frame_rgb(infer_rgb)
             except Exception as e:
                 print(f"[!] embedded CV frame error: {e}")
                 out = {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
-            label = (out.get("label") or "").strip()
-            conf = float(out.get("confidence") or 0.0)
-            lj = out.get("landmarks_json") or "[]"
+            if out is not None:
+                label = (out.get("label") or "").strip()
+                conf = float(out.get("confidence") or 0.0)
+                lj = out.get("landmarks_json") or "[]"
 
-            if label and label != self._last_embedded_label:
-                self._last_embedded_label = label
-                self.gestureDetected.emit(label)
+                # Сначала уверенность и скелет, затем жест — QML читает confidence после сигнала.
+                if self._embedded_recognition_confidence != conf:
+                    self._embedded_recognition_confidence = conf
+                    self.embeddedRecognitionConfidenceChanged.emit()
+                if self._embedded_landmarks_json != lj:
+                    self._embedded_landmarks_json = lj
+                    self.embeddedLandmarksJsonChanged.emit()
 
-            if self._embedded_recognition_confidence != conf:
-                self._embedded_recognition_confidence = conf
-                self.embeddedRecognitionConfidenceChanged.emit()
-            if self._embedded_landmarks_json != lj:
-                self._embedded_landmarks_json = lj
-                self.embeddedLandmarksJsonChanged.emit()
+                if label and label != self._last_embedded_label:
+                    self._last_embedded_label = label
+                    self.gestureDetected.emit(label)
 
         self._camera_preview_revision += 1
         self.cameraPreviewRevisionChanged.emit()
@@ -320,6 +405,8 @@ class AppController(QObject):
             str(infer_script.resolve()),
             "--tts",
         ]
+        if self._two_hands_mode:
+            cmd.append("--two-hands")
 
         try:
             log_handle = self._recognition_log_file.open("a", encoding="utf-8")
@@ -345,31 +432,40 @@ class AppController(QObject):
     def startEmbeddedGestureRecognition(self) -> None:
         """
         Режим «камера в приложении + MediaPipe/KNN» для экрана распознавания.
-        Не использует отдельный процесс realtime_infer.py (освобождает камеру 0).
+        Инициализация выполняется в UI-потоке: MediaPipe объекты должны
+        создаваться и использоваться в одном потоке, иначе детект становится
+        нестабильным (зависание "загрузка..." и confidence=0).
         """
         if self._embedded_infer_active:
             return
         self.stopRecognition()
+        self.status = "CV: загрузка MediaPipe (модель рук)…"
+        err_msg = ""
+        infer: Any = None
         try:
             from app.gesture_online_infer import GestureOnlineInfer
 
-            self._embedded_infer = GestureOnlineInfer()
+            infer = GestureOnlineInfer(two_hands=self._two_hands_mode)
+            # Если классификатор требует две руки — синхронизируем UI-флаг.
+            if infer.classifier_requires_two_hands and not self._two_hands_mode:
+                self._two_hands_mode = True
+                self.twoHandsModeChanged.emit()
+            if infer.init_error:
+                err_msg = infer.init_error
+                infer.close()
+                infer = None
         except Exception as e:
-            print(f"[!] Встроенное CV: не удалось создать движок: {e}")
-            self.status = f"CV init error: {e}"
+            err_msg = str(e)
+            infer = None
+        if infer is None:
+            print(f"[!] Встроенное CV: {err_msg}")
+            self.status = f"CV init error: {err_msg}" if err_msg else "CV init failed"
             self._embedded_infer = None
             return
+        if infer.model_error:
+            print(f"[i] Встроенное CV (без классификатора): {infer.model_error}")
 
-        if self._embedded_infer.init_error:
-            print(f"[!] Встроенное CV: {self._embedded_infer.init_error}")
-            self.status = f"CV: {self._embedded_infer.init_error}"
-            self._embedded_infer.close()
-            self._embedded_infer = None
-            return
-
-        if self._embedded_infer.model_error:
-            print(f"[i] Встроенное CV (без классификатора): {self._embedded_infer.model_error}")
-
+        self._embedded_infer = infer
         self._embedded_infer_active = True
         self._last_embedded_label = ""
         self._embedded_recognition_confidence = 0.0
@@ -461,16 +557,36 @@ class AppController(QObject):
     @Slot(str)
     def startGestureTraining(self, gesture_label):
         """
-        Запустить обучение нового жеста
-        Start training a new gesture
-        
-        Args:
-            gesture_label: название жеста / gesture name
+        Начать сессию записи примеров жеста: готовит каталог data/gestures/<label>/
+        (полная запись кадров — см. cv/record_gestures.py).
         """
-        print(f"[i] Начало обучения жесту: {gesture_label}")
-        self.status = f"Training: {gesture_label}"
-        # TODO: интеграция с cv/record_gestures.py
-        # TODO: integration with cv/record_gestures.py
+        label = (gesture_label or "").strip()
+        if not label:
+            self.status = "Recording: пустое имя класса"
+            print("[w] startGestureTraining: пустая метка")
+            return
+        base = Path(__file__).resolve().parent.parent / "data" / "gestures" / label
+        base.mkdir(parents=True, exist_ok=True)
+        self.status = f"Recording: {label}"
+        print(f"[✓] Сессия записи жеста «{label}» → {base}")
+
+    @Slot(str, int)
+    def logGestureSample(self, gesture_label: str, sample_index: int) -> None:
+        """
+        Зафиксировать один образец в журнале (JSONL) рядом с данными жеста.
+        """
+        label = (gesture_label or "").strip()
+        if not label or int(sample_index) < 1:
+            return
+        root = Path(__file__).resolve().parent.parent / "data" / "gestures" / label
+        root.mkdir(parents=True, exist_ok=True)
+        meta = root / "samples_log.jsonl"
+        rec = {"t": datetime.now(timezone.utc).isoformat(), "sample": int(sample_index)}
+        try:
+            with meta.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError as e:
+            print(f"[!] logGestureSample: {e}")
     
     @Slot(str, result=bool)
     def executeCommand(self, command_name):

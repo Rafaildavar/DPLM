@@ -16,6 +16,22 @@ Item {
 
     property string gestureName: qsTr("—")
     property string executedCommand: qsTr("—")
+    property bool executeCommands: true
+
+    function commandForKnnClass(cls) {
+        var c = (cls || "").toLowerCase()
+        if (c === "zoom_one" || c.indexOf("zoom_one") >= 0)
+            return "Open Browser"
+        if (c === "zoom" || (c.indexOf("zoom") >= 0 && c.indexOf("zoom_one") < 0))
+            return "Open Browser"
+        if (c.indexOf("hello") >= 0 || c.indexOf("swipe") >= 0)
+            return "Open Browser"
+        if (c.indexOf("thumb") >= 0 || c.indexOf("up") >= 0)
+            return "Volume Up"
+        if (c.indexOf("palm") >= 0 || c.indexOf("stop") >= 0)
+            return "Close Window"
+        return ""
+    }
 
     // Подключение CV при показе экрана в StackView
     StackView.onStatusChanged: {
@@ -35,14 +51,14 @@ Item {
 
         function onGestureDetected(gesture) {
             gestureName = gesture
+            var cmd = commandForKnnClass(gesture)
+            if (cmd.length && executeCommands) {
+                appController.executeCommand(cmd)
+            }
         }
 
         function onCommandExecuted(command) {
             executedCommand = command
-        }
-
-        function onEmbeddedLandmarksJsonChanged() {
-            handOverlay.requestPaint()
         }
     }
 
@@ -71,79 +87,18 @@ Item {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 240
+            Layout.fillHeight: true
+            Layout.minimumHeight: 320
+            Layout.preferredHeight: 420
             clip: true
 
             CameraPreview {
                 anchors.fill: parent
-                previewHeight: 240
+                previewHeight: parent.height
                 cornerRadius: 16
-            }
-
-            Canvas {
-                id: handOverlay
-                anchors.fill: parent
-                opacity: 0.9
-                onPaint: {
-                    const ctx = getContext("2d")
-                    ctx.reset()
-                    let pts = []
-                    try {
-                        pts = JSON.parse(appController.embeddedLandmarksJson || "[]")
-                    } catch (e) {
-                        pts = []
-                    }
-                    if (!pts.length)
-                        return
-                    const w = width
-                    const h = height
-                    const edges = [
-                        [0, 1],
-                        [1, 2],
-                        [2, 3],
-                        [3, 4],
-                        [0, 5],
-                        [5, 6],
-                        [6, 7],
-                        [7, 8],
-                        [0, 9],
-                        [9, 10],
-                        [10, 11],
-                        [11, 12],
-                        [0, 13],
-                        [13, 14],
-                        [14, 15],
-                        [15, 16],
-                        [0, 17],
-                        [17, 18],
-                        [18, 19],
-                        [19, 20],
-                        [5, 9],
-                        [9, 13],
-                        [13, 17]
-                    ]
-                    ctx.strokeStyle = Qt.rgba(0, 0.85, 0.95, 0.92)
-                    ctx.lineWidth = 2.5
-                    ctx.beginPath()
-                    for (let e = 0; e < edges.length; e++) {
-                        const a = edges[e][0]
-                        const b = edges[e][1]
-                        if (a < pts.length && b < pts.length) {
-                            ctx.moveTo(pts[a][0] * w, pts[a][1] * h)
-                            ctx.lineTo(pts[b][0] * w, pts[b][1] * h)
-                        }
-                    }
-                    ctx.stroke()
-                    ctx.fillStyle = "#00E5FF"
-                    for (let i = 0; i < pts.length; i++) {
-                        ctx.beginPath()
-                        ctx.arc(pts[i][0] * w, pts[i][1] * h, 4, 0, 6.28)
-                        ctx.fill()
-                    }
-                }
-                Component.onCompleted: requestPaint()
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
+                showStatusBanner: false
+                showHandOverlay: true
+                handLandmarksJson: appController.embeddedLandmarksJson
             }
 
             Label {
@@ -186,6 +141,45 @@ Item {
                 text: Math.round(appController.embeddedRecognitionConfidence * 100) + "%"
                 font.bold: true
                 color: Material.accent
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 16
+
+            Label {
+                text: qsTr("Выполнять команды:")
+                color: Material.color(Material.Grey, Material.Shade400)
+            }
+
+            Switch {
+                checked: executeCommands
+                onToggled: executeCommands = checked
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Label {
+                text: qsTr("Две руки:")
+                color: Material.color(Material.Grey, Material.Shade400)
+            }
+
+            Switch {
+                id: twoHandsSwitch
+                checked: appController.twoHandsMode
+                onToggled: appController.setTwoHandsMode(checked)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("Распознавать обе руки одновременно (MediaPipe num_hands=2)")
+            }
+
+            Connections {
+                target: appController
+                function onTwoHandsModeChanged() {
+                    if (twoHandsSwitch.checked !== appController.twoHandsMode)
+                        twoHandsSwitch.checked = appController.twoHandsMode
+                }
             }
         }
 

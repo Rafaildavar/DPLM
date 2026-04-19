@@ -1,7 +1,8 @@
 # Computer Vision (headless on macOS to avoid Qt/GUI conflicts)
 opencv-python-headless
-# До 0.10.31 — legacy mp.solutions (cv/realtime_infer.py). Новее: Tasks API в app/gesture_online_infer.py.
-mediapipe
+# С 0.10.33 модуль mp.solutions удалён — весь проект использует Tasks API
+# (см. cv/hand_landmarker.py). Минимальная версия выровнена под это.
+mediapipe>=0.10.33
 numpy
 
 # Machine Learning

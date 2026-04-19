@@ -1,37 +1,31 @@
+"""
+Запись жестов: сохраняем последовательности ландмарков в .npy.
+
+С mediapipe>=0.10.33 используется Tasks API через ``cv.hand_landmarker``.
+"""
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import cv2
 import numpy as np
-import mediapipe as mp
 
+_THIS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _THIS_DIR.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-# -----------------------------------------------
-# Запись жестов: сохраняем последовательности ландмарков в .npy
-# Комментарии на русском
-# -----------------------------------------------
+from cv.hand_landmarker import (  # noqa: E402
+    HandLandmarkerVideo,
+    draw_hand_overlay_bgr,
+    normalize_landmarks,
+)
+
 
 MACOS_BACKEND = cv2.CAP_AVFOUNDATION
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-mp_styles = mp.solutions.drawing_styles
-
-
-def normalize_landmarks(landmarks_xy: List[Tuple[float, float]]) -> np.ndarray:
-    """Нормализация относительно запястья и масштаба (21×2)."""
-    pts = np.asarray(landmarks_xy, dtype=np.float32)
-    if pts.shape != (21, 2):
-        raise ValueError("Ожидалось 21 точка")
-    wrist = pts[0].copy()
-    pts -= wrist
-    d = np.linalg.norm(pts, axis=1)
-    scale = float(np.max(d))
-    if scale < 1e-6:
-        scale = 1.0
-    pts /= scale
-    return pts
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,11 +55,10 @@ def main() -> None:
         print("Ошибка открытия камеры (проверьте доступ в Privacy & Security → Camera)")
         sys.exit(1)
 
-    hands = mp_hands.Hands(
-        static_image_mode=False,
-        max_num_hands=2 if args.two_hands else 1,
-        model_complexity=1,
+    detector = HandLandmarkerVideo(
+        num_hands=2 if args.two_hands else 1,
         min_detection_confidence=0.6,
+        min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
     )
 
@@ -73,7 +66,7 @@ def main() -> None:
     print(f"Метка жеста: {label}; нужно семплов: {target_samples}; длина семпла: {seq_len} кадров")
 
     recording = False
-    buffer: List[np.ndarray] = []  # список кадров (21×2) или конкатенация рук
+    buffer: List[np.ndarray] = []
     saved = 0
 
     try:
@@ -85,29 +78,20 @@ def main() -> None:
 
             frame_bgr = cv2.flip(frame_bgr, 1)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            results = hands.process(frame_rgb)
+            hands = detector.detect_for_video_rgb(frame_rgb)
 
             landmarks_this_frame: List[np.ndarray] = []
+            for h in hands:
+                draw_hand_overlay_bgr(frame_bgr, h, label=h.handedness)
+                try:
+                    landmarks_this_frame.append(normalize_landmarks(h.landmarks))
+                except Exception:
+                    continue
 
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    mp_drawing.draw_landmarks(
-                        image=frame_bgr,
-                        landmark_list=hand_landmarks,
-                        connections=mp_hands.HAND_CONNECTIONS,
-                        landmark_drawing_spec=mp_styles.get_default_hand_landmarks_style(),
-                        connection_drawing_spec=mp_styles.get_default_hand_connections_style(),
-                    )
-                    pts = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
-                    pts_norm = normalize_landmarks(pts)  # (21×2)
-                    landmarks_this_frame.append(pts_norm)
-
-            # Если две руки и запрошен режим two-hands, кадр будет иметь форму (42×2) — конкатенация
             if args.two_hands:
-                if len(landmarks_this_frame) == 2:
-                    frame_vec = np.concatenate(landmarks_this_frame, axis=0)  # (42,2)
+                if len(landmarks_this_frame) >= 2:
+                    frame_vec = np.concatenate(landmarks_this_frame[:2], axis=0)
                 elif len(landmarks_this_frame) == 1:
-                    # если только одна рука в кадре — добиваем нулями вторую
                     frame_vec = np.concatenate(
                         [landmarks_this_frame[0], np.zeros((21, 2), dtype=np.float32)],
                         axis=0,
@@ -115,21 +99,21 @@ def main() -> None:
                 else:
                     frame_vec = np.zeros((42, 2), dtype=np.float32)
             else:
-                # одна рука: если нет руки — нули
                 if len(landmarks_this_frame) >= 1:
                     frame_vec = landmarks_this_frame[0]
                 else:
                     frame_vec = np.zeros((21, 2), dtype=np.float32)
 
-            # Режим записи: собираем кадры в буфер до длины seq_len
             if recording and frame_vec is not None:
                 buffer.append(frame_vec)
                 if len(buffer) >= seq_len:
                     print("[i] Достигнута длина семпла, нажмите n для сохранения или s для перезапуска")
 
-            # Оверлей статуса
-            status = f"label={label} saved={saved}/{target_samples} rec={'ON' if recording else 'OFF'} len={len(buffer)}"
-            cv2.putText(frame_bgr, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+            status = (
+                f"label={label} saved={saved}/{target_samples} "
+                f"rec={'ON' if recording else 'OFF'} len={len(buffer)} hands={len(hands)}"
+            )
+            cv2.putText(frame_bgr, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
             cv2.imshow("Record Gestures — s:rec n:save q:quit", frame_bgr)
             key = cv2.waitKey(1) & 0xFF
@@ -137,7 +121,6 @@ def main() -> None:
             if key == ord('q'):
                 break
             elif key == ord('s'):
-                # старт/стоп записи — очищаем буфер при старте
                 recording = not recording
                 if recording:
                     buffer = []
@@ -145,7 +128,6 @@ def main() -> None:
                 else:
                     print("[i] Запись остановлена (буфер сохранён в памяти, нажмите n)")
             elif key == ord('n'):
-                # сохранить текущий буфер как семпл (если есть данные)
                 if len(buffer) == 0:
                     print("[!] Буфер пуст — нечего сохранять")
                     continue
@@ -153,11 +135,7 @@ def main() -> None:
                     print(f"[!] Слишком короткий семпл: {len(buffer)}<{seq_len}")
                     continue
 
-                # Сохраняем как (T, D), где D = 42×2 или 21×2 развёрнутые в вектор
-                arr = np.asarray(buffer, dtype=np.float32)  # (T, 21×2) или (T, 42×2)
-                # опционально можно разворачивать в (T, 84) или (T, 42)
-
-                # Имя файла
+                arr = np.asarray(buffer, dtype=np.float32)
                 existing = sorted(out_dir.glob("sample_*.npy"))
                 idx = len(existing)
                 out_path = out_dir / f"sample_{idx:04d}.npy"
@@ -165,7 +143,6 @@ def main() -> None:
                 saved += 1
                 print(f"[✓] Сохранено: {out_path}")
 
-                # Останавливаем запись и чистим буфер
                 recording = False
                 buffer = []
 
@@ -174,12 +151,10 @@ def main() -> None:
                     break
 
     finally:
-        hands.close()
+        detector.close()
         cap.release()
         cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
     main()
-
-
