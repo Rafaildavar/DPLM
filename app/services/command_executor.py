@@ -10,6 +10,7 @@ Executes user commands via subprocess and pyautogui
 import subprocess
 import platform
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import logging
@@ -35,6 +36,28 @@ class CommandExecutor:
         self.system = platform.system().lower()
         self.commands_registry: Dict[str, Dict[str, Any]] = {}
         self._register_default_commands()
+
+    def _host_platform_tag(self) -> str:
+        """Тег платформы как в БД/UI: macos | windows | linux."""
+        if self.system == "darwin":
+            return "macos"
+        if self.system == "windows":
+            return "windows"
+        return self.system
+
+    def _config_platform_matches(self, config: Dict[str, Any]) -> bool:
+        req = (config.get("platform") or "all")
+        if isinstance(req, str):
+            req = req.strip().lower()
+        else:
+            req = "all"
+        if req in ("", "all"):
+            return True
+        if req in ("darwin", "mac", "macos"):
+            req = "macos"
+        if req in ("win32", "windows"):
+            req = "windows"
+        return req == self._host_platform_tag()
     
     def _register_default_commands(self):
         """Регистрация команд по умолчанию / Register default commands"""
@@ -93,6 +116,90 @@ class CommandExecutor:
         """
         self.commands_registry[name.lower()] = config
     
+    def execute_config(self, config: Dict[str, Any], **kwargs) -> bool:
+        """
+        Выполнить действие по словарю (в т.ч. JSON из БД ``Command.action_spec``).
+        """
+        if not self._config_platform_matches(config):
+            logger.warning(
+                "Команда не для этой платформы (хост=%s, в конфиге platform=%s)",
+                self._host_platform_tag(),
+                config.get("platform"),
+            )
+            return False
+        try:
+            return self._dispatch_action(config, **kwargs)
+        except Exception as e:
+            logger.error("Ошибка выполнения действия %s: %s", config.get("action"), e)
+            return False
+
+    def _dispatch_action(self, config: Dict[str, Any], **kwargs) -> bool:
+        action = config.get("action")
+
+        if action == "open_app":
+            return self._open_application(config.get("app", ""))
+
+        if action == "run_script":
+            script_path = config.get("script_path")
+            if script_path:
+                return self._run_script(script_path, config.get("args", []))
+            return False
+
+        if action == "key_combination":
+            keys = config.get("keys", [])
+            return self._press_keys(keys)
+
+        if action == "press":
+            key = config.get("key") or config.get("keys")
+            if isinstance(key, list) and key:
+                key = key[0]
+            if not key:
+                return False
+            return self._press_single(str(key))
+
+        if action == "scroll":
+            return self._scroll(int(config.get("clicks", -3)))
+
+        if action == "volume_up":
+            return self._volume_up()
+
+        if action == "volume_down":
+            return self._volume_down()
+
+        if action == "open_url":
+            url = (config.get("url") or "").strip()
+            if not url:
+                return False
+            return self._open_url(url)
+
+        if action == "mute_toggle":
+            return self._press_single("volumemute")
+
+        if action == "brightness_up":
+            return self._brightness("up")
+
+        if action == "brightness_down":
+            return self._brightness("down")
+
+        if action == "lock_screen":
+            return self._lock_screen()
+
+        if action == "screenshot":
+            return self._screenshot()
+
+        if action == "media_key":
+            kind = (config.get("kind") or "").strip().lower()
+            return self._media_key(kind)
+
+        if action == "custom":
+            handler = config.get("handler")
+            if handler and callable(handler):
+                return handler(**kwargs)
+            return False
+
+        logger.error("Неизвестное действие: %s", action)
+        return False
+
     def execute(self, command_name: str, **kwargs) -> bool:
         """
         Выполнить команду по имени.
@@ -113,48 +220,7 @@ class CommandExecutor:
             return False
         
         config = self.commands_registry[command_name_lower]
-        
-        # Проверка платформы / Platform check
-        if "platform" in config:
-            platform_req = config["platform"]
-            if platform_req != "all" and platform_req != self.system:
-                logger.warning(f"Команда '{command_name}' не поддерживается на {self.system}")
-                return False
-        
-        # Выполнение действия / Execute action
-        action = config.get("action")
-        
-        try:
-            if action == "open_app":
-                return self._open_application(config.get("app", ""))
-            
-            elif action == "run_script":
-                script_path = config.get("script_path")
-                if script_path:
-                    return self._run_script(script_path, config.get("args", []))
-            
-            elif action == "key_combination":
-                keys = config.get("keys", [])
-                return self._press_keys(keys)
-            
-            elif action == "volume_up":
-                return self._volume_up()
-            
-            elif action == "volume_down":
-                return self._volume_down()
-            
-            elif action == "custom":
-                handler = config.get("handler")
-                if handler and callable(handler):
-                    return handler(**kwargs)
-            
-            else:
-                logger.error(f"Неизвестное действие: {action}")
-                return False
-        
-        except Exception as e:
-            logger.error(f"Ошибка выполнения команды '{command_name}': {e}")
-            return False
+        return self.execute_config(config, **kwargs)
     
     def _open_application(self, app_name: str) -> bool:
         """
@@ -236,7 +302,140 @@ class CommandExecutor:
         except Exception as e:
             logger.error(f"Ошибка нажатия клавиш {keys}: {e}")
             return False
+
+    def _press_single(self, key: str) -> bool:
+        if not PYAUTOGUI_AVAILABLE:
+            logger.warning("pyautogui не установлен - автоматизация клавиатуры недоступна")
+            return False
+        try:
+            pyautogui.press(key)
+            return True
+        except Exception as e:
+            logger.error("Ошибка нажатия клавиши %s: %s", key, e)
+            return False
+
+    def _scroll(self, clicks: int) -> bool:
+        if not PYAUTOGUI_AVAILABLE:
+            return False
+        try:
+            pyautogui.scroll(clicks)
+            return True
+        except Exception as e:
+            logger.error("Ошибка прокрутки: %s", e)
+            return False
+
+    def _open_url(self, url: str) -> bool:
+        try:
+            if self.system == "darwin":
+                subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            if self.system == "windows":
+                subprocess.Popen(["cmd", "/c", "start", "", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            logger.warning("open_url не поддерживается на %s", self.system)
+            return False
+        except Exception as e:
+            logger.error("Ошибка open_url: %s", e)
+            return False
     
+    def _brightness(self, direction: str) -> bool:
+        """
+        Изменить яркость экрана.
+        macOS: AppleScript ``key code`` 144 (вверх) и 145 (вниз) — это коды
+        клавиш F2/F1 без модификаторов, обрабатываются системой как
+        медиа-клавиши яркости.
+        """
+        direction = (direction or "").strip().lower()
+        if direction not in ("up", "down"):
+            logger.error("brightness: неизвестное направление %r", direction)
+            return False
+        if self.system == "darwin":
+            key_code = 144 if direction == "up" else 145
+            try:
+                subprocess.run(
+                    [
+                        "osascript",
+                        "-e",
+                        f'tell application "System Events" to key code {key_code}',
+                    ],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2.0,
+                )
+                return True
+            except (OSError, subprocess.SubprocessError) as e:
+                logger.error("brightness osascript: %s", e)
+                return False
+        if not PYAUTOGUI_AVAILABLE:
+            return False
+        try:
+            pyautogui.press("brightnessup" if direction == "up" else "brightnessdown")
+            return True
+        except Exception as e:
+            logger.error("brightness pyautogui: %s", e)
+            return False
+
+    def _lock_screen(self) -> bool:
+        """
+        Заблокировать экран / усыпить дисплей.
+        macOS: ``pmset displaysleepnow`` — гасит дисплей, после wake система
+        запросит пароль, если он включён.
+        """
+        try:
+            if self.system == "darwin":
+                subprocess.Popen(
+                    ["pmset", "displaysleepnow"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            logger.warning("lock_screen: поддерживается только на macOS")
+            return False
+        except OSError as e:
+            logger.error("lock_screen: %s", e)
+            return False
+
+    def _screenshot(self) -> bool:
+        """
+        Сделать скриншот в ``~/Desktop/dplm_screenshot_<ts>.png``.
+        macOS: системная утилита ``screencapture``.
+        """
+        if self.system != "darwin":
+            logger.warning("screenshot: поддерживается только на macOS")
+            return False
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        out = Path.home() / "Desktop" / f"dplm_screenshot_{ts}.png"
+        try:
+            subprocess.Popen(
+                ["screencapture", "-x", str(out)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except OSError as e:
+            logger.error("screenshot: %s", e)
+            return False
+
+    def _media_key(self, kind: str) -> bool:
+        """
+        Управление мультимедиа: play/pause, next, prev.
+        Под капотом — клавиши PyAutoGUI ``playpause`` / ``nexttrack`` / ``prevtrack``.
+        """
+        mapping = {
+            "play_pause": "playpause",
+            "play": "playpause",
+            "pause": "playpause",
+            "next": "nexttrack",
+            "prev": "prevtrack",
+            "previous": "prevtrack",
+        }
+        key = mapping.get((kind or "").strip().lower())
+        if not key:
+            logger.error("media_key: неизвестный kind %r", kind)
+            return False
+        return self._press_single(key)
+
     def _volume_up(self) -> bool:
         """Увеличить громкость / Increase volume"""
         if not PYAUTOGUI_AVAILABLE:

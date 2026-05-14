@@ -1,0 +1,38 @@
+# -----------------------------------------------------------------------------
+# PostgreSQL для приложения DPLM (только база данных, без приложения).
+#
+# Старт:
+#   docker compose up -d db
+# Подключение из приложения берётся из переменных окружения /
+# из файла .env (см. .env.example).
+#
+# Данные — в именованном Docker-томе ``dplm_postgres_data`` (стабильнее bind-mount
+# на macOS, где часто ломаются ``pg_filenode.map`` / ``pg_logical``).
+# Старый путь ``./.db_data/postgres`` больше не используется — каталог можно удалить.
+# -----------------------------------------------------------------------------
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: dplm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DPLM_DB_USER:-dplm}
+      POSTGRES_PASSWORD: ${DPLM_DB_PASSWORD:-dplm}
+      POSTGRES_DB: ${DPLM_DB_NAME:-dplm}
+      # Хранить данные в подпапке внутри тома, чтобы можно было
+      # легко удалять корень тома.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${DPLM_DB_PORT:-5432}:5432"
+    volumes:
+      - dplm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "pg_isready -U ${DPLM_DB_USER:-dplm} -d ${DPLM_DB_NAME:-dplm}"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  dplm_postgres_data:

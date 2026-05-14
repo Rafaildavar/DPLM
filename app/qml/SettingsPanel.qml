@@ -16,22 +16,10 @@ Rectangle {
     radius: 12
     border.color: Material.accent
     border.width: 2
-    
-    // Overlay для модальности / Overlay for modality
-    Rectangle {
-        id: overlay
-        anchors.fill: parent.parent
-        color: "#80000000"
-        visible: root.visible
-        
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                root.visible = false
-            }
-        }
-    }
-    
+
+    // Затемнение фона — в MainWindow (settingsModalHost), здесь только карточка:
+    // якорь к parent.parent в Qt Quick недопустим (не родитель и не сосед).
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20

@@ -44,3 +44,7 @@ alembic/versions/__pycache__/
 *.tmp
 *.log
 ~$*
+
+# Environment files
+.env
+

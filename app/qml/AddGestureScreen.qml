@@ -9,6 +9,11 @@ import QtQuick.Layouts
 Item {
     id: root
 
+    StackView.onStatusChanged: {
+        if (StackView.status === StackView.Active && pitchHost && pitchHost.setPitchScreenIndex)
+            pitchHost.setPitchScreenIndex(2)
+    }
+
     required property StackView gestStack
     property var gestureCatalog
     property var navRoot
@@ -73,6 +78,7 @@ Item {
                     return
                 gestStack.push(Qt.resolvedUrl("RecordingExamplesScreen.qml"), {
                                    "gestStack": gestStack,
+                                   "gestureCatalog": gestureCatalog,
                                    "gestureName": gestureNameField.text.trim(),
                                    "navRoot": navRoot,
                                    "pitchHost": pitchHost

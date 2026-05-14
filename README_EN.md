@@ -74,13 +74,32 @@ DPLM/
 git clone https://github.com/your-username/DPLM.git
 cd DPLM
 
-# Create and activate virtual environment
-python -m venv .venv
+# Create and activate virtual environment (Python 3.13 required)
+python3.13 -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 # .venv\Scripts\activate   # Windows
 
 # Install dependencies
 pip install -r requirements.txt
+```
+
+### Known issue on macOS 26 (Tahoe)
+
+On macOS 26 the `PySide6 6.10+` wheels (including 6.11) are blocked by the new
+Gatekeeper provenance check (`com.apple.provenance`); Qt silently rejects all
+platform plugins from `PySide6/Qt/plugins/platforms` and the app dies with:
+
+```
+qt.qpa.plugin: Could not find the Qt platform plugin "cocoa"
+This application failed to start because no Qt platform plugin could be initialized.
+```
+
+`requirements.txt` pins `PySide6==6.9.3`, which predates the policy change and
+works out of the box on macOS 26 + Python 3.13. If you installed a newer
+version manually, roll back:
+
+```bash
+.venv/bin/pip install --force-reinstall 'PySide6==6.9.3' 'PySide6-Addons==6.9.3' 'PySide6-Essentials==6.9.3' 'shiboken6==6.9.3'
 ```
 
 ### Running
@@ -153,7 +172,7 @@ feat: implement gesture training service with LSTM support
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.13+ (tested against CPython 3.13)
 - macOS 11+ (Apple Silicon / Intel) or Windows 10/11
 - Webcam (1280×720 or higher)
 - 4GB RAM minimum (8GB recommended)

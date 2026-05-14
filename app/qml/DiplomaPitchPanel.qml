@@ -27,6 +27,13 @@ Item {
                       })
     }
 
+    /** Синхронизация подсветки списка с экраном (в т.ч. после gestStack.push с экрана 3). */
+    function setPitchScreenIndex(ix) {
+        var i = Number(ix)
+        if (!isNaN(i) && i >= 0 && i < pitchScreenList.count)
+            screenListView.currentIndex = i
+    }
+
     function bumpSamples(gestureName, recorded) {
         if (!gestureName || recorded <= 0)
             return
@@ -159,7 +166,7 @@ Item {
 
                     Label {
                         anchors.centerIn: parent
-                        text: qsTr("Питч диплома")
+                        text: qsTr("Питч")
                         font.pixelSize: 15
                         font.bold: true
                         color: "white"

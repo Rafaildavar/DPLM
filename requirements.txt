@@ -14,8 +14,14 @@ SpeechRecognition
 vosk
 
 # GUI Framework
-PySide6
-PySide6-Addons
+# На macOS 26 (Tahoe) wheel-ы PySide6 6.10/6.11 блокируются новой
+# Gatekeeper-проверкой `com.apple.provenance` — `libqcocoa.dylib` не загружается
+# с ошибкой `Could not find the Qt platform plugin "cocoa"`. Версия 6.9.3
+# собрана раньше изменения политики и работает на macOS 26 + Python 3.13.
+PySide6==6.9.3
+PySide6-Addons==6.9.3
+PySide6-Essentials==6.9.3
+shiboken6==6.9.3
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)

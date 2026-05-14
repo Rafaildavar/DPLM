@@ -294,3 +294,45 @@ def test_multiple_settings():
     
     session.close()
 
+
+def test_resolve_postgres_url_connect_timeout_and_encoded_credentials(monkeypatch):
+    """Postgres URL: кодирование user/password и connect_timeout для Alembic."""
+    import app.models.database as db
+
+    monkeypatch.setattr(db, "_load_dotenv_if_present", lambda: None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DPLM_DB_BACKEND", "postgres")
+    monkeypatch.setenv("DPLM_DB_HOST", "db.example")
+    monkeypatch.setenv("DPLM_DB_PORT", "5432")
+    monkeypatch.setenv("DPLM_DB_USER", "user@host")
+    monkeypatch.setenv("DPLM_DB_PASSWORD", "p&w=1")
+    monkeypatch.setenv("DPLM_DB_NAME", "dplm")
+
+    url = db.resolve_database_url()
+    assert "connect_timeout=10" in url
+    assert "user%40host" in url
+    assert "p%26w%3D1" in url
+    assert "db.example" in url
+
+
+def test_resolve_explicit_database_url_preserves_existing_connect_timeout(monkeypatch):
+    import app.models.database as db
+
+    monkeypatch.setattr(db, "_load_dotenv_if_present", lambda: None)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://a:b@localhost/db?connect_timeout=30",
+    )
+    assert db.resolve_database_url() == (
+        "postgresql+psycopg2://a:b@localhost/db?connect_timeout=30"
+    )
+
+
+def test_resolve_explicit_database_url_appends_timeout_if_missing(monkeypatch):
+    import app.models.database as db
+
+    monkeypatch.setattr(db, "_load_dotenv_if_present", lambda: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://a:b@localhost/db")
+    url = db.resolve_database_url()
+    assert "connect_timeout=10" in url
+

@@ -89,6 +89,52 @@ except ImportError as e:
     get_executor = None
 
 try:
+    from app.models.database import (
+        Command as DbCommand,
+        Gesture as DbGesture,
+        init_database,
+        get_db_session,
+    )
+    from app.services.binding_settings import (
+        BindingSettings as _BindingSettingsType,
+        load_binding_settings,
+        save_binding_settings,
+    )
+    from app.services.gesture_command_bridge import (
+        GestureCommandBridge,
+        is_dangerous_command as _is_dangerous_command,
+        save_gesture_binding as _save_gesture_binding,
+    )
+    from app.services.user_command_sync import (
+        ACTION_SPEC_SCHEMA,
+        CATEGORY_LABELS,
+        category_for_action,
+        is_dangerous_action,
+        sync_db_commands_to_executor,
+        validate_action_spec as _validate_action_spec,
+    )
+
+    BINDING_SERVICES_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARN] Сервис привязок не доступен: {e}")
+    BINDING_SERVICES_AVAILABLE = False
+    DbCommand = None
+    DbGesture = None
+    init_database = None
+    get_db_session = None
+    GestureCommandBridge = None
+    ACTION_SPEC_SCHEMA = {}
+    CATEGORY_LABELS = {}
+    category_for_action = lambda _a: ""  # noqa: E731
+    is_dangerous_action = lambda _a: False  # noqa: E731
+    _is_dangerous_command = lambda _c: False  # noqa: E731
+    _save_gesture_binding = None
+    _validate_action_spec = lambda _s: "binding services unavailable"  # noqa: E731
+    load_binding_settings = None
+    save_binding_settings = None
+    sync_db_commands_to_executor = None
+
+try:
     import cv2  # noqa: F401
     import numpy as np  # noqa: F401
 
@@ -162,6 +208,10 @@ class AppController(QObject):
             self._command_executor = get_executor()
         else:
             self._command_executor = None
+
+        # Связка БД ↔ команды (lazy init: только при первом обращении из UI)
+        self._db_initialized = False
+        self._gesture_command_bridge: Optional[Any] = None
 
         # Превью камеры (OpenCV → QML, те же настройки, что cv/realtime_infer.py)
         self._camera_cap: Optional[object] = None
@@ -644,7 +694,301 @@ class AppController(QObject):
             {"name": "Volume Up", "gesture": "thumbs_up"},
             {"name": "Close Window", "gesture": "palm"},
         ]
-    
+
+    # ============================================================================
+    # Привязки жестов к командам (см. docs/BINDING_RULES.md)
+    # Gesture-to-command bindings
+    # ============================================================================
+
+    def _ensure_db_bridge(self) -> Optional[Any]:
+        """Лениво инициализировать БД и `GestureCommandBridge`. ``None`` при ошибке."""
+        if not BINDING_SERVICES_AVAILABLE:
+            return None
+        if self._gesture_command_bridge is not None:
+            return self._gesture_command_bridge
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            self._gesture_command_bridge = GestureCommandBridge(
+                session_factory=get_db_session,
+                executor=self._command_executor,
+            )
+            return self._gesture_command_bridge
+        except Exception as e:
+            print(f"[!] Не удалось инициализировать БД привязок: {e}")
+            return None
+
+    @Slot(result=list)
+    def getDbGestures(self) -> list:
+        """
+        R3: вернуть список жестов из БД, доступных для привязки
+        (только активные и с заполненным ``model_class_id``).
+        """
+        if not BINDING_SERVICES_AVAILABLE:
+            return []
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            print(f"[!] getDbGestures: БД недоступна: {e}")
+            return []
+        try:
+            rows = (
+                session.query(DbGesture)
+                .filter(DbGesture.is_active.is_(True))
+                .filter(DbGesture.model_class_id.isnot(None))
+                .order_by(DbGesture.label)
+                .all()
+            )
+            current = {
+                row.gesture_id: row.name
+                for row in session.query(DbCommand)
+                .filter(DbCommand.gesture_id.isnot(None))
+                .all()
+            }
+            out = []
+            for g in rows:
+                out.append({
+                    "id": int(g.id),
+                    "label": str(g.label or ""),
+                    "description": str(g.description or ""),
+                    "isTwoHands": bool(getattr(g, "is_two_hands", False) or False),
+                    "boundCommandName": current.get(g.id, ""),
+                })
+            return out
+        finally:
+            session.close()
+
+    @Slot(result=list)
+    def getActionCategories(self) -> list:
+        """Категории команд для UI (id + человекочитаемое имя)."""
+        if not BINDING_SERVICES_AVAILABLE:
+            return []
+        return [{"id": cid, "label": label} for cid, label in CATEGORY_LABELS.items()]
+
+    @Slot(str, result=list)
+    def getActionsForCategory(self, category_id: str) -> list:
+        """Список действий внутри категории (для второго выпадашки в форме)."""
+        if not BINDING_SERVICES_AVAILABLE:
+            return []
+        cid = (category_id or "").strip()
+        out = []
+        for action_name, schema in ACTION_SPEC_SCHEMA.items():
+            if schema.get("category") == cid:
+                out.append({
+                    "action": action_name,
+                    "fields": list((schema.get("fields") or {}).keys()),
+                    "fieldHints": dict(schema.get("fields") or {}),
+                    "example": schema.get("example") or {},
+                })
+        return out
+
+    @Slot(str, result=str)
+    def categoryForAction(self, action: str) -> str:
+        """Категория для action (используется UI, чтобы выделить вкладку)."""
+        if not BINDING_SERVICES_AVAILABLE:
+            return ""
+        return category_for_action(action)
+
+    @Slot(str, result=str)
+    def validateCommandName(self, name: str) -> str:
+        """
+        R8: проверить уникальность и непустоту имени команды.
+
+        Returns:
+            Пустая строка — ок, иначе — сообщение об ошибке для UI.
+        """
+        if not BINDING_SERVICES_AVAILABLE:
+            return ""
+        clean = (name or "").strip()
+        if not clean:
+            return "Имя команды не может быть пустым"
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            return f"БД недоступна: {e}"
+        try:
+            exists = (
+                session.query(DbCommand)
+                .filter(DbCommand.name == clean)
+                .first()
+                is not None
+            )
+        finally:
+            session.close()
+        if exists:
+            return f"Команда с именем «{clean}» уже существует"
+        return ""
+
+    @Slot(str, result=str)
+    def validateActionSpec(self, spec_json: str) -> str:
+        """R7: проверить корректность ``action_spec`` (JSON-строка). Пусто = ок."""
+        if not BINDING_SERVICES_AVAILABLE:
+            return ""
+        raw = (spec_json or "").strip()
+        if not raw:
+            return "action_spec не задан"
+        try:
+            spec = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return f"action_spec: некорректный JSON: {e}"
+        msg = _validate_action_spec(spec)
+        return msg or ""
+
+    @Slot(str, result=bool)
+    def isActionDangerous(self, action: str) -> bool:
+        """R6: подсказка UI — нужно ли показывать предупреждение для action."""
+        return bool(BINDING_SERVICES_AVAILABLE and is_dangerous_action(action))
+
+    @Slot(str, str, str, result=str)
+    def saveBinding(self, gesture_label: str, command_name: str, action_spec_json: str) -> str:
+        """
+        R1+R7+R8: сохранить пару «жест → команда» с описанием действия.
+
+        Если на жесте уже есть команда — старая отвязывается (но не удаляется),
+        а новая занимает её место. Если имя команды уже существует — обновляется
+        её ``action_spec`` и привязка к жесту.
+
+        Returns:
+            Пустая строка при успехе, иначе — текст ошибки для UI.
+        """
+        if not BINDING_SERVICES_AVAILABLE:
+            return "Сервис привязок не доступен"
+
+        label = (gesture_label or "").strip()
+        name = (command_name or "").strip()
+        if not label:
+            return "Не выбран жест"
+        if not name:
+            return "Имя команды не может быть пустым"
+
+        raw = (action_spec_json or "").strip()
+        if not raw:
+            return "action_spec не задан"
+        try:
+            spec = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return f"action_spec: некорректный JSON: {e}"
+        err = _validate_action_spec(spec)
+        if err:
+            return err
+
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            return f"БД недоступна: {e}"
+
+        try:
+            _save_gesture_binding(session, label, name, spec, platform="macos")
+            if self._command_executor and sync_db_commands_to_executor:
+                try:
+                    sync_db_commands_to_executor(session, self._command_executor)
+                except Exception as e:
+                    print(f"[w] sync_db_commands_to_executor: {e}")
+            return ""
+        except ValueError as e:
+            return str(e)
+        except Exception as e:
+            session.rollback()
+            return f"Ошибка сохранения: {e}"
+        finally:
+            session.close()
+
+    @Slot(result=dict)
+    def getBindingPolicy(self) -> dict:
+        """Текущие настройки R4/R5/R6 для UI настроек."""
+        if not BINDING_SERVICES_AVAILABLE or load_binding_settings is None:
+            return {
+                "confidenceThreshold": 0.65,
+                "cooldownMs": 1500,
+                "warnTwoHands": True,
+            }
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception:
+            return {
+                "confidenceThreshold": 0.65,
+                "cooldownMs": 1500,
+                "warnTwoHands": True,
+            }
+        try:
+            s = load_binding_settings(session)
+            return {
+                "confidenceThreshold": float(s.confidence_threshold),
+                "cooldownMs": int(s.cooldown_ms),
+                "warnTwoHands": bool(s.warn_two_hands),
+            }
+        finally:
+            session.close()
+
+    @Slot(float, int, bool, result=bool)
+    def setBindingPolicy(
+        self, confidence_threshold: float, cooldown_ms: int, warn_two_hands: bool
+    ) -> bool:
+        """Сохранить настройки R4/R5/R6 в БД и обновить policy в bridge."""
+        if not BINDING_SERVICES_AVAILABLE or save_binding_settings is None:
+            return False
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception:
+            return False
+        try:
+            save_binding_settings(
+                session,
+                confidence_threshold=float(confidence_threshold),
+                cooldown_ms=int(cooldown_ms),
+                warn_two_hands=bool(warn_two_hands),
+            )
+        finally:
+            session.close()
+
+        bridge = self._gesture_command_bridge
+        if bridge is not None:
+            try:
+                bridge.reload_policy()
+            except Exception as e:
+                print(f"[w] reload_policy: {e}")
+        return True
+
+    @Slot(str, float, result=bool)
+    def executeForGesture(self, gesture_label: str, confidence: float) -> bool:
+        """
+        Полный цикл: метка жеста + уверенность → проверка R4/R5 → команда.
+        Используется QML-экраном распознавания (R4 фильтрует низкую уверенность,
+        R5 — антидребезг).
+        """
+        bridge = self._ensure_db_bridge()
+        if bridge is None:
+            return False
+        try:
+            ok, info = bridge.execute(
+                gesture_label,
+                record_history=True,
+                confidence=float(confidence),
+                apply_policy=True,
+            )
+        except Exception as e:
+            print(f"[!] executeForGesture: {e}")
+            return False
+        if ok:
+            self.commandExecuted.emit(info)
+        return bool(ok)
+
     # ============================================================================
     # Голосовой помощник / Voice Assistant
     # ============================================================================

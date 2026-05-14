@@ -124,7 +124,7 @@
 
 | Компонент | Технология |
 |-----------|------------|
-| Язык | Python 3.10+ |
+| Язык | Python 3.13+ |
 | GUI | PySide6 (Qt for Python), QML, Material Design 3 |
 | Computer Vision | OpenCV, MediaPipe Hands |
 | ML | scikit-learn (KNN, SVM), Optuna |

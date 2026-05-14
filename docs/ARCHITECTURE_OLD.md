@@ -140,7 +140,7 @@ DPLM/
 | GUI | PySide6 (Qt Widgets) | latest |
 | TTS | pyttsx3 | latest |
 | Сериализация | NumPy, joblib, json | - |
-| Python | CPython | 3.10-3.13 |
+| Python | CPython | 3.13 |
 
 ### 5. Рабочий процесс пользователя
 
@@ -332,7 +332,7 @@ DPLM/
 | GUI | PySide6 (Qt Widgets) | latest |
 | TTS | pyttsx3 | latest |
 | Serialization | NumPy, joblib, json | - |
-| Python | CPython | 3.10-3.13 |
+| Python | CPython | 3.13 |
 
 ### 5. User Workflow
 

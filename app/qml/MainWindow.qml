@@ -96,7 +96,7 @@ Window {
                         font.pixelSize: 22
                         font.bold: true
                         color: "white"
-                        font.family: "SF Pro Display, Segoe UI, Arial"
+                        font.family: Qt.application.font.family
                     }
                     
                     RowLayout {
@@ -321,10 +321,11 @@ Window {
             }
         }
         
-        // Панель управления распознаванием с градиентом / Recognition control panel with gradient
+        // Панель глобального распознавания — скрыта на вкладке «Питч» (там свой сценарий CV)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 80
+            Layout.preferredHeight: tabBar.currentIndex === 3 ? 0 : 80
+            visible: tabBar.currentIndex !== 3
             radius: 16
             color: "#2a2a3e"
             
@@ -404,37 +405,53 @@ Window {
         }
     }
     
-    // Панель настроек (модальное окно) / Settings panel (modal)
-    SettingsPanel {
-        id: settingsPanel
-        visible: false
-        opacity: 0
-        scale: 0.9
-        width: Math.min(parent.width * 0.95, 600)
-        height: Math.min(parent.height * 0.95, 800)
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
+    // Панель настроек (модальное окно): затемнение на весь Window + карточка по центру
+    Item {
+        id: settingsModalHost
+        anchors.fill: parent
+        visible: settingsPanel.visible
+        z: 1000
 
-        Behavior on opacity {
-            NumberAnimation {
-                duration: 300
+        Rectangle {
+            anchors.fill: parent
+            color: "#80000000"
+            MouseArea {
+                anchors.fill: parent
+                onClicked: settingsPanel.visible = false
             }
         }
 
-        Behavior on scale {
-            NumberAnimation {
-                duration: 300
-                easing.type: Easing.OutBack
-            }
-        }
+        SettingsPanel {
+            id: settingsPanel
+            visible: false
+            opacity: 0
+            scale: 0.9
+            width: Math.min(settingsModalHost.width * 0.95, 600)
+            height: Math.min(settingsModalHost.height * 0.95, 800)
+            x: (settingsModalHost.width - width) / 2
+            y: (settingsModalHost.height - height) / 2
 
-        states: State {
-            name: "visible"
-            when: settingsPanel.visible
-            PropertyChanges {
-                target: settingsPanel
-                opacity: 1
-                scale: 1
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 300
+                }
+            }
+
+            Behavior on scale {
+                NumberAnimation {
+                    duration: 300
+                    easing.type: Easing.OutBack
+                }
+            }
+
+            states: State {
+                name: "visible"
+                when: settingsPanel.visible
+                PropertyChanges {
+                    target: settingsPanel
+                    opacity: 1
+                    scale: 1
+                }
             }
         }
     }
