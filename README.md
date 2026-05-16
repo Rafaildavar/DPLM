@@ -60,8 +60,8 @@ DPLM/
 | **ML Classification** | scikit-learn (KNN/SVM), LSTM/GRU (для сложных жестов) |
 | **Database** | PostgreSQL Embedded (pg_embed) |
 | **ORM** | SQLAlchemy + Alembic (миграции) |
-| **Speech-to-Text** | SpeechRecognition, Vosk (оффлайн) |
-| **Text-to-Speech** | pyttsx3 → Coqui TTS |
+| **Speech-to-Text** | Временно отключено |
+| **Text-to-Speech** | Временно отключено |
 | **Command Execution** | subprocess, pyautogui |
 | **Platforms** | Windows 10/11, macOS 11+ |
 
@@ -74,8 +74,8 @@ DPLM/
 git clone https://github.com/your-username/DPLM.git
 cd DPLM
 
-# Создание и активация виртуального окружения
-python -m venv .venv
+# Создание и активация виртуального окружения (рекомендуется Python 3.12)
+python3.12 -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 # .venv\Scripts\activate   # Windows
 
@@ -86,12 +86,69 @@ pip install -r requirements.txt
 ### Запуск
 
 ```bash
-# Запуск GUI (новая версия)
+# 1) Запустить PostgreSQL
+docker compose up -d db
+
+# 2) Запустить GUI (Flet — текущая основная версия)
+PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+```
+
+Голосовой помощник временно отключён: его логика пока не подключена к текущей
+Flet-версии, поэтому вкладка «Помощник» убрана из интерфейса, чтобы не
+блокировать запуск и не показывать нерабочие кнопки. Основной сценарий сейчас:
+обучение жестов, список жестов, привязки жестов к командам и настройки.
+
+Если на macOS приложение зависает на экране `Working...`, удалите старый
+bytecode-кэш и запустите снова:
+
+```bash
+find app -name __pycache__ -type d -prune -exec rm -rf {} +
+PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+```
+
+### Legacy-запуск
+
+```bash
+# Запуск legacy QML/PySide6 (только если включён PySide6 в requirements.txt)
 python -m app.main
 
-# Запуск старой версии (для сравнения)
+# Запуск самой старой версии (для сравнения)
 git checkout v0.6.0-old
 python -m app.gui_main
+```
+
+### Почему Flet, а не PySide6
+
+На macOS 26 (Tahoe) + Python 3.13 + Apple Silicon PySide6 регулярно ломался
+с ошибкой `Could not find the Qt platform plugin "cocoa"` из-за конфликтов
+загрузки `libqcocoa.dylib` через `@rpath/QtGui.framework`. Flet 0.85+
+поставляет собственный Flutter-runtime внутри пакета `flet_desktop`, не
+требует системных Qt-плагинов и устанавливается одним `pip install flet`.
+
+Архитектура Flet-версии:
+
+* `app/flet_app/main.py` — точка входа, конфигурация окна.
+* `app/flet_app/controller.py` — GUI-агностичный контроллер (камера, инференс,
+  команды). Заменяет PySide6-класс `AppController` без зависимостей от Qt.
+* `app/flet_app/views/` — экраны основной логики (`home`, `gestures`,
+  `training`, `bindings`, `settings`).
+
+Существующие сервисы (`app/services/*`, `app/models/*`, `cv/*`) переиспользуются
+без изменений — они и так были GUI-агностичными.
+
+### Известная проблема на macOS 26 (Tahoe)
+
+На macOS 26 wheel-ы `PySide6 6.10+` (включая 6.11) блокируются новой Gatekeeper-проверкой (`com.apple.provenance`), и Qt молча отбрасывает все плагины из директории `PySide6/Qt/plugins/platforms`. Симптом:
+
+```
+qt.qpa.plugin: Could not find the Qt platform plugin "cocoa"
+This application failed to start because no Qt platform plugin could be initialized.
+```
+
+В `requirements.txt` PySide6 закреплён на `6.9.3` — этой версии достаточно, и она работает на macOS 26 + Python 3.13 без правок. Если ты вручную ставил более новую версию, откатись:
+
+```bash
+.venv/bin/pip install --force-reinstall 'PySide6==6.9.3' 'PySide6-Addons==6.9.3' 'PySide6-Essentials==6.9.3' 'shiboken6==6.9.3'
 ```
 
 ### Если PySide6 не запускается на macOS
@@ -176,7 +233,7 @@ feat: implement gesture training service with LSTM support
 
 ## Требования
 
-- Python 3.10+
+- Python 3.12 (рекомендуется для текущей Flet-версии)
 - macOS 11+ (Apple Silicon / Intel) или Windows 10/11
 - Веб-камера (1280×720 или выше)
 - 4GB RAM минимум (8GB рекомендуется)

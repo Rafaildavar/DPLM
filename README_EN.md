@@ -60,8 +60,8 @@ DPLM/
 | **ML Classification** | scikit-learn (KNN/SVM), LSTM/GRU (complex gestures) |
 | **Database** | PostgreSQL Embedded (pg_embed) |
 | **ORM** | SQLAlchemy + Alembic (migrations) |
-| **Speech-to-Text** | SpeechRecognition, Vosk (offline) |
-| **Text-to-Speech** | pyttsx3 → Coqui TTS |
+| **Speech-to-Text** | Temporarily disabled |
+| **Text-to-Speech** | Temporarily disabled |
 | **Command Execution** | subprocess, pyautogui |
 | **Platforms** | Windows 10/11, macOS 11+ |
 
@@ -74,8 +74,8 @@ DPLM/
 git clone https://github.com/your-username/DPLM.git
 cd DPLM
 
-# Create and activate virtual environment
-python -m venv .venv
+# Create and activate virtual environment (Python 3.12 recommended)
+python3.12 -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 # .venv\Scripts\activate   # Windows
 
@@ -83,10 +83,52 @@ source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
+### Known issue on macOS 26 (Tahoe)
+
+On macOS 26 the `PySide6 6.10+` wheels (including 6.11) are blocked by the new
+Gatekeeper provenance check (`com.apple.provenance`); Qt silently rejects all
+platform plugins from `PySide6/Qt/plugins/platforms` and the app dies with:
+
+```
+qt.qpa.plugin: Could not find the Qt platform plugin "cocoa"
+This application failed to start because no Qt platform plugin could be initialized.
+```
+
+`requirements.txt` pins `PySide6==6.9.3`, which predates the policy change and
+works out of the box on macOS 26 + Python 3.13. If you installed a newer
+version manually, roll back:
+
+```bash
+.venv/bin/pip install --force-reinstall 'PySide6==6.9.3' 'PySide6-Addons==6.9.3' 'PySide6-Essentials==6.9.3' 'shiboken6==6.9.3'
+```
+
 ### Running
 
 ```bash
-# Run GUI (new version)
+# 1) Start PostgreSQL
+docker compose up -d db
+
+# 2) Run GUI (Flet is the primary version)
+PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+```
+
+The voice assistant is temporarily disabled: its behavior is not wired into
+the current Flet UI yet, so the Assistant tab is hidden instead of exposing
+non-working controls. The supported flow is gesture training, gesture list,
+gesture-command bindings, and settings.
+
+If the macOS window gets stuck on `Working...`, remove old bytecode caches and
+start again:
+
+```bash
+find app -name __pycache__ -type d -prune -exec rm -rf {} +
+PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+```
+
+### Legacy Run
+
+```bash
+# Run legacy QML/PySide6 (only if PySide6 is installed)
 python -m app.main
 
 # Run old version (for comparison)
@@ -153,7 +195,7 @@ feat: implement gesture training service with LSTM support
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.12 (recommended for the current Flet version)
 - macOS 11+ (Apple Silicon / Intel) or Windows 10/11
 - Webcam (1280×720 or higher)
 - 4GB RAM minimum (8GB recommended)
@@ -175,4 +217,3 @@ Developed as part of GUAP diploma project (2025)
 ---
 
 **Note**: Project is in active development. Old version available at tag `v0.6.0-old` for reference to original implementation.
-
