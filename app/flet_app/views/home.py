@@ -69,6 +69,11 @@ class HomeView:
             weight=ft.FontWeight.W_500,
             color=COLOR_ON_SURFACE,
         )
+        self._activity_list = ft.Column(
+            spacing=6,
+            scroll=ft.ScrollMode.AUTO,
+            controls=[ft.Text("Пока нет событий", size=12, color=COLOR_MUTED)],
+        )
 
         self._toggle_btn = ft.FilledButton(
             content=ft.Text(self._btn_label(), size=15, weight=ft.FontWeight.BOLD),
@@ -104,6 +109,7 @@ class HomeView:
         controller.camera_frame_updated.connect(self._on_frame)
         controller.gesture_detected.connect(self._on_gesture)
         controller.command_executed.connect(self._on_command)
+        controller.recognition_event_recorded.connect(self._on_activity_changed)
         controller.confidence_changed.connect(self._on_confidence)
         controller.status_changed.connect(self._on_status)
         controller.recognizing_changed.connect(self._on_recognizing)
@@ -114,7 +120,7 @@ class HomeView:
     def on_show(self) -> None:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
-        pass
+        self._refresh_activity()
 
     def on_hide(self) -> None:
         # При уходе с главной — НЕ останавливаем распознавание, потому что
@@ -186,6 +192,63 @@ class HomeView:
             self._command_text.update()
         except Exception:
             pass
+
+    def _on_activity_changed(self) -> None:
+        self._page.run_thread(self._refresh_activity)
+
+    def _refresh_activity(self) -> None:
+        rows = self._controller.get_recent_recognition_events(limit=6)
+        if not rows:
+            self._activity_list.controls = [
+                ft.Text("Пока нет событий", size=12, color=COLOR_MUTED)
+            ]
+        else:
+            self._activity_list.controls = [
+                self._activity_row(row)
+                for row in rows
+            ]
+        try:
+            self._activity_list.update()
+        except Exception:
+            pass
+
+    def _activity_row(self, row: dict) -> ft.Control:
+        executed = bool(row.get("executed"))
+        label = str(row.get("label") or "—")
+        confidence = int(round(float(row.get("confidence") or 0.0) * 100))
+        detected_at = str(row.get("detectedAt") or "")
+        command = str(row.get("commandName") or "")
+        detail = f"{confidence}%"
+        if command and executed:
+            detail = f"{detail} · {command}"
+        elif not executed:
+            detail = f"{detail} · без команды"
+        return ft.Row(
+            controls=[
+                ft.Icon(
+                    ft.Icons.CHECK_CIRCLE if executed else ft.Icons.INFO_OUTLINE,
+                    color=COLOR_SUCCESS if executed else COLOR_MUTED,
+                    size=16,
+                ),
+                ft.Column(
+                    spacing=0,
+                    expand=True,
+                    controls=[
+                        ft.Text(
+                            label,
+                            size=12,
+                            color=COLOR_ON_SURFACE,
+                            weight=ft.FontWeight.W_600,
+                            no_wrap=True,
+                        ),
+                        ft.Text(detail, size=11, color=COLOR_MUTED, no_wrap=True),
+                    ],
+                ),
+                ft.Text(detected_at, size=11, color=COLOR_MUTED),
+            ],
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
 
     def _on_confidence(self, value: float) -> None:
         self._page.run_thread(self._apply_confidence, value)
@@ -301,6 +364,42 @@ class HomeView:
                                 spacing=8,
                             ),
                             self._command_text,
+                        ],
+                    ),
+                    padding=16,
+                    radius=16,
+                ),
+                surface_card(
+                    ft.Column(
+                        spacing=8,
+                        controls=[
+                            ft.Row(
+                                controls=[
+                                    ft.Icon(
+                                        ft.Icons.HISTORY,
+                                        color=COLOR_ACCENT,
+                                        size=20,
+                                    ),
+                                    ft.Text(
+                                        "Последние события",
+                                        size=14,
+                                        color=COLOR_MUTED,
+                                        weight=ft.FontWeight.W_500,
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.REFRESH,
+                                        icon_color=COLOR_MUTED,
+                                        tooltip="Обновить журнал",
+                                        on_click=lambda _e: self._refresh_activity(),
+                                    ),
+                                ],
+                                spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            ft.Container(
+                                content=self._activity_list,
+                                height=150,
+                            ),
                         ],
                     ),
                     padding=16,

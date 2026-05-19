@@ -153,6 +153,7 @@ class AppController:
         camera_frame_updated()       # новый JPEG в `latest_jpeg_b64`
         gesture_detected(str)
         command_executed(str)
+        recognition_event_recorded()
         confidence_changed(float)
         landmarks_changed(str)       # JSON со списком ландмарок
         voice_assistant_state_changed(str)
@@ -186,6 +187,7 @@ class AppController:
         self.camera_frame_updated = _Event()
         self.gesture_detected = _Event()
         self.command_executed = _Event()
+        self.recognition_event_recorded = _Event()
         self.confidence_changed = _Event()
         self.landmarks_changed = _Event()
         self.voice_assistant_state_changed = _Event()
@@ -613,9 +615,11 @@ class AppController:
             # опасных действий). Это даёт «жест → команда ОС» — главную фичу
             # диплома.
             if self._auto_execute_on_gesture:
-                self.execute_for_gesture(label, conf)
+                executed = self.execute_for_gesture(label, conf)
             else:
+                executed = False
                 print("[ctrl.gesture] auto-execute выключен — команда не запускается", flush=True)
+            self._record_recognition_event(label, conf, executed)
 
     # ----------------------------------------------------------------------
     # Встроенный пайплайн распознавания
@@ -912,6 +916,62 @@ class AppController:
         if ok:
             self.command_executed.emit(info)
         return bool(ok)
+
+    def get_recent_recognition_events(self, limit: int = 8) -> list[dict[str, Any]]:
+        if not BINDING_SERVICES_AVAILABLE:
+            return []
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            print(f"[!] get_recent_recognition_events: {e}")
+            return []
+        try:
+            from app.services.recognition_events import list_recent_recognition_events
+
+            return list_recent_recognition_events(session, limit=limit)
+        except Exception as e:
+            print(f"[!] list_recent_recognition_events: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _record_recognition_event(
+        self,
+        label: str,
+        confidence: float,
+        executed: bool,
+    ) -> None:
+        if not BINDING_SERVICES_AVAILABLE:
+            return
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            print(f"[!] record_recognition_event init: {e}")
+            return
+        try:
+            from app.services.recognition_events import record_recognition_event
+
+            record_recognition_event(
+                session,
+                label=label,
+                confidence=confidence,
+                executed=executed,
+            )
+            self.recognition_event_recorded.emit()
+        except Exception as e:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            print(f"[!] record_recognition_event: {e}")
+        finally:
+            session.close()
 
     # ---- Методы, нужные экрану «Привязки» --------------------------------
 
