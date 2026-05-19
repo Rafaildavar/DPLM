@@ -27,6 +27,14 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, Callable, Optional
 
+from app.services.app_config import (
+    AppConfig,
+    ConfigStore,
+    DEFAULT_CONFIG_PATH,
+    database_url_from_config,
+    resolve_config_path,
+)
+
 
 # ---- Опциональные зависимости (как в исходном app/main.py) -------------------
 
@@ -50,6 +58,7 @@ try:
         Gesture as DbGesture,
         get_db_session,
         init_database,
+        reset_database_manager,
     )
     from app.services.binding_settings import (
         load_binding_settings,
@@ -76,6 +85,7 @@ except ImportError as e:
     DbGesture = None  # type: ignore[assignment]
     init_database = None  # type: ignore[assignment]
     get_db_session = None  # type: ignore[assignment]
+    reset_database_manager = None  # type: ignore[assignment]
     GestureCommandBridge = None  # type: ignore[assignment]
     save_gesture_binding = None  # type: ignore[assignment]
     sync_db_commands_to_executor = None  # type: ignore[assignment]
@@ -150,12 +160,21 @@ class AppController:
     """
 
     def __init__(self) -> None:
+        # Локальная техническая конфигурация -------------------------------
+        self._config_store = ConfigStore(DEFAULT_CONFIG_PATH)
+        try:
+            self._config_store.ensure_exists()
+        except Exception as e:
+            print(f"[w] config ensure failed: {e}")
+        self._config_file: AppConfig = self._config_store.load(include_env=False)
+        self._config: AppConfig = self._config_store.load(include_env=True)
+
         # Состояние ----------------------------------------------------------
         self._status: str = "Idle"
         self._is_recognizing: bool = False
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
-        self._two_hands_mode: bool = False
+        self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._confidence: float = 0.0
         self._landmarks_json: str = "[]"
         self._last_label: str = ""
@@ -180,15 +199,16 @@ class AppController:
         self._latest_jpeg_bytes: bytes = b""
         self._frame_w = 0
         self._frame_h = 0
-        self._target_fps = 30
+        self._target_fps = int(self._config.recognition.target_fps)
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
 
         # Subprocess realtime_infer (фоновое распознавание) ------------------
         self._recognition_process: Optional[subprocess.Popen] = None
-        self._recognition_pid_file = Path.home() / ".dplm" / "gesture_infer.pid"
-        self._recognition_log_file = Path.home() / ".dplm" / "gesture_infer.log"
+        log_dir = self._configured_log_dir()
+        self._recognition_pid_file = log_dir / "gesture_infer.pid"
+        self._recognition_log_file = log_dir / "gesture_infer.log"
         self._recognition_pid_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Сервисы ------------------------------------------------------------
@@ -203,7 +223,9 @@ class AppController:
         self._gesture_command_bridge: Any | None = None
         # Если включено — после детекции жеста автоматически вызывается
         # ``execute_for_gesture(label, conf)``. Можно выключить в UI.
-        self._auto_execute_on_gesture: bool = True
+        self._auto_execute_on_gesture: bool = bool(
+            self._config.recognition.auto_execute_on_gesture
+        )
 
         # Subprocess для записи/обучения (CLI-обёртка) ---------------------
         self._training_proc: Optional[subprocess.Popen] = None
@@ -260,6 +282,146 @@ class AppController:
     def command_executor(self) -> Any | None:
         return self._command_executor
 
+    @property
+    def config_path(self) -> Path:
+        return self._config_store.path
+
+    def get_app_config(self) -> dict[str, Any]:
+        """Вернуть настройки, записанные именно в config.json (без env override)."""
+        self._config_file = self._config_store.load(include_env=False)
+        return self._config_file.to_dict()
+
+    def get_effective_app_config(self) -> dict[str, Any]:
+        """Вернуть фактически применяемые настройки с учётом окружения."""
+        self._config = self._config_store.load(include_env=True)
+        return self._config.to_dict()
+
+    def get_config_env_overrides(self) -> dict[str, str]:
+        return self._config_store.env_overrides()
+
+    def save_app_config(self, raw: dict[str, Any]) -> tuple[bool, list[str], list[str]]:
+        """Сохранить технические настройки в config.json и применить runtime flags."""
+        config = AppConfig.from_dict(raw)
+        result = self._config_store.validate(config)
+        if not result.ok:
+            return False, result.errors, result.warnings
+
+        try:
+            self._config_store.save(config)
+            self._config_file = self._config_store.load(include_env=False)
+            self._config = self._config_store.load(include_env=True)
+            self._apply_runtime_config()
+            self._reset_db_bridge()
+        except Exception as e:
+            return False, [str(e)], result.warnings
+        return True, [], result.warnings
+
+    def get_system_status(self) -> dict[str, Any]:
+        """Лёгкая сводка для экрана настроек."""
+        self._config = self._config_store.load(include_env=True)
+        validation = self._config_store.validate(self._config)
+        db_url = database_url_from_config(self._config)
+        data_dir = self._configured_data_dir()
+        models_dir = self._configured_models_dir()
+        model_path = self._configured_model_path()
+        classes_path = self._configured_classes_path()
+        feature_dim_path = self._configured_feature_dim_path()
+        log_dir = self._configured_log_dir()
+
+        db_ok = False
+        db_error = ""
+        if BINDING_SERVICES_AVAILABLE:
+            try:
+                if not self._db_initialized:
+                    init_database()
+                    self._db_initialized = True
+                from app.models import database as database_module
+
+                manager = getattr(database_module, "db_manager", None)
+                db_ok = bool(manager.healthcheck()) if manager is not None else False
+            except Exception as e:
+                db_error = str(e)
+
+        return {
+            "configPath": str(self._config_store.path),
+            "configExists": self._config_store.path.exists(),
+            "envOverrides": self.get_config_env_overrides(),
+            "databaseUrl": self._mask_database_url(db_url),
+            "databaseOk": db_ok,
+            "databaseError": db_error,
+            "cv2Available": _CV2_AVAILABLE,
+            "cameraIndex": int(self._config.recognition.camera_index),
+            "targetFps": int(self._config.recognition.target_fps),
+            "dataDir": str(data_dir),
+            "dataDirExists": data_dir.exists(),
+            "modelsDir": str(models_dir),
+            "modelsDirExists": models_dir.exists(),
+            "modelPath": str(model_path),
+            "modelExists": model_path.exists(),
+            "classesPath": str(classes_path),
+            "classesExists": classes_path.exists(),
+            "featureDimPath": str(feature_dim_path),
+            "featureDimExists": feature_dim_path.exists(),
+            "logDir": str(log_dir),
+            "logDirExists": log_dir.exists(),
+            "recognitionLog": str(self._recognition_log_file),
+            "voiceEnabled": bool(self._config.assistant.voice_enabled),
+            "voiceAvailable": VOICE_ASSISTANT_AVAILABLE,
+            "validationErrors": validation.errors,
+            "validationWarnings": validation.warnings,
+        }
+
+    def _apply_runtime_config(self) -> None:
+        self._target_fps = int(self._config.recognition.target_fps)
+        self._auto_execute_on_gesture = bool(
+            self._config.recognition.auto_execute_on_gesture
+        )
+        log_dir = self._configured_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self._recognition_pid_file = log_dir / "gesture_infer.pid"
+        self._recognition_log_file = log_dir / "gesture_infer.log"
+        self.set_two_hands_mode(bool(self._config.recognition.two_hands_mode))
+
+    def _reset_db_bridge(self) -> None:
+        self._gesture_command_bridge = None
+        self._db_initialized = False
+        if reset_database_manager is not None:
+            try:
+                reset_database_manager()
+            except Exception as e:
+                print(f"[w] reset_database_manager: {e}")
+
+    def _configured_path(self, value: str | Path) -> Path:
+        return resolve_config_path(value)
+
+    def _configured_data_dir(self) -> Path:
+        return self._configured_path(self._config.paths.data_dir)
+
+    def _configured_models_dir(self) -> Path:
+        return self._configured_path(self._config.paths.models_dir)
+
+    def _configured_model_path(self) -> Path:
+        return self._configured_path(self._config.paths.model_path)
+
+    def _configured_classes_path(self) -> Path:
+        return self._configured_path(self._config.paths.classes_path)
+
+    def _configured_feature_dim_path(self) -> Path:
+        return self._configured_path(self._config.paths.feature_dim_path)
+
+    def _configured_log_dir(self) -> Path:
+        return self._configured_path(self._config.paths.log_dir)
+
+    def _mask_database_url(self, url: str) -> str:
+        if "://" not in url or "@" not in url:
+            return url
+        scheme, rest = url.split("://", 1)
+        creds, host = rest.split("@", 1)
+        if ":" in creds:
+            user = creds.split(":", 1)[0]
+            return f"{scheme}://{user}:***@{host}"
+        return f"{scheme}://***@{host}"
+
     # ----------------------------------------------------------------------
     # Внутренние сеттеры с событиями
     # ----------------------------------------------------------------------
@@ -303,7 +465,10 @@ class AppController:
         try:
             from app.cv_camera import open_default_capture
 
-            cap = open_default_capture()
+            cap = open_default_capture(
+                int(self._config.recognition.camera_index),
+                fps=int(self._config.recognition.target_fps),
+            )
         except Exception as e:
             print(f"[!] Ошибка открытия камеры: {e}")
             import traceback
@@ -458,7 +623,12 @@ class AppController:
             from app.gesture_online_infer import GestureOnlineInfer
 
             print("[ctrl.start_embedded] creating GestureOnlineInfer…")
-            infer = GestureOnlineInfer(two_hands=self._two_hands_mode)
+            infer = GestureOnlineInfer(
+                model_path=self._configured_model_path(),
+                classes_path=self._configured_classes_path(),
+                feature_dim_path=self._configured_feature_dim_path(),
+                two_hands=self._two_hands_mode,
+            )
             print(f"[ctrl.start_embedded] infer created; init_error={getattr(infer,'init_error','')!r}")
             if (
                 getattr(infer, "classifier_requires_two_hands", False)
@@ -519,7 +689,21 @@ class AppController:
             return
 
         infer_script = Path(__file__).resolve().parent.parent.parent / "cv" / "realtime_infer.py"
-        cmd = [sys.executable, str(infer_script), "--tts"]
+        cmd = [
+            sys.executable,
+            str(infer_script),
+            "--tts",
+            "--model",
+            str(self._configured_model_path()),
+            "--classes",
+            str(self._configured_classes_path()),
+            "--feature-dim-file",
+            str(self._configured_feature_dim_path()),
+            "--camera-index",
+            str(int(self._config.recognition.camera_index)),
+            "--fps",
+            str(int(self._config.recognition.target_fps)),
+        ]
         if self._two_hands_mode:
             cmd.append("--two-hands")
         try:
@@ -660,6 +844,10 @@ class AppController:
     @property
     def auto_execute(self) -> bool:
         return self._auto_execute_on_gesture
+
+    @property
+    def auto_start_recognition(self) -> bool:
+        return bool(self._config.recognition.auto_start_recognition)
 
     def _ensure_db_bridge(self) -> Any | None:
         """Лениво инициализирует БД и ``GestureCommandBridge``. ``None`` при ошибке."""
@@ -980,13 +1168,12 @@ class AppController:
         if not BINDING_SERVICES_AVAILABLE:
             return {"created": 0, "updated": 0, "total": 0}
 
-        project_root = Path(__file__).resolve().parents[2]
-        data_root = project_root / "data" / "gestures"
+        data_root = self._configured_data_dir()
         if not data_root.exists():
             return {"created": 0, "updated": 0, "total": 0}
 
         # ``classes.json`` — список меток в порядке индексов классификатора.
-        classes_path = project_root / "models" / "classes.json"
+        classes_path = self._configured_classes_path()
         class_idx_map: dict[str, int] = {}
         if classes_path.exists():
             try:
@@ -1023,7 +1210,7 @@ class AppController:
                 if row is None:
                     row = DbGesture(
                         label=label,
-                        description=f"Auto-imported from data/gestures/{label}/",
+                        description=f"Auto-imported from {data_root / label}",
                         samples_path=str(label_dir),
                         model_class_id=model_class_id,
                         is_active=True,
@@ -1047,7 +1234,7 @@ class AppController:
     def list_recorded_gestures(self) -> list[dict[str, Any]]:
         """Возвращает список папок в ``data/gestures/<label>/`` с числом
         сэмплов в каждой. Используется на вкладке «Обучение»."""
-        root = Path(__file__).resolve().parents[2] / "data" / "gestures"
+        root = self._configured_data_dir()
         out: list[dict[str, Any]] = []
         if not root.exists():
             return out
@@ -1088,6 +1275,12 @@ class AppController:
             str(int(num_samples)),
             "--frames",
             str(int(frames)),
+            "--data-root",
+            str(self._configured_data_dir()),
+            "--camera-index",
+            str(int(self._config.recognition.camera_index)),
+            "--fps",
+            str(int(self._config.recognition.target_fps)),
         ]
         if two_hands:
             cmd.append("--two-hands")
@@ -1134,8 +1327,8 @@ class AppController:
 
     def start_training(
         self,
-        data_root: str = "data/gestures",
-        out_path: str = "models/knn.pkl",
+        data_root: str = "",
+        out_path: str = "",
         neighbors: int = 5,
         expect_dim: Optional[int] = None,
         on_line: Optional[Callable[[str], None]] = None,
@@ -1145,15 +1338,21 @@ class AppController:
         if self._training_proc is not None and self._training_proc.poll() is None:
             return False
         project_root = Path(__file__).resolve().parents[2]
+        actual_data_root = data_root or str(self._configured_data_dir())
+        actual_out_path = out_path or str(self._configured_model_path())
         cmd = [
             sys.executable,
             "-u",
             "-m",
             "cv.train_classifier",
             "--data-root",
-            data_root,
+            actual_data_root,
             "--out",
-            out_path,
+            actual_out_path,
+            "--classes-out",
+            str(self._configured_classes_path()),
+            "--feature-dim-out",
+            str(self._configured_feature_dim_path()),
             "--neighbors",
             str(int(neighbors)),
         ]

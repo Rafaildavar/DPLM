@@ -7,18 +7,24 @@ import sys
 from typing import Any
 
 
-def open_default_capture() -> Any:
+def open_default_capture(
+    camera_index: int = 0,
+    *,
+    width: int = 1280,
+    height: int = 720,
+    fps: int = 30,
+) -> Any:
     """
     Открыть камеру с тем же бэкендом и разрешением, что в realtime_infer.py.
     """
     import cv2
 
     if sys.platform == "darwin":
-        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(int(camera_index), cv2.CAP_AVFOUNDATION)
     else:
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(int(camera_index))
     if cap.isOpened():
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
+        cap.set(cv2.CAP_PROP_FPS, int(fps))
     return cap

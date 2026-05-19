@@ -44,7 +44,7 @@ alembic/versions/__pycache__/
 *.tmp
 *.log
 ~$*
+app/services/command_executor 2.py
 
 # Environment files
 .env
-

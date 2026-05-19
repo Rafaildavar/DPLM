@@ -87,6 +87,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Обучение KNN классификатора жестов")
     p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
     p.add_argument("--out", default="models/knn.pkl", help="Путь для сохранения модели")
+    p.add_argument("--classes-out", default=None, help="Путь для сохранения classes.json")
+    p.add_argument("--feature-dim-out", default=None, help="Путь для сохранения feature_dim.txt")
     p.add_argument("--neighbors", type=int, default=5, help="Число соседей KNN")
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     return p.parse_args()
@@ -108,12 +110,19 @@ def main() -> None:
     print(f"[✓] Модель сохранена: {out_path}")
 
     # Сохраним классы и размерность признака для инференса
-    (out_path.parent / "classes.json").write_text(json.dumps(classes, ensure_ascii=False, indent=2))
-    (out_path.parent / "feature_dim.txt").write_text(str(X.shape[1]))
-    print("[✓] Метаданные сохранены: classes.json, feature_dim.txt")
+    classes_out = Path(args.classes_out) if args.classes_out else (out_path.parent / "classes.json")
+    feature_dim_out = (
+        Path(args.feature_dim_out)
+        if args.feature_dim_out
+        else (out_path.parent / "feature_dim.txt")
+    )
+    classes_out.parent.mkdir(parents=True, exist_ok=True)
+    feature_dim_out.parent.mkdir(parents=True, exist_ok=True)
+    classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
+    feature_dim_out.write_text(str(X.shape[1]))
+    print(f"[✓] Метаданные сохранены: {classes_out}, {feature_dim_out}")
 
 
 if __name__ == "__main__":
     main()
-
 

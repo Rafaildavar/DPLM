@@ -5,7 +5,11 @@ pytest configuration and shared fixtures
 import sys
 from pathlib import Path
 import pytest
-from PySide6.QtWidgets import QApplication
+
+try:
+    from PySide6.QtWidgets import QApplication  # noqa: F401
+except ImportError:  # Flet-only test runs do not require Qt.
+    QApplication = None  # type: ignore[assignment]
 
 # Добавить корневую директорию проекта в PYTHONPATH
 # Add project root directory to PYTHONPATH
@@ -93,4 +97,3 @@ def sample_gesture_data():
     # Generate random normalized coordinates
     data = np.random.rand(seq_len, feature_dim).astype(np.float32)
     return data
-

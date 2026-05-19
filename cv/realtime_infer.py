@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
     p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
+    p.add_argument("--camera-index", type=int, default=0, help="Индекс камеры OpenCV")
+    p.add_argument("--fps", type=int, default=30, help="Целевой FPS камеры")
     p.add_argument(
         "--min-say-interval", type=float, default=1.5, help="Интервал между озвучиваниями, сек"
     )
@@ -80,10 +82,10 @@ def main() -> None:
 
     window: Deque[np.ndarray] = deque(maxlen=max(1, args.window))
 
-    cap = cv2.VideoCapture(0, MACOS_BACKEND)
+    cap = cv2.VideoCapture(int(args.camera_index), MACOS_BACKEND)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FPS, int(args.fps))
 
     if not cap.isOpened():
         print("Ошибка открытия камеры (проверьте доступ в Privacy & Security → Camera)")

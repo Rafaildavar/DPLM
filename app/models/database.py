@@ -16,8 +16,10 @@
 
 Реализация:
 - ORM: SQLAlchemy 2.x (``declarative_base``).
-- СУБД по умолчанию — PostgreSQL (через ``psycopg2``). Параметры подключения
-  читаются из переменных окружения (``DATABASE_URL`` либо
+- СУБД выбирается локальным конфигом (SQLite или PostgreSQL через ``psycopg2``).
+  Параметры подключения
+  читаются из локального конфига ``~/.dplm/config.json`` и могут быть
+  переопределены переменными окружения (``DATABASE_URL`` либо
   ``DPLM_DB_HOST/USER/PASSWORD/...``).
 - Для разработки и тестов поддерживается резервный режим SQLite (включается
   явно: ``DPLM_DB_BACKEND=sqlite`` или ``DATABASE_URL=sqlite:///...``).
@@ -424,6 +426,14 @@ def _load_dotenv_if_present() -> None:
     Подгружает только переменные, которых нет в окружении. Игнорирует
     комментарии и некорректные строки. Безопасен на любой ОС.
     """
+    try:
+        from app.services.app_config import load_project_dotenv
+
+        load_project_dotenv()
+        return
+    except Exception:
+        pass
+
     env_path = Path(__file__).resolve().parents[2] / ".env"
     if not env_path.exists():
         return
@@ -467,12 +477,11 @@ def resolve_database_url(prefer_sqlite: bool = False) -> str:
     Порядок приоритетов:
 
     1. Явный параметр ``prefer_sqlite=True`` — SQLite-файл из
-       ``DPLM_SQLITE_PATH`` (по умолчанию ``.db_data/dplm_dev.sqlite``).
+       ``DPLM_SQLITE_PATH`` или ``~/.dplm/config.json``.
     2. Переменная ``DATABASE_URL`` (любая поддерживаемая SQLAlchemy строка).
-    3. ``DPLM_DB_BACKEND=sqlite`` — резервный SQLite.
-    4. По умолчанию — PostgreSQL, собранный из переменных
-       ``DPLM_DB_HOST/PORT/USER/PASSWORD/NAME`` (со значениями по
-       умолчанию ``localhost/5432/dplm/dplm/dplm``).
+    3. ``DPLM_*`` переменные окружения.
+    4. ``~/.dplm/config.json``.
+    5. Встроенные значения ``AppConfig``.
 
     Для строк ``postgresql*`` в URL добавляется ``connect_timeout`` (10 с),
     если параметр ещё не задан — чтобы при недоступной БД соединение
@@ -490,25 +499,52 @@ def resolve_database_url(prefer_sqlite: bool = False) -> str:
     if explicit_url:
         return _append_pg_connect_timeout(explicit_url)
 
-    backend = os.environ.get("DPLM_DB_BACKEND", "postgres").strip().lower()
-    if backend in ("sqlite", "sqlite3"):
-        return _sqlite_url_from_env()
+    db_env_keys = {
+        "DPLM_DB_BACKEND",
+        "DPLM_DB_HOST",
+        "DPLM_DB_PORT",
+        "DPLM_DB_USER",
+        "DPLM_DB_PASSWORD",
+        "DPLM_DB_NAME",
+        "DPLM_SQLITE_PATH",
+    }
+    if any(os.environ.get(k, "").strip() for k in db_env_keys):
+        backend = os.environ.get("DPLM_DB_BACKEND", "postgres").strip().lower()
+        if backend in ("sqlite", "sqlite3"):
+            return _sqlite_url_from_env()
 
-    host = os.environ.get("DPLM_DB_HOST", "localhost")
-    port = os.environ.get("DPLM_DB_PORT", "5432")
-    user = quote_plus(os.environ.get("DPLM_DB_USER", "dplm"))
-    password = quote_plus(os.environ.get("DPLM_DB_PASSWORD", "dplm"))
-    name = os.environ.get("DPLM_DB_NAME", "dplm")
-    base = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"
-    return _append_pg_connect_timeout(base)
+        host = os.environ.get("DPLM_DB_HOST", "localhost")
+        port = os.environ.get("DPLM_DB_PORT", "5432")
+        user = quote_plus(os.environ.get("DPLM_DB_USER", "dplm"))
+        password = quote_plus(os.environ.get("DPLM_DB_PASSWORD", "dplm"))
+        name = os.environ.get("DPLM_DB_NAME", "dplm")
+        base = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"
+        return _append_pg_connect_timeout(base)
+
+    try:
+        from app.services.app_config import database_url_from_config, load_app_config
+
+        config = load_app_config(include_env=False, load_dotenv=False)
+        return _append_pg_connect_timeout(
+            database_url_from_config(config, prefer_sqlite=False)
+        )
+    except Exception:
+        base = "postgresql+psycopg2://dplm:dplm@localhost:5432/dplm"
+        return _append_pg_connect_timeout(base)
 
 
 def _sqlite_url_from_env() -> str:
     raw = os.environ.get("DPLM_SQLITE_PATH", "").strip()
     if raw:
         return f"sqlite:///{raw}"
-    default_path = Path(".db_data") / "dplm_dev.sqlite"
-    return f"sqlite:///{default_path}"
+    try:
+        from app.services.app_config import load_app_config, resolve_config_path
+
+        config = load_app_config(include_env=False, load_dotenv=False)
+        return f"sqlite:///{resolve_config_path(config.database.sqlite_path)}"
+    except Exception:
+        default_path = Path(".db_data") / "dplm_dev.sqlite"
+        return f"sqlite:///{default_path}"
 
 
 # ============================================================================
@@ -634,6 +670,20 @@ def _enable_sqlite_foreign_keys(engine: Engine) -> None:
 # ============================================================================
 
 db_manager: Optional[DatabaseManager] = None
+
+
+def reset_database_manager() -> None:
+    """Закрыть и сбросить глобальный менеджер БД.
+
+    Нужен GUI-настройкам: после смены backend/path/host следующая операция
+    должна открыть новое подключение, а не использовать старый engine.
+    """
+    global db_manager
+    if db_manager is not None:
+        try:
+            db_manager.close()
+        finally:
+            db_manager = None
 
 
 def init_database(

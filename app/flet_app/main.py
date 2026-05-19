@@ -44,6 +44,8 @@ def main(page: ft.Page) -> None:
     atexit.register(controller.shutdown)
 
     page.add(build_shell(page, controller))
+    if controller.auto_start_recognition:
+        page.run_thread(controller.toggle_recognition)
     print("[✓] Flet DPLM запущен")
 
 

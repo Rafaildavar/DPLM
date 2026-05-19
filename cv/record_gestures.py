@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (если есть)")
     p.add_argument("--fps", type=int, default=30, help="Целевой FPS для записи")
     p.add_argument("--frames", type=int, default=30, help="Длина одного семпла (число кадров)")
+    p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
+    p.add_argument("--camera-index", type=int, default=0, help="Индекс камеры OpenCV")
     return p.parse_args()
 
 
@@ -44,10 +46,10 @@ def main() -> None:
     target_samples = max(1, args.num_samples)
     seq_len = max(1, args.frames)
 
-    out_dir = Path("data/gestures") / label
+    out_dir = Path(args.data_root) / label
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cap = cv2.VideoCapture(0, MACOS_BACKEND)
+    cap = cv2.VideoCapture(int(args.camera_index), MACOS_BACKEND)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     cap.set(cv2.CAP_PROP_FPS, args.fps)
