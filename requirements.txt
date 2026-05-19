@@ -13,15 +13,20 @@ pyttsx3
 SpeechRecognition
 vosk
 
-# GUI Framework
-# На macOS 26 (Tahoe) wheel-ы PySide6 6.10/6.11 блокируются новой
-# Gatekeeper-проверкой `com.apple.provenance` — `libqcocoa.dylib` не загружается
-# с ошибкой `Could not find the Qt platform plugin "cocoa"`. Версия 6.9.3
-# собрана раньше изменения политики и работает на macOS 26 + Python 3.13.
-PySide6==6.9.3
-PySide6-Addons==6.9.3
-PySide6-Essentials==6.9.3
-shiboken6==6.9.3
+# GUI Framework — Flet (Flutter desktop runtime, без Qt-плагинов).
+# Точка входа: `python -m app.flet_app.main`. На macOS 26 (Tahoe) + Apple
+# Silicon работает «из коробки», т. к. не использует системные Qt/Cocoa
+# плагины (которые ломались у PySide6 из-за новой Gatekeeper-проверки
+# `com.apple.provenance` и `@rpath/QtGui.framework`).
+flet>=0.85.0
+
+# Legacy QML/PySide6 (старая ветка `app/main.py` + 22 QML-файла).
+# Не нужен для Flet-версии. Раскомментируй, если хочешь сравнить с QML;
+# фиксированная версия 6.9.3 — последняя, которая на macOS 26 работала.
+# PySide6==6.9.3
+# PySide6-Addons==6.9.3
+# PySide6-Essentials==6.9.3
+# shiboken6==6.9.3
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)
@@ -38,5 +43,6 @@ joblib
 # Testing
 pytest
 pytest-cov
-pytest-qt  # для тестирования Qt/QML
 pytest-mock
+# pytest-qt — нужен только для тестов legacy QML/PySide6 версии.
+# pytest-qt

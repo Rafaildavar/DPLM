@@ -1,5 +1,1 @@
-# -*- coding: utf-8 -*-
-"""
-Сервисы приложения DPLM
-Application services for DPLM
-"""
+"""Service layer package for DPLM."""

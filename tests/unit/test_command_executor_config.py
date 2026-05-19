@@ -34,6 +34,8 @@ def test_execute_config_mute_toggle(monkeypatch):
     monkeypatch.setattr(ce.pyautogui, "press", lambda k: pressed.append(k))
 
     ex = ce.CommandExecutor()
+    # mute на macOS идёт через AppleScript; тестируем pyautogui-ветку (Windows).
+    monkeypatch.setattr(ex, "system", "windows")
     ok = ex.execute_config({"action": "mute_toggle", "platform": "all"})
     assert ok is True
     assert pressed == ["volumemute"]
@@ -131,6 +133,8 @@ def test_execute_config_media_key(monkeypatch, kind, expected_key):
     monkeypatch.setattr(ce.pyautogui, "press", lambda k: pressed.append(k))
 
     ex = ce.CommandExecutor()
+    # На darwin медиаклавиши — osascript; на Linux проверяем pyautogui.
+    monkeypatch.setattr(ex, "system", "linux")
     ok = ex.execute_config({"action": "media_key", "kind": kind, "platform": "all"})
     assert ok is True
     assert pressed == [expected_key]
