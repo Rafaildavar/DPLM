@@ -20,6 +20,7 @@ from app.flet_app.theme import (
     COLOR_SURFACE_HIGH,
     surface_card,
 )
+from app.services.diagnostics import STATUS_FAIL, STATUS_PASS, STATUS_WARN
 
 
 class SettingsView:
@@ -97,6 +98,23 @@ class SettingsView:
             content=ft.Text("Обновить статус"),
             icon=ft.Icons.REFRESH,
             on_click=lambda _e: self._refresh_status(update=True),
+        )
+        self._diagnostics_status = ft.Text("", size=13, color=COLOR_MUTED, visible=False)
+        self._diagnostics_results = ft.Column(spacing=8)
+        self._diagnostics_camera_switch = ft.Switch(
+            value=False,
+            label="Открывать камеру во время проверки",
+            active_color=COLOR_ACCENT,
+        )
+        self._diagnostics_btn = ft.FilledButton(
+            content=ft.Text("Запустить самопроверку", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.CHECK_CIRCLE,
+            style=ft.ButtonStyle(
+                bgcolor=COLOR_ACCENT,
+                color=ft.Colors.WHITE,
+                padding=ft.Padding.symmetric(horizontal=20, vertical=12),
+            ),
+            on_click=self._on_run_diagnostics,
         )
         self._save_tech_btn = ft.FilledButton(
             content=ft.Text("Сохранить технические настройки", weight=ft.FontWeight.BOLD),
@@ -381,6 +399,38 @@ class SettingsView:
         self._controller.toggle_recognition()
         self._refresh_status(update=True)
 
+    def _on_run_diagnostics(self, _e) -> None:
+        report = self._controller.run_self_test(
+            check_camera=bool(self._diagnostics_camera_switch.value)
+        )
+        summary = report.get("summary") or {}
+        failures = int(summary.get(STATUS_FAIL, 0))
+        warnings = int(summary.get(STATUS_WARN, 0))
+        if failures:
+            self._diagnostics_status.value = f"Самопроверка: ошибок {failures}, предупреждений {warnings}"
+            self._diagnostics_status.color = COLOR_DANGER
+        elif warnings:
+            self._diagnostics_status.value = f"Самопроверка: OK, предупреждений {warnings}"
+            self._diagnostics_status.color = "#ffca28"
+        else:
+            self._diagnostics_status.value = "Самопроверка: OK"
+            self._diagnostics_status.color = COLOR_SUCCESS
+        self._diagnostics_status.visible = True
+
+        controls: list[ft.Control] = []
+        for item in report.get("items") or []:
+            status = str(item.get("status") or "")
+            ok = True if status == STATUS_PASS else False if status == STATUS_FAIL else None
+            controls.append(
+                self._status_line(
+                    str(item.get("label") or item.get("key") or ""),
+                    str(item.get("detail") or ""),
+                    ok,
+                )
+            )
+        self._diagnostics_results.controls = controls
+        self._refresh_status(update=True)
+
     def _recognition_btn_text(self) -> str:
         return "Остановить распознавание" if self._controller.is_recognizing else "Запустить распознавание"
 
@@ -451,6 +501,25 @@ class SettingsView:
                         spacing=10,
                         wrap=True,
                     ),
+                ],
+            ),
+            padding=20,
+            radius=16,
+        )
+
+        diagnostics_card = surface_card(
+            ft.Column(
+                spacing=14,
+                controls=[
+                    self._section_title(ft.Icons.CHECK_CIRCLE, "Самопроверка"),
+                    self._diagnostics_camera_switch,
+                    ft.Row(
+                        controls=[self._diagnostics_btn],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    self._diagnostics_status,
+                    self._diagnostics_results,
                 ],
             ),
             padding=20,
@@ -550,6 +619,7 @@ class SettingsView:
             controls=[
                 surface_card(header, padding=16, radius=16),
                 system_card,
+                diagnostics_card,
                 db_card,
                 paths_card,
                 recognition_card,

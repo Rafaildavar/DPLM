@@ -371,6 +371,22 @@ class AppController:
             "validationWarnings": validation.warnings,
         }
 
+    def run_self_test(self, *, check_camera: bool = False) -> dict[str, Any]:
+        from app.services.diagnostics import run_diagnostics
+
+        report = run_diagnostics(
+            config=self._config_store.load(include_env=True),
+            config_store=self._config_store,
+            check_database=True,
+            check_camera=check_camera,
+        )
+        if report.get("ok"):
+            self._set_status("Diagnostics: OK")
+        else:
+            failures = int((report.get("summary") or {}).get("fail", 0))
+            self._set_status(f"Diagnostics: {failures} failures")
+        return report
+
     def _apply_runtime_config(self) -> None:
         self._target_fps = int(self._config.recognition.target_fps)
         self._auto_execute_on_gesture = bool(
