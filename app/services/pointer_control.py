@@ -30,6 +30,10 @@ INDEX_FINGER_TIP = 8
 INDEX_FINGER_MCP = 5
 INDEX_FINGER_PIP = 6
 INDEX_FINGER_DIP = 7
+THUMB_TIP = 4
+MIDDLE_FINGER_TIP = 12
+MIDDLE_FINGER_MCP = 9
+PINKY_FINGER_MCP = 17
 Point = tuple[float, float]
 
 
@@ -152,7 +156,7 @@ def _landmark_point(landmarks: list[Any], index: int) -> Optional[Point]:
 
 
 class PointerControlService:
-    """Указательный палец двигает курсор; сгибание даёт click или drag."""
+    """Указательный палец двигает курсор; thumb+middle pinch даёт click/drag."""
 
     def __init__(
         self,
@@ -163,6 +167,7 @@ class PointerControlService:
         click_debounce_s: float = 0.42,
         drag_start_px: float = 18.0,
         drag_gain: float = 1.35,
+        enable_index_bend_fallback: bool = False,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -170,11 +175,14 @@ class PointerControlService:
         self.click_debounce_s = max(0.1, float(click_debounce_s))
         self.drag_start_px = max(4.0, float(drag_start_px))
         self.drag_gain = max(0.5, min(3.0, float(drag_gain)))
+        self.enable_index_bend_fallback = bool(enable_index_bend_fallback)
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
+        self._pinch_active = False
+        self._trigger_active = False
         self._button_down = False
         self._pending_click = False
         self._dragging = False
@@ -189,6 +197,8 @@ class PointerControlService:
         self._smooth_y = None
         self._missing_frames = 0
         self._index_folded = False
+        self._pinch_active = False
+        self._trigger_active = False
         self._button_down = False
         self._pending_click = False
         self._dragging = False
@@ -229,24 +239,24 @@ class PointerControlService:
         if index_tip is None:
             return PointerUpdateResult(ok=True, moved=False), None
         ix, iy = index_tip
-        index_mcp = _landmark_point(landmarks, INDEX_FINGER_MCP) or index_tip
         index_folded = self._is_index_folded(landmarks)
+        pinch_active = self._is_thumb_middle_pinched(landmarks)
+        trigger_active = pinch_active or (
+            self.enable_index_bend_fallback and index_folded
+        )
 
         screen_w, screen_h = pyautogui.size()
         pointer_x, pointer_y = self._landmark_to_screen(ix, iy, screen_w, screen_h)
-        mcp_x, mcp_y = self._landmark_to_screen(
-            index_mcp[0], index_mcp[1], screen_w, screen_h
-        )
         target_x, target_y = pointer_x, pointer_y
 
         previous_x = self._smooth_x
         previous_y = self._smooth_y
-        was_folded = self._index_folded
-        just_folded = index_folded and not was_folded
-        just_released = not index_folded and was_folded
+        was_trigger_active = self._trigger_active
+        just_pressed = trigger_active and not was_trigger_active
+        just_released = not trigger_active and was_trigger_active
 
         if (
-            index_folded
+            trigger_active
             and self._fold_anchor_x is not None
             and self._fold_anchor_y is not None
             and self._fold_reference_x is not None
@@ -254,32 +264,32 @@ class PointerControlService:
         ):
             target_x = (
                 self._fold_anchor_x
-                + (mcp_x - self._fold_reference_x) * self.drag_gain
+                + (pointer_x - self._fold_reference_x) * self.drag_gain
             )
             target_y = (
                 self._fold_anchor_y
-                + (mcp_y - self._fold_reference_y) * self.drag_gain
+                + (pointer_y - self._fold_reference_y) * self.drag_gain
             )
 
         if self._smooth_x is None or self._smooth_y is None:
             self._smooth_x = target_x
             self._smooth_y = target_y
-            if just_folded:
+            if just_pressed:
                 self._button_down = True
                 self._pending_click = True
                 self._dragging = False
                 self._fold_anchor_x = self._smooth_x
                 self._fold_anchor_y = self._smooth_y
-                self._fold_reference_x = mcp_x
-                self._fold_reference_y = mcp_y
-        elif just_folded:
+                self._fold_reference_x = pointer_x
+                self._fold_reference_y = pointer_y
+        elif just_pressed:
             self._button_down = True
             self._pending_click = True
             self._dragging = False
             self._fold_anchor_x = self._smooth_x
             self._fold_anchor_y = self._smooth_y
-            self._fold_reference_x = mcp_x
-            self._fold_reference_y = mcp_y
+            self._fold_reference_x = pointer_x
+            self._fold_reference_y = pointer_y
             target_x = self._smooth_x
             target_y = self._smooth_y
         elif just_released:
@@ -295,12 +305,12 @@ class PointerControlService:
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = False
-        mouse_down = just_folded
+        mouse_down = just_pressed
         mouse_up = False
-        drag_started = just_folded
+        drag_started = just_pressed
         drag_ended = False
 
-        if index_folded and self._button_down and self._pending_click and not self._dragging:
+        if trigger_active and self._button_down and self._pending_click and not self._dragging:
             if self._fold_drag_distance() >= self.drag_start_px:
                 self._dragging = True
                 self._pending_click = False
@@ -320,6 +330,8 @@ class PointerControlService:
             self._fold_reference_y = None
 
         self._index_folded = index_folded
+        self._pinch_active = pinch_active
+        self._trigger_active = trigger_active
         moved = True
         if previous_x is not None and previous_y is not None:
             deadzone = 1.0 if self._button_down else self.move_deadzone_px
@@ -472,6 +484,27 @@ class PointerControlService:
         if self._index_folded:
             return extension_ratio < 0.78 and bend_angle < 165.0
         return extension_ratio < 0.66 and bend_angle < 152.0
+
+    def _is_thumb_middle_pinched(self, landmarks: list[Any]) -> bool:
+        thumb_tip = _landmark_point(landmarks, THUMB_TIP)
+        middle_tip = _landmark_point(landmarks, MIDDLE_FINGER_TIP)
+        index_mcp = _landmark_point(landmarks, INDEX_FINGER_MCP)
+        middle_mcp = _landmark_point(landmarks, MIDDLE_FINGER_MCP)
+        pinky_mcp = _landmark_point(landmarks, PINKY_FINGER_MCP)
+        wrist = _landmark_point(landmarks, 0)
+        if None in (thumb_tip, middle_tip, index_mcp, middle_mcp, pinky_mcp, wrist):
+            return False
+        assert thumb_tip is not None and middle_tip is not None
+        assert index_mcp is not None and middle_mcp is not None
+        assert pinky_mcp is not None and wrist is not None
+
+        palm_span = max(
+            _distance(index_mcp, pinky_mcp),
+            _distance(wrist, middle_mcp),
+            1e-6,
+        )
+        ratio = _distance(thumb_tip, middle_tip) / palm_span
+        return ratio < (0.72 if self._pinch_active else 0.48)
 
     def _click_requested(self) -> bool:
         now = time.monotonic()

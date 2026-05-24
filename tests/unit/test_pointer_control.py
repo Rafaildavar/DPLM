@@ -51,9 +51,7 @@ def test_pointer_moves_cursor(monkeypatch):
     monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
     monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
 
-    landmarks = [[0.5, 0.5] for _ in range(21)]
-    landmarks[8] = [0.5, 0.5]
-    payload = json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
+    payload = _payload(_open_index_landmarks(tip=(0.5, 0.5)))
 
     svc = PointerControlService()
     result = svc.update(payload)
@@ -62,7 +60,7 @@ def test_pointer_moves_cursor(monkeypatch):
     assert moves
 
 
-def test_bent_index_finger_clicks_once(monkeypatch):
+def test_thumb_middle_pinch_clicks_once(monkeypatch):
     moves = []
     events = []
 
@@ -98,11 +96,11 @@ def test_bent_index_finger_clicks_once(monkeypatch):
 
     svc = PointerControlService(click_debounce_s=0.1)
     open_payload = _payload(_open_index_landmarks())
-    folded_payload = _payload(_folded_index_landmarks())
+    pinched_payload = _payload(_pinched_landmarks())
 
     assert svc.update(open_payload).ok
-    folded = svc.update(folded_payload)
-    held = svc.update(folded_payload)
+    folded = svc.update(pinched_payload)
+    held = svc.update(pinched_payload)
     released = svc.update(open_payload)
 
     assert not folded.clicked
@@ -112,7 +110,7 @@ def test_bent_index_finger_clicks_once(monkeypatch):
     assert moves
 
 
-def test_bent_index_finger_drag_selects_until_release(monkeypatch):
+def test_thumb_middle_pinch_drags_until_release(monkeypatch):
     events = []
 
     class FakePyAutoGUI:
@@ -148,10 +146,10 @@ def test_bent_index_finger_drag_selects_until_release(monkeypatch):
     svc = PointerControlService(drag_start_px=12)
 
     assert svc.update(_payload(_open_index_landmarks())).moved
-    folded = svc.update(_payload(_folded_index_landmarks()))
+    folded = svc.update(_payload(_pinched_landmarks()))
     assert folded.drag_started
     assert not folded.dragging
-    started = svc.update(_payload(_folded_index_landmarks(offset_x=0.08)))
+    started = svc.update(_payload(_pinched_landmarks(tip=(0.58, 0.18))))
     released = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.18))))
 
     assert started.dragging
@@ -159,6 +157,39 @@ def test_bent_index_finger_drag_selects_until_release(monkeypatch):
     assert ("down",) in events
     assert ("up",) in events
     assert ("click",) not in events
+
+
+def test_bent_index_finger_is_ignored_by_default(monkeypatch):
+    events = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            events.append(("move", x, y))
+
+        @staticmethod
+        def mouseDown(*args, **kwargs):
+            events.append(("down",))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService()
+    svc.update(_payload(_open_index_landmarks()))
+    result = svc.update(_payload(_folded_index_landmarks()))
+
+    assert not result.drag_started
+    assert ("down",) not in events
 
 
 def test_pointer_ignores_small_jitter(monkeypatch):
@@ -238,10 +269,14 @@ def _blank_landmarks():
 def _open_index_landmarks(*, tip=(0.5, 0.18)):
     landmarks = _blank_landmarks()
     landmarks[0] = [0.5, 0.82]
+    landmarks[4] = [0.30, 0.55]
     landmarks[5] = [0.5, 0.56]
     landmarks[6] = [0.5, 0.42]
     landmarks[7] = [0.5, 0.30]
     landmarks[8] = [tip[0], tip[1]]
+    landmarks[9] = [0.58, 0.56]
+    landmarks[12] = [0.62, 0.22]
+    landmarks[17] = [0.70, 0.58]
     return landmarks
 
 
@@ -250,15 +285,26 @@ def _pointing_landmarks(tip, mcp):
     tx, ty = tip
     mx, my = mcp
     landmarks[0] = [0.5, 0.82]
+    landmarks[4] = [0.30, 0.55]
     landmarks[5] = [mx, my]
     landmarks[6] = [mx + (tx - mx) * 0.35, my + (ty - my) * 0.35]
     landmarks[7] = [mx + (tx - mx) * 0.70, my + (ty - my) * 0.70]
     landmarks[8] = [tx, ty]
+    landmarks[9] = [0.58, 0.56]
+    landmarks[12] = [0.62, 0.22]
+    landmarks[17] = [0.70, 0.58]
+    return landmarks
+
+
+def _pinched_landmarks(*, tip=(0.5, 0.18)):
+    landmarks = _open_index_landmarks(tip=tip)
+    landmarks[4] = [0.54, 0.39]
+    landmarks[12] = [0.56, 0.40]
     return landmarks
 
 
 def _folded_index_landmarks(*, offset_x=0.0):
-    landmarks = _blank_landmarks()
+    landmarks = _open_index_landmarks()
     landmarks[0] = [0.5, 0.82]
     landmarks[5] = [0.5 + offset_x, 0.56]
     landmarks[6] = [0.5 + offset_x, 0.42]
