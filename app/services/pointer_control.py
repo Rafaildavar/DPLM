@@ -42,22 +42,6 @@ PINKY_FINGER_TIP = 20
 PINKY_FINGER_MCP = 17
 PINKY_FINGER_PIP = 18
 PINKY_FINGER_DIP = 19
-MACOS_BROWSER_APPS = (
-    "Google Chrome",
-    "Safari",
-    "Arc",
-    "Brave Browser",
-    "Microsoft Edge",
-    "Chromium",
-    "Firefox",
-)
-MACOS_CHROMIUM_BROWSER_APPS = {
-    "Google Chrome",
-    "Arc",
-    "Brave Browser",
-    "Microsoft Edge",
-    "Chromium",
-}
 Point = tuple[float, float]
 
 
@@ -184,10 +168,10 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
-        tab_swipe_threshold: float = 0.15,
-        tab_swipe_vertical_tolerance: float = 0.14,
-        tab_swipe_min_speed: float = 0.45,
-        tab_swipe_cooldown_s: float = 0.90,
+        tab_swipe_threshold: float = 0.09,
+        tab_swipe_vertical_tolerance: float = 0.18,
+        tab_swipe_min_speed: float = 0.18,
+        tab_swipe_cooldown_s: float = 0.85,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -208,6 +192,7 @@ class PointerControlService:
         self._last_click_ts = 0.0
         self._two_finger_swipe_points: list[tuple[float, Point]] = []
         self._tab_swipe_pose_active = False
+        self._last_swipe_tracking_log_ts = 0.0
         self._last_tab_swipe_ts = 0.0
 
     def reset(self) -> None:
@@ -217,6 +202,7 @@ class PointerControlService:
         self._index_folded = False
         self._two_finger_swipe_points.clear()
         self._tab_swipe_pose_active = False
+        self._last_swipe_tracking_log_ts = 0.0
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -411,13 +397,17 @@ class PointerControlService:
             return False
 
         assert mcp is not None and pip is not None and tip is not None
-        return self._finger_extended(
-            landmarks,
-            mcp_index=mcp_index,
-            pip_index=pip_index,
-            dip_index=dip_index,
-            tip_index=tip_index,
-        ) and tip[1] < pip[1] - 0.02 and tip[1] < mcp[1] - 0.04
+        simple_raise = tip[1] < mcp[1] - 0.03 and tip[1] <= pip[1] + 0.08
+        return simple_raise and (
+            self._finger_extended(
+                landmarks,
+                mcp_index=mcp_index,
+                pip_index=pip_index,
+                dip_index=dip_index,
+                tip_index=tip_index,
+            )
+            or _distance(mcp, tip) >= 0.10
+        )
 
     def _two_finger_swipe_center(self, landmarks: list[Any]) -> Optional[Point]:
         index_tip = _landmark_point(landmarks, INDEX_FINGER_TIP)
@@ -452,11 +442,23 @@ class PointerControlService:
             dip_index=PINKY_FINGER_DIP,
             tip_index=PINKY_FINGER_TIP,
         )
-        if not index_raised or not middle_raised or ring_raised or pinky_raised:
+        if not index_raised or not middle_raised:
             return None
-        if _distance(index_tip, middle_tip) > 0.30:
+        ring_tip = _landmark_point(landmarks, RING_FINGER_TIP)
+        pinky_tip = _landmark_point(landmarks, PINKY_FINGER_TIP)
+        open_palm = (
+            ring_raised
+            and pinky_raised
+            and ring_tip is not None
+            and pinky_tip is not None
+            and ring_tip[1] < middle_tip[1] + 0.10
+            and pinky_tip[1] < middle_tip[1] + 0.12
+        )
+        if open_palm:
             return None
-        if abs(index_tip[1] - middle_tip[1]) > 0.18:
+        if _distance(index_tip, middle_tip) > 0.24:
+            return None
+        if abs(index_tip[1] - middle_tip[1]) > 0.22:
             return None
         return (index_tip[0] + middle_tip[0]) / 2.0, (index_tip[1] + middle_tip[1]) / 2.0
 
@@ -487,6 +489,15 @@ class PointerControlService:
         dx = center[0] - start[0]
         dy = center[1] - start[1]
         if abs(dx) < self.tab_swipe_threshold:
+            if (
+                abs(dx) >= self.tab_swipe_threshold * 0.55
+                and now - self._last_swipe_tracking_log_ts >= 0.45
+            ):
+                print(
+                    f"[i] Pointer: two-finger swipe tracking dx={dx:.2f} dy={dy:.2f}",
+                    flush=True,
+                )
+                self._last_swipe_tracking_log_ts = now
             return ""
         if abs(dy) > self.tab_swipe_vertical_tolerance:
             self._two_finger_swipe_points = [(now, center)]
@@ -507,11 +518,11 @@ class PointerControlService:
     def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
         if sys.platform == "darwin":
             if direction == "left":
-                return ("command", "option", "right")
-            return ("command", "option", "left")
+                return ("ctrl", "right")
+            return ("ctrl", "left")
         if direction == "left":
-            return ("ctrl", "tab")
-        return ("ctrl", "shift", "tab")
+            return ("alt", "tab")
+        return ("alt", "shift", "tab")
 
     def _run_macos_script(self, script: str, *, timeout: float = 1.0) -> tuple[bool, str]:
         try:
@@ -528,164 +539,37 @@ class PointerControlService:
             return True, (result.stdout or "").strip()
         return False, (result.stderr or "").strip()
 
-    def _macos_frontmost_and_running_apps(self) -> tuple[str, set[str]]:
-        script = """
-tell application "System Events"
-    set frontApp to name of first application process whose frontmost is true
-    set runningApps to name of application processes
-end tell
-set oldDelimiters to AppleScript's text item delimiters
-set AppleScript's text item delimiters to linefeed
-set runningText to runningApps as text
-set AppleScript's text item delimiters to oldDelimiters
-return frontApp & linefeed & runningText
-"""
-        ok, output = self._run_macos_script(script)
-        if not ok:
-            print(f"[!] Pointer: macOS app lookup failed: {output}", flush=True)
-            return "", set()
-        lines = [line.strip() for line in output.splitlines() if line.strip()]
-        if not lines:
-            return "", set()
-        return lines[0], set(lines[1:])
-
-    def _macos_browser_target(self) -> tuple[str, str]:
-        frontmost, running = self._macos_frontmost_and_running_apps()
-        if frontmost in MACOS_BROWSER_APPS:
-            return frontmost, frontmost
-        for app_name in MACOS_BROWSER_APPS:
-            if app_name in running:
-                return app_name, frontmost
-        return "", frontmost
-
-    def _macos_chromium_tab_script(self, app_name: str, direction: str) -> str:
-        step = "+ 1" if direction == "next" else "- 1"
-        wrap = "1" if direction == "next" else "tabCount"
-        edge = "tabCount" if direction == "next" else "1"
-        return f"""
-tell application "{app_name}"
-    if (count of windows) = 0 then return "no-window"
-    set tabCount to count of tabs of front window
-    if tabCount < 2 then return "one-tab"
-    set currentIndex to active tab index of front window
-    if currentIndex = {edge} then
-        set targetIndex to {wrap}
-    else
-        set targetIndex to currentIndex {step}
-    end if
-    set active tab index of front window to targetIndex
-    activate
-end tell
-return "ok"
-"""
-
-    def _macos_safari_tab_script(self, direction: str) -> str:
-        step = "+ 1" if direction == "next" else "- 1"
-        wrap = "1" if direction == "next" else "tabCount"
-        edge = "tabCount" if direction == "next" else "1"
-        return f"""
-tell application "Safari"
-    if (count of windows) = 0 then return "no-window"
-    tell front window
-        set tabCount to count of tabs
-        if tabCount < 2 then return "one-tab"
-        set currentIndex to index of current tab
-        if currentIndex = {edge} then
-            set targetIndex to {wrap}
-        else
-            set targetIndex to currentIndex {step}
-        end if
-        set current tab to tab targetIndex
-    end tell
-    activate
-end tell
-return "ok"
-"""
-
-    def _macos_browser_hotkey_script(self, app_name: str, direction: str) -> str:
-        modifiers = "control down" if direction == "next" else "{control down, shift down}"
-        return f"""
-tell application "{app_name}" to activate
-delay 0.05
-tell application "System Events"
-    tell process "{app_name}"
-        key code 48 using {modifiers}
-    end tell
-end tell
-return "ok"
-"""
-
     def _macos_direction_for_hotkey(self, hotkey: tuple[str, ...]) -> str:
-        if hotkey in (("command", "option", "right"), ("ctrl", "tab")):
+        if hotkey in (("ctrl", "right"), ("alt", "tab")):
             return "next"
-        if hotkey in (("command", "option", "left"), ("ctrl", "shift", "tab")):
+        if hotkey in (("ctrl", "left"), ("alt", "shift", "tab")):
             return "previous"
         return ""
 
-    def _send_macos_browser_tab(self, direction: str) -> bool:
-        app_name, frontmost = self._macos_browser_target()
-        if not app_name:
-            print(
-                f"[!] Pointer: no running browser target for tab swipe; frontmost={frontmost}",
-                flush=True,
-            )
-            return True
-
-        if app_name == "Safari":
-            script = self._macos_safari_tab_script(direction)
-        elif app_name in MACOS_CHROMIUM_BROWSER_APPS:
-            script = self._macos_chromium_tab_script(app_name, direction)
-        else:
-            script = self._macos_browser_hotkey_script(app_name, direction)
-
+    def _send_macos_window_swipe(self, direction: str) -> bool:
+        key_code = "124" if direction == "next" else "123"
+        script = (
+            'tell application "System Events" to key code '
+            f"{key_code} using control down"
+        )
         ok, output = self._run_macos_script(script)
         if ok:
-            result = output or "ok"
             print(
-                "[i] Pointer: tab swipe "
-                f"{direction} target={app_name} frontmost={frontmost} result={result}",
+                f"[i] Pointer: window swipe {direction} via macOS Control+Arrow",
                 flush=True,
             )
             return True
-
-        print(
-            f"[!] Pointer: browser tab script failed for {app_name}: {output}",
-            flush=True,
-        )
-        ok, fallback_output = self._run_macos_script(
-            self._macos_browser_hotkey_script(app_name, direction)
-        )
-        if ok:
-            result = fallback_output or "ok"
-            print(
-                "[i] Pointer: tab swipe "
-                f"{direction} target={app_name} frontmost={frontmost} "
-                f"fallback=hotkey result={result}",
-                flush=True,
-            )
-            return True
-        print(
-            f"[!] Pointer: browser tab hotkey failed for {app_name}: {fallback_output}",
-            flush=True,
-        )
+        if output:
+            print(f"[!] Pointer: macOS window swipe failed: {output}", flush=True)
         return False
 
     def _send_macos_hotkey(self, hotkey: tuple[str, ...]) -> bool:
         scripts = {
-            ("command", "option", "right"): (
-                'tell application "System Events" to key code 124 '
-                "using {command down, option down}"
+            ("ctrl", "right"): (
+                'tell application "System Events" to key code 124 using control down'
             ),
-            ("command", "option", "left"): (
-                'tell application "System Events" to key code 123 '
-                "using {command down, option down}"
-            ),
-            ("ctrl", "tab"): (
-                'tell application "System Events" to key code 48 using control down'
-            ),
-            ("ctrl", "shift", "tab"): (
-                'tell application "System Events" to key code 48 '
-                "using {control down, shift down}"
+            ("ctrl", "left"): (
+                'tell application "System Events" to key code 123 using control down'
             ),
         }
         script = scripts.get(hotkey)
@@ -701,16 +585,16 @@ return "ok"
     def _send_hotkey(self, hotkey: tuple[str, ...]) -> None:
         if sys.platform == "darwin":
             direction = self._macos_direction_for_hotkey(hotkey)
-            if direction and self._send_macos_browser_tab(direction):
+            if direction and self._send_macos_window_swipe(direction):
                 return
             if self._send_macos_hotkey(hotkey):
                 print(
-                    f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via System Events",
+                    f"[i] Pointer: window swipe hotkey {'+'.join(hotkey)} via System Events",
                     flush=True,
                 )
                 return
         print(
-            f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via pyautogui",
+            f"[i] Pointer: window swipe hotkey {'+'.join(hotkey)} via pyautogui",
             flush=True,
         )
         pyautogui.hotkey(*hotkey)

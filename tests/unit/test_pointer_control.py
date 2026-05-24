@@ -132,7 +132,7 @@ def test_pointer_ignores_small_jitter(monkeypatch):
     assert len(moves) == 1
 
 
-def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
+def test_two_finger_swipe_left_switches_next_window_space(monkeypatch):
     hotkeys = []
     scripts = []
 
@@ -167,12 +167,12 @@ def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
     assert start.ok
     assert swipe.tab_switched == "left"
     assert hotkeys == []
-    assert any("application processes" in args[2] for args in scripts)
-    assert any('tell application "Google Chrome"' in args[2] for args in scripts)
-    assert any("currentIndex + 1" in args[2] for args in scripts)
+    assert len(scripts) == 1
+    assert "key code 124" in scripts[0][2]
+    assert "control down" in scripts[0][2]
 
 
-def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
+def test_two_finger_swipe_right_switches_previous_window_space(monkeypatch):
     hotkeys = []
     scripts = []
 
@@ -207,12 +207,12 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
     assert start.ok
     assert swipe.tab_switched == "right"
     assert hotkeys == []
-    assert any("application processes" in args[2] for args in scripts)
-    assert any('tell application "Google Chrome"' in args[2] for args in scripts)
-    assert any("currentIndex - 1" in args[2] for args in scripts)
+    assert len(scripts) == 1
+    assert "key code 123" in scripts[0][2]
+    assert "control down" in scripts[0][2]
 
 
-def test_open_palm_horizontal_motion_does_not_switch_tabs(monkeypatch):
+def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):
     hotkeys = []
 
     class FakePyAutoGUI:
@@ -250,20 +250,14 @@ def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 
 
-def _fake_subprocess_run(scripts, *, frontmost="Terminal", running=("Terminal", "Google Chrome")):
+def _fake_subprocess_run(scripts):
     def run(args, **_kwargs):
         scripts.append(args)
-        script = args[2]
 
         class Result:
             returncode = 0
             stderr = ""
             stdout = ""
-
-        if "application processes" in script:
-            Result.stdout = "\n".join((frontmost, *running))
-        elif 'tell application "Google Chrome"' in script:
-            Result.stdout = "ok"
 
         return Result()
 
