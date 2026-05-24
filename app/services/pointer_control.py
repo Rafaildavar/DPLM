@@ -150,9 +150,9 @@ class PointerControlService:
     def __init__(
         self,
         *,
-        smoothing: float = 0.35,
+        smoothing: float = 0.28,
         edge_margin: float = 0.08,
-        move_deadzone_px: float = 2.5,
+        move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
@@ -223,6 +223,7 @@ class PointerControlService:
             alpha = self._adaptive_alpha(distance_px, screen_w, screen_h)
             self._smooth_x = self._smooth_x * (1.0 - alpha) + target_x * alpha
             self._smooth_y = self._smooth_y * (1.0 - alpha) + target_y * alpha
+            self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = self._click_requested(index_folded)
         moved = True
@@ -244,12 +245,38 @@ class PointerControlService:
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
-        if distance_px <= 12.0:
+        if distance_px <= 10.0:
+            return max(0.06, base * 0.22)
+        if distance_px <= 36.0:
             return max(0.08, base * 0.35)
+        if distance_px <= 120.0:
+            return max(0.12, base * 0.55)
         screen_diag = math.hypot(float(screen_w), float(screen_h))
-        if distance_px >= screen_diag * 0.16:
-            return min(0.82, base + 0.28)
-        return base
+        if distance_px >= screen_diag * 0.20:
+            return min(0.70, base + 0.18)
+        return max(0.16, base * 0.75)
+
+    def _limit_step(
+        self,
+        previous_x: Optional[float],
+        previous_y: Optional[float],
+        screen_w: int,
+        screen_h: int,
+    ) -> None:
+        if previous_x is None or previous_y is None:
+            return
+        if self._smooth_x is None or self._smooth_y is None:
+            return
+        dx = self._smooth_x - previous_x
+        dy = self._smooth_y - previous_y
+        distance = math.hypot(dx, dy)
+        screen_diag = math.hypot(float(screen_w), float(screen_h))
+        max_step = max(40.0, min(180.0, screen_diag * 0.075))
+        if distance <= max_step or distance <= 1e-6:
+            return
+        scale = max_step / distance
+        self._smooth_x = previous_x + dx * scale
+        self._smooth_y = previous_y + dy * scale
 
     def _is_index_folded(self, landmarks: list[Any]) -> bool:
         mcp = _landmark_point(landmarks, INDEX_FINGER_MCP)

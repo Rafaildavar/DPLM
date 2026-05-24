@@ -826,14 +826,18 @@ class AppController:
             return []
         items: list[dict[str, Any]] = []
         for n, cfg in self._command_executor.commands_registry.items():
+            action = str(cfg.get("action") or "")
             items.append(
                 {
                     "name": n,
                     "description": cfg.get("description", ""),
                     "platform": cfg.get("platform", "all"),
+                    "action": action,
+                    "category": category_for_action(action),
+                    "config": dict(cfg),
                 }
             )
-        return items
+        return sorted(items, key=lambda item: str(item.get("name") or ""))
 
     # ----------------------------------------------------------------------
     # Главная связка: один тумблер «запустить/остановить» (embedded)

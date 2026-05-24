@@ -46,6 +46,7 @@ class BindingsView:
         self._gestures: list[dict] = []
         self._categories: list[dict] = []
         self._actions: list[dict] = []
+        self._default_commands: list[dict] = []
 
         # Контролы
         # Flet 0.85: Dropdown использует on_select, а не on_change.
@@ -60,6 +61,13 @@ class BindingsView:
             label="Категория команды",
             border_color=COLOR_SURFACE_HIGH,
             on_select=self._on_category_changed,
+            editable=False,
+        )
+        self._default_command_dd = ft.Dropdown(
+            label="Готовая команда",
+            hint_text="Можно выбрать готовую команду или заполнить форму ниже",
+            border_color=COLOR_SURFACE_HIGH,
+            on_select=self._on_default_command_changed,
             editable=False,
         )
         self._action_dd = ft.Dropdown(
@@ -139,6 +147,7 @@ class BindingsView:
     def on_show(self) -> None:
         # Перечитываем словарь жестов из БД (R3) и категории при каждом показе.
         self._refresh_categories()
+        self._refresh_default_commands()
         self._refresh_gestures()
 
     def on_hide(self) -> None:
@@ -153,6 +162,29 @@ class BindingsView:
         ]
         try:
             self._category_dd.update()
+        except Exception:
+            pass
+
+    def _refresh_default_commands(self) -> None:
+        self._default_commands = self._controller.list_commands()
+        options: list[ft.DropdownOption] = []
+        for command in self._default_commands:
+            name = str(command.get("name") or "")
+            action = str(command.get("action") or "")
+            platform = str(command.get("platform") or "all")
+            text = name
+            detail = " · ".join(part for part in (action, platform) if part)
+            if detail:
+                text = f"{name} — {detail}"
+            options.append(ft.DropdownOption(key=name, text=text))
+        self._default_command_dd.options = options
+        self._default_command_dd.hint_text = (
+            "Готовые команды не найдены"
+            if not options
+            else "Можно выбрать готовую команду или заполнить форму ниже"
+        )
+        try:
+            self._default_command_dd.update()
         except Exception:
             pass
 
@@ -217,6 +249,47 @@ class BindingsView:
 
     def _on_category_changed(self, _e) -> None:
         self._refresh_actions()
+        self._refresh_warn_two_hands()
+
+    def _on_default_command_changed(self, _e) -> None:
+        name = (self._default_command_dd.value or "").strip()
+        command = next(
+            (item for item in self._default_commands if item.get("name") == name),
+            None,
+        )
+        if command is None:
+            return
+
+        action = str(command.get("action") or "").strip()
+        category_id = str(command.get("category") or "").strip()
+        if category_id:
+            self._category_dd.value = category_id
+            self._refresh_actions()
+        if action:
+            self._action_dd.value = action
+
+        params = dict(command.get("config") or {})
+        params.pop("action", None)
+        params.pop("platform", None)
+        self._params_field.value = json.dumps(params, ensure_ascii=False)
+        self._name_field.value = name
+
+        selected = self._selected_action()
+        hints = selected.get("fieldHints") if selected else {}
+        self._field_hints.value = (
+            "\n".join(f"• {k}: {v}" for k, v in hints.items())
+            if hints
+            else "Готовая команда: параметры уже подставлены"
+        )
+        try:
+            self._category_dd.update()
+            self._action_dd.update()
+            self._params_field.update()
+            self._name_field.update()
+            self._field_hints.update()
+        except Exception:
+            pass
+        self._refresh_overwrite_hint()
         self._refresh_warn_two_hands()
 
     def _on_action_changed(self, _e) -> None:
@@ -412,7 +485,15 @@ class BindingsView:
                             self._gesture_dd,
                             ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                             ft.Text(
-                                "2. Категория и действие",
+                                "2. Готовая команда",
+                                size=14,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                            ),
+                            self._default_command_dd,
+                            ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
+                            ft.Text(
+                                "3. Категория и действие",
                                 size=14,
                                 weight=ft.FontWeight.W_600,
                                 color=COLOR_ON_SURFACE,
@@ -422,7 +503,7 @@ class BindingsView:
                             self._field_hints,
                             ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                             ft.Text(
-                                "3. Параметры и имя",
+                                "4. Параметры и имя",
                                 size=14,
                                 weight=ft.FontWeight.W_600,
                                 color=COLOR_ON_SURFACE,
