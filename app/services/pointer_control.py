@@ -34,6 +34,14 @@ MIDDLE_FINGER_TIP = 12
 MIDDLE_FINGER_MCP = 9
 MIDDLE_FINGER_PIP = 10
 MIDDLE_FINGER_DIP = 11
+RING_FINGER_TIP = 16
+RING_FINGER_MCP = 13
+RING_FINGER_PIP = 14
+RING_FINGER_DIP = 15
+PINKY_FINGER_TIP = 20
+PINKY_FINGER_MCP = 17
+PINKY_FINGER_PIP = 18
+PINKY_FINGER_DIP = 19
 Point = tuple[float, float]
 
 
@@ -160,9 +168,10 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
-        tab_swipe_threshold: float = 0.10,
-        tab_swipe_vertical_tolerance: float = 0.22,
-        tab_swipe_cooldown_s: float = 0.65,
+        tab_swipe_threshold: float = 0.15,
+        tab_swipe_vertical_tolerance: float = 0.14,
+        tab_swipe_min_speed: float = 0.45,
+        tab_swipe_cooldown_s: float = 0.90,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -173,6 +182,7 @@ class PointerControlService:
             0.03,
             min(0.3, float(tab_swipe_vertical_tolerance)),
         )
+        self.tab_swipe_min_speed = max(0.0, float(tab_swipe_min_speed))
         self.tab_swipe_cooldown_s = max(0.0, float(tab_swipe_cooldown_s))
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
@@ -367,28 +377,68 @@ class PointerControlService:
         tip_ahead_of_knuckles = tip[1] <= pip[1] + 0.04 and tip[1] <= mcp[1] + 0.02
         return straight_enough or (extension_ratio >= 0.50 and tip_ahead_of_knuckles)
 
+    def _finger_raised(
+        self,
+        landmarks: list[Any],
+        *,
+        mcp_index: int,
+        pip_index: int,
+        dip_index: int,
+        tip_index: int,
+    ) -> bool:
+        mcp = _landmark_point(landmarks, mcp_index)
+        pip = _landmark_point(landmarks, pip_index)
+        tip = _landmark_point(landmarks, tip_index)
+        if None in (mcp, pip, tip):
+            return False
+
+        assert mcp is not None and pip is not None and tip is not None
+        return self._finger_extended(
+            landmarks,
+            mcp_index=mcp_index,
+            pip_index=pip_index,
+            dip_index=dip_index,
+            tip_index=tip_index,
+        ) and tip[1] < pip[1] - 0.02 and tip[1] < mcp[1] - 0.04
+
     def _two_finger_swipe_center(self, landmarks: list[Any]) -> Optional[Point]:
         index_tip = _landmark_point(landmarks, INDEX_FINGER_TIP)
         middle_tip = _landmark_point(landmarks, MIDDLE_FINGER_TIP)
         if index_tip is None or middle_tip is None:
             return None
-        index_extended = self._finger_extended(
+        index_raised = self._finger_raised(
             landmarks,
             mcp_index=INDEX_FINGER_MCP,
             pip_index=INDEX_FINGER_PIP,
             dip_index=INDEX_FINGER_DIP,
             tip_index=INDEX_FINGER_TIP,
         )
-        middle_extended = self._finger_extended(
+        middle_raised = self._finger_raised(
             landmarks,
             mcp_index=MIDDLE_FINGER_MCP,
             pip_index=MIDDLE_FINGER_PIP,
             dip_index=MIDDLE_FINGER_DIP,
             tip_index=MIDDLE_FINGER_TIP,
         )
-        if not index_extended or not middle_extended:
+        ring_raised = self._finger_raised(
+            landmarks,
+            mcp_index=RING_FINGER_MCP,
+            pip_index=RING_FINGER_PIP,
+            dip_index=RING_FINGER_DIP,
+            tip_index=RING_FINGER_TIP,
+        )
+        pinky_raised = self._finger_raised(
+            landmarks,
+            mcp_index=PINKY_FINGER_MCP,
+            pip_index=PINKY_FINGER_PIP,
+            dip_index=PINKY_FINGER_DIP,
+            tip_index=PINKY_FINGER_TIP,
+        )
+        if not index_raised or not middle_raised or ring_raised or pinky_raised:
             return None
         if _distance(index_tip, middle_tip) > 0.30:
+            return None
+        if abs(index_tip[1] - middle_tip[1]) > 0.18:
             return None
         return (index_tip[0] + middle_tip[0]) / 2.0, (index_tip[1] + middle_tip[1]) / 2.0
 
@@ -405,11 +455,12 @@ class PointerControlService:
         now = time.monotonic()
         self._two_finger_swipe_points.append((now, center))
         self._two_finger_swipe_points = [
-            point for point in self._two_finger_swipe_points if now - point[0] <= 0.70
+            point for point in self._two_finger_swipe_points if now - point[0] <= 0.55
         ][-10:]
         if len(self._two_finger_swipe_points) < 2:
             return ""
 
+        start_t = self._two_finger_swipe_points[0][0]
         start = self._two_finger_swipe_points[0][1]
         dx = center[0] - start[0]
         dy = center[1] - start[1]
@@ -418,7 +469,10 @@ class PointerControlService:
         if abs(dy) > self.tab_swipe_vertical_tolerance:
             self._two_finger_swipe_points = [(now, center)]
             return ""
-        if abs(dx) < abs(dy) * 1.2:
+        if abs(dx) < abs(dy) * 1.8:
+            return ""
+        elapsed = max(0.016, now - start_t)
+        if abs(dx) / elapsed < self.tab_swipe_min_speed:
             return ""
         if (now - self._last_tab_swipe_ts) < self.tab_swipe_cooldown_s:
             self._two_finger_swipe_points = [(now, center)]

@@ -202,6 +202,40 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
     assert hotkeys == [("ctrl", "shift", "tab")]
 
 
+def test_open_palm_horizontal_motion_does_not_switch_tabs(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    start = svc.update(_payload(_open_palm_landmarks(center=(0.62, 0.24))))
+    motion = svc.update(_payload(_open_palm_landmarks(center=(0.43, 0.24))))
+
+    assert start.ok
+    assert not motion.tab_switched
+    assert hotkeys == []
+
+
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 
@@ -243,4 +277,19 @@ def _two_finger_landmarks(*, center=(0.5, 0.24)):
     landmarks[10] = [middle_x, 0.43]
     landmarks[11] = [middle_x, 0.31]
     landmarks[12] = [middle_x, center[1]]
+    return landmarks
+
+
+def _open_palm_landmarks(*, center=(0.5, 0.24)):
+    landmarks = _two_finger_landmarks(center=center)
+    ring_x = center[0] + 0.095
+    pinky_x = center[0] + 0.15
+    landmarks[13] = [ring_x, 0.58]
+    landmarks[14] = [ring_x, 0.43]
+    landmarks[15] = [ring_x, 0.31]
+    landmarks[16] = [ring_x, center[1]]
+    landmarks[17] = [pinky_x, 0.60]
+    landmarks[18] = [pinky_x, 0.45]
+    landmarks[19] = [pinky_x, 0.33]
+    landmarks[20] = [pinky_x, center[1] + 0.02]
     return landmarks
