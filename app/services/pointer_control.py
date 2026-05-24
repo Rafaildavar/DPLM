@@ -42,6 +42,22 @@ PINKY_FINGER_TIP = 20
 PINKY_FINGER_MCP = 17
 PINKY_FINGER_PIP = 18
 PINKY_FINGER_DIP = 19
+MACOS_BROWSER_APPS = (
+    "Google Chrome",
+    "Safari",
+    "Arc",
+    "Brave Browser",
+    "Microsoft Edge",
+    "Chromium",
+    "Firefox",
+)
+MACOS_CHROMIUM_BROWSER_APPS = {
+    "Google Chrome",
+    "Arc",
+    "Brave Browser",
+    "Microsoft Edge",
+    "Chromium",
+}
 Point = tuple[float, float]
 
 
@@ -497,6 +513,163 @@ class PointerControlService:
             return ("ctrl", "tab")
         return ("ctrl", "shift", "tab")
 
+    def _run_macos_script(self, script: str, *, timeout: float = 1.0) -> tuple[bool, str]:
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except Exception as exc:
+            return False, str(exc)
+        if result.returncode == 0:
+            return True, (result.stdout or "").strip()
+        return False, (result.stderr or "").strip()
+
+    def _macos_frontmost_and_running_apps(self) -> tuple[str, set[str]]:
+        script = """
+tell application "System Events"
+    set frontApp to name of first application process whose frontmost is true
+    set runningApps to name of application processes
+end tell
+set oldDelimiters to AppleScript's text item delimiters
+set AppleScript's text item delimiters to linefeed
+set runningText to runningApps as text
+set AppleScript's text item delimiters to oldDelimiters
+return frontApp & linefeed & runningText
+"""
+        ok, output = self._run_macos_script(script)
+        if not ok:
+            print(f"[!] Pointer: macOS app lookup failed: {output}", flush=True)
+            return "", set()
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if not lines:
+            return "", set()
+        return lines[0], set(lines[1:])
+
+    def _macos_browser_target(self) -> tuple[str, str]:
+        frontmost, running = self._macos_frontmost_and_running_apps()
+        if frontmost in MACOS_BROWSER_APPS:
+            return frontmost, frontmost
+        for app_name in MACOS_BROWSER_APPS:
+            if app_name in running:
+                return app_name, frontmost
+        return "", frontmost
+
+    def _macos_chromium_tab_script(self, app_name: str, direction: str) -> str:
+        step = "+ 1" if direction == "next" else "- 1"
+        wrap = "1" if direction == "next" else "tabCount"
+        edge = "tabCount" if direction == "next" else "1"
+        return f"""
+tell application "{app_name}"
+    if (count of windows) = 0 then return "no-window"
+    set tabCount to count of tabs of front window
+    if tabCount < 2 then return "one-tab"
+    set currentIndex to active tab index of front window
+    if currentIndex = {edge} then
+        set targetIndex to {wrap}
+    else
+        set targetIndex to currentIndex {step}
+    end if
+    set active tab index of front window to targetIndex
+    activate
+end tell
+return "ok"
+"""
+
+    def _macos_safari_tab_script(self, direction: str) -> str:
+        step = "+ 1" if direction == "next" else "- 1"
+        wrap = "1" if direction == "next" else "tabCount"
+        edge = "tabCount" if direction == "next" else "1"
+        return f"""
+tell application "Safari"
+    if (count of windows) = 0 then return "no-window"
+    tell front window
+        set tabCount to count of tabs
+        if tabCount < 2 then return "one-tab"
+        set currentIndex to index of current tab
+        if currentIndex = {edge} then
+            set targetIndex to {wrap}
+        else
+            set targetIndex to currentIndex {step}
+        end if
+        set current tab to tab targetIndex
+    end tell
+    activate
+end tell
+return "ok"
+"""
+
+    def _macos_browser_hotkey_script(self, app_name: str, direction: str) -> str:
+        modifiers = "control down" if direction == "next" else "{control down, shift down}"
+        return f"""
+tell application "{app_name}" to activate
+delay 0.05
+tell application "System Events"
+    tell process "{app_name}"
+        key code 48 using {modifiers}
+    end tell
+end tell
+return "ok"
+"""
+
+    def _macos_direction_for_hotkey(self, hotkey: tuple[str, ...]) -> str:
+        if hotkey in (("command", "option", "right"), ("ctrl", "tab")):
+            return "next"
+        if hotkey in (("command", "option", "left"), ("ctrl", "shift", "tab")):
+            return "previous"
+        return ""
+
+    def _send_macos_browser_tab(self, direction: str) -> bool:
+        app_name, frontmost = self._macos_browser_target()
+        if not app_name:
+            print(
+                f"[!] Pointer: no running browser target for tab swipe; frontmost={frontmost}",
+                flush=True,
+            )
+            return True
+
+        if app_name == "Safari":
+            script = self._macos_safari_tab_script(direction)
+        elif app_name in MACOS_CHROMIUM_BROWSER_APPS:
+            script = self._macos_chromium_tab_script(app_name, direction)
+        else:
+            script = self._macos_browser_hotkey_script(app_name, direction)
+
+        ok, output = self._run_macos_script(script)
+        if ok:
+            result = output or "ok"
+            print(
+                "[i] Pointer: tab swipe "
+                f"{direction} target={app_name} frontmost={frontmost} result={result}",
+                flush=True,
+            )
+            return True
+
+        print(
+            f"[!] Pointer: browser tab script failed for {app_name}: {output}",
+            flush=True,
+        )
+        ok, fallback_output = self._run_macos_script(
+            self._macos_browser_hotkey_script(app_name, direction)
+        )
+        if ok:
+            result = fallback_output or "ok"
+            print(
+                "[i] Pointer: tab swipe "
+                f"{direction} target={app_name} frontmost={frontmost} "
+                f"fallback=hotkey result={result}",
+                flush=True,
+            )
+            return True
+        print(
+            f"[!] Pointer: browser tab hotkey failed for {app_name}: {fallback_output}",
+            flush=True,
+        )
+        return False
+
     def _send_macos_hotkey(self, hotkey: tuple[str, ...]) -> bool:
         scripts = {
             ("command", "option", "right"): (
@@ -518,31 +691,24 @@ class PointerControlService:
         script = scripts.get(hotkey)
         if not script:
             return False
-        try:
-            result = subprocess.run(
-                ["osascript", "-e", script],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=1.0,
-            )
-        except Exception as exc:
-            print(f"[!] Pointer: macOS hotkey failed: {exc}", flush=True)
-            return False
-        if result.returncode == 0:
+        ok, output = self._run_macos_script(script)
+        if ok:
             return True
-        stderr = (result.stderr or "").strip()
-        if stderr:
-            print(f"[!] Pointer: macOS hotkey failed: {stderr}", flush=True)
+        if output:
+            print(f"[!] Pointer: macOS hotkey failed: {output}", flush=True)
         return False
 
     def _send_hotkey(self, hotkey: tuple[str, ...]) -> None:
-        if sys.platform == "darwin" and self._send_macos_hotkey(hotkey):
-            print(
-                f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via System Events",
-                flush=True,
-            )
-            return
+        if sys.platform == "darwin":
+            direction = self._macos_direction_for_hotkey(hotkey)
+            if direction and self._send_macos_browser_tab(direction):
+                return
+            if self._send_macos_hotkey(hotkey):
+                print(
+                    f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via System Events",
+                    flush=True,
+                )
+                return
         print(
             f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via pyautogui",
             flush=True,

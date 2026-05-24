@@ -167,9 +167,9 @@ def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
     assert start.ok
     assert swipe.tab_switched == "left"
     assert hotkeys == []
-    assert "key code 124" in scripts[0][2]
-    assert "command down" in scripts[0][2]
-    assert "option down" in scripts[0][2]
+    assert any("application processes" in args[2] for args in scripts)
+    assert any('tell application "Google Chrome"' in args[2] for args in scripts)
+    assert any("currentIndex + 1" in args[2] for args in scripts)
 
 
 def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
@@ -207,9 +207,9 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
     assert start.ok
     assert swipe.tab_switched == "right"
     assert hotkeys == []
-    assert "key code 123" in scripts[0][2]
-    assert "command down" in scripts[0][2]
-    assert "option down" in scripts[0][2]
+    assert any("application processes" in args[2] for args in scripts)
+    assert any('tell application "Google Chrome"' in args[2] for args in scripts)
+    assert any("currentIndex - 1" in args[2] for args in scripts)
 
 
 def test_open_palm_horizontal_motion_does_not_switch_tabs(monkeypatch):
@@ -250,13 +250,20 @@ def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 
 
-def _fake_subprocess_run(scripts):
+def _fake_subprocess_run(scripts, *, frontmost="Terminal", running=("Terminal", "Google Chrome")):
     def run(args, **_kwargs):
         scripts.append(args)
+        script = args[2]
 
         class Result:
             returncode = 0
             stderr = ""
+            stdout = ""
+
+        if "application processes" in script:
+            Result.stdout = "\n".join((frontmost, *running))
+        elif 'tell application "Google Chrome"' in script:
+            Result.stdout = "ok"
 
         return Result()
 
