@@ -168,10 +168,10 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
-        tab_swipe_threshold: float = 0.09,
-        tab_swipe_vertical_tolerance: float = 0.18,
-        tab_swipe_min_speed: float = 0.18,
-        tab_swipe_cooldown_s: float = 0.85,
+        tab_swipe_threshold: float = 0.075,
+        tab_swipe_vertical_tolerance: float = 0.20,
+        tab_swipe_min_speed: float = 0.12,
+        tab_swipe_cooldown_s: float = 0.75,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -193,6 +193,7 @@ class PointerControlService:
         self._two_finger_swipe_points: list[tuple[float, Point]] = []
         self._tab_swipe_pose_active = False
         self._last_swipe_tracking_log_ts = 0.0
+        self._swipe_missing_pose_frames = 0
         self._last_tab_swipe_ts = 0.0
 
     def reset(self) -> None:
@@ -203,6 +204,7 @@ class PointerControlService:
         self._two_finger_swipe_points.clear()
         self._tab_swipe_pose_active = False
         self._last_swipe_tracking_log_ts = 0.0
+        self._swipe_missing_pose_frames = 0
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -465,13 +467,17 @@ class PointerControlService:
     def _tab_swipe_requested(self, landmarks: list[Any], index_folded: bool) -> str:
         if index_folded:
             self._two_finger_swipe_points.clear()
+            self._swipe_missing_pose_frames = 0
             return ""
 
         center = self._two_finger_swipe_center(landmarks)
         if center is None:
-            self._two_finger_swipe_points.clear()
-            self._tab_swipe_pose_active = False
+            self._swipe_missing_pose_frames += 1
+            if self._two_finger_swipe_points and self._swipe_missing_pose_frames <= 2:
+                return ""
+            self._reset_tab_swipe_tracking()
             return ""
+        self._swipe_missing_pose_frames = 0
         if not self._tab_swipe_pose_active:
             print("[i] Pointer: two-finger swipe pose ready", flush=True)
             self._tab_swipe_pose_active = True
@@ -479,30 +485,53 @@ class PointerControlService:
         now = time.monotonic()
         self._two_finger_swipe_points.append((now, center))
         self._two_finger_swipe_points = [
-            point for point in self._two_finger_swipe_points if now - point[0] <= 0.55
-        ][-10:]
+            point for point in self._two_finger_swipe_points if now - point[0] <= 0.75
+        ][-14:]
         if len(self._two_finger_swipe_points) < 2:
             return ""
 
-        start_t = self._two_finger_swipe_points[0][0]
-        start = self._two_finger_swipe_points[0][1]
-        dx = center[0] - start[0]
-        dy = center[1] - start[1]
-        if abs(dx) < self.tab_swipe_threshold:
+        previous_points = self._two_finger_swipe_points[:-1]
+        _raw_start_t, raw_start = max(
+            previous_points,
+            key=lambda point: abs(center[0] - point[1][0]),
+        )
+        raw_dx = center[0] - raw_start[0]
+        raw_dy = center[1] - raw_start[1]
+
+        candidate: Optional[tuple[float, Point, float, float]] = None
+        for point_t, point in previous_points:
+            candidate_dx = center[0] - point[0]
+            candidate_dy = center[1] - point[1]
+            if abs(candidate_dy) > self.tab_swipe_vertical_tolerance:
+                continue
+            if abs(candidate_dx) < abs(candidate_dy) * 1.4:
+                continue
+            if candidate is None or abs(candidate_dx) > abs(candidate[2]):
+                candidate = (point_t, point, candidate_dx, candidate_dy)
+
+        if candidate is None:
             if (
-                abs(dx) >= self.tab_swipe_threshold * 0.55
+                abs(raw_dx) >= self.tab_swipe_threshold * 0.45
                 and now - self._last_swipe_tracking_log_ts >= 0.45
             ):
                 print(
-                    f"[i] Pointer: two-finger swipe tracking dx={dx:.2f} dy={dy:.2f}",
+                    f"[i] Pointer: two-finger swipe tracking dx={raw_dx:.2f} dy={raw_dy:.2f}",
                     flush=True,
                 )
                 self._last_swipe_tracking_log_ts = now
             return ""
-        if abs(dy) > self.tab_swipe_vertical_tolerance:
-            self._two_finger_swipe_points = [(now, center)]
-            return ""
-        if abs(dx) < abs(dy) * 1.8:
+
+        start_t, _start, dx, dy = candidate
+        if abs(dx) < self.tab_swipe_threshold:
+            if (
+                abs(raw_dx) >= self.tab_swipe_threshold * 0.45
+                and now - self._last_swipe_tracking_log_ts >= 0.45
+            ):
+                print(
+                    f"[i] Pointer: two-finger swipe tracking dx={raw_dx:.2f} dy={raw_dy:.2f}",
+                    flush=True,
+                )
+                self._last_swipe_tracking_log_ts = now
             return ""
         elapsed = max(0.016, now - start_t)
         if abs(dx) / elapsed < self.tab_swipe_min_speed:
@@ -514,6 +543,11 @@ class PointerControlService:
         self._last_tab_swipe_ts = now
         self._two_finger_swipe_points.clear()
         return "left" if dx < 0 else "right"
+
+    def _reset_tab_swipe_tracking(self) -> None:
+        self._two_finger_swipe_points.clear()
+        self._tab_swipe_pose_active = False
+        self._swipe_missing_pose_frames = 0
 
     def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
         if sys.platform == "darwin":

@@ -212,6 +212,47 @@ def test_two_finger_swipe_right_switches_previous_window_space(monkeypatch):
     assert "control down" in scripts[0][2]
 
 
+def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
+    hotkeys = []
+    scripts = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
+    monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    lost_pose = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.24))))
+    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.53, 0.24))))
+
+    assert start.ok
+    assert lost_pose.ok
+    assert swipe.tab_switched == "left"
+    assert hotkeys == []
+    assert len(scripts) == 1
+    assert "key code 124" in scripts[0][2]
+
+
 def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):
     hotkeys = []
 
