@@ -164,7 +164,7 @@ def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "left"
-    assert hotkeys == [("command", "shift", "]")]
+    assert hotkeys == [("ctrl", "tab")]
 
 
 def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
@@ -199,7 +199,7 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "right"
-    assert hotkeys == [("command", "shift", "[")]
+    assert hotkeys == [("ctrl", "shift", "tab")]
 
 
 def _payload(landmarks):
