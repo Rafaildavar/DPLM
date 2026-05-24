@@ -191,6 +191,7 @@ class PointerControlService:
         self._index_folded = False
         self._last_click_ts = 0.0
         self._two_finger_swipe_points: list[tuple[float, Point]] = []
+        self._tab_swipe_pose_active = False
         self._last_tab_swipe_ts = 0.0
 
     def reset(self) -> None:
@@ -199,6 +200,7 @@ class PointerControlService:
         self._missing_frames = 0
         self._index_folded = False
         self._two_finger_swipe_points.clear()
+        self._tab_swipe_pose_active = False
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -450,7 +452,11 @@ class PointerControlService:
         center = self._two_finger_swipe_center(landmarks)
         if center is None:
             self._two_finger_swipe_points.clear()
+            self._tab_swipe_pose_active = False
             return ""
+        if not self._tab_swipe_pose_active:
+            print("[i] Pointer: two-finger swipe pose ready", flush=True)
+            self._tab_swipe_pose_active = True
 
         now = time.monotonic()
         self._two_finger_swipe_points.append((now, center))
@@ -483,9 +489,65 @@ class PointerControlService:
         return "left" if dx < 0 else "right"
 
     def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
+        if sys.platform == "darwin":
+            if direction == "left":
+                return ("command", "option", "right")
+            return ("command", "option", "left")
         if direction == "left":
             return ("ctrl", "tab")
         return ("ctrl", "shift", "tab")
+
+    def _send_macos_hotkey(self, hotkey: tuple[str, ...]) -> bool:
+        scripts = {
+            ("command", "option", "right"): (
+                'tell application "System Events" to key code 124 '
+                "using {command down, option down}"
+            ),
+            ("command", "option", "left"): (
+                'tell application "System Events" to key code 123 '
+                "using {command down, option down}"
+            ),
+            ("ctrl", "tab"): (
+                'tell application "System Events" to key code 48 using control down'
+            ),
+            ("ctrl", "shift", "tab"): (
+                'tell application "System Events" to key code 48 '
+                "using {control down, shift down}"
+            ),
+        }
+        script = scripts.get(hotkey)
+        if not script:
+            return False
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+            )
+        except Exception as exc:
+            print(f"[!] Pointer: macOS hotkey failed: {exc}", flush=True)
+            return False
+        if result.returncode == 0:
+            return True
+        stderr = (result.stderr or "").strip()
+        if stderr:
+            print(f"[!] Pointer: macOS hotkey failed: {stderr}", flush=True)
+        return False
+
+    def _send_hotkey(self, hotkey: tuple[str, ...]) -> None:
+        if sys.platform == "darwin" and self._send_macos_hotkey(hotkey):
+            print(
+                f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via System Events",
+                flush=True,
+            )
+            return
+        print(
+            f"[i] Pointer: tab swipe hotkey {'+'.join(hotkey)} via pyautogui",
+            flush=True,
+        )
+        pyautogui.hotkey(*hotkey)
 
     def apply(self, action: PointerAction) -> None:
         if not PYAUTOGUI_AVAILABLE:
@@ -499,8 +561,7 @@ class PointerControlService:
         if action.click:
             pyautogui.click(_pause=False)
         if action.hotkey:
-            print(f"[i] Pointer: tab swipe hotkey {'+'.join(action.hotkey)}", flush=True)
-            pyautogui.hotkey(*action.hotkey)
+            self._send_hotkey(action.hotkey)
 
     def update(self, landmarks_json: str) -> PointerUpdateResult:
         """Синхронный путь (тесты/CLI): compute + apply в одном вызове."""

@@ -134,6 +134,7 @@ def test_pointer_ignores_small_jitter(monkeypatch):
 
 def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
     hotkeys = []
+    scripts = []
 
     class FakePyAutoGUI:
         FAILSAFE = False
@@ -157,6 +158,7 @@ def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
     monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
     monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
     monkeypatch.setattr(pc.sys, "platform", "darwin")
+    monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
     start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
@@ -164,11 +166,15 @@ def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "left"
-    assert hotkeys == [("ctrl", "tab")]
+    assert hotkeys == []
+    assert "key code 124" in scripts[0][2]
+    assert "command down" in scripts[0][2]
+    assert "option down" in scripts[0][2]
 
 
 def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
     hotkeys = []
+    scripts = []
 
     class FakePyAutoGUI:
         FAILSAFE = False
@@ -192,6 +198,7 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
     monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
     monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
     monkeypatch.setattr(pc.sys, "platform", "darwin")
+    monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
     start = svc.update(_payload(_two_finger_landmarks(center=(0.38, 0.24))))
@@ -199,7 +206,10 @@ def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "right"
-    assert hotkeys == [("ctrl", "shift", "tab")]
+    assert hotkeys == []
+    assert "key code 123" in scripts[0][2]
+    assert "command down" in scripts[0][2]
+    assert "option down" in scripts[0][2]
 
 
 def test_open_palm_horizontal_motion_does_not_switch_tabs(monkeypatch):
@@ -238,6 +248,19 @@ def test_open_palm_horizontal_motion_does_not_switch_tabs(monkeypatch):
 
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
+
+
+def _fake_subprocess_run(scripts):
+    def run(args, **_kwargs):
+        scripts.append(args)
+
+        class Result:
+            returncode = 0
+            stderr = ""
+
+        return Result()
+
+    return run
 
 
 def _blank_landmarks():
