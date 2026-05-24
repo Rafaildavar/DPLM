@@ -30,6 +30,10 @@ INDEX_FINGER_TIP = 8
 INDEX_FINGER_MCP = 5
 INDEX_FINGER_PIP = 6
 INDEX_FINGER_DIP = 7
+MIDDLE_FINGER_TIP = 12
+MIDDLE_FINGER_MCP = 9
+MIDDLE_FINGER_PIP = 10
+MIDDLE_FINGER_DIP = 11
 Point = tuple[float, float]
 
 
@@ -73,6 +77,7 @@ class PointerUpdateResult:
     ok: bool
     moved: bool = False
     clicked: bool = False
+    tab_switched: str = ""
     error: str = ""
 
 
@@ -81,6 +86,7 @@ class PointerAction:
     x: int
     y: int
     click: bool = False
+    hotkey: tuple[str, ...] = ()
 
 
 def parse_landmarks_json(landmarks_json: str) -> list[dict[str, Any]]:
@@ -154,23 +160,35 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
+        tab_swipe_threshold: float = 0.16,
+        tab_swipe_vertical_tolerance: float = 0.11,
+        tab_swipe_cooldown_s: float = 0.65,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
         self.move_deadzone_px = max(0.0, float(move_deadzone_px))
         self.click_debounce_s = max(0.1, float(click_debounce_s))
+        self.tab_swipe_threshold = max(0.05, min(0.5, float(tab_swipe_threshold)))
+        self.tab_swipe_vertical_tolerance = max(
+            0.03,
+            min(0.3, float(tab_swipe_vertical_tolerance)),
+        )
+        self.tab_swipe_cooldown_s = max(0.0, float(tab_swipe_cooldown_s))
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
         self._last_click_ts = 0.0
+        self._two_finger_swipe_start: Optional[Point] = None
+        self._last_tab_swipe_ts = 0.0
 
     def reset(self) -> None:
         self._smooth_x = None
         self._smooth_y = None
         self._missing_frames = 0
         self._index_folded = False
+        self._two_finger_swipe_start = None
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -226,6 +244,7 @@ class PointerControlService:
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = self._click_requested(index_folded)
+        tab_swipe = self._tab_swipe_requested(landmarks, index_folded)
         moved = True
         if previous_x is not None and previous_y is not None:
             moved = (
@@ -233,15 +252,24 @@ class PointerControlService:
                 >= self.move_deadzone_px
             )
 
-        if not moved and not clicked:
+        if not moved and not clicked and not tab_swipe:
             return PointerUpdateResult(ok=True, moved=False), None
 
         action = PointerAction(
             x=max(0, min(int(screen_w) - 1, int(round(self._smooth_x)))),
             y=max(0, min(int(screen_h) - 1, int(round(self._smooth_y)))),
             click=clicked,
+            hotkey=self._tab_swipe_hotkey(tab_swipe) if tab_swipe else (),
         )
-        return PointerUpdateResult(ok=True, moved=moved, clicked=clicked), action
+        return (
+            PointerUpdateResult(
+                ok=True,
+                moved=moved,
+                clicked=clicked,
+                tab_switched=tab_swipe,
+            ),
+            action,
+        )
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
@@ -312,6 +340,95 @@ class PointerControlService:
         self._index_folded = index_folded
         return clicked
 
+    def _finger_extended(
+        self,
+        landmarks: list[Any],
+        *,
+        mcp_index: int,
+        pip_index: int,
+        dip_index: int,
+        tip_index: int,
+    ) -> bool:
+        mcp = _landmark_point(landmarks, mcp_index)
+        pip = _landmark_point(landmarks, pip_index)
+        dip = _landmark_point(landmarks, dip_index)
+        tip = _landmark_point(landmarks, tip_index)
+        if None in (mcp, pip, dip, tip):
+            return False
+
+        assert mcp is not None and pip is not None and dip is not None and tip is not None
+        finger_len = _distance(mcp, pip) + _distance(pip, dip) + _distance(dip, tip)
+        if finger_len <= 1e-6:
+            return False
+        extension_ratio = _distance(mcp, tip) / finger_len
+        pip_angle = _angle_degrees(mcp, pip, dip)
+        dip_angle = _angle_degrees(pip, dip, tip)
+        return extension_ratio >= 0.74 and min(pip_angle, dip_angle) >= 158.0
+
+    def _two_finger_swipe_center(self, landmarks: list[Any]) -> Optional[Point]:
+        index_tip = _landmark_point(landmarks, INDEX_FINGER_TIP)
+        middle_tip = _landmark_point(landmarks, MIDDLE_FINGER_TIP)
+        if index_tip is None or middle_tip is None:
+            return None
+        index_extended = self._finger_extended(
+            landmarks,
+            mcp_index=INDEX_FINGER_MCP,
+            pip_index=INDEX_FINGER_PIP,
+            dip_index=INDEX_FINGER_DIP,
+            tip_index=INDEX_FINGER_TIP,
+        )
+        middle_extended = self._finger_extended(
+            landmarks,
+            mcp_index=MIDDLE_FINGER_MCP,
+            pip_index=MIDDLE_FINGER_PIP,
+            dip_index=MIDDLE_FINGER_DIP,
+            tip_index=MIDDLE_FINGER_TIP,
+        )
+        if not index_extended or not middle_extended:
+            return None
+        if _distance(index_tip, middle_tip) > 0.22:
+            return None
+        return (index_tip[0] + middle_tip[0]) / 2.0, (index_tip[1] + middle_tip[1]) / 2.0
+
+    def _tab_swipe_requested(self, landmarks: list[Any], index_folded: bool) -> str:
+        if index_folded:
+            self._two_finger_swipe_start = None
+            return ""
+
+        center = self._two_finger_swipe_center(landmarks)
+        if center is None:
+            self._two_finger_swipe_start = None
+            return ""
+        if self._two_finger_swipe_start is None:
+            self._two_finger_swipe_start = center
+            return ""
+
+        dx = center[0] - self._two_finger_swipe_start[0]
+        dy = center[1] - self._two_finger_swipe_start[1]
+        if abs(dy) > self.tab_swipe_vertical_tolerance:
+            self._two_finger_swipe_start = center
+            return ""
+        if abs(dx) < self.tab_swipe_threshold:
+            return ""
+
+        now = time.monotonic()
+        if (now - self._last_tab_swipe_ts) < self.tab_swipe_cooldown_s:
+            self._two_finger_swipe_start = center
+            return ""
+
+        self._last_tab_swipe_ts = now
+        self._two_finger_swipe_start = None
+        return "left" if dx < 0 else "right"
+
+    def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
+        if sys.platform == "darwin":
+            if direction == "left":
+                return ("command", "shift", "]")
+            return ("command", "shift", "[")
+        if direction == "left":
+            return ("ctrl", "tab")
+        return ("ctrl", "shift", "tab")
+
     def apply(self, action: PointerAction) -> None:
         if not PYAUTOGUI_AVAILABLE:
             return
@@ -323,6 +440,8 @@ class PointerControlService:
         pyautogui.moveTo(action.x, action.y, duration=0, _pause=False)
         if action.click:
             pyautogui.click(_pause=False)
+        if action.hotkey:
+            pyautogui.hotkey(*action.hotkey)
 
     def update(self, landmarks_json: str) -> PointerUpdateResult:
         """Синхронный путь (тесты/CLI): compute + apply в одном вызове."""

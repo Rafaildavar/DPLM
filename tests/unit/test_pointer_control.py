@@ -132,6 +132,76 @@ def test_pointer_ignores_small_jitter(monkeypatch):
     assert len(moves) == 1
 
 
+def test_two_finger_swipe_left_switches_next_tab(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
+
+    assert start.ok
+    assert swipe.tab_switched == "left"
+    assert hotkeys == [("command", "shift", "]")]
+
+
+def test_two_finger_swipe_right_switches_previous_tab(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.38, 0.24))))
+    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.58, 0.24))))
+
+    assert start.ok
+    assert swipe.tab_switched == "right"
+    assert hotkeys == [("command", "shift", "[")]
+
+
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 
@@ -157,4 +227,20 @@ def _folded_index_landmarks():
     landmarks[6] = [0.5, 0.42]
     landmarks[7] = [0.55, 0.49]
     landmarks[8] = [0.51, 0.57]
+    return landmarks
+
+
+def _two_finger_landmarks(*, center=(0.5, 0.24)):
+    landmarks = _blank_landmarks()
+    index_x = center[0] - 0.035
+    middle_x = center[0] + 0.035
+    landmarks[0] = [center[0], 0.82]
+    landmarks[5] = [index_x, 0.58]
+    landmarks[6] = [index_x, 0.43]
+    landmarks[7] = [index_x, 0.31]
+    landmarks[8] = [index_x, center[1]]
+    landmarks[9] = [middle_x, 0.58]
+    landmarks[10] = [middle_x, 0.43]
+    landmarks[11] = [middle_x, 0.31]
+    landmarks[12] = [middle_x, center[1]]
     return landmarks
