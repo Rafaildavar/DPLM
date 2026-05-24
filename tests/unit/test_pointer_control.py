@@ -82,6 +82,14 @@ def test_bent_index_finger_clicks_once(monkeypatch):
         def click(*args, **kwargs):
             clicks.append(True)
 
+        @staticmethod
+        def mouseDown(*args, **kwargs):
+            raise AssertionError("quick click must not start drag")
+
+        @staticmethod
+        def mouseUp(*args, **kwargs):
+            raise AssertionError("quick click must not release drag")
+
     import app.services.pointer_control as pc
 
     monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
@@ -93,13 +101,63 @@ def test_bent_index_finger_clicks_once(monkeypatch):
     folded_payload = _payload(_folded_index_landmarks())
 
     assert svc.update(open_payload).ok
-    first = svc.update(folded_payload)
+    folded = svc.update(folded_payload)
     held = svc.update(folded_payload)
+    released = svc.update(open_payload)
 
-    assert first.clicked
+    assert not folded.clicked
     assert not held.clicked
+    assert released.clicked
     assert clicks == [True]
     assert moves
+
+
+def test_bent_index_finger_drag_selects_until_release(monkeypatch):
+    events = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            events.append(("move", x, y))
+
+        @staticmethod
+        def click(*args, **kwargs):
+            events.append(("click",))
+
+        @staticmethod
+        def mouseDown(*args, **kwargs):
+            events.append(("down",))
+
+        @staticmethod
+        def mouseUp(*args, **kwargs):
+            events.append(("up",))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(drag_start_px=12)
+
+    assert svc.update(_payload(_open_index_landmarks())).moved
+    assert not svc.update(_payload(_folded_index_landmarks())).drag_started
+    started = svc.update(_payload(_folded_index_landmarks(offset_x=0.08)))
+    released = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.18))))
+
+    assert started.drag_started
+    assert started.dragging
+    assert released.drag_ended
+    assert ("down",) in events
+    assert ("up",) in events
+    assert ("click",) not in events
 
 
 def test_pointer_ignores_small_jitter(monkeypatch):
@@ -150,11 +208,11 @@ def _open_index_landmarks(*, tip=(0.5, 0.18)):
     return landmarks
 
 
-def _folded_index_landmarks():
+def _folded_index_landmarks(*, offset_x=0.0):
     landmarks = _blank_landmarks()
     landmarks[0] = [0.5, 0.82]
-    landmarks[5] = [0.5, 0.56]
-    landmarks[6] = [0.5, 0.42]
-    landmarks[7] = [0.55, 0.49]
-    landmarks[8] = [0.51, 0.57]
+    landmarks[5] = [0.5 + offset_x, 0.56]
+    landmarks[6] = [0.5 + offset_x, 0.42]
+    landmarks[7] = [0.55 + offset_x, 0.49]
+    landmarks[8] = [0.51 + offset_x, 0.57]
     return landmarks

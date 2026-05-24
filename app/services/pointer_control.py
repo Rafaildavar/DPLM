@@ -73,6 +73,9 @@ class PointerUpdateResult:
     ok: bool
     moved: bool = False
     clicked: bool = False
+    drag_started: bool = False
+    dragging: bool = False
+    drag_ended: bool = False
     error: str = ""
 
 
@@ -81,6 +84,10 @@ class PointerAction:
     x: int
     y: int
     click: bool = False
+    mouse_down: bool = False
+    mouse_up: bool = False
+    down_x: Optional[int] = None
+    down_y: Optional[int] = None
 
 
 def parse_landmarks_json(landmarks_json: str) -> list[dict[str, Any]]:
@@ -145,7 +152,7 @@ def _landmark_point(landmarks: list[Any], index: int) -> Optional[Point]:
 
 
 class PointerControlService:
-    """Кончик указательного двигает курсор; сгибание указательного кликает."""
+    """Указательный палец двигает курсор; сгибание даёт click или drag."""
 
     def __init__(
         self,
@@ -154,16 +161,26 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
+        drag_start_px: float = 18.0,
+        drag_gain: float = 1.35,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
         self.move_deadzone_px = max(0.0, float(move_deadzone_px))
         self.click_debounce_s = max(0.1, float(click_debounce_s))
+        self.drag_start_px = max(4.0, float(drag_start_px))
+        self.drag_gain = max(0.5, min(3.0, float(drag_gain)))
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
+        self._pending_click = False
+        self._dragging = False
+        self._fold_anchor_x: Optional[float] = None
+        self._fold_anchor_y: Optional[float] = None
+        self._fold_reference_x: Optional[float] = None
+        self._fold_reference_y: Optional[float] = None
         self._last_click_ts = 0.0
 
     def reset(self) -> None:
@@ -171,6 +188,12 @@ class PointerControlService:
         self._smooth_y = None
         self._missing_frames = 0
         self._index_folded = False
+        self._pending_click = False
+        self._dragging = False
+        self._fold_anchor_x = None
+        self._fold_anchor_y = None
+        self._fold_reference_x = None
+        self._fold_reference_y = None
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -186,7 +209,13 @@ class PointerControlService:
         if hand is None:
             self._missing_frames += 1
             if self._missing_frames >= 4:
+                release = self._release_drag_action()
                 self.reset()
+                if release is not None:
+                    return (
+                        PointerUpdateResult(ok=True, drag_ended=True),
+                        release,
+                    )
             return PointerUpdateResult(ok=True, moved=False), None
         self._missing_frames = 0
 
@@ -198,50 +227,129 @@ class PointerControlService:
         if index_tip is None:
             return PointerUpdateResult(ok=True, moved=False), None
         ix, iy = index_tip
+        index_mcp = _landmark_point(landmarks, INDEX_FINGER_MCP) or index_tip
         index_folded = self._is_index_folded(landmarks)
 
         screen_w, screen_h = pyautogui.size()
-        margin = self.edge_margin
-        span = max(1e-6, 1.0 - 2.0 * margin)
-        nx = max(margin, min(1.0 - margin, ix))
-        ny = max(margin, min(1.0 - margin, iy))
-        target_x = (nx - margin) / span * float(screen_w)
-        target_y = (ny - margin) / span * float(screen_h)
+        pointer_x, pointer_y = self._landmark_to_screen(ix, iy, screen_w, screen_h)
+        mcp_x, mcp_y = self._landmark_to_screen(
+            index_mcp[0], index_mcp[1], screen_w, screen_h
+        )
+        target_x, target_y = pointer_x, pointer_y
 
         previous_x = self._smooth_x
         previous_y = self._smooth_y
-        freeze_for_click = index_folded and previous_x is not None and previous_y is not None
+        was_folded = self._index_folded
+        just_folded = index_folded and not was_folded
+        just_released = not index_folded and was_folded
+
+        if (
+            index_folded
+            and self._fold_anchor_x is not None
+            and self._fold_anchor_y is not None
+            and self._fold_reference_x is not None
+            and self._fold_reference_y is not None
+        ):
+            target_x = (
+                self._fold_anchor_x
+                + (mcp_x - self._fold_reference_x) * self.drag_gain
+            )
+            target_y = (
+                self._fold_anchor_y
+                + (mcp_y - self._fold_reference_y) * self.drag_gain
+            )
 
         if self._smooth_x is None or self._smooth_y is None:
             self._smooth_x = target_x
             self._smooth_y = target_y
-        elif freeze_for_click:
+            if just_folded:
+                self._pending_click = True
+                self._dragging = False
+                self._fold_anchor_x = self._smooth_x
+                self._fold_anchor_y = self._smooth_y
+                self._fold_reference_x = mcp_x
+                self._fold_reference_y = mcp_y
+        elif just_folded:
+            self._pending_click = True
+            self._dragging = False
+            self._fold_anchor_x = self._smooth_x
+            self._fold_anchor_y = self._smooth_y
+            self._fold_reference_x = mcp_x
+            self._fold_reference_y = mcp_y
+            target_x = self._smooth_x
+            target_y = self._smooth_y
+        elif just_released:
             target_x = self._smooth_x
             target_y = self._smooth_y
         else:
             distance_px = math.hypot(target_x - self._smooth_x, target_y - self._smooth_y)
-            alpha = self._adaptive_alpha(distance_px, screen_w, screen_h)
+            alpha = self._drag_alpha(distance_px) if self._dragging else self._adaptive_alpha(
+                distance_px, screen_w, screen_h
+            )
             self._smooth_x = self._smooth_x * (1.0 - alpha) + target_x * alpha
             self._smooth_y = self._smooth_y * (1.0 - alpha) + target_y * alpha
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
-        clicked = self._click_requested(index_folded)
+        clicked = False
+        drag_started = False
+        drag_ended = False
+
+        if index_folded and self._pending_click and not self._dragging:
+            if self._fold_drag_distance() >= self.drag_start_px:
+                self._dragging = True
+                self._pending_click = False
+                drag_started = True
+
+        if just_released:
+            if self._dragging:
+                drag_ended = True
+            elif self._pending_click:
+                clicked = self._click_requested()
+            self._dragging = False
+            self._pending_click = False
+            self._fold_anchor_x = None
+            self._fold_anchor_y = None
+            self._fold_reference_x = None
+            self._fold_reference_y = None
+
+        self._index_folded = index_folded
         moved = True
         if previous_x is not None and previous_y is not None:
+            deadzone = 1.0 if self._dragging else self.move_deadzone_px
             moved = (
                 math.hypot(self._smooth_x - previous_x, self._smooth_y - previous_y)
-                >= self.move_deadzone_px
+                >= deadzone
             )
 
-        if not moved and not clicked:
+        if not moved and not clicked and not drag_started and not drag_ended:
             return PointerUpdateResult(ok=True, moved=False), None
 
+        anchor_x = None
+        anchor_y = None
+        if drag_started:
+            anchor_x = self._screen_x(self._fold_anchor_x, screen_w)
+            anchor_y = self._screen_y(self._fold_anchor_y, screen_h)
+
         action = PointerAction(
-            x=max(0, min(int(screen_w) - 1, int(round(self._smooth_x)))),
-            y=max(0, min(int(screen_h) - 1, int(round(self._smooth_y)))),
+            x=self._screen_x(self._smooth_x, screen_w),
+            y=self._screen_y(self._smooth_y, screen_h),
             click=clicked,
+            mouse_down=drag_started,
+            mouse_up=drag_ended,
+            down_x=anchor_x,
+            down_y=anchor_y,
         )
-        return PointerUpdateResult(ok=True, moved=moved, clicked=clicked), action
+        return (
+            PointerUpdateResult(
+                ok=True,
+                moved=moved,
+                clicked=clicked,
+                drag_started=drag_started,
+                dragging=self._dragging,
+                drag_ended=drag_ended,
+            ),
+            action,
+        )
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
@@ -255,6 +363,29 @@ class PointerControlService:
         if distance_px >= screen_diag * 0.20:
             return min(0.70, base + 0.18)
         return max(0.16, base * 0.75)
+
+    def _landmark_to_screen(
+        self,
+        x: float,
+        y: float,
+        screen_w: int,
+        screen_h: int,
+    ) -> tuple[float, float]:
+        margin = self.edge_margin
+        span = max(1e-6, 1.0 - 2.0 * margin)
+        nx = max(margin, min(1.0 - margin, x))
+        ny = max(margin, min(1.0 - margin, y))
+        return (
+            (nx - margin) / span * float(screen_w),
+            (ny - margin) / span * float(screen_h),
+        )
+
+    def _drag_alpha(self, distance_px: float) -> float:
+        if distance_px <= 24.0:
+            return 0.25
+        if distance_px <= 120.0:
+            return 0.36
+        return 0.46
 
     def _limit_step(
         self,
@@ -278,6 +409,41 @@ class PointerControlService:
         self._smooth_x = previous_x + dx * scale
         self._smooth_y = previous_y + dy * scale
 
+    def _fold_drag_distance(self) -> float:
+        if None in (
+            self._smooth_x,
+            self._smooth_y,
+            self._fold_anchor_x,
+            self._fold_anchor_y,
+        ):
+            return 0.0
+        assert self._smooth_x is not None and self._smooth_y is not None
+        assert self._fold_anchor_x is not None and self._fold_anchor_y is not None
+        return math.hypot(
+            self._smooth_x - self._fold_anchor_x,
+            self._smooth_y - self._fold_anchor_y,
+        )
+
+    def _screen_x(self, value: Optional[float], screen_w: int) -> int:
+        if value is None:
+            value = 0.0
+        return max(0, min(int(screen_w) - 1, int(round(value))))
+
+    def _screen_y(self, value: Optional[float], screen_h: int) -> int:
+        if value is None:
+            value = 0.0
+        return max(0, min(int(screen_h) - 1, int(round(value))))
+
+    def _release_drag_action(self) -> Optional[PointerAction]:
+        if not self._dragging or self._smooth_x is None or self._smooth_y is None:
+            return None
+        screen_w, screen_h = pyautogui.size()
+        return PointerAction(
+            x=self._screen_x(self._smooth_x, screen_w),
+            y=self._screen_y(self._smooth_y, screen_h),
+            mouse_up=True,
+        )
+
     def _is_index_folded(self, landmarks: list[Any]) -> bool:
         mcp = _landmark_point(landmarks, INDEX_FINGER_MCP)
         pip = _landmark_point(landmarks, INDEX_FINGER_PIP)
@@ -300,16 +466,11 @@ class PointerControlService:
             return extension_ratio < 0.78 and bend_angle < 165.0
         return extension_ratio < 0.66 and bend_angle < 152.0
 
-    def _click_requested(self, index_folded: bool) -> bool:
+    def _click_requested(self) -> bool:
         now = time.monotonic()
-        clicked = (
-            index_folded
-            and not self._index_folded
-            and (now - self._last_click_ts) >= self.click_debounce_s
-        )
+        clicked = (now - self._last_click_ts) >= self.click_debounce_s
         if clicked:
             self._last_click_ts = now
-        self._index_folded = index_folded
         return clicked
 
     def apply(self, action: PointerAction) -> None:
@@ -320,9 +481,17 @@ class PointerControlService:
                 self._accessibility_warned = True
                 print(f"[!] {ACCESSIBILITY_HINT}", flush=True)
             return
-        pyautogui.moveTo(action.x, action.y, duration=0, _pause=False)
+        if action.mouse_down and action.down_x is not None and action.down_y is not None:
+            pyautogui.moveTo(action.down_x, action.down_y, duration=0, _pause=False)
+            pyautogui.mouseDown(_pause=False)
+            if action.x != action.down_x or action.y != action.down_y:
+                pyautogui.moveTo(action.x, action.y, duration=0, _pause=False)
+        else:
+            pyautogui.moveTo(action.x, action.y, duration=0, _pause=False)
         if action.click:
             pyautogui.click(_pause=False)
+        if action.mouse_up:
+            pyautogui.mouseUp(_pause=False)
 
     def update(self, landmarks_json: str) -> PointerUpdateResult:
         """Синхронный путь (тесты/CLI): compute + apply в одном вызове."""
