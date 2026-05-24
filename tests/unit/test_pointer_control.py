@@ -64,7 +64,7 @@ def test_pointer_moves_cursor(monkeypatch):
 
 def test_bent_index_finger_clicks_once(monkeypatch):
     moves = []
-    clicks = []
+    events = []
 
     class FakePyAutoGUI:
         FAILSAFE = False
@@ -80,15 +80,15 @@ def test_bent_index_finger_clicks_once(monkeypatch):
 
         @staticmethod
         def click(*args, **kwargs):
-            clicks.append(True)
+            raise AssertionError("quick click is produced by mouseDown/mouseUp")
 
         @staticmethod
         def mouseDown(*args, **kwargs):
-            raise AssertionError("quick click must not start drag")
+            events.append("down")
 
         @staticmethod
         def mouseUp(*args, **kwargs):
-            raise AssertionError("quick click must not release drag")
+            events.append("up")
 
     import app.services.pointer_control as pc
 
@@ -108,7 +108,7 @@ def test_bent_index_finger_clicks_once(monkeypatch):
     assert not folded.clicked
     assert not held.clicked
     assert released.clicked
-    assert clicks == [True]
+    assert events == ["down", "up"]
     assert moves
 
 
@@ -148,11 +148,12 @@ def test_bent_index_finger_drag_selects_until_release(monkeypatch):
     svc = PointerControlService(drag_start_px=12)
 
     assert svc.update(_payload(_open_index_landmarks())).moved
-    assert not svc.update(_payload(_folded_index_landmarks())).drag_started
+    folded = svc.update(_payload(_folded_index_landmarks()))
+    assert folded.drag_started
+    assert not folded.dragging
     started = svc.update(_payload(_folded_index_landmarks(offset_x=0.08)))
     released = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.18))))
 
-    assert started.drag_started
     assert started.dragging
     assert released.drag_ended
     assert ("down",) in events
@@ -190,6 +191,42 @@ def test_pointer_ignores_small_jitter(monkeypatch):
     assert len(moves) == 1
 
 
+def test_pointer_sharpness_changes_large_move_response(monkeypatch):
+    moves = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    low = PointerControlService(smoothing=0.15)
+    high = PointerControlService(smoothing=0.85)
+
+    low.update(_payload(_pointing_landmarks((0.2, 0.2), (0.08, 0.08))))
+    low.update(_payload(_pointing_landmarks((0.8, 0.8), (0.62, 0.62))))
+    low_x = moves[-1][0]
+
+    moves.clear()
+    high.update(_payload(_pointing_landmarks((0.2, 0.2), (0.08, 0.08))))
+    high.update(_payload(_pointing_landmarks((0.8, 0.8), (0.62, 0.62))))
+    high_x = moves[-1][0]
+
+    assert high_x > low_x
+
+
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 
@@ -205,6 +242,18 @@ def _open_index_landmarks(*, tip=(0.5, 0.18)):
     landmarks[6] = [0.5, 0.42]
     landmarks[7] = [0.5, 0.30]
     landmarks[8] = [tip[0], tip[1]]
+    return landmarks
+
+
+def _pointing_landmarks(tip, mcp):
+    landmarks = _blank_landmarks()
+    tx, ty = tip
+    mx, my = mcp
+    landmarks[0] = [0.5, 0.82]
+    landmarks[5] = [mx, my]
+    landmarks[6] = [mx + (tx - mx) * 0.35, my + (ty - my) * 0.35]
+    landmarks[7] = [mx + (tx - mx) * 0.70, my + (ty - my) * 0.70]
+    landmarks[8] = [tx, ty]
     return landmarks
 
 

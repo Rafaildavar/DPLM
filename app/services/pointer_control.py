@@ -175,6 +175,7 @@ class PointerControlService:
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
+        self._button_down = False
         self._pending_click = False
         self._dragging = False
         self._fold_anchor_x: Optional[float] = None
@@ -188,6 +189,7 @@ class PointerControlService:
         self._smooth_y = None
         self._missing_frames = 0
         self._index_folded = False
+        self._button_down = False
         self._pending_click = False
         self._dragging = False
         self._fold_anchor_x = None
@@ -209,7 +211,7 @@ class PointerControlService:
         if hand is None:
             self._missing_frames += 1
             if self._missing_frames >= 4:
-                release = self._release_drag_action()
+                release = self._release_button_action()
                 self.reset()
                 if release is not None:
                     return (
@@ -263,6 +265,7 @@ class PointerControlService:
             self._smooth_x = target_x
             self._smooth_y = target_y
             if just_folded:
+                self._button_down = True
                 self._pending_click = True
                 self._dragging = False
                 self._fold_anchor_x = self._smooth_x
@@ -270,6 +273,7 @@ class PointerControlService:
                 self._fold_reference_x = mcp_x
                 self._fold_reference_y = mcp_y
         elif just_folded:
+            self._button_down = True
             self._pending_click = True
             self._dragging = False
             self._fold_anchor_x = self._smooth_x
@@ -291,20 +295,23 @@ class PointerControlService:
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = False
-        drag_started = False
+        mouse_down = just_folded
+        mouse_up = False
+        drag_started = just_folded
         drag_ended = False
 
-        if index_folded and self._pending_click and not self._dragging:
+        if index_folded and self._button_down and self._pending_click and not self._dragging:
             if self._fold_drag_distance() >= self.drag_start_px:
                 self._dragging = True
                 self._pending_click = False
-                drag_started = True
 
         if just_released:
+            mouse_up = self._button_down
             if self._dragging:
                 drag_ended = True
             elif self._pending_click:
                 clicked = self._click_requested()
+            self._button_down = False
             self._dragging = False
             self._pending_click = False
             self._fold_anchor_x = None
@@ -315,13 +322,13 @@ class PointerControlService:
         self._index_folded = index_folded
         moved = True
         if previous_x is not None and previous_y is not None:
-            deadzone = 1.0 if self._dragging else self.move_deadzone_px
+            deadzone = 1.0 if self._button_down else self.move_deadzone_px
             moved = (
                 math.hypot(self._smooth_x - previous_x, self._smooth_y - previous_y)
                 >= deadzone
             )
 
-        if not moved and not clicked and not drag_started and not drag_ended:
+        if not moved and not clicked and not mouse_down and not mouse_up:
             return PointerUpdateResult(ok=True, moved=False), None
 
         anchor_x = None
@@ -333,9 +340,9 @@ class PointerControlService:
         action = PointerAction(
             x=self._screen_x(self._smooth_x, screen_w),
             y=self._screen_y(self._smooth_y, screen_h),
-            click=clicked,
-            mouse_down=drag_started,
-            mouse_up=drag_ended,
+            click=False,
+            mouse_down=mouse_down,
+            mouse_up=mouse_up,
             down_x=anchor_x,
             down_y=anchor_y,
         )
@@ -353,16 +360,16 @@ class PointerControlService:
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
-        if distance_px <= 10.0:
-            return max(0.06, base * 0.22)
-        if distance_px <= 36.0:
-            return max(0.08, base * 0.35)
-        if distance_px <= 120.0:
-            return max(0.12, base * 0.55)
         screen_diag = math.hypot(float(screen_w), float(screen_h))
-        if distance_px >= screen_diag * 0.20:
-            return min(0.70, base + 0.18)
-        return max(0.16, base * 0.75)
+        if distance_px <= 6.0:
+            return max(0.05, base * 0.18)
+        if distance_px <= 24.0:
+            return max(0.10, base * 0.36)
+        if distance_px <= 90.0:
+            return max(0.20, base * 0.70)
+        if distance_px >= screen_diag * 0.12:
+            return min(0.92, base + 0.34)
+        return min(0.82, max(0.28, base + 0.10))
 
     def _landmark_to_screen(
         self,
@@ -382,10 +389,10 @@ class PointerControlService:
 
     def _drag_alpha(self, distance_px: float) -> float:
         if distance_px <= 24.0:
-            return 0.25
+            return 0.34
         if distance_px <= 120.0:
-            return 0.36
-        return 0.46
+            return 0.48
+        return 0.66
 
     def _limit_step(
         self,
@@ -402,7 +409,7 @@ class PointerControlService:
         dy = self._smooth_y - previous_y
         distance = math.hypot(dx, dy)
         screen_diag = math.hypot(float(screen_w), float(screen_h))
-        max_step = max(40.0, min(180.0, screen_diag * 0.075))
+        max_step = max(80.0, min(420.0, screen_diag * (0.12 + self.smoothing * 0.20)))
         if distance <= max_step or distance <= 1e-6:
             return
         scale = max_step / distance
@@ -434,8 +441,8 @@ class PointerControlService:
             value = 0.0
         return max(0, min(int(screen_h) - 1, int(round(value))))
 
-    def _release_drag_action(self) -> Optional[PointerAction]:
-        if not self._dragging or self._smooth_x is None or self._smooth_y is None:
+    def _release_button_action(self) -> Optional[PointerAction]:
+        if not self._button_down or self._smooth_x is None or self._smooth_y is None:
             return None
         screen_w, screen_h = pyautogui.size()
         return PointerAction(

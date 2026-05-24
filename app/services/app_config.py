@@ -59,6 +59,7 @@ class RecognitionConfig:
     two_hands_mode: bool = False
     auto_execute_on_gesture: bool = True
     auto_start_recognition: bool = False
+    pointer_smoothing: float = 0.55
 
 
 @dataclass
@@ -113,6 +114,8 @@ def _merge_dataclass(cls: type, defaults: Any, raw: Any) -> Any:
             out[key] = _coerce_bool(value, bool(default_value))
         elif isinstance(default_value, int):
             out[key] = _coerce_int(value, int(default_value))
+        elif isinstance(default_value, float):
+            out[key] = _coerce_float(value, float(default_value))
         else:
             out[key] = "" if value is None else str(value)
     return cls(**out)
@@ -121,6 +124,13 @@ def _merge_dataclass(cls: type, defaults: Any, raw: Any) -> Any:
 def _coerce_int(value: Any, default: int) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -224,6 +234,12 @@ def _set_auto_start(config: AppConfig, value: str) -> None:
     )
 
 
+def _set_pointer_smoothing(config: AppConfig, value: str) -> None:
+    config.recognition.pointer_smoothing = _coerce_float(
+        value, config.recognition.pointer_smoothing
+    )
+
+
 ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "DATABASE_URL": ("database.url", _set_db_url),
     "DPLM_DB_BACKEND": ("database.backend", _set_db_backend),
@@ -246,6 +262,14 @@ ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "DPLM_AUTO_START_RECOGNITION": (
         "recognition.auto_start_recognition",
         _set_auto_start,
+    ),
+    "DPLM_POINTER_SMOOTHING": (
+        "recognition.pointer_smoothing",
+        _set_pointer_smoothing,
+    ),
+    "DPLM_POINTER_SHARPNESS": (
+        "recognition.pointer_smoothing",
+        _set_pointer_smoothing,
     ),
 }
 
@@ -356,6 +380,8 @@ class ConfigStore:
             errors.append("recognition.camera_index должен быть >= 0")
         if rec.target_fps < 1 or rec.target_fps > 120:
             errors.append("recognition.target_fps должен быть в диапазоне 1..120")
+        if rec.pointer_smoothing < 0.05 or rec.pointer_smoothing > 0.95:
+            errors.append("recognition.pointer_smoothing должен быть в диапазоне 0.05..0.95")
 
         model_path = resolve_config_path(paths.model_path)
         classes_path = resolve_config_path(paths.classes_path)

@@ -83,6 +83,18 @@ class SettingsView:
             label="Автозапуск распознавания при старте приложения",
             active_color=COLOR_ACCENT,
         )
+        self._pointer_sharpness_slider = ft.Slider(
+            value=self._to_float(recognition.get("pointer_smoothing"), 0.55),
+            min=0.05,
+            max=0.95,
+            divisions=90,
+            active_color=COLOR_ACCENT,
+            inactive_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_pointer_sharpness_change,
+        )
+        self._pointer_sharpness_label = ft.Text(
+            self._pointer_sharpness_text(), size=14, color=COLOR_ON_SURFACE
+        )
 
         self._recognition_btn = ft.FilledButton(
             content=ft.Text(self._recognition_btn_text(), weight=ft.FontWeight.BOLD),
@@ -255,6 +267,10 @@ class SettingsView:
             recognition.get("auto_execute_on_gesture")
         )
         self._auto_start_switch.value = bool(recognition.get("auto_start_recognition"))
+        self._pointer_sharpness_slider.value = self._to_float(
+            recognition.get("pointer_smoothing"), 0.55
+        )
+        self._pointer_sharpness_label.value = self._pointer_sharpness_text()
 
     def _refresh_status(self, *, update: bool) -> None:
         status = self._controller.get_system_status()
@@ -367,6 +383,9 @@ class SettingsView:
                 "two_hands_mode": bool(self._two_hands_switch.value),
                 "auto_execute_on_gesture": bool(self._auto_execute_switch.value),
                 "auto_start_recognition": bool(self._auto_start_switch.value),
+                "pointer_smoothing": self._to_float(
+                    self._pointer_sharpness_slider.value, 0.55
+                ),
             },
             "assistant": {
                 "voice_enabled": False,
@@ -376,6 +395,12 @@ class SettingsView:
     def _to_int(self, value: Any, default: int) -> int:
         try:
             return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _to_float(self, value: Any, default: float) -> float:
+        try:
+            return float(value)
         except (TypeError, ValueError):
             return default
 
@@ -444,6 +469,14 @@ class SettingsView:
     def _cooldown_text(self) -> str:
         v = int(self._cooldown_slider.value)
         return f"Cooldown между срабатываниями (R5): {v} мс"
+
+    def _pointer_sharpness_text(self) -> str:
+        v = float(self._pointer_sharpness_slider.value)
+        return f"Резкость курсора: {int(round(v * 100))}%"
+
+    def _on_pointer_sharpness_change(self, _e) -> None:
+        self._pointer_sharpness_label.value = self._pointer_sharpness_text()
+        self._safe_update(self._pointer_sharpness_label)
 
     def _on_threshold_change(self, _e) -> None:
         self._threshold_label.value = self._threshold_text()
@@ -564,6 +597,9 @@ class SettingsView:
                     self._two_hands_switch,
                     self._auto_execute_switch,
                     self._auto_start_switch,
+                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
+                    self._pointer_sharpness_label,
+                    self._pointer_sharpness_slider,
                     ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     ft.Text(
                         "Голосовой ассистент временно отключён; точка подключения сохранена для следующего этапа.",
