@@ -552,11 +552,11 @@ class PointerControlService:
     def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
         if sys.platform == "darwin":
             if direction == "left":
-                return ("ctrl", "right")
-            return ("ctrl", "left")
+                return ("ctrl", "left")
+            return ("ctrl", "right")
         if direction == "left":
-            return ("alt", "tab")
-        return ("alt", "shift", "tab")
+            return ("alt", "shift", "tab")
+        return ("alt", "tab")
 
     def _run_macos_script(self, script: str, *, timeout: float = 1.0) -> tuple[bool, str]:
         try:

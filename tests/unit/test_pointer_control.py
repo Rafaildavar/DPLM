@@ -132,7 +132,7 @@ def test_pointer_ignores_small_jitter(monkeypatch):
     assert len(moves) == 1
 
 
-def test_two_finger_swipe_left_switches_next_window_space(monkeypatch):
+def test_two_finger_swipe_left_switches_previous_window_space(monkeypatch):
     hotkeys = []
     scripts = []
 
@@ -168,11 +168,11 @@ def test_two_finger_swipe_left_switches_next_window_space(monkeypatch):
     assert swipe.tab_switched == "left"
     assert hotkeys == []
     assert len(scripts) == 1
-    assert "key code 124" in scripts[0][2]
+    assert "key code 123" in scripts[0][2]
     assert "control down" in scripts[0][2]
 
 
-def test_two_finger_swipe_right_switches_previous_window_space(monkeypatch):
+def test_two_finger_swipe_right_switches_next_window_space(monkeypatch):
     hotkeys = []
     scripts = []
 
@@ -208,7 +208,7 @@ def test_two_finger_swipe_right_switches_previous_window_space(monkeypatch):
     assert swipe.tab_switched == "right"
     assert hotkeys == []
     assert len(scripts) == 1
-    assert "key code 123" in scripts[0][2]
+    assert "key code 124" in scripts[0][2]
     assert "control down" in scripts[0][2]
 
 
@@ -250,7 +250,7 @@ def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
     assert swipe.tab_switched == "left"
     assert hotkeys == []
     assert len(scripts) == 1
-    assert "key code 124" in scripts[0][2]
+    assert "key code 123" in scripts[0][2]
 
 
 def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):
