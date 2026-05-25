@@ -91,6 +91,49 @@ class CommandExecutor:
                 "action": "volume_down",
                 "platform": "macos"
             })
+            self.register_command("выключить или включить звук", {
+                "action": "mute_toggle",
+                "platform": "macos"
+            })
+            self.register_command("сделать снимок экрана", {
+                "action": "screenshot",
+                "platform": "macos"
+            })
+            self.register_command("прокрутить страницу вниз", {
+                "action": "scroll",
+                "clicks": -5,
+                "platform": "macos"
+            })
+            self.register_command("прокрутить страницу вверх", {
+                "action": "scroll",
+                "clicks": 5,
+                "platform": "macos"
+            })
+            self.register_command("пауза или продолжить музыку", {
+                "action": "media_key",
+                "kind": "play_pause",
+                "platform": "macos"
+            })
+            self.register_command("следующий трек", {
+                "action": "media_key",
+                "kind": "next",
+                "platform": "macos"
+            })
+            self.register_command("предыдущий трек", {
+                "action": "media_key",
+                "kind": "prev",
+                "platform": "macos"
+            })
+            self.register_command("открыть finder", {
+                "action": "open_app",
+                "app": "Finder",
+                "platform": "macos"
+            })
+            self.register_command("открыть системные настройки", {
+                "action": "open_app",
+                "app": "System Settings",
+                "platform": "macos"
+            })
         
         # Системные команды Windows / Windows system commands
         elif self.system == "windows":
