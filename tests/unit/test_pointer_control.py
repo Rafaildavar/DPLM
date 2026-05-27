@@ -161,7 +161,8 @@ def test_two_finger_swipe_left_switches_previous_window_space(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = _arm_swipe(svc, center=(0.62, 0.24))
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.56, 0.24))))
     swipe = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
 
     assert start.ok
@@ -201,7 +202,8 @@ def test_two_finger_swipe_right_switches_next_window_space(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = _arm_swipe(svc, center=(0.38, 0.24))
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.38, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.44, 0.24))))
     swipe = svc.update(_payload(_two_finger_landmarks(center=(0.58, 0.24))))
 
     assert start.ok
@@ -241,7 +243,8 @@ def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = _arm_swipe(svc, center=(0.62, 0.24))
+    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.58, 0.24))))
     lost_pose = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.24))))
     swipe = svc.update(_payload(_two_finger_landmarks(center=(0.49, 0.24))))
 
@@ -287,7 +290,7 @@ def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):
     assert hotkeys == []
 
 
-def test_moving_into_two_finger_pose_does_not_trigger_unarmed_swipe(monkeypatch):
+def test_two_frame_two_finger_motion_does_not_switch_windows(monkeypatch):
     hotkeys = []
 
     class FakePyAutoGUI:
@@ -347,7 +350,8 @@ def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):
     monkeypatch.setattr(pc.sys, "platform", "linux")
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    _arm_swipe(svc, center=(0.62, 0.24))
+    svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.56, 0.24))))
     first = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
     svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
     held_again = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
@@ -359,13 +363,6 @@ def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):
 
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
-
-
-def _arm_swipe(svc, *, center):
-    result = None
-    for _ in range(3):
-        result = svc.update(_payload(_two_finger_landmarks(center=center)))
-    return result
 
 
 def _fake_subprocess_run(scripts):
