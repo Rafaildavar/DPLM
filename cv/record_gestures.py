@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import List
 
@@ -63,13 +64,13 @@ def main() -> None:
         min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
     )
+    from cv.recording_cycle import RecordingCycle
     from cv.recording_overlay import draw_recording_overlay
 
     print("Управление: s — старт/стоп записи; n — сохранить семпл; q — выход")
     print(f"Метка жеста: {label}; нужно семплов: {target_samples}; длина семпла: {seq_len} кадров")
 
-    recording = False
-    buffer: List[np.ndarray] = []
+    capture = RecordingCycle(sequence_length=seq_len)
     saved = 0
 
     try:
@@ -107,20 +108,24 @@ def main() -> None:
                 else:
                     frame_vec = np.zeros((21, 2), dtype=np.float32)
 
-            if recording and frame_vec is not None:
-                buffer.append(frame_vec)
-                if len(buffer) >= seq_len:
-                    print("[i] Достигнута длина семпла, нажмите n для сохранения или s для перезапуска")
+            now = time.monotonic()
+            started_now, became_ready = capture.capture(frame_vec, now)
+            if started_now:
+                print("[+] Запись начата")
+            if became_ready:
+                print("[✓] Пример записан — нажмите n для сохранения или s для повтора")
 
             frame_bgr = draw_recording_overlay(
                 frame_bgr,
                 label=label,
                 saved=saved,
                 target_samples=target_samples,
-                recording=recording,
-                frame_count=len(buffer),
+                recording=capture.recording,
+                frame_count=len(capture.frames),
                 sequence_length=seq_len,
                 hands_count=len(hands),
+                sample_ready=capture.ready,
+                countdown_seconds=capture.countdown_value(now),
             )
 
             cv2.imshow("Gesture Recording - DPLM", frame_bgr)
@@ -129,21 +134,17 @@ def main() -> None:
             if key == ord('q'):
                 break
             elif key == ord('s'):
-                recording = not recording
-                if recording:
-                    buffer = []
-                    print("[+] Запись начата")
-                else:
-                    print("[i] Запись остановлена (буфер сохранён в памяти, нажмите n)")
+                capture.start(time.monotonic())
+                print("[i] Приготовьтесь: запись начнётся через 3 секунды")
             elif key == ord('n'):
-                if len(buffer) == 0:
-                    print("[!] Буфер пуст — нечего сохранять")
+                if capture.counting_down or capture.recording:
+                    print("[i] Дождитесь окончания записи или нажмите s для повтора")
                     continue
-                if len(buffer) < seq_len:
-                    print(f"[!] Слишком короткий семпл: {len(buffer)}<{seq_len}")
+                if not capture.ready:
+                    print("[!] Нет готового примера — нажмите s для записи")
                     continue
 
-                arr = np.asarray(buffer, dtype=np.float32)
+                arr = np.asarray(capture.frames, dtype=np.float32)
                 existing = sorted(out_dir.glob("sample_*.npy"))
                 idx = len(existing)
                 out_path = out_dir / f"sample_{idx:04d}.npy"
@@ -151,8 +152,7 @@ def main() -> None:
                 saved += 1
                 print(f"[✓] Сохранено: {out_path}")
 
-                recording = False
-                buffer = []
+                capture.clear()
 
                 if saved >= target_samples:
                     print("[✓] Достигнуто целевое число семплов — выходим")

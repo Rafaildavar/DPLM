@@ -80,6 +80,8 @@ def draw_recording_overlay(
     frame_count: int,
     sequence_length: int,
     hands_count: int,
+    sample_ready: bool = False,
+    countdown_seconds: int | None = None,
 ) -> np.ndarray:
     """Render user-facing status panels after detection has processed the frame."""
     height, width = frame_bgr.shape[:2]
@@ -127,9 +129,12 @@ def draw_recording_overlay(
             fill=green,
         )
 
-    if recording and frame_count >= sequence_length:
+    if sample_ready:
         status = "Пример готов. Нажмите N для сохранения"
         status_color = green
+    elif countdown_seconds is not None:
+        status = f"Приготовьтесь. Запись через {countdown_seconds}"
+        status_color = amber
     elif recording:
         status = f"Идет запись: {min(frame_count, sequence_length)} из {sequence_length} кадров"
         status_color = red
@@ -143,6 +148,24 @@ def draw_recording_overlay(
     status_y = height - bottom_height + 20
     draw.ellipse((margin, status_y + 9, margin + 14, status_y + 23), fill=status_color)
     _text(draw, (margin + 28, status_y), status, size=22, color=white, bold=True)
+
+    if countdown_seconds is not None:
+        countdown_text = str(countdown_seconds)
+        counter_font = _font(86, True)
+        counter_box = draw.textbbox((0, 0), countdown_text, font=counter_font)
+        counter_width = counter_box[2] - counter_box[0]
+        center_x, center_y = width // 2, height // 2
+        draw.rounded_rectangle(
+            (center_x - 64, center_y - 70, center_x + 64, center_y + 64),
+            radius=18,
+            fill=(22, 27, 35),
+        )
+        draw.text(
+            (center_x - counter_width // 2, center_y - 57),
+            countdown_text,
+            font=counter_font,
+            fill=white,
+        )
 
     hints_y = height - 50
     next_x = _hint(draw, margin, hints_y, "S", "Начать / повторить")
