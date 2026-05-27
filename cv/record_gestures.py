@@ -63,6 +63,7 @@ def main() -> None:
         min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
     )
+    from cv.recording_overlay import draw_recording_overlay
 
     print("Управление: s — старт/стоп записи; n — сохранить семпл; q — выход")
     print(f"Метка жеста: {label}; нужно семплов: {target_samples}; длина семпла: {seq_len} кадров")
@@ -111,13 +112,18 @@ def main() -> None:
                 if len(buffer) >= seq_len:
                     print("[i] Достигнута длина семпла, нажмите n для сохранения или s для перезапуска")
 
-            status = (
-                f"label={label} saved={saved}/{target_samples} "
-                f"rec={'ON' if recording else 'OFF'} len={len(buffer)} hands={len(hands)}"
+            frame_bgr = draw_recording_overlay(
+                frame_bgr,
+                label=label,
+                saved=saved,
+                target_samples=target_samples,
+                recording=recording,
+                frame_count=len(buffer),
+                sequence_length=seq_len,
+                hands_count=len(hands),
             )
-            cv2.putText(frame_bgr, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-            cv2.imshow("Record Gestures — s:rec n:save q:quit", frame_bgr)
+            cv2.imshow("Gesture Recording - DPLM", frame_bgr)
             key = cv2.waitKey(1) & 0xFF
 
             if key == ord('q'):

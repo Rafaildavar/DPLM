@@ -4,6 +4,7 @@ opencv-python-headless
 # (см. cv/hand_landmarker.py). Минимальная версия выровнена под это.
 mediapipe>=0.10.33
 numpy
+Pillow>=10.0
 
 # Machine Learning
 scikit-learn
