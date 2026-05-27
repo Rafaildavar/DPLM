@@ -6,6 +6,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def recording_action_for_key(key: int) -> str:
+    """Map controls that stay usable regardless of active keyboard layout."""
+    if key in (ord("s"), ord("S"), 32):
+        return "start"
+    if key in (ord("n"), ord("N"), 10, 13):
+        return "save"
+    if key in (ord("q"), ord("Q"), 27):
+        return "quit"
+    return ""
+
+
 @dataclass
 class RecordingCycle:
     sequence_length: int

@@ -1,4 +1,11 @@
-from cv.recording_cycle import RecordingCycle
+from cv.recording_cycle import RecordingCycle, recording_action_for_key
+
+
+def test_recording_keys_work_without_letter_layout() -> None:
+    assert recording_action_for_key(32) == "start"
+    assert recording_action_for_key(13) == "save"
+    assert recording_action_for_key(27) == "quit"
+    assert recording_action_for_key(ord("s")) == "start"
 
 
 def test_recording_cycle_counts_down_and_stops_at_exact_length() -> None:

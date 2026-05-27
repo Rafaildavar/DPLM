@@ -64,10 +64,10 @@ def main() -> None:
         min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
     )
-    from cv.recording_cycle import RecordingCycle
+    from cv.recording_cycle import RecordingCycle, recording_action_for_key
     from cv.recording_overlay import draw_recording_overlay
 
-    print("Управление: s — старт/стоп записи; n — сохранить семпл; q — выход")
+    print("Управление: ПРОБЕЛ — начать/повторить; ENTER — сохранить; ESC — выход")
     print(f"Метка жеста: {label}; нужно семплов: {target_samples}; длина семпла: {seq_len} кадров")
 
     capture = RecordingCycle(sequence_length=seq_len)
@@ -113,7 +113,7 @@ def main() -> None:
             if started_now:
                 print("[+] Запись начата")
             if became_ready:
-                print("[✓] Пример записан — нажмите n для сохранения или s для повтора")
+                print("[✓] Пример записан — нажмите Enter для сохранения или Пробел для повтора")
 
             frame_bgr = draw_recording_overlay(
                 frame_bgr,
@@ -130,18 +130,19 @@ def main() -> None:
 
             cv2.imshow("Gesture Recording - DPLM", frame_bgr)
             key = cv2.waitKey(1) & 0xFF
+            action = recording_action_for_key(key)
 
-            if key == ord('q'):
+            if action == "quit":
                 break
-            elif key == ord('s'):
+            elif action == "start":
                 capture.start(time.monotonic())
                 print("[i] Приготовьтесь: запись начнётся через 3 секунды")
-            elif key == ord('n'):
+            elif action == "save":
                 if capture.counting_down or capture.recording:
-                    print("[i] Дождитесь окончания записи или нажмите s для повтора")
+                    print("[i] Дождитесь окончания записи или нажмите Пробел для повтора")
                     continue
                 if not capture.ready:
-                    print("[!] Нет готового примера — нажмите s для записи")
+                    print("[!] Нет готового примера — нажмите Пробел для записи")
                     continue
 
                 arr = np.asarray(capture.frames, dtype=np.float32)

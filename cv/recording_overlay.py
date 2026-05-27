@@ -63,11 +63,13 @@ def _hint(
 ) -> int:
     white = (244, 246, 249)
     muted = (186, 193, 203)
-    draw.rounded_rectangle((x, y, x + 34, y + 32), radius=7, fill=(56, 64, 75))
-    _text(draw, (x + 11, y + 4), key, size=18, color=white, bold=True)
-    _text(draw, (x + 45, y + 6), label, size=17, color=muted)
+    key_box = draw.textbbox((0, 0), key, font=_font(15, True))
+    key_width = max(38, key_box[2] - key_box[0] + 20)
+    draw.rounded_rectangle((x, y, x + key_width, y + 32), radius=7, fill=(56, 64, 75))
+    _text(draw, (x + 10, y + 6), key, size=15, color=white, bold=True)
+    _text(draw, (x + key_width + 11, y + 6), label, size=17, color=muted)
     text_box = draw.textbbox((0, 0), label, font=_font(17))
-    return x + 45 + (text_box[2] - text_box[0]) + 34
+    return x + key_width + 11 + (text_box[2] - text_box[0]) + 28
 
 
 def draw_recording_overlay(
@@ -130,7 +132,7 @@ def draw_recording_overlay(
         )
 
     if sample_ready:
-        status = "Пример готов. Нажмите N для сохранения"
+        status = "Пример готов. Нажмите Enter для сохранения"
         status_color = green
     elif countdown_seconds is not None:
         status = f"Приготовьтесь. Запись через {countdown_seconds}"
@@ -139,7 +141,7 @@ def draw_recording_overlay(
         status = f"Идет запись: {min(frame_count, sequence_length)} из {sequence_length} кадров"
         status_color = red
     elif hands_count:
-        status = "Рука найдена. Нажмите S для записи"
+        status = "Рука найдена. Нажмите Пробел для записи"
         status_color = green
     else:
         status = "Покажите руку в кадре"
@@ -168,8 +170,8 @@ def draw_recording_overlay(
         )
 
     hints_y = height - 50
-    next_x = _hint(draw, margin, hints_y, "S", "Начать / повторить")
-    next_x = _hint(draw, next_x, hints_y, "N", "Сохранить")
-    _hint(draw, next_x, hints_y, "Q", "Завершить")
+    next_x = _hint(draw, margin, hints_y, "SPACE", "Начать / повторить")
+    next_x = _hint(draw, next_x, hints_y, "ENTER", "Сохранить")
+    _hint(draw, next_x, hints_y, "ESC", "Завершить")
 
     return cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
