@@ -168,10 +168,13 @@ class PointerControlService:
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
-        tab_swipe_threshold: float = 0.075,
-        tab_swipe_vertical_tolerance: float = 0.20,
-        tab_swipe_min_speed: float = 0.12,
+        tab_swipe_threshold: float = 0.10,
+        tab_swipe_vertical_tolerance: float = 0.10,
+        tab_swipe_min_speed: float = 0.14,
         tab_swipe_cooldown_s: float = 0.75,
+        tab_swipe_arm_frames: int = 3,
+        tab_swipe_arm_radius: float = 0.035,
+        tab_swipe_release_frames: int = 2,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -184,27 +187,36 @@ class PointerControlService:
         )
         self.tab_swipe_min_speed = max(0.0, float(tab_swipe_min_speed))
         self.tab_swipe_cooldown_s = max(0.0, float(tab_swipe_cooldown_s))
+        self.tab_swipe_arm_frames = max(2, int(tab_swipe_arm_frames))
+        self.tab_swipe_arm_radius = max(0.01, min(0.1, float(tab_swipe_arm_radius)))
+        self.tab_swipe_release_frames = max(1, int(tab_swipe_release_frames))
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
         self._last_click_ts = 0.0
+        self._two_finger_arm_points: list[Point] = []
         self._two_finger_swipe_points: list[tuple[float, Point]] = []
         self._tab_swipe_pose_active = False
         self._last_swipe_tracking_log_ts = 0.0
         self._swipe_missing_pose_frames = 0
         self._last_tab_swipe_ts = 0.0
+        self._swipe_requires_release = False
+        self._swipe_release_pose_frames = 0
 
     def reset(self) -> None:
         self._smooth_x = None
         self._smooth_y = None
         self._missing_frames = 0
         self._index_folded = False
+        self._two_finger_arm_points.clear()
         self._two_finger_swipe_points.clear()
         self._tab_swipe_pose_active = False
         self._last_swipe_tracking_log_ts = 0.0
         self._swipe_missing_pose_frames = 0
+        self._swipe_requires_release = False
+        self._swipe_release_pose_frames = 0
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -466,11 +478,23 @@ class PointerControlService:
 
     def _tab_swipe_requested(self, landmarks: list[Any], index_folded: bool) -> str:
         if index_folded:
-            self._two_finger_swipe_points.clear()
-            self._swipe_missing_pose_frames = 0
+            self._reset_tab_swipe_tracking()
+            self._swipe_requires_release = False
+            self._swipe_release_pose_frames = 0
             return ""
 
         center = self._two_finger_swipe_center(landmarks)
+        if self._swipe_requires_release:
+            if center is None:
+                self._swipe_release_pose_frames += 1
+                if self._swipe_release_pose_frames >= self.tab_swipe_release_frames:
+                    self._swipe_requires_release = False
+                    self._swipe_release_pose_frames = 0
+                    self._reset_tab_swipe_tracking()
+            else:
+                self._swipe_release_pose_frames = 0
+            return ""
+
         if center is None:
             self._swipe_missing_pose_frames += 1
             if self._two_finger_swipe_points and self._swipe_missing_pose_frames <= 2:
@@ -479,6 +503,16 @@ class PointerControlService:
             return ""
         self._swipe_missing_pose_frames = 0
         if not self._tab_swipe_pose_active:
+            if self._two_finger_arm_points and (
+                _distance(self._two_finger_arm_points[0], center) > self.tab_swipe_arm_radius
+                or _distance(self._two_finger_arm_points[-1], center) > self.tab_swipe_arm_radius
+            ):
+                self._two_finger_arm_points = [center]
+                return ""
+            self._two_finger_arm_points.append(center)
+            if len(self._two_finger_arm_points) < self.tab_swipe_arm_frames:
+                return ""
+            self._two_finger_arm_points.clear()
             print("[i] Pointer: two-finger swipe pose ready", flush=True)
             self._tab_swipe_pose_active = True
 
@@ -504,7 +538,7 @@ class PointerControlService:
             candidate_dy = center[1] - point[1]
             if abs(candidate_dy) > self.tab_swipe_vertical_tolerance:
                 continue
-            if abs(candidate_dx) < abs(candidate_dy) * 1.4:
+            if abs(candidate_dx) < abs(candidate_dy) * 1.8:
                 continue
             if candidate is None or abs(candidate_dx) > abs(candidate[2]):
                 candidate = (point_t, point, candidate_dx, candidate_dy)
@@ -541,10 +575,12 @@ class PointerControlService:
             return ""
 
         self._last_tab_swipe_ts = now
-        self._two_finger_swipe_points.clear()
+        self._reset_tab_swipe_tracking()
+        self._swipe_requires_release = True
         return "left" if dx < 0 else "right"
 
     def _reset_tab_swipe_tracking(self) -> None:
+        self._two_finger_arm_points.clear()
         self._two_finger_swipe_points.clear()
         self._tab_swipe_pose_active = False
         self._swipe_missing_pose_frames = 0

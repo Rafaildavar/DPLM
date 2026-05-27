@@ -161,7 +161,7 @@ def test_two_finger_swipe_left_switches_previous_window_space(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    start = _arm_swipe(svc, center=(0.62, 0.24))
     swipe = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
 
     assert start.ok
@@ -201,7 +201,7 @@ def test_two_finger_swipe_right_switches_next_window_space(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = svc.update(_payload(_two_finger_landmarks(center=(0.38, 0.24))))
+    start = _arm_swipe(svc, center=(0.38, 0.24))
     swipe = svc.update(_payload(_two_finger_landmarks(center=(0.58, 0.24))))
 
     assert start.ok
@@ -241,9 +241,9 @@ def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
     monkeypatch.setattr(pc.subprocess, "run", _fake_subprocess_run(scripts))
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
-    start = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    start = _arm_swipe(svc, center=(0.62, 0.24))
     lost_pose = svc.update(_payload(_open_index_landmarks(tip=(0.58, 0.24))))
-    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.53, 0.24))))
+    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.49, 0.24))))
 
     assert start.ok
     assert lost_pose.ok
@@ -287,8 +287,85 @@ def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):
     assert hotkeys == []
 
 
+def test_moving_into_two_finger_pose_does_not_trigger_unarmed_swipe(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    motion = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
+
+    assert not motion.tab_switched
+    assert hotkeys == []
+
+
+def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "linux")
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    _arm_swipe(svc, center=(0.62, 0.24))
+    first = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    held_again = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
+
+    assert first.tab_switched == "left"
+    assert not held_again.tab_switched
+    assert hotkeys == [("alt", "shift", "tab")]
+
+
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
+
+
+def _arm_swipe(svc, *, center):
+    result = None
+    for _ in range(3):
+        result = svc.update(_payload(_two_finger_landmarks(center=center)))
+    return result
 
 
 def _fake_subprocess_run(scripts):
