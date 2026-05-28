@@ -167,10 +167,8 @@ def test_two_finger_swipe_left_switches_previous_window_space(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "left"
-    assert hotkeys == []
-    assert len(scripts) == 1
-    assert "key code 123" in scripts[0][2]
-    assert "control down" in scripts[0][2]
+    assert hotkeys == [("ctrl", "left")]
+    assert scripts == []
 
 
 def test_two_finger_swipe_right_switches_next_window_space(monkeypatch):
@@ -208,10 +206,8 @@ def test_two_finger_swipe_right_switches_next_window_space(monkeypatch):
 
     assert start.ok
     assert swipe.tab_switched == "right"
-    assert hotkeys == []
-    assert len(scripts) == 1
-    assert "key code 124" in scripts[0][2]
-    assert "control down" in scripts[0][2]
+    assert hotkeys == [("ctrl", "right")]
+    assert scripts == []
 
 
 def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
@@ -251,9 +247,8 @@ def test_two_finger_swipe_survives_brief_pose_loss(monkeypatch):
     assert start.ok
     assert lost_pose.ok
     assert swipe.tab_switched == "left"
-    assert hotkeys == []
-    assert len(scripts) == 1
-    assert "key code 123" in scripts[0][2]
+    assert hotkeys == [("ctrl", "left")]
+    assert scripts == []
 
 
 def test_open_palm_horizontal_motion_does_not_switch_windows(monkeypatch):

@@ -171,9 +171,9 @@ class PointerControlService:
         tab_swipe_threshold: float = 0.075,
         tab_swipe_vertical_tolerance: float = 0.20,
         tab_swipe_min_speed: float = 0.12,
-        tab_swipe_cooldown_s: float = 0.75,
+        tab_swipe_cooldown_s: float = 0.45,
         tab_swipe_min_frames: int = 3,
-        tab_swipe_release_frames: int = 2,
+        tab_swipe_release_frames: int = 1,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -640,8 +640,18 @@ class PointerControlService:
     def _send_hotkey(self, hotkey: tuple[str, ...]) -> None:
         if sys.platform == "darwin":
             direction = self._macos_direction_for_hotkey(hotkey)
-            if direction and self._send_macos_window_swipe(direction):
-                return
+            if direction:
+                try:
+                    print(
+                        f"[i] Pointer: window swipe hotkey {'+'.join(hotkey)} via pyautogui",
+                        flush=True,
+                    )
+                    pyautogui.hotkey(*hotkey)
+                    return
+                except Exception as exc:
+                    print(f"[!] Pointer: pyautogui window swipe failed: {exc}", flush=True)
+                if self._send_macos_window_swipe(direction):
+                    return
             if self._send_macos_hotkey(hotkey):
                 print(
                     f"[i] Pointer: window swipe hotkey {'+'.join(hotkey)} via System Events",

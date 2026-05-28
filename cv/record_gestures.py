@@ -156,8 +156,7 @@ def main() -> None:
                 capture.clear()
 
                 if saved >= target_samples:
-                    print("[✓] Достигнуто целевое число семплов — выходим")
-                    break
+                    print("[✓] Достигнуто целевое число семплов — можно закрыть Esc или продолжить Пробел")
 
     finally:
         detector.close()

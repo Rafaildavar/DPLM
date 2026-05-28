@@ -106,7 +106,10 @@ def draw_recording_overlay(
     _text(draw, (margin, 18), "Запись жеста", size=28, color=white, bold=True)
     _text(draw, (margin, 57), f"Жест: {display_label}", size=18, color=muted)
 
-    sample_text = f"Пример {min(saved + 1, target_samples)} из {target_samples}"
+    if saved < target_samples:
+        sample_text = f"Пример {saved + 1} из {target_samples}"
+    else:
+        sample_text = f"Пример {saved + 1}"
     sample_box = draw.textbbox((0, 0), sample_text, font=_font(18, True))
     _text(
         draw,
