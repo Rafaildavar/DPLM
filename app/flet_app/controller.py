@@ -606,6 +606,11 @@ class AppController:
         lj = out.get("landmarks_json") or "[]"
         self._set_confidence(conf)
         self._set_landmarks(lj)
+        if not label:
+            if self._last_label:
+                self._last_label = ""
+                self.gesture_detected.emit("")
+            return
         if label and label != self._last_label:
             print(f"[ctrl.gesture] detected={label!r} conf={conf:.3f} prev={self._last_label!r}", flush=True)
             self._last_label = label

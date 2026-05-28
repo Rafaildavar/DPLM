@@ -215,6 +215,14 @@ class GestureOnlineInfer:
             except Exception:
                 continue
 
+        if not normalized:
+            self._window.clear()
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+            }
+
         if self._classifier_two_hands:
             if len(normalized) >= 2:
                 frame_vec = np.concatenate(normalized[:2], axis=0)
@@ -222,12 +230,8 @@ class GestureOnlineInfer:
                 frame_vec = np.concatenate(
                     [normalized[0], np.zeros((21, 2), dtype=np.float32)], axis=0
                 )
-            else:
-                frame_vec = np.zeros((42, 2), dtype=np.float32)
         else:
-            frame_vec = (
-                normalized[0] if normalized else np.zeros((21, 2), dtype=np.float32)
-            )
+            frame_vec = normalized[0]
 
         feat = frame_vec.reshape(-1)
         if feat.shape[0] != self._feature_dim:
