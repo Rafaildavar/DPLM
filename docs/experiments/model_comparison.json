@@ -1,0 +1,321 @@
+{
+  "dataset": {
+    "data_root": "data/gestures",
+    "sample_count": 67,
+    "class_count": 4,
+    "class_counts": {
+      "New": 20,
+      "new2": 4,
+      "zoom": 15,
+      "zoom_one": 28
+    },
+    "raw_feature_dims": [
+      42,
+      84
+    ],
+    "target_dim": 84,
+    "cv_folds": 4
+  },
+  "results": [
+    {
+      "feature_mode": "static_mean",
+      "model_name": "knn",
+      "accuracy": 0.9403,
+      "macro_f1": 0.9336,
+      "macro_precision": 0.9157,
+      "macro_recall": 0.9571,
+      "macro_false_positive_rate": 0.021,
+      "latency_ms_per_sample": 0.415,
+      "threshold": {
+        "threshold": 0.75,
+        "coverage": 0.8806,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 8
+      },
+      "confusion_matrix": [
+        [
+          18,
+          1,
+          0,
+          1
+        ],
+        [
+          0,
+          4,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          26
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_mean",
+      "model_name": "svm",
+      "accuracy": 0.9254,
+      "macro_f1": 0.9414,
+      "macro_precision": 0.9398,
+      "macro_recall": 0.9482,
+      "macro_false_positive_rate": 0.0272,
+      "latency_ms_per_sample": 0.02,
+      "threshold": {
+        "threshold": 0.7,
+        "coverage": 0.7612,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 16
+      },
+      "confusion_matrix": [
+        [
+          18,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          4,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          0,
+          0,
+          3,
+          25
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_mean",
+      "model_name": "rf",
+      "accuracy": 0.9104,
+      "macro_f1": 0.8658,
+      "macro_precision": 0.9417,
+      "macro_recall": 0.8321,
+      "macro_false_positive_rate": 0.0363,
+      "latency_ms_per_sample": 0.29,
+      "threshold": {
+        "threshold": 0.8,
+        "coverage": 0.6119,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 26
+      },
+      "confusion_matrix": [
+        [
+          18,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          2,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          26
+        ]
+      ]
+    },
+    {
+      "feature_mode": "dynamic_stats",
+      "model_name": "knn",
+      "accuracy": 0.9254,
+      "macro_f1": 0.9223,
+      "macro_precision": 0.9058,
+      "macro_recall": 0.9446,
+      "macro_false_positive_rate": 0.0274,
+      "latency_ms_per_sample": 0.105,
+      "threshold": {
+        "threshold": 0.7,
+        "coverage": 0.8955,
+        "accepted_accuracy": 0.9833,
+        "rejected_count": 7
+      },
+      "confusion_matrix": [
+        [
+          17,
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          4,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          26
+        ]
+      ]
+    },
+    {
+      "feature_mode": "dynamic_stats",
+      "model_name": "svm",
+      "accuracy": 0.9254,
+      "macro_f1": 0.9174,
+      "macro_precision": 0.9491,
+      "macro_recall": 0.8946,
+      "macro_false_positive_rate": 0.0299,
+      "latency_ms_per_sample": 0.025,
+      "threshold": {
+        "threshold": 0.8,
+        "coverage": 0.5672,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 29
+      },
+      "confusion_matrix": [
+        [
+          18,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          3,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          26
+        ]
+      ]
+    },
+    {
+      "feature_mode": "dynamic_stats",
+      "model_name": "rf",
+      "accuracy": 0.8806,
+      "macro_f1": 0.8244,
+      "macro_precision": 0.8431,
+      "macro_recall": 0.8143,
+      "macro_false_positive_rate": 0.0434,
+      "latency_ms_per_sample": 0.222,
+      "threshold": {
+        "threshold": 0.7,
+        "coverage": 0.6716,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 22
+      },
+      "confusion_matrix": [
+        [
+          18,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          2,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          15,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          24
+        ]
+      ]
+    }
+  ],
+  "best_result": {
+    "feature_mode": "static_mean",
+    "model_name": "svm",
+    "accuracy": 0.9254,
+    "macro_f1": 0.9414,
+    "macro_precision": 0.9398,
+    "macro_recall": 0.9482,
+    "macro_false_positive_rate": 0.0272,
+    "latency_ms_per_sample": 0.02,
+    "threshold": {
+      "threshold": 0.7,
+      "coverage": 0.7612,
+      "accepted_accuracy": 1.0,
+      "rejected_count": 16
+    },
+    "confusion_matrix": [
+      [
+        18,
+        0,
+        0,
+        2
+      ],
+      [
+        0,
+        4,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        15,
+        0
+      ],
+      [
+        0,
+        0,
+        3,
+        25
+      ]
+    ]
+  },
+  "notes": [
+    "Активные классы в сравнении: New, new2, zoom, zoom_one",
+    "CV folds: 4; минимальный размер класса: 4",
+    "Обнаружены разные исходные размерности признаков; для этого benchmark семплы были дополнены или обрезаны до target_dim 84.",
+    "Дисбаланс классов высокий; macro-метрики важнее обычной accuracy."
+  ]
+}
