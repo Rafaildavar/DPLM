@@ -31,9 +31,11 @@ def test_no_hand_frame_clears_window_and_does_not_predict() -> None:
     infer._feature_dim = 42
     infer._classifier_two_hands = False
     infer._window = deque([np.ones(42, dtype=np.float32)], maxlen=30)
+    infer._finger_count_window = deque([2], maxlen=5)
 
     out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert out == {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
     assert len(infer._window) == 0
+    assert len(infer._finger_count_window) == 0
     assert clf.predict_calls == 0

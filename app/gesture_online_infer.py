@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
 
@@ -18,6 +18,11 @@ from cv.hand_landmarker import (
     HandLandmarkerVideo,
     normalize_landmarks,
     resolve_hand_landmarker_task_path,
+)
+from cv.gesture_pose_signature import (
+    build_signature_metadata_from_data_root,
+    hands_non_thumb_count,
+    load_signature_metadata,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +41,7 @@ class GestureOnlineInfer:
         model_path: Optional[Path] = None,
         classes_path: Optional[Path] = None,
         feature_dim_path: Optional[Path] = None,
+        gesture_signatures_path: Optional[Path] = None,
         window: int = 30,
         two_hands: bool = False,
     ) -> None:
@@ -50,10 +56,15 @@ class GestureOnlineInfer:
         # Режим детектора рук (что мы реально ловим/рисуем):
         self._detector_two_hands = bool(two_hands)
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
+        self._finger_count_window: Deque[int] = deque(maxlen=5)
+        self._gesture_signatures: dict[str, dict[str, Any]] = {}
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
         feature_dim_path = feature_dim_path or (PROJECT_ROOT / "models" / "feature_dim.txt")
+        gesture_signatures_path = gesture_signatures_path or (
+            model_path.parent / "gesture_signatures.json"
+        )
 
         try:
             import mediapipe  # noqa: F401  - проверим наличие пакета
@@ -100,6 +111,7 @@ class GestureOnlineInfer:
             self._clf = None
             if not self._model_error:
                 self._model_error = "Нет models/knn.pkl"
+        self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
 
         try:
             task_path = str(resolve_hand_landmarker_task_path())
@@ -110,6 +122,71 @@ class GestureOnlineInfer:
         except Exception as e:
             self._init_error = str(e)
             self._detector = None
+
+    def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
+        metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
+        if not metadata and self._classes:
+            metadata = build_signature_metadata_from_data_root(
+                PROJECT_ROOT / "data" / "gestures",
+                self._classes,
+                max_hands=2 if self._classifier_two_hands else 1,
+            )
+
+        classes_raw = metadata.get("classes") if isinstance(metadata, dict) else None
+        if not isinstance(classes_raw, dict):
+            return {}
+
+        signatures: dict[str, dict[str, Any]] = {}
+        for label, raw in classes_raw.items():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                count = int(raw["non_thumb_count"])
+                stability = float(raw.get("stability", 1.0))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if stability < 0.55:
+                continue
+            signature = {"non_thumb_count": count, "stability": stability}
+            signatures[str(label)] = signature
+            signatures[str(label).lower()] = signature
+        return signatures
+
+    def _stable_non_thumb_count(self, hands: List[DetectedHand]) -> int | None:
+        count = hands_non_thumb_count(
+            (h.landmarks for h in hands),
+            max_hands=2 if self._classifier_two_hands else 1,
+        )
+        if count is None:
+            self._finger_count_window.clear()
+            return None
+
+        self._finger_count_window.append(int(count))
+        dominant, support = Counter(self._finger_count_window).most_common(1)[0]
+        if support >= max(1, (len(self._finger_count_window) + 1) // 2):
+            return int(dominant)
+        return int(count)
+
+    def _pose_matches_prediction(self, label: str, current_count: int | None) -> bool:
+        if current_count is None or not label:
+            return True
+
+        signature = self._gesture_signatures.get(label) or self._gesture_signatures.get(
+            label.lower()
+        )
+        if not signature:
+            return True
+
+        expected_count = int(signature["non_thumb_count"])
+        if int(current_count) == expected_count:
+            return True
+
+        print(
+            "[i] gesture rejected by finger count: "
+            f"label={label!r} expected={expected_count} current={current_count}",
+            flush=True,
+        )
+        return False
 
     @property
     def init_error(self) -> str:
@@ -162,6 +239,7 @@ class GestureOnlineInfer:
                 task_path=task_path,
             )
             self._window.clear()
+            self._finger_count_window.clear()
         except Exception as e:
             self._init_error = str(e)
             self._detector = None
@@ -174,6 +252,7 @@ class GestureOnlineInfer:
                 pass
             self._detector = None
         self._window.clear()
+        self._finger_count_window.clear()
 
     def _build_overlay_payload(self, hands: List[DetectedHand]) -> str:
         """
@@ -217,11 +296,14 @@ class GestureOnlineInfer:
 
         if not normalized:
             self._window.clear()
+            self._finger_count_window.clear()
             return {
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
             }
+
+        current_finger_count = self._stable_non_thumb_count(hands)
 
         if self._classifier_two_hands:
             if len(normalized) >= 2:
@@ -259,6 +341,14 @@ class GestureOnlineInfer:
                 confidence = 0.75 if normalized else 0.0
         elif normalized:
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
+
+        if label and not self._pose_matches_prediction(label, current_finger_count):
+            self._window.clear()
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+            }
 
         return {
             "label": label,
