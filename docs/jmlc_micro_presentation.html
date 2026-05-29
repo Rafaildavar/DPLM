@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DPLM / JMLC - микро-презентация</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-2: #eef3f8;
+      --text: #17202a;
+      --muted: #637083;
+      --line: #d9e1ea;
+      --blue: #2563eb;
+      --green: #159957;
+      --amber: #c67b12;
+      --red: #c24141;
+      --violet: #6d4bd1;
+      --ink: #111827;
+      --shadow: 0 18px 50px rgba(22, 31, 48, 0.14);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      min-height: 100%;
+      background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent 32%),
+        linear-gradient(315deg, rgba(21, 153, 87, 0.10), transparent 36%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .deck {
+      position: relative;
+      height: 100vh;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+    }
+
+    .topbar,
+    .controls {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .mark {
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(37, 99, 235, 0.24);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(21, 153, 87, 0.16)),
+        #fff;
+      display: grid;
+      place-items: center;
+      color: var(--blue);
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .counter {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .stage {
+      position: relative;
+      width: min(1180px, 100%);
+      min-height: 0;
+      margin: 0 auto;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 40px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(217, 225, 234, 0.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateX(24px);
+      pointer-events: none;
+      overflow: auto;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .slide.is-active {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .slide h2 {
+      margin: 0;
+      max-width: 900px;
+      color: var(--ink);
+      font-size: 38px;
+      line-height: 1.08;
+      font-weight: 840;
+    }
+
+    .lead {
+      max-width: 840px;
+      margin: 18px 0 0;
+      color: #344154;
+      font-size: 19px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .panel.tint-blue {
+      border-color: rgba(37, 99, 235, 0.24);
+      background: #f5f8ff;
+    }
+
+    .panel.tint-green {
+      border-color: rgba(21, 153, 87, 0.24);
+      background: #f3fbf7;
+    }
+
+    .panel.tint-amber {
+      border-color: rgba(198, 123, 18, 0.26);
+      background: #fff9ef;
+    }
+
+    .panel.tint-red {
+      border-color: rgba(194, 65, 65, 0.22);
+      background: #fff6f6;
+    }
+
+    .panel h3 {
+      margin: 0 0 8px;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tagrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #344154;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .score-list {
+      margin-top: 24px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .score {
+      display: grid;
+      grid-template-columns: 190px 1fr 94px;
+      align-items: center;
+      gap: 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .score strong {
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .score span {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #e6ecf3;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+    }
+
+    .fill.green {
+      background: var(--green);
+    }
+
+    .fill.amber {
+      background: var(--amber);
+    }
+
+    .fill.red {
+      background: var(--red);
+    }
+
+    .fill.violet {
+      background: var(--violet);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 112px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .step b {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.25;
+    }
+
+    .step small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .step::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -11px;
+      width: 11px;
+      height: 2px;
+      background: var(--line);
+    }
+
+    .step:last-child::after {
+      display: none;
+    }
+
+    .matrix {
+      width: 100%;
+      margin-top: 24px;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      font-size: 14px;
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .matrix th {
+      color: var(--ink);
+      background: #f0f5fb;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    .matrix tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .status.ok {
+      color: #0b6a3c;
+      background: #dcf8e9;
+    }
+
+    .status.mid {
+      color: #8b5300;
+      background: #fff0cf;
+    }
+
+    .status.low {
+      color: #9a2626;
+      background: #ffe0e0;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .model-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 15px;
+      background: #fff;
+      min-height: 154px;
+    }
+
+    .model-card .letter {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      color: #fff;
+      background: var(--blue);
+      font-weight: 900;
+      margin-bottom: 12px;
+    }
+
+    .model-card:nth-child(2) .letter {
+      background: var(--green);
+    }
+
+    .model-card:nth-child(3) .letter {
+      background: var(--amber);
+    }
+
+    .model-card:nth-child(4) .letter {
+      background: var(--violet);
+    }
+
+    .model-card:nth-child(5) .letter {
+      background: var(--red);
+    }
+
+    .model-card b {
+      display: block;
+      font-size: 15px;
+      color: var(--ink);
+      line-height: 1.25;
+    }
+
+    .model-card span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .todo {
+      display: grid;
+      grid-template-columns: 42px 1fr 150px;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .todo .num {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      background: #eef3f8;
+      color: var(--ink);
+      font-weight: 900;
+    }
+
+    .todo b {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .todo small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .impact {
+      justify-self: end;
+      min-width: 128px;
+      text-align: center;
+      color: #0b6a3c;
+      background: #e4f8ed;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 22px;
+      margin-top: 26px;
+      align-items: stretch;
+    }
+
+    .image-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: #fff;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .image-panel img {
+      width: 100%;
+      height: auto;
+      max-height: 330px;
+      object-fit: contain;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: #f7f9fc;
+    }
+
+    .image-panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .qa {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .qa-item {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .qa-item b {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .qa-item p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .controls {
+      padding-bottom: 2px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .nav button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--ink);
+      background: #fff;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .nav button.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .nav button:disabled {
+      opacity: 0.46;
+      cursor: not-allowed;
+    }
+
+    .progress {
+      flex: 1;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress > div {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+      transition: width 180ms ease;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+      body {
+        overflow: auto;
+      }
+
+      .deck {
+        min-height: 100vh;
+        height: auto;
+        padding: 14px;
+        grid-template-rows: auto auto auto;
+      }
+
+      .stage {
+        min-height: 720px;
+      }
+
+      .slide {
+        padding: 24px;
+      }
+
+      .slide h2 {
+        font-size: 30px;
+      }
+
+      .lead {
+        font-size: 16px;
+      }
+
+      .grid.two,
+      .grid.three,
+      .grid.four,
+      .cards,
+      .pipeline,
+      .split,
+      .qa {
+        grid-template-columns: 1fr;
+      }
+
+      .score {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .score span {
+        text-align: left;
+      }
+
+      .todo {
+        grid-template-columns: 38px 1fr;
+      }
+
+      .impact {
+        grid-column: 2;
+        justify-self: start;
+      }
+
+      .step::after {
+        display: none;
+      }
+
+      .hint {
+        display: none;
+      }
+    }
+
+    @media print {
+      body {
+        overflow: visible;
+        background: #fff;
+      }
+
+      .deck {
+        display: block;
+        height: auto;
+        padding: 0;
+      }
+
+      .topbar,
+      .controls {
+        display: none;
+      }
+
+      .stage {
+        width: 100%;
+      }
+
+      .slide {
+        position: relative;
+        inset: auto;
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+        overflow: visible;
+        min-height: 100vh;
+        page-break-after: always;
+        box-shadow: none;
+        border-radius: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="DPLM JMLC микро-презентация">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">D</div>
+        <div>
+          <h1>DPLM / JMLC Research Track</h1>
+          <p>Микро-презентация по критериям комиссии</p>
+        </div>
+      </div>
+      <div class="counter" id="counter">1 / 8</div>
+    </header>
+
+    <section class="stage">
+      <article class="slide is-active">
+        <p class="eyebrow">Главный тезис</p>
+        <h2>DPLM стоит показывать как AI-продукт и исследовательский стенд</h2>
+        <p class="lead">
+          Дипломная версия уже выглядит как инженерная система. Для JMLC нужно ярче доказать
+          полный цикл: данные, модели, эксперименты, продуктовые гипотезы, AI-инструменты и
+          готовность отвечать на вопросы комиссии.
+        </p>
+
+        <div class="pipeline" aria-label="Исследовательский цикл">
+          <div class="step"><b>Сбор данных</b><small>Пользовательские записи жестов, классы, сессии</small></div>
+          <div class="step"><b>EDA</b><small>Баланс классов, длины, ошибки детекта, похожие жесты</small></div>
+          <div class="step"><b>Baseline</b><small>KNN + static_mean как точка сравнения</small></div>
+          <div class="step"><b>A/B/C</b><small>dynamic_stats, DTW-KNN, TCN/1D CNN</small></div>
+          <div class="step"><b>Метрики</b><small>F1, confusion matrix, latency, false triggers</small></div>
+          <div class="step"><b>Live proof</b><small>Журнал recognition_logs и проверка в приложении</small></div>
+        </div>
+
+        <div class="tagrow">
+          <span class="tag">MediaPipe</span>
+          <span class="tag">scikit-learn</span>
+          <span class="tag">Optuna</span>
+          <span class="tag">PostgreSQL</span>
+          <span class="tag">Flet GUI</span>
+          <span class="tag">pytest</span>
+          <span class="tag">Docker</span>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Покрытие критериев</p>
+        <h2>Сейчас сильнее всего раскрыт Data Science. Остальное нужно подсветить доказательствами</h2>
+        <p class="lead">
+          Это не оценка качества проекта, а карта того, насколько явно критерии видны комиссии из материалов.
+        </p>
+
+        <div class="score-list">
+          <div class="score"><strong>Data Science</strong><div class="bar"><div class="fill green" style="width: 76%"></div></div><span>сильная база</span></div>
+          <div class="score"><strong>Разработка</strong><div class="bar"><div class="fill" style="width: 62%"></div></div><span>частично</span></div>
+          <div class="score"><strong>Презентация</strong><div class="bar"><div class="fill violet" style="width: 54%"></div></div><span>нужен питч</span></div>
+          <div class="score"><strong>Продукт</strong><div class="bar"><div class="fill amber" style="width: 46%"></div></div><span>добавить</span></div>
+          <div class="score"><strong>Применение ИИ</strong><div class="bar"><div class="fill amber" style="width: 38%"></div></div><span>зафиксировать</span></div>
+          <div class="score"><strong>Мотивация</strong><div class="bar"><div class="fill red" style="width: 28%"></div></div><span>дописать</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Матрица критериев</p>
+        <h2>Что уже есть и что нужно добить</h2>
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>Критерий</th>
+              <th>Статус</th>
+              <th>Доказательство</th>
+              <th>Следующий шаг</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Разработка</td>
+              <td><span class="status mid">частично</span></td>
+              <td>GUI, CV, БД, Alembic, docker-compose, pytest</td>
+              <td>CI, Makefile, MLOps-артефакты</td>
+            </tr>
+            <tr>
+              <td>Data Science</td>
+              <td><span class="status ok">хорошо</span></td>
+              <td>Гипотеза, baseline, модели A/B/C/D, метрики, Optuna</td>
+              <td>EDA, split strategy, фактическая таблица экспериментов</td>
+            </tr>
+            <tr>
+              <td>Применение ИИ</td>
+              <td><span class="status low">слабо видно</span></td>
+              <td>MediaPipe, ML-классификатор, голосовой помощник</td>
+              <td>docs/ai_usage.md с ролями AI-агентов</td>
+            </tr>
+            <tr>
+              <td>Продукт</td>
+              <td><span class="status low">дописать</span></td>
+              <td>MVP уже есть в логике приложения</td>
+              <td>Аудитория, конкуренты, гипотезы, feedback</td>
+            </tr>
+            <tr>
+              <td>Мотивация</td>
+              <td><span class="status low">нет блока</span></td>
+              <td>Связь проекта с AI/ML очевидна, но не проговорена</td>
+              <td>Текст под выбранную магистратуру</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Data Science</p>
+        <h2>Исследование должно отвечать на один ясный вопрос</h2>
+        <p class="lead">
+          Достаточно ли static_mean для пользовательских жестов, или динамические признаки снижают
+          ложные срабатывания без роста задержки?
+        </p>
+
+        <div class="cards">
+          <div class="model-card">
+            <div class="letter">A</div>
+            <b>KNN</b>
+            <span>static_mean. Базовая дипломная версия и контрольная точка.</span>
+          </div>
+          <div class="model-card">
+            <div class="letter">B</div>
+            <b>KNN / SVM / RF</b>
+            <span>dynamic_stats. Быстрый инженерный апгрейд признаков.</span>
+          </div>
+          <div class="model-card">
+            <div class="letter">C</div>
+            <b>DTW-KNN</b>
+            <span>Полная последовательность. Проверка динамики жеста.</span>
+          </div>
+          <div class="model-card">
+            <div class="letter">D</div>
+            <b>TCN / 1D CNN</b>
+            <span>Нейросетевой вариант при большем датасете.</span>
+          </div>
+          <div class="model-card">
+            <div class="letter">M</div>
+            <b>Метрики</b>
+            <span>Macro F1, confusion matrix, threshold, latency, live false triggers.</span>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="panel tint-green">
+            <h3>Что показать комиссии</h3>
+            <p>Паспорт датасета, EDA, предобработку, протокол валидации, таблицу A/B/C, матрицу ошибок и анализ порогов. Главный риск: без фактических результатов Data Science будет выглядеть как план, а не как исследование.</p>
+          </div>
+          <div class="image-panel">
+            <img src="plots/param_importance.png" alt="График важности гиперпараметров">
+            <p>Текущий визуальный артефакт из `docs/plots/`: его стоит дополнить confusion matrix и threshold report.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Разработка и MLOps</p>
+        <h2>Инженерная сила проекта уже есть в репозитории. Ее надо превратить в доказательства</h2>
+
+        <div class="grid three">
+          <div class="panel tint-blue">
+            <h3>Архитектура</h3>
+            <p>Flet GUI, CV-модули, сервисы команд, настройки, БД, журнал событий.</p>
+          </div>
+          <div class="panel tint-green">
+            <h3>Качество</h3>
+            <p>Unit-тесты на pytest, проверка конфигурации, БД, команд, bridge-логики и инференса.</p>
+          </div>
+          <div class="panel tint-amber">
+            <h3>Воспроизводимость</h3>
+            <p>Docker для PostgreSQL, Alembic-миграции, фиксированные зависимости, отчеты экспериментов.</p>
+          </div>
+        </div>
+
+        <div class="timeline">
+          <div class="todo">
+            <div class="num">1</div>
+            <div><b>CI workflow</b><small>pytest, coverage, import smoke, миграции</small></div>
+            <div class="impact">инженерия</div>
+          </div>
+          <div class="todo">
+            <div class="num">2</div>
+            <div><b>scripts/compare_models.py</b><small>единый запуск baseline и вариантов B/C/D</small></div>
+            <div class="impact">ML-пайплайн</div>
+          </div>
+          <div class="todo">
+            <div class="num">3</div>
+            <div><b>docs/experiments/</b><small>dataset profile, model comparison, threshold report, live eval</small></div>
+            <div class="impact">MLOps</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Продукт и AI</p>
+        <h2>Покажи, что это не демо, а MVP с понятной аудиторией</h2>
+
+        <div class="grid two">
+          <div class="panel tint-blue">
+            <h3>Проблема</h3>
+            <p>Пользователю нужны персональные быстрые команды без отдельного устройства и без постоянной настройки горячих клавиш.</p>
+          </div>
+          <div class="panel tint-green">
+            <h3>MVP</h3>
+            <p>Записать жест, обучить модель, привязать команду, распознавать live, настроить threshold и смотреть журнал ошибок.</p>
+          </div>
+          <div class="panel tint-amber">
+            <h3>Конкуренты</h3>
+            <p>Voice Control, Windows Voice Access, Stream Deck, Leap Motion и gesture-control приложения.</p>
+          </div>
+          <div class="panel tint-red">
+            <h3>AI в работе</h3>
+            <p>Зафиксировать AI-агентов для ресерча, EDA, code review, тест-кейсов, презентации и ручной проверки результатов.</p>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="panel">
+            <h3>Продуктовые метрики</h3>
+            <div class="tagrow">
+              <span class="tag">time-to-first-command</span>
+              <span class="tag">success rate</span>
+              <span class="tag">false triggers/hour</span>
+              <span class="tag">latency</span>
+              <span class="tag">SUS / UMUX-Lite</span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Дифференциация</h3>
+            <p>Обычная веб-камера, локальные данные, пользовательские жесты, измеримое качество, настраиваемая безопасность команд.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">P0 план</p>
+        <h2>Что сделать первым, чтобы презентация стала убедительной</h2>
+
+        <div class="timeline">
+          <div class="todo">
+            <div class="num">1</div>
+            <div><b>compare_models.py</b><small>Запуск A/B/C и таблица качества по единым метрикам</small></div>
+            <div class="impact">самый важный</div>
+          </div>
+          <div class="todo">
+            <div class="num">2</div>
+            <div><b>dataset_profile.md</b><small>Классы, семплы, длины записей, риски и ограничения данных</small></div>
+            <div class="impact">Data Science</div>
+          </div>
+          <div class="todo">
+            <div class="num">3</div>
+            <div><b>threshold_report.md</b><small>Рекомендованный confidenceThreshold и trade-off ошибок</small></div>
+            <div class="impact">валидация</div>
+          </div>
+          <div class="todo">
+            <div class="num">4</div>
+            <div><b>ai_usage.md</b><small>Как AI-инструменты помогали и как результаты проверялись</small></div>
+            <div class="impact">критерий AI</div>
+          </div>
+          <div class="todo">
+            <div class="num">5</div>
+            <div><b>pitch + Q&A</b><small>5-7 минут: проблема, MVP, архитектура, эксперименты, продукт, развитие</small></div>
+            <div class="impact">защита</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Питч и вопросы</p>
+        <h2>Мини-сценарий защиты</h2>
+
+        <div class="grid four">
+          <div class="panel tint-blue"><h3>1 мин</h3><p>Проблема, аудитория, зачем нужен gesture-control без спецоборудования.</p></div>
+          <div class="panel tint-green"><h3>2 мин</h3><p>MVP: запись жеста, обучение, привязка команды, live-распознавание.</p></div>
+          <div class="panel tint-amber"><h3>2 мин</h3><p>Data Science: baseline, гипотеза, модели, метрики, результаты.</p></div>
+          <div class="panel tint-red"><h3>1 мин</h3><p>Развитие: MLOps, больше данных, последовательностные модели, accessibility.</p></div>
+        </div>
+
+        <div class="qa">
+          <div class="qa-item">
+            <b>Почему не сразу нейросеть?</b>
+            <p>Для малого персонального датасета KNN/SVM быстрее, проще и интерпретируемее. Нейросеть имеет смысл после накопления данных.</p>
+          </div>
+          <div class="qa-item">
+            <b>В чем исследовательская часть?</b>
+            <p>В проверке гипотезы о динамике жестов, сравнении признаков и моделей, подборе порогов и live-валидации ошибок.</p>
+          </div>
+          <div class="qa-item">
+            <b>Как снижаете ложные срабатывания?</b>
+            <p>Threshold, cooldown, per-class metrics, confusion matrix, live false trigger rate и recognition_logs.</p>
+          </div>
+          <div class="qa-item">
+            <b>Почему это продукт?</b>
+            <p>Есть пользовательский сценарий, MVP, локальные данные, журнал ошибок, настройка безопасности и метрики импакта.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="controls">
+      <div class="nav">
+        <button id="prev" type="button">Назад</button>
+        <button id="next" class="primary" type="button">Далее</button>
+      </div>
+      <div class="progress" aria-hidden="true"><div id="progress"></div></div>
+      <div class="hint">Стрелки влево/вправо тоже работают</div>
+    </footer>
+  </main>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const counter = document.getElementById("counter");
+    const progress = document.getElementById("progress");
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+    let index = 0;
+
+    function showSlide(nextIndex) {
+      index = Math.max(0, Math.min(slides.length - 1, nextIndex));
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle("is-active", slideIndex === index);
+      });
+      counter.textContent = `${index + 1} / ${slides.length}`;
+      progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+      prev.disabled = index === 0;
+      next.disabled = index === slides.length - 1;
+    }
+
+    prev.addEventListener("click", () => showSlide(index - 1));
+    next.addEventListener("click", () => showSlide(index + 1));
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown") showSlide(index + 1);
+      if (event.key === "ArrowLeft" || event.key === "PageUp") showSlide(index - 1);
+      if (event.key === "Home") showSlide(0);
+      if (event.key === "End") showSlide(slides.length - 1);
+    });
+
+    showSlide(0);
+  </script>
+</body>
+</html>

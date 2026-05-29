@@ -1,0 +1,179 @@
+{
+  "generated_at": "2026-05-29T16:12:12+00:00",
+  "root": "/Users/remi/Developer/GUAP/DPLM",
+  "dataset": {
+    "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
+    "class_count": 13,
+    "active_class_count": 4,
+    "empty_class_count": 9,
+    "sample_count": 67,
+    "valid_sample_count": 67,
+    "invalid_sample_count": 0,
+    "active_sample_min": 4,
+    "active_sample_max": 28,
+    "imbalance_ratio": 7.0,
+    "frame_min": 30,
+    "frame_max": 153,
+    "frame_mean": 61.85,
+    "feature_dims": [
+      42,
+      84
+    ],
+    "classes": [
+      {
+        "label": "New",
+        "sample_count": 20,
+        "valid_sample_count": 20,
+        "frame_min": 30,
+        "frame_max": 30,
+        "frame_mean": 30.0,
+        "feature_dims": [
+          42
+        ],
+        "issues": []
+      },
+      {
+        "label": "Newest",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "Open",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "hello",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "new2",
+        "sample_count": 4,
+        "valid_sample_count": 4,
+        "frame_min": 30,
+        "frame_max": 30,
+        "frame_mean": 30.0,
+        "feature_dims": [
+          42
+        ],
+        "issues": []
+      },
+      {
+        "label": "palm",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "peace_sign",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "swipe_right",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "test_gesture",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "thumbs_up",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      },
+      {
+        "label": "zoom",
+        "sample_count": 15,
+        "valid_sample_count": 15,
+        "frame_min": 34,
+        "frame_max": 62,
+        "frame_mean": 43.33,
+        "feature_dims": [
+          84
+        ],
+        "issues": []
+      },
+      {
+        "label": "zoom_one",
+        "sample_count": 28,
+        "valid_sample_count": 28,
+        "frame_min": 64,
+        "frame_max": 153,
+        "frame_mean": 99.07,
+        "feature_dims": [
+          42
+        ],
+        "issues": []
+      },
+      {
+        "label": "ываы",
+        "sample_count": 0,
+        "valid_sample_count": 0,
+        "frame_min": null,
+        "frame_max": null,
+        "frame_mean": null,
+        "feature_dims": [],
+        "issues": []
+      }
+    ]
+  },
+  "tests": {
+    "test_root": "/Users/remi/Developer/GUAP/DPLM/tests",
+    "test_file_count": 17,
+    "test_function_count": 87,
+    "pytest_ini_exists": true,
+    "coverage_gate": "90"
+  },
+  "artifacts": {
+    "JMLC.md": true,
+    "docker-compose.yml": true,
+    "pytest.ini": true,
+    "alembic": true,
+    "models/classes.json": true,
+    "models/feature_dim.txt": true,
+    "docs/jmlc_micro_presentation.html": true
+  }
+}
