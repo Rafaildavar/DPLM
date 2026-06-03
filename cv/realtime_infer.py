@@ -34,6 +34,20 @@ from cv.hand_landmarker import (  # noqa: E402
 MACOS_BACKEND = cv2.CAP_AVFOUNDATION
 
 
+def _ordered_hands(hands):
+    def sort_key(hand):
+        handedness = (getattr(hand, "handedness", "") or "").strip().lower()
+        if handedness == "right":
+            side_rank = 0
+        elif handedness == "left":
+            side_rank = 1
+        else:
+            side_rank = 2
+        return side_rank, -float(getattr(hand, "score", 0.0) or 0.0)
+
+    return sorted(hands, key=sort_key)
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Онлайн-классификация жестов (KNN) + TTS")
     p.add_argument("--model", default="models/knn.pkl", help="Путь к модели KNN (joblib)")
@@ -60,15 +74,17 @@ def main() -> None:
     clf = joblib.load(args.model)
     classes = json.loads(Path(args.classes).read_text())
     feature_dim = int(Path(args.feature_dim_file).read_text().strip())
+    model_feature_dim = int(getattr(clf, "n_features_in_", 0) or 0)
+    if model_feature_dim > 0 and model_feature_dim != feature_dim:
+        print(
+            "[w] feature_dim.txt не совпадает с knn.pkl: "
+            f"{feature_dim} -> {model_feature_dim}"
+        )
+        feature_dim = model_feature_dim
 
-    # Автонастройка режима рук по размерности признака
-    # 42 = одна рука (21×2), 84 = две руки (42×2)
-    if feature_dim == 84 and not args.two_hands:
-        print("[i] Обнаружена размерность 84 → переключаюсь в режим двух рук (--two-hands)")
-        args.two_hands = True
-    elif feature_dim == 42 and args.two_hands:
-        print("[i] feature_dim=42, но запрошен --two-hands: вторая рука будет нарисована, "
-              "но в признак подаётся только первая.")
+    classifier_two_hands = feature_dim == 84
+    if not args.two_hands:
+        print("[i] Auto-hand: детектор ищет до 2 рук, модель сама задаёт 42/84 признака")
 
     tts_engine = None
     last_spoken_label = None
@@ -92,7 +108,7 @@ def main() -> None:
         sys.exit(1)
 
     detector = HandLandmarkerVideo(
-        num_hands=2 if args.two_hands else 1,
+        num_hands=2,
         min_detection_confidence=0.6,
         min_presence_confidence=0.6,
         min_tracking_confidence=0.6,
@@ -109,7 +125,7 @@ def main() -> None:
 
             frame_bgr = cv2.flip(frame_bgr, 1)
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            hands = detector.detect_for_video_rgb(frame_rgb)
+            hands = _ordered_hands(detector.detect_for_video_rgb(frame_rgb))
 
             normalized: List[np.ndarray] = []
             for h in hands:
@@ -119,7 +135,8 @@ def main() -> None:
                 except Exception:
                     continue
 
-            if args.two_hands:
+            normalized = normalized[:2]
+            if classifier_two_hands:
                 if len(normalized) >= 2:
                     frame_vec = np.concatenate(normalized[:2], axis=0)
                 elif len(normalized) == 1:

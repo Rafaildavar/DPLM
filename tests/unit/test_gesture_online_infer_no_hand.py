@@ -22,6 +22,72 @@ class _CountingClassifier:
         return np.asarray([[1.0]])
 
 
+def _open_hand_landmarks(x: float = 0.5):
+    landmarks = [[x, 0.5] for _ in range(21)]
+    landmarks[0] = [x, 0.82]
+    landmarks[5] = [x, 0.56]
+    landmarks[6] = [x, 0.42]
+    landmarks[7] = [x, 0.30]
+    landmarks[8] = [x, 0.18]
+    return landmarks
+
+
+class _TwoHandsDetector:
+    def detect_for_video_rgb(self, _frame_rgb):
+        landmarks = _open_hand_landmarks()
+        from cv.hand_landmarker import DetectedHand
+
+        return [
+            DetectedHand(landmarks=landmarks, handedness="Left", score=0.9),
+            DetectedHand(landmarks=landmarks, handedness="Right", score=1.0),
+        ]
+
+
+class _OneHandDetector:
+    def detect_for_video_rgb(self, _frame_rgb):
+        from cv.hand_landmarker import DetectedHand
+
+        return [DetectedHand(landmarks=_open_hand_landmarks(), handedness="Right", score=1.0)]
+
+
+class _ShapeCheckingClassifier:
+    def __init__(self, expected_dim: int = 42) -> None:
+        self.expected_shape = (1, expected_dim)
+        self.seen_shape = None
+
+    def predict(self, features):
+        self.seen_shape = features.shape
+        assert features.shape == self.expected_shape
+        return np.asarray([0])
+
+    def predict_proba(self, features):
+        assert features.shape == self.expected_shape
+        return np.asarray([[0.9]])
+
+
+class _FeatureCaptureClassifier:
+    def __init__(self, expected_dim: int) -> None:
+        self.expected_shape = (1, expected_dim)
+        self.features = None
+
+    def predict(self, features):
+        self.features = features
+        assert features.shape == self.expected_shape
+        return np.asarray([0])
+
+    def predict_proba(self, features):
+        assert features.shape == self.expected_shape
+        return np.asarray([[0.9]])
+
+
+class _BadShapeClassifier:
+    def predict(self, _features):
+        raise ValueError("bad shape")
+
+    def predict_proba(self, _features):
+        raise AssertionError("predict_proba must not be called after predict failure")
+
+
 def test_no_hand_frame_clears_window_and_does_not_predict() -> None:
     infer = object.__new__(GestureOnlineInfer)
     clf = _CountingClassifier()
@@ -39,3 +105,60 @@ def test_no_hand_frame_clears_window_and_does_not_predict() -> None:
     assert len(infer._window) == 0
     assert len(infer._finger_count_window) == 0
     assert clf.predict_calls == 0
+
+
+def test_single_hand_classifier_gets_42_features_when_two_hands_are_detected() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _ShapeCheckingClassifier(42)
+    infer._detector = _TwoHandsDetector()
+    infer._clf = clf
+    infer._classes = ["new"]
+    infer._feature_dim = 42
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=30)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert clf.seen_shape == (1, 42)
+    assert out["landmarks_json"] != "[]"
+
+
+def test_two_hand_classifier_gets_84_features_with_one_hand_padded() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _FeatureCaptureClassifier(84)
+    infer._detector = _OneHandDetector()
+    infer._clf = clf
+    infer._classes = ["two_hand_ready"]
+    infer._feature_dim = 84
+    infer._classifier_two_hands = True
+    infer._window = deque(maxlen=30)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == "two_hand_ready"
+    assert clf.features is not None
+    assert clf.features.shape == (1, 84)
+    assert np.allclose(clf.features[0, 42:], 0.0)
+
+
+def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._detector = _OneHandDetector()
+    infer._clf = _BadShapeClassifier()
+    infer._classes = ["new"]
+    infer._feature_dim = 42
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=30)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert out["landmarks_json"] != "[]"
+    assert len(infer._window) == 0

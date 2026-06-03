@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Iterable, List, Optional, Tuple
 
 import joblib
 import numpy as np
@@ -14,7 +14,12 @@ from sklearn.neighbors import KNeighborsClassifier
 # --------------------------------------------------
 
 
-def load_dataset(data_root: Path, expect_dim: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+def load_dataset(
+    data_root: Path,
+    expect_dim: Optional[int] = None,
+    include_labels: Optional[Iterable[str]] = None,
+    lowercase_labels: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Загружает семплы из data_root/<label>/sample_*.npy
     Возвращает (X, y, classes), где:
@@ -26,17 +31,27 @@ def load_dataset(data_root: Path, expect_dim: Optional[int] = None) -> Tuple[np.
     feats_raw: List[np.ndarray] = []
     y_list: List[int] = []
     classes: List[str] = []
+    class_indices: dict[str, int] = {}
     max_dim: int = 0
+    raw_include = {str(label).strip() for label in (include_labels or []) if str(label).strip()}
+    canonical_include = {
+        label.lower() if lowercase_labels else label for label in raw_include
+    }
 
     for label_dir in sorted(p for p in data_root.iterdir() if p.is_dir()):
-        label = label_dir.name
+        raw_label = label_dir.name
+        label = raw_label.lower() if lowercase_labels else raw_label
+        if canonical_include and label not in canonical_include and raw_label not in raw_include:
+            continue
         sample_files = sorted(label_dir.glob("sample_*.npy"))
         if not sample_files:
             print(f"[i] Пропуск: нет семплов в {label_dir}")
             continue
 
-        class_idx = len(classes)
-        classes.append(label)
+        if label not in class_indices:
+            class_indices[label] = len(classes)
+            classes.append(label)
+        class_idx = class_indices[label]
 
         for sf in sample_files:
             arr = np.load(sf)  # ожидаем (T, D1, D2) или (T, D)
@@ -90,7 +105,24 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--classes-out", default=None, help="Путь для сохранения classes.json")
     p.add_argument("--feature-dim-out", default=None, help="Путь для сохранения feature_dim.txt")
     p.add_argument("--neighbors", type=int, default=5, help="Число соседей KNN")
+    p.add_argument(
+        "--weights",
+        choices=["uniform", "distance"],
+        default="distance",
+        help="Вес соседей KNN: distance устойчивее для маленьких несбалансированных наборов",
+    )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
+    p.add_argument(
+        "--include-label",
+        action="append",
+        default=[],
+        help="Обучать только указанный класс; можно передать несколько раз",
+    )
+    p.add_argument(
+        "--lowercase-labels",
+        action="store_true",
+        help="Сохранять имена классов в нижнем регистре (New -> new)",
+    )
     return p.parse_args()
 
 
@@ -100,10 +132,19 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    X, y, classes = load_dataset(data_root, expect_dim=args.expect_dim)
+    X, y, classes = load_dataset(
+        data_root,
+        expect_dim=args.expect_dim,
+        include_labels=args.include_label,
+        lowercase_labels=bool(args.lowercase_labels),
+    )
     print(f"[i] Загружено семплов: {len(X)}; классов: {len(classes)}; размер признака: {X.shape[1]}")
 
-    clf = KNeighborsClassifier(n_neighbors=args.neighbors, metric="euclidean")
+    clf = KNeighborsClassifier(
+        n_neighbors=args.neighbors,
+        metric="euclidean",
+        weights=args.weights,
+    )
     clf.fit(X, y)
 
     joblib.dump(clf, out_path)
@@ -125,4 +166,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

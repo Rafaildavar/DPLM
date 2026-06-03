@@ -158,6 +158,44 @@ def _landmark_point(landmarks: list[Any], index: int) -> Optional[Point]:
         return None
 
 
+def _screen_size() -> tuple[int, int]:
+    if PYAUTOGUI_AVAILABLE and pyautogui is not None:
+        try:
+            size = pyautogui.size()
+            width = int(getattr(size, "width", size[0]))
+            height = int(getattr(size, "height", size[1]))
+            if width > 0 and height > 0:
+                return width, height
+        except Exception:
+            pass
+
+    if sys.platform == "darwin":
+        try:
+            import Quartz
+
+            bounds = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
+            width = int(round(bounds.size.width))
+            height = int(round(bounds.size.height))
+            if width > 0 and height > 0:
+                return width, height
+        except Exception:
+            pass
+        try:
+            from AppKit import NSScreen
+
+            screens = NSScreen.screens()
+            if screens:
+                frame = screens[0].frame()
+                width = int(round(frame.size.width))
+                height = int(round(frame.size.height))
+                if width > 0 and height > 0:
+                    return width, height
+        except Exception:
+            pass
+
+    return 1440, 900
+
+
 class PointerControlService:
     """Кончик указательного двигает курсор; сгибание указательного кликает."""
 
@@ -242,7 +280,7 @@ class PointerControlService:
         ix, iy = index_tip
         index_folded = self._is_index_folded(landmarks)
 
-        screen_w, screen_h = pyautogui.size()
+        screen_w, screen_h = _screen_size()
         margin = self.edge_margin
         span = max(1e-6, 1.0 - 2.0 * margin)
         nx = max(margin, min(1.0 - margin, ix))

@@ -4,6 +4,7 @@ import json
 from app.services.pointer_control import (
     PointerControlService,
     _pick_pointer_hand,
+    _screen_size,
     parse_landmarks_json,
 )
 
@@ -60,6 +61,21 @@ def test_pointer_moves_cursor(monkeypatch):
     assert result.ok
     assert result.moved
     assert moves
+
+
+def test_screen_size_falls_back_when_pyautogui_reports_zero(monkeypatch):
+    class FakePyAutoGUI:
+        @staticmethod
+        def size():
+            return (0, 0)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc.sys, "platform", "linux")
+
+    assert _screen_size() == (1440, 900)
 
 
 def test_bent_index_finger_clicks_once(monkeypatch):

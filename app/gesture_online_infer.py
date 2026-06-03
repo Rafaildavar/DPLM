@@ -53,8 +53,11 @@ class GestureOnlineInfer:
         self._feature_dim = 42
         # Режим классификатора (фиксируется обученной моделью):
         self._classifier_two_hands = False
-        # Режим детектора рук (что мы реально ловим/рисуем):
-        self._detector_two_hands = bool(two_hands)
+        # Режим детектора рук (что мы реально ловим/рисуем). В auto-hand
+        # режиме детектор всегда ищет до 2 рук, а размерность модели решает,
+        # сколько рук попадет в классификатор.
+        self._requested_two_hands = bool(two_hands)
+        self._detector_two_hands = True
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
@@ -77,10 +80,6 @@ class GestureOnlineInfer:
                 self._feature_dim = int(feature_dim_path.read_text(encoding="utf-8").strip())
             except Exception:
                 self._feature_dim = 42
-        self._classifier_two_hands = self._feature_dim == 84
-        # Если классификатор обучен на 2 руки — детектор тоже должен ловить 2.
-        if self._classifier_two_hands:
-            self._detector_two_hands = True
 
         if classes_path.exists():
             try:
@@ -104,6 +103,14 @@ class GestureOnlineInfer:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", InconsistentVersionWarning)
                     self._clf = joblib.load(str(model_path))
+                model_feature_dim = int(getattr(self._clf, "n_features_in_", 0) or 0)
+                if model_feature_dim > 0 and model_feature_dim != self._feature_dim:
+                    print(
+                        "[w] feature_dim.txt does not match knn.pkl: "
+                        f"{self._feature_dim} -> {model_feature_dim}",
+                        flush=True,
+                    )
+                    self._feature_dim = model_feature_dim
             except Exception as e:
                 self._clf = None
                 self._model_error = f"knn.pkl: {e}"
@@ -111,12 +118,14 @@ class GestureOnlineInfer:
             self._clf = None
             if not self._model_error:
                 self._model_error = "Нет models/knn.pkl"
+        self._classifier_two_hands = self._feature_dim == 84
+        self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
 
         try:
             task_path = str(resolve_hand_landmarker_task_path())
             self._detector = HandLandmarkerVideo(
-                num_hands=2 if self._detector_two_hands else 1,
+                num_hands=2,
                 task_path=task_path,
             )
         except Exception as e:
@@ -214,35 +223,20 @@ class GestureOnlineInfer:
 
     def set_two_hands(self, enabled: bool) -> None:
         """
-        Переключить режим детектора (1 ↔ 2 руки) во время работы.
+        Legacy setter для старого UI.
 
-        Если классификатор обучен на 2 руки (feature_dim=84), отключение
-        игнорируется — иначе предсказание не будет иметь смысла.
-        Должно вызываться из того же потока, где вызывается ``process_frame_rgb``.
+        Сейчас инференс работает в auto-hand режиме: детектор всегда ищет до
+        двух рук, а классификатор получает 42 или 84 признака по своей
+        фактической размерности. Поэтому переключатель больше не пересоздаёт
+        MediaPipe, а только сбрасывает сглаживающее окно.
         """
-        target = bool(enabled) or self._classifier_two_hands
-        if target == self._detector_two_hands:
+        target = bool(enabled)
+        if target == self._requested_two_hands:
             return
 
-        self._detector_two_hands = target
-        if self._detector is None:
-            return
-        try:
-            self._detector.close()
-        except Exception:
-            pass
-        self._detector = None
-        try:
-            task_path = str(resolve_hand_landmarker_task_path())
-            self._detector = HandLandmarkerVideo(
-                num_hands=2 if target else 1,
-                task_path=task_path,
-            )
-            self._window.clear()
-            self._finger_count_window.clear()
-        except Exception as e:
-            self._init_error = str(e)
-            self._detector = None
+        self._requested_two_hands = target
+        self._window.clear()
+        self._finger_count_window.clear()
 
     def close(self) -> None:
         if self._detector is not None:
@@ -267,6 +261,19 @@ class GestureOnlineInfer:
             payload.append([[float(x), float(y)] for (x, y) in h.landmarks])
         return json.dumps(payload, separators=(",", ":"))
 
+    def _ordered_hands(self, hands: List[DetectedHand]) -> List[DetectedHand]:
+        def sort_key(hand: DetectedHand) -> tuple[int, float]:
+            handedness = (hand.handedness or "").strip().lower()
+            if handedness == "right":
+                side_rank = 0
+            elif handedness == "left":
+                side_rank = 1
+            else:
+                side_rank = 2
+            return side_rank, -float(hand.score or 0.0)
+
+        return sorted(hands, key=sort_key)
+
     def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
         """
         Args:
@@ -283,7 +290,7 @@ class GestureOnlineInfer:
         if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
             return empty
 
-        hands = self._detector.detect_for_video_rgb(frame_rgb)
+        hands = self._ordered_hands(self._detector.detect_for_video_rgb(frame_rgb))
         landmarks_json = self._build_overlay_payload(hands)
 
         # Нормализуем точки рук для классификатора.
@@ -330,15 +337,23 @@ class GestureOnlineInfer:
 
         if self._clf is not None and self._classes and len(self._window) > 0:
             avg_feat = np.mean(np.stack(tuple(self._window), axis=0), axis=0).reshape(1, -1)
-            pred_idx = int(self._clf.predict(avg_feat)[0])
-            label = (
-                self._classes[pred_idx] if 0 <= pred_idx < len(self._classes) else str(pred_idx)
-            )
             try:
+                pred_idx = int(self._clf.predict(avg_feat)[0])
+                label = (
+                    self._classes[pred_idx]
+                    if 0 <= pred_idx < len(self._classes)
+                    else str(pred_idx)
+                )
                 proba = self._clf.predict_proba(avg_feat)[0]
                 confidence = float(np.max(proba))
-            except Exception:
-                confidence = 0.75 if normalized else 0.0
+            except Exception as e:
+                print(f"[!] classifier prediction failed: {e}", flush=True)
+                self._window.clear()
+                return {
+                    "label": "",
+                    "confidence": 0.0,
+                    "landmarks_json": landmarks_json,
+                }
         elif normalized:
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
 

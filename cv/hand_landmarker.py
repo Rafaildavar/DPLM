@@ -128,7 +128,10 @@ class HandLandmarkerVideo:
 
         path = task_path or str(resolve_hand_landmarker_task_path())
         options = HandLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=path),
+            base_options=BaseOptions(
+                model_asset_path=path,
+                delegate=BaseOptions.Delegate.CPU,
+            ),
             running_mode=VisionRunningMode.VIDEO,
             num_hands=max(1, int(num_hands)),
             min_hand_detection_confidence=float(min_detection_confidence),

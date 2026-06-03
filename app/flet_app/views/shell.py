@@ -59,7 +59,7 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
     )
     status_text = ft.Text(controller.status, size=13, color=COLOR_ON_SURFACE)
     title_text = ft.Text(
-        "DPLM Assistant",
+        "DPLM — ассистент жестов",
         size=20,
         weight=ft.FontWeight.BOLD,
         color=ft.Colors.WHITE,

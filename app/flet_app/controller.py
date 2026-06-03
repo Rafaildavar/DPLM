@@ -107,6 +107,17 @@ except ImportError:
     _CV2_AVAILABLE = False
 
 
+try:
+    from app.services.pointer_control import PointerControlService, parse_landmarks_json
+
+    POINTER_CONTROL_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARN] Pointer control недоступен: {e}")
+    POINTER_CONTROL_AVAILABLE = False
+    PointerControlService = None  # type: ignore[assignment]
+    parse_landmarks_json = None  # type: ignore[assignment]
+
+
 # ---- Сигналы как простые подписки -------------------------------------------
 
 
@@ -142,6 +153,9 @@ class _Event:
 # ---- Контроллер -------------------------------------------------------------
 
 
+GESTURE_CONFIRM_FRAMES = 6
+
+
 class AppController:
     """
     Главный контроллер Flet-версии.
@@ -156,6 +170,9 @@ class AppController:
         recognition_event_recorded()
         confidence_changed(float)
         landmarks_changed(str)       # JSON со списком ландмарок
+        gesture_mode_changed(bool)
+        pointer_mode_changed(bool)
+        landmark_overlay_changed(bool)
         voice_assistant_state_changed(str)
         two_hands_changed(bool)
     """
@@ -176,9 +193,15 @@ class AppController:
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
+        self._gesture_mode: bool = True
+        self._show_landmark_overlay: bool = True
+        self._pointer_mode: bool = False
         self._confidence: float = 0.0
         self._landmarks_json: str = "[]"
         self._last_label: str = ""
+        self._pending_label: str = ""
+        self._pending_frames: int = 0
+        self._pending_confidence_total: float = 0.0
 
         # События ------------------------------------------------------------
         self.status_changed = _Event()
@@ -190,6 +213,9 @@ class AppController:
         self.recognition_event_recorded = _Event()
         self.confidence_changed = _Event()
         self.landmarks_changed = _Event()
+        self.gesture_mode_changed = _Event()
+        self.pointer_mode_changed = _Event()
+        self.landmark_overlay_changed = _Event()
         self.voice_assistant_state_changed = _Event()
         self.two_hands_changed = _Event()
 
@@ -205,6 +231,7 @@ class AppController:
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
+        self._pointer_control: Any | None = None
 
         # Subprocess realtime_infer (фоновое распознавание) ------------------
         self._recognition_process: Optional[subprocess.Popen] = None
@@ -256,6 +283,18 @@ class AppController:
     @property
     def two_hands_mode(self) -> bool:
         return self._two_hands_mode
+
+    @property
+    def gesture_mode(self) -> bool:
+        return self._gesture_mode
+
+    @property
+    def show_landmark_overlay(self) -> bool:
+        return self._show_landmark_overlay
+
+    @property
+    def pointer_mode(self) -> bool:
+        return self._pointer_mode
 
     @property
     def confidence(self) -> float:
@@ -469,6 +508,164 @@ class AppController:
             self._landmarks_json = value
             self.landmarks_changed.emit(value)
 
+    def _reset_gesture_confirmation(self) -> None:
+        self._pending_label = ""
+        self._pending_frames = 0
+        self._pending_confidence_total = 0.0
+
+    def _update_gesture_confirmation(self, label: str, confidence: float) -> tuple[bool, float]:
+        clean = (label or "").strip()
+        if not clean:
+            self._reset_gesture_confirmation()
+            return False, 0.0
+
+        if clean != getattr(self, "_pending_label", ""):
+            self._pending_label = clean
+            self._pending_frames = 1
+            self._pending_confidence_total = float(confidence)
+        else:
+            self._pending_frames = int(getattr(self, "_pending_frames", 0)) + 1
+            self._pending_confidence_total = float(
+                getattr(self, "_pending_confidence_total", 0.0)
+            ) + float(confidence)
+
+        avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
+        return self._pending_frames >= GESTURE_CONFIRM_FRAMES, avg_conf
+
+    def _ensure_pointer_control(self) -> Any | None:
+        if not POINTER_CONTROL_AVAILABLE or PointerControlService is None:
+            return None
+        if self._pointer_control is None:
+            self._pointer_control = PointerControlService(
+                smoothing=float(self._config.recognition.pointer_smoothing)
+            )
+        return self._pointer_control
+
+    def _reset_pointer_control(self) -> None:
+        if self._pointer_control is not None:
+            try:
+                self._pointer_control.reset()
+            except Exception:
+                pass
+
+    def _update_pointer_from_landmarks(self, landmarks_json: str) -> None:
+        if not self._pointer_mode:
+            return
+        pointer = self._ensure_pointer_control()
+        if pointer is None:
+            self._set_status("Pointer: pyautogui недоступен")
+            return
+        result = pointer.update(landmarks_json)
+        if not result.ok and result.error:
+            self._set_status(f"Pointer: {result.error}")
+
+    def _draw_landmarks_on_frame(self, frame_bgr: Any, landmarks_json: str) -> None:
+        if (
+            not self._show_landmark_overlay
+            or not landmarks_json
+            or landmarks_json == "[]"
+            or parse_landmarks_json is None
+        ):
+            return
+        try:
+            import cv2
+            from cv.hand_landmarker import HAND_CONNECTIONS
+
+            hands = parse_landmarks_json(landmarks_json)
+            height, width = frame_bgr.shape[:2]
+            for hand in hands:
+                points = hand.get("landmarks") or []
+                if not isinstance(points, list):
+                    continue
+
+                pts_px: list[tuple[int, int]] = []
+                for point in points:
+                    try:
+                        x = max(0.0, min(1.0, float(point[0])))
+                        y = max(0.0, min(1.0, float(point[1])))
+                    except (TypeError, ValueError, IndexError):
+                        continue
+                    pts_px.append(
+                        (
+                            max(0, min(width - 1, int(round(x * width)))),
+                            max(0, min(height - 1, int(round(y * height)))),
+                        )
+                    )
+
+                if len(pts_px) < 21:
+                    continue
+                for a, b in HAND_CONNECTIONS:
+                    cv2.line(
+                        frame_bgr,
+                        pts_px[a],
+                        pts_px[b],
+                        (0, 215, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+                for x, y in pts_px:
+                    cv2.circle(frame_bgr, (x, y), 4, (0, 255, 80), -1, cv2.LINE_AA)
+        except Exception as e:
+            print(f"[w] draw_landmarks_on_frame: {e}", flush=True)
+
+    def _ensure_embedded_recognition_for_live_controls(self) -> None:
+        if self._embedded_active:
+            return
+        self._set_recognizing(True)
+        self.start_embedded_recognition()
+        if not self._embedded_active:
+            self._set_recognizing(False)
+
+    def _live_recognition_status(self) -> str:
+        if self._gesture_mode and self._pointer_mode:
+            return "Жесты и указатель включены"
+        if self._pointer_mode:
+            return "Указатель: указательный палец двигает курсор"
+        if self._gesture_mode:
+            return "Распознавание жестов включено"
+        if self._show_landmark_overlay:
+            return "Точки руки включены"
+        return "Камера включена"
+
+    def _create_embedded_infer(self) -> Any | None:
+        err = ""
+        infer: Any | None = None
+        try:
+            from app.gesture_online_infer import GestureOnlineInfer
+
+            print("[ctrl.embedded] creating GestureOnlineInfer in camera thread…")
+            infer = GestureOnlineInfer(
+                model_path=self._configured_model_path(),
+                classes_path=self._configured_classes_path(),
+                feature_dim_path=self._configured_feature_dim_path(),
+                two_hands=self._two_hands_mode,
+            )
+            print(
+                "[ctrl.embedded] infer created; "
+                f"init_error={getattr(infer, 'init_error', '')!r}",
+                flush=True,
+            )
+            if getattr(infer, "init_error", ""):
+                err = infer.init_error
+                infer.close()
+                infer = None
+        except Exception as e:
+            err = str(e)
+            print(f"[!] embedded infer init: {e}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            infer = None
+
+        if infer is None:
+            self._embedded_active = False
+            self._set_recognizing(False)
+            self._set_status(f"CV init error: {err}" if err else "CV init failed")
+            return None
+
+        self._set_status(self._live_recognition_status())
+        return infer
+
     # ----------------------------------------------------------------------
     # Камера (поток-цикл — отдельный thread, не QTimer)
     # ----------------------------------------------------------------------
@@ -556,12 +753,17 @@ class AppController:
                 continue
 
             frame_bgr = cv2.flip(frame_bgr, 1)
+            landmarks_json = "[]"
 
             # Встроенный CV (MediaPipe + KNN) — синхронно в этом же потоке;
             # как в исходной версии, это безопасно потому что MediaPipe-объекты
             # создаются и используются в одном потоке.
-            if self._embedded_active and self._embedded_infer is not None:
+            if self._embedded_active:
                 try:
+                    if self._embedded_infer is None:
+                        self._embedded_infer = self._create_embedded_infer()
+                    if self._embedded_infer is None:
+                        continue
                     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                     h, w = rgb.shape[:2]
                     if w > 640:
@@ -574,9 +776,12 @@ class AppController:
                         rgb = np.ascontiguousarray(rgb)
                     out = self._embedded_infer.process_frame_rgb(rgb)
                     if out is not None:
+                        landmarks_json = out.get("landmarks_json") or "[]"
                         self._dispatch_infer_result(out)
                 except Exception as e:
                     print(f"[!] embedded CV frame error: {e}")
+
+            self._draw_landmarks_on_frame(frame_bgr, landmarks_json)
 
             # Кодирование в JPEG для Flet ``Image(src=bytes)``.
             # 720p @ q=75 → 30-70 КБ на кадр, на M-серии тянет 30 fps без
@@ -604,15 +809,31 @@ class AppController:
         label = (out.get("label") or "").strip()
         conf = float(out.get("confidence") or 0.0)
         lj = out.get("landmarks_json") or "[]"
-        self._set_confidence(conf)
         self._set_landmarks(lj)
-        if not label:
+        self._update_pointer_from_landmarks(lj)
+        if not self._gesture_mode:
+            self._set_confidence(0.0)
+            self._reset_gesture_confirmation()
             if self._last_label:
                 self._last_label = ""
                 self.gesture_detected.emit("")
             return
+        self._set_confidence(conf)
+        if not label:
+            self._reset_gesture_confirmation()
+            if self._last_label:
+                self._last_label = ""
+                self.gesture_detected.emit("")
+            return
+        confirmed, stable_conf = self._update_gesture_confirmation(label, conf)
+        if not confirmed:
+            return
         if label and label != self._last_label:
-            print(f"[ctrl.gesture] detected={label!r} conf={conf:.3f} prev={self._last_label!r}", flush=True)
+            print(
+                f"[ctrl.gesture] detected={label!r} conf={stable_conf:.3f} "
+                f"frames={self._pending_frames} prev={self._last_label!r}",
+                flush=True,
+            )
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-
@@ -620,76 +841,41 @@ class AppController:
             # опасных действий). Это даёт «жест → команда ОС» — главную фичу
             # диплома.
             if self._auto_execute_on_gesture:
-                executed = self.execute_for_gesture(label, conf)
+                executed = self.execute_for_gesture(label, stable_conf)
             else:
                 executed = False
                 print("[ctrl.gesture] auto-execute выключен — команда не запускается", flush=True)
-            self._record_recognition_event(label, conf, executed)
+            self._record_recognition_event(label, stable_conf, executed)
 
     # ----------------------------------------------------------------------
     # Встроенный пайплайн распознавания
     # ----------------------------------------------------------------------
 
     def start_embedded_recognition(self) -> None:
-        import traceback as _tb
-
-        print(
-            f"[ctrl.start_embedded] already_active={self._embedded_active}; "
-            f"called from:\n  {_tb.format_stack(limit=6)[-2].strip()}",
-            flush=True,
-        )
+        print(f"[ctrl.start_embedded] already_active={self._embedded_active}", flush=True)
         if self._embedded_active:
             return
         self.stop_recognition()
         self._set_status("CV: загрузка MediaPipe…")
-        err = ""
-        infer: Any | None = None
-        try:
-            from app.gesture_online_infer import GestureOnlineInfer
-
-            print("[ctrl.start_embedded] creating GestureOnlineInfer…")
-            infer = GestureOnlineInfer(
-                model_path=self._configured_model_path(),
-                classes_path=self._configured_classes_path(),
-                feature_dim_path=self._configured_feature_dim_path(),
-                two_hands=self._two_hands_mode,
-            )
-            print(f"[ctrl.start_embedded] infer created; init_error={getattr(infer,'init_error','')!r}")
-            if (
-                getattr(infer, "classifier_requires_two_hands", False)
-                and not self._two_hands_mode
-            ):
-                self._two_hands_mode = True
-                self.two_hands_changed.emit(True)
-            if getattr(infer, "init_error", ""):
-                err = infer.init_error
-                infer.close()
-                infer = None
-        except Exception as e:
-            err = str(e)
-            print(f"[!] start_embedded: {e}")
-            import traceback
-            traceback.print_exc()
-            infer = None
-
-        if infer is None:
-            self._set_status(f"CV init error: {err}" if err else "CV init failed")
-            return
-
-        self._embedded_infer = infer
+        self._embedded_infer = None
         self._embedded_active = True
         self._last_label = ""
+        self._reset_gesture_confirmation()
         self._set_confidence(0.0)
         self._set_landmarks("[]")
         if not self._is_camera_active:
             self.start_camera()
-        self._set_status("CV: embedded gesture recognition")
+        if not self._is_camera_active:
+            self._embedded_active = False
+            self._set_recognizing(False)
 
     def stop_embedded_recognition(self) -> None:
         if not self._embedded_active and self._embedded_infer is None:
             return
         self._embedded_active = False
         self._last_label = ""
+        self._reset_gesture_confirmation()
+        self._reset_pointer_control()
         self._set_confidence(0.0)
         self._set_landmarks("[]")
         infer = self._embedded_infer
@@ -699,7 +885,11 @@ class AppController:
                 infer.close()
             except Exception:
                 pass
-        if self._status.startswith("CV:"):
+        if (
+            self._status.startswith("CV:")
+            or self._status.startswith("Распознавание")
+            or self._status.startswith("Указатель:")
+        ):
             self._set_status("Idle")
 
     # ----------------------------------------------------------------------
@@ -810,6 +1000,50 @@ class AppController:
         if self._is_recognition_pid_active():
             self.stop_recognition()
             self.start_recognition()
+
+    def set_show_landmark_overlay(self, enabled: bool) -> None:
+        target = bool(enabled)
+        if target == self._show_landmark_overlay:
+            return
+        self._show_landmark_overlay = target
+        self.landmark_overlay_changed.emit(target)
+        if target:
+            self._ensure_embedded_recognition_for_live_controls()
+        elif self._embedded_active:
+            self._set_status(self._live_recognition_status())
+
+    def set_gesture_mode(self, enabled: bool) -> None:
+        target = bool(enabled)
+        if target == self._gesture_mode:
+            return
+        self._gesture_mode = target
+        self._reset_gesture_confirmation()
+        if not target:
+            self._set_confidence(0.0)
+            if self._last_label:
+                self._last_label = ""
+                self.gesture_detected.emit("")
+        self.gesture_mode_changed.emit(target)
+        if target:
+            self._ensure_embedded_recognition_for_live_controls()
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
+
+    def set_pointer_mode(self, enabled: bool) -> None:
+        target = bool(enabled)
+        if target == self._pointer_mode:
+            return
+        self._pointer_mode = target
+        if not target:
+            self._reset_pointer_control()
+        self.pointer_mode_changed.emit(target)
+        if target:
+            self._ensure_embedded_recognition_for_live_controls()
+            self._set_status(self._live_recognition_status())
+        elif self._embedded_active:
+            self._set_status(self._live_recognition_status())
+        elif self._status.startswith("Указатель:"):
+            self._set_status("Idle")
 
     # ----------------------------------------------------------------------
     # Команды
@@ -1260,12 +1494,18 @@ class AppController:
         # ``classes.json`` — список меток в порядке индексов классификатора.
         classes_path = self._configured_classes_path()
         class_idx_map: dict[str, int] = {}
+        class_idx_by_lower: dict[str, int] = {}
+        class_label_by_lower: dict[str, str] = {}
         if classes_path.exists():
             try:
                 import json as _json
 
                 names = _json.loads(classes_path.read_text())
-                class_idx_map = {name: idx for idx, name in enumerate(names)}
+                class_idx_map = {str(name): idx for idx, name in enumerate(names)}
+                for name, idx in class_idx_map.items():
+                    lower = name.lower()
+                    class_idx_by_lower.setdefault(lower, idx)
+                    class_label_by_lower.setdefault(lower, name)
             except Exception as e:
                 print(f"[w] classes.json read failed: {e}")
 
@@ -1279,19 +1519,29 @@ class AppController:
             return {"created": 0, "updated": 0, "total": 0}
 
         created = updated = total = 0
+        seen_labels: set[str] = set()
         try:
             for label_dir in sorted(p for p in data_root.iterdir() if p.is_dir()):
                 samples = list(label_dir.glob("sample_*.npy"))
                 if not samples:
                     continue
-                total += 1
-                label = label_dir.name
+                raw_label = label_dir.name
+                label = raw_label
+                model_class_id = class_idx_map.get(raw_label)
+                if class_idx_map:
+                    if model_class_id is None:
+                        model_class_id = class_idx_by_lower.get(raw_label.lower())
+                        label = class_label_by_lower.get(raw_label.lower(), raw_label)
+                    if model_class_id is None:
+                        continue
+                if label not in seen_labels:
+                    total += 1
+                    seen_labels.add(label)
                 row = (
                     session.query(DbGesture)
                     .filter(DbGesture.label == label)
                     .first()
                 )
-                model_class_id = class_idx_map.get(label)
                 if row is None:
                     row = DbGesture(
                         label=label,
@@ -1327,6 +1577,37 @@ class AppController:
             samples = sorted(label_dir.glob("sample_*.npy"))
             out.append({"label": label_dir.name, "samples": len(samples)})
         return out
+
+    def _active_training_labels_from_db(self) -> list[str]:
+        if not BINDING_SERVICES_AVAILABLE or DbGesture is None:
+            return []
+        try:
+            if not getattr(self, "_db_initialized", False):
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            print(f"[w] training labels from DB: {e}")
+            return []
+        try:
+            labels: list[str] = []
+            seen: set[str] = set()
+            rows = (
+                session.query(DbGesture.label)
+                .filter(DbGesture.is_active.is_(True))
+                .order_by(DbGesture.label)
+                .all()
+            )
+            for row in rows:
+                label = str(row[0]).strip()
+                key = label.lower()
+                if not label or key in seen:
+                    continue
+                labels.append(label)
+                seen.add(key)
+            return labels
+        finally:
+            session.close()
 
     def start_recording(
         self,
@@ -1423,26 +1704,12 @@ class AppController:
         if self._training_proc is not None and self._training_proc.poll() is None:
             return False
         project_root = Path(__file__).resolve().parents[2]
-        actual_data_root = data_root or str(self._configured_data_dir())
-        actual_out_path = out_path or str(self._configured_model_path())
-        cmd = [
-            sys.executable,
-            "-u",
-            "-m",
-            "cv.train_classifier",
-            "--data-root",
-            actual_data_root,
-            "--out",
-            actual_out_path,
-            "--classes-out",
-            str(self._configured_classes_path()),
-            "--feature-dim-out",
-            str(self._configured_feature_dim_path()),
-            "--neighbors",
-            str(int(neighbors)),
-        ]
-        if expect_dim is not None:
-            cmd += ["--expect-dim", str(int(expect_dim))]
+        cmd = self._build_training_command(
+            data_root=data_root,
+            out_path=out_path,
+            neighbors=neighbors,
+            expect_dim=expect_dim,
+        )
 
         try:
             proc = subprocess.Popen(
@@ -1498,6 +1765,39 @@ class AppController:
 
         Thread(target=reader, daemon=True).start()
         return True
+
+    def _build_training_command(
+        self,
+        *,
+        data_root: str = "",
+        out_path: str = "",
+        neighbors: int = 5,
+        expect_dim: Optional[int] = None,
+    ) -> list[str]:
+        actual_data_root = data_root or str(self._configured_data_dir())
+        actual_out_path = out_path or str(self._configured_model_path())
+        cmd = [
+            sys.executable,
+            "-u",
+            "-m",
+            "cv.train_classifier",
+            "--data-root",
+            actual_data_root,
+            "--out",
+            actual_out_path,
+            "--classes-out",
+            str(self._configured_classes_path()),
+            "--feature-dim-out",
+            str(self._configured_feature_dim_path()),
+            "--neighbors",
+            str(int(neighbors)),
+            "--lowercase-labels",
+        ]
+        for label in self._active_training_labels_from_db():
+            cmd += ["--include-label", label]
+        if expect_dim is not None:
+            cmd += ["--expect-dim", str(int(expect_dim))]
+        return cmd
 
     def cancel_training(self) -> None:
         """Прервать текущий тренировочный subprocess (если запущен)."""
