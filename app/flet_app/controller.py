@@ -56,6 +56,8 @@ try:
     from app.models.database import (
         Command as DbCommand,
         Gesture as DbGesture,
+        GestureHistory as DbGestureHistory,
+        GestureSample as DbGestureSample,
         get_db_session,
         init_database,
         reset_database_manager,
@@ -67,6 +69,13 @@ try:
     from app.services.gesture_command_bridge import (
         GestureCommandBridge,
         save_gesture_binding,
+    )
+    from app.services.gesture_samples import (
+        ensure_gesture,
+        record_gesture_sample,
+        resolve_project_path,
+        sample_index_from_path,
+        sample_shape_metadata,
     )
     from app.services.user_command_sync import (
         ACTION_SPEC_SCHEMA,
@@ -83,11 +92,18 @@ except ImportError as e:
     BINDING_SERVICES_AVAILABLE = False
     DbCommand = None  # type: ignore[assignment]
     DbGesture = None  # type: ignore[assignment]
+    DbGestureHistory = None  # type: ignore[assignment]
+    DbGestureSample = None  # type: ignore[assignment]
     init_database = None  # type: ignore[assignment]
     get_db_session = None  # type: ignore[assignment]
     reset_database_manager = None  # type: ignore[assignment]
     GestureCommandBridge = None  # type: ignore[assignment]
     save_gesture_binding = None  # type: ignore[assignment]
+    ensure_gesture = None  # type: ignore[assignment]
+    record_gesture_sample = None  # type: ignore[assignment]
+    resolve_project_path = None  # type: ignore[assignment]
+    sample_index_from_path = None  # type: ignore[assignment]
+    sample_shape_metadata = None  # type: ignore[assignment]
     sync_db_commands_to_executor = None  # type: ignore[assignment]
     load_binding_settings = None  # type: ignore[assignment]
     save_binding_settings = None  # type: ignore[assignment]
@@ -713,10 +729,6 @@ class AppController:
         if not self._is_camera_active and not self._camera_thread:
             return
         self._camera_stop.set()
-        t = self._camera_thread
-        if t is not None:
-            t.join(timeout=2.0)
-        self._camera_thread = None
         cap = self._camera_cap
         self._camera_cap = None
         if cap is not None:
@@ -724,6 +736,10 @@ class AppController:
                 cap.release()
             except Exception:
                 pass
+        t = self._camera_thread
+        if t is not None:
+            t.join(timeout=2.0)
+        self._camera_thread = None
         with self._frame_lock:
             self._latest_jpeg_bytes = b""
             self._frame_w = 0
@@ -1078,6 +1094,120 @@ class AppController:
             )
         return sorted(items, key=lambda item: str(item.get("name") or ""))
 
+    def list_db_commands(self) -> list[dict[str, Any]]:
+        """Вернуть пользовательские команды, сохранённые в таблице commands."""
+        if not BINDING_SERVICES_AVAILABLE or DbCommand is None:
+            return []
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            print(f"[!] list_db_commands: {e}")
+            return []
+        try:
+            import json as _json
+
+            rows = session.query(DbCommand).order_by(DbCommand.name).all()
+            out: list[dict[str, Any]] = []
+            for cmd in rows:
+                spec: dict[str, Any] = {}
+                raw_spec = (cmd.action_spec or "").strip()
+                if raw_spec:
+                    try:
+                        parsed = _json.loads(raw_spec)
+                        if isinstance(parsed, dict):
+                            spec = parsed
+                    except _json.JSONDecodeError:
+                        spec = {}
+                action = str(spec.get("action") or "")
+                gesture = getattr(cmd, "gesture", None)
+                out.append(
+                    {
+                        "id": int(cmd.id or 0),
+                        "name": str(cmd.name or ""),
+                        "platform": str(cmd.platform or "all"),
+                        "isActive": bool(cmd.is_active),
+                        "gestureLabel": str(getattr(gesture, "label", "") or ""),
+                        "action": action,
+                        "category": category_for_action(action),
+                        "actionSpec": spec,
+                    }
+                )
+            return out
+        finally:
+            session.close()
+
+    def _forget_executor_command(self, name: str) -> None:
+        registry = getattr(self._command_executor, "commands_registry", None)
+        if isinstance(registry, dict):
+            registry.pop((name or "").strip().lower(), None)
+
+    def delete_db_command(self, command_id: int) -> dict[str, Any]:
+        """Удалить пользовательскую команду из БД и убрать её из executor registry."""
+        summary: dict[str, Any] = {
+            "ok": False,
+            "deleted": 0,
+            "historyDeleted": 0,
+            "name": "",
+            "error": "",
+        }
+        if (
+            not BINDING_SERVICES_AVAILABLE
+            or DbCommand is None
+            or DbGestureHistory is None
+        ):
+            summary["error"] = "Сервис команд недоступен"
+            return summary
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            summary["error"] = f"БД недоступна: {e}"
+            return summary
+        try:
+            cmd = session.query(DbCommand).filter(DbCommand.id == int(command_id)).first()
+            if cmd is None:
+                summary["error"] = "Команда не найдена"
+                return summary
+            command_name = str(cmd.name or "")
+            history_deleted = (
+                session.query(DbGestureHistory)
+                .filter(DbGestureHistory.command_id == cmd.id)
+                .delete(synchronize_session=False)
+            )
+            session.delete(cmd)
+            session.commit()
+
+            self._forget_executor_command(command_name)
+            if self._command_executor and sync_db_commands_to_executor:
+                try:
+                    sync_db_commands_to_executor(session, self._command_executor)
+                except Exception as e:
+                    print(f"[w] sync_db_commands_to_executor after delete: {e}")
+
+            summary.update(
+                {
+                    "ok": True,
+                    "deleted": 1,
+                    "historyDeleted": int(history_deleted or 0),
+                    "name": command_name,
+                }
+            )
+            return summary
+        except Exception as e:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            summary["error"] = f"Ошибка удаления: {e}"
+            return summary
+        finally:
+            session.close()
+
     # ----------------------------------------------------------------------
     # Главная связка: один тумблер «запустить/остановить» (embedded)
     # ----------------------------------------------------------------------
@@ -1089,8 +1219,14 @@ class AppController:
         В отличие от ``start_recognition`` (запускающего subprocess
         ``cv/realtime_infer.py``), здесь всё работает прямо в процессе GUI.
         """
-        if self._is_recognizing or self._embedded_active:
+        if (
+            self._is_recognizing
+            or self._embedded_active
+            or self._is_camera_active
+            or self._is_recognition_pid_active()
+        ):
             self.stop_embedded_recognition()
+            self.stop_recognition()
             self.stop_camera()
             self._set_recognizing(False)
         else:
@@ -1474,26 +1610,36 @@ class AppController:
     def sync_dataset_to_db(self) -> dict[str, int]:
         """
         Просканировать ``data/gestures/<label>/`` и для каждой папки с непустым
-        набором ``sample_*.npy`` создать/обновить строку в таблице ``gestures``.
+        набором ``sample_*.npy`` создать/обновить строки в таблицах
+        ``gestures`` и ``gesture_samples``.
 
         После этого экран «Привязки» сразу увидит словарь жестов (правило R3
         требует ``model_class_id IS NOT NULL`` и ``is_active=True``).
         Если рядом существует ``models/classes.json`` (его пишет
         ``cv/train_classifier.py``), индексы классов проставляются из него.
+        Новые, ещё не обученные жесты всё равно попадают в БД, но без
+        ``model_class_id``; следующий запуск обучения подхватит их из БД и
+        после успешной тренировки сделает доступными для привязок.
 
         Returns:
-            Сводка ``{"created": N, "updated": M, "total": K}``.
+            Сводка ``{"created": N, "updated": M, "total": K, "samples": S}``.
         """
-        if not BINDING_SERVICES_AVAILABLE:
-            return {"created": 0, "updated": 0, "total": 0}
+        empty_summary = {"created": 0, "updated": 0, "total": 0, "samples": 0}
+        if (
+            not BINDING_SERVICES_AVAILABLE
+            or ensure_gesture is None
+            or record_gesture_sample is None
+            or sample_index_from_path is None
+            or sample_shape_metadata is None
+        ):
+            return empty_summary
 
         data_root = self._configured_data_dir()
         if not data_root.exists():
-            return {"created": 0, "updated": 0, "total": 0}
+            return empty_summary
 
         # ``classes.json`` — список меток в порядке индексов классификатора.
         classes_path = self._configured_classes_path()
-        class_idx_map: dict[str, int] = {}
         class_idx_by_lower: dict[str, int] = {}
         class_label_by_lower: dict[str, str] = {}
         if classes_path.exists():
@@ -1501,11 +1647,13 @@ class AppController:
                 import json as _json
 
                 names = _json.loads(classes_path.read_text())
-                class_idx_map = {str(name): idx for idx, name in enumerate(names)}
-                for name, idx in class_idx_map.items():
-                    lower = name.lower()
+                for idx, name in enumerate(names):
+                    clean_name = str(name).strip()
+                    if not clean_name:
+                        continue
+                    lower = clean_name.lower()
                     class_idx_by_lower.setdefault(lower, idx)
-                    class_label_by_lower.setdefault(lower, name)
+                    class_label_by_lower.setdefault(lower, clean_name)
             except Exception as e:
                 print(f"[w] classes.json read failed: {e}")
 
@@ -1516,55 +1664,86 @@ class AppController:
             session = get_db_session()
         except Exception as e:
             print(f"[!] sync_dataset_to_db: {e}")
-            return {"created": 0, "updated": 0, "total": 0}
+            return empty_summary
 
-        created = updated = total = 0
+        created = updated = total = samples_synced = 0
         seen_labels: set[str] = set()
         try:
             for label_dir in sorted(p for p in data_root.iterdir() if p.is_dir()):
-                samples = list(label_dir.glob("sample_*.npy"))
+                samples = sorted(label_dir.glob("sample_*.npy"))
                 if not samples:
                     continue
                 raw_label = label_dir.name
-                label = raw_label
-                model_class_id = class_idx_map.get(raw_label)
-                if class_idx_map:
-                    if model_class_id is None:
-                        model_class_id = class_idx_by_lower.get(raw_label.lower())
-                        label = class_label_by_lower.get(raw_label.lower(), raw_label)
-                    if model_class_id is None:
-                        continue
+                label_key = raw_label.lower()
+                # Тренировка всегда запускается с --lowercase-labels, поэтому
+                # БД тоже хранит каноническую метку в нижнем регистре. Так
+                # распознанный класс "ctrlz" совпадает с жестом, записанным в
+                # папку "CTRLZ".
+                label = class_label_by_lower.get(label_key, label_key)
+                model_class_id = class_idx_by_lower.get(label_key)
+
                 if label not in seen_labels:
                     total += 1
                     seen_labels.add(label)
-                row = (
-                    session.query(DbGesture)
-                    .filter(DbGesture.label == label)
-                    .first()
-                )
+
+                row = session.query(DbGesture).filter(DbGesture.label == label).first()
                 if row is None:
-                    row = DbGesture(
-                        label=label,
-                        description=f"Auto-imported from {data_root / label}",
-                        samples_path=str(label_dir),
-                        model_class_id=model_class_id,
-                        is_active=True,
+                    row = (
+                        session.query(DbGesture)
+                        .filter(DbGesture.label.ilike(label))
+                        .first()
                     )
-                    session.add(row)
-                    created += 1
+                    if row is None:
+                        created += 1
+                    else:
+                        row.label = label
+                        session.flush()
+                        updated += 1
                 else:
-                    row.samples_path = str(label_dir)
-                    if model_class_id is not None:
-                        row.model_class_id = model_class_id
-                    row.is_active = True
                     updated += 1
+
+                _, first_hand_count = sample_shape_metadata(samples[0])
+                is_two_hands = first_hand_count >= 2 if first_hand_count is not None else None
+                gesture = ensure_gesture(
+                    session,
+                    label=label,
+                    samples_path=label_dir,
+                    model_class_id=model_class_id,
+                    is_two_hands=is_two_hands,
+                    commit=False,
+                )
+                gesture.description = gesture.description or f"Auto-imported from {label_dir}"
+                if classes_path.exists():
+                    gesture.model_class_id = model_class_id
+                gesture.is_active = True
+
+                for sample_path in samples:
+                    frames, hand_count = sample_shape_metadata(sample_path)
+                    record_gesture_sample(
+                        session,
+                        label=label,
+                        sample_index=sample_index_from_path(sample_path),
+                        features_path=sample_path,
+                        frames=frames,
+                        hand_count=hand_count,
+                        source="dataset",
+                        samples_path=label_dir,
+                        is_two_hands=is_two_hands,
+                        commit=False,
+                    )
+                    samples_synced += 1
             session.commit()
         except Exception as e:
             session.rollback()
             print(f"[!] sync_dataset_to_db commit: {e}")
         finally:
             session.close()
-        return {"created": created, "updated": updated, "total": total}
+        return {
+            "created": created,
+            "updated": updated,
+            "total": total,
+            "samples": samples_synced,
+        }
 
     def list_recorded_gestures(self) -> list[dict[str, Any]]:
         """Возвращает список папок в ``data/gestures/<label>/`` с числом
@@ -1575,8 +1754,145 @@ class AppController:
             return out
         for label_dir in sorted(p for p in root.iterdir() if p.is_dir()):
             samples = sorted(label_dir.glob("sample_*.npy"))
+            if not samples:
+                continue
             out.append({"label": label_dir.name, "samples": len(samples)})
         return out
+
+    def _label_dir_for_dataset_label(self, label: str) -> Path | None:
+        root = self._configured_data_dir()
+        raw = (label or "").strip()
+        if not raw or not root.exists():
+            return None
+        direct = root / raw
+        if direct.is_dir():
+            return direct
+        label_key = raw.lower()
+        for item in root.iterdir():
+            if item.is_dir() and item.name.lower() == label_key:
+                return item
+        return None
+
+    def _safe_dataset_npy(self, path: Path, data_root: Path) -> bool:
+        try:
+            resolved = path.resolve()
+            root = data_root.resolve()
+            return resolved.is_file() and resolved.suffix == ".npy" and resolved.is_relative_to(root)
+        except OSError:
+            return False
+
+    def delete_recorded_samples(self, label: str) -> dict[str, Any]:
+        """Удалить записанные NPY-семплы для жеста и синхронно почистить ORM."""
+        summary: dict[str, Any] = {
+            "ok": False,
+            "label": (label or "").strip(),
+            "filesDeleted": 0,
+            "sampleRowsDeleted": 0,
+            "commandsUnbound": 0,
+            "directoryRemoved": False,
+            "error": "",
+        }
+        raw_label = (label or "").strip()
+        if not raw_label:
+            summary["error"] = "Не указан жест"
+            return summary
+        if (
+            not BINDING_SERVICES_AVAILABLE
+            or DbCommand is None
+            or DbGesture is None
+            or DbGestureSample is None
+        ):
+            summary["error"] = "Сервис жестов недоступен"
+            return summary
+
+        data_root = self._configured_data_dir()
+        label_dir = self._label_dir_for_dataset_label(raw_label)
+        file_paths: set[Path] = set(label_dir.glob("sample_*.npy")) if label_dir else set()
+
+        try:
+            if not self._db_initialized:
+                init_database()
+                self._db_initialized = True
+            session = get_db_session()
+        except Exception as e:
+            summary["error"] = f"БД недоступна: {e}"
+            return summary
+
+        try:
+            label_key = raw_label.lower()
+            gesture = session.query(DbGesture).filter(DbGesture.label == label_key).first()
+            if gesture is None:
+                gesture = (
+                    session.query(DbGesture)
+                    .filter(DbGesture.label.ilike(raw_label))
+                    .first()
+                )
+
+            sample_rows: list[Any] = []
+            if gesture is not None:
+                sample_rows = (
+                    session.query(DbGestureSample)
+                    .filter(DbGestureSample.gesture_id == gesture.id)
+                    .all()
+                )
+                if resolve_project_path is not None:
+                    for sample in sample_rows:
+                        stored_path = (sample.features_path or "").strip()
+                        if stored_path:
+                            file_paths.add(resolve_project_path(stored_path))
+
+                for sample in sample_rows:
+                    session.delete(sample)
+
+                commands = (
+                    session.query(DbCommand)
+                    .filter(DbCommand.gesture_id == gesture.id)
+                    .all()
+                )
+                for command in commands:
+                    command.gesture_id = None
+
+                gesture.model_class_id = None
+                gesture.accuracy = None
+                gesture.is_active = False
+                if label_dir is not None:
+                    gesture.samples_path = str(label_dir)
+
+                summary["sampleRowsDeleted"] = len(sample_rows)
+                summary["commandsUnbound"] = len(commands)
+
+            deleted_files = 0
+            for sample_file in sorted(file_paths):
+                if not self._safe_dataset_npy(sample_file, data_root):
+                    continue
+                try:
+                    sample_file.unlink()
+                    deleted_files += 1
+                except OSError as e:
+                    session.rollback()
+                    summary["error"] = f"Не удалось удалить файл {sample_file}: {e}"
+                    return summary
+
+            if label_dir is not None:
+                try:
+                    label_dir.rmdir()
+                    summary["directoryRemoved"] = True
+                except OSError:
+                    summary["directoryRemoved"] = False
+
+            session.commit()
+            summary["filesDeleted"] = deleted_files
+            summary["ok"] = True
+            return summary
+        except Exception as e:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            summary["error"] = f"Ошибка удаления: {e}"
+            return summary
+        finally:
+            session.close()
 
     def _active_training_labels_from_db(self) -> list[str]:
         if not BINDING_SERVICES_AVAILABLE or DbGesture is None:
@@ -1682,6 +1998,20 @@ class AppController:
                 pass
             finally:
                 code = proc.wait()
+                if int(code) == 0:
+                    try:
+                        summary = self.sync_dataset_to_db()
+                        if on_line:
+                            on_line(
+                                f"[✓] БД жестов синхронизирована: "
+                                f"добавлено {summary['created']}, "
+                                f"обновлено {summary['updated']}, "
+                                f"классов: {summary['total']}, "
+                                f"сэмплов: {summary['samples']}"
+                            )
+                    except Exception as e:
+                        if on_line:
+                            on_line(f"[w] sync_dataset_to_db: {e}")
                 if on_done:
                     try:
                         on_done(int(code))
@@ -1752,7 +2082,8 @@ class AppController:
                                 f"[✓] БД жестов синхронизирована: "
                                 f"добавлено {summary['created']}, "
                                 f"обновлено {summary['updated']}, "
-                                f"всего классов: {summary['total']}"
+                                f"классов: {summary['total']}, "
+                                f"сэмплов: {summary['samples']}"
                             )
                     except Exception as e:
                         if on_line:

@@ -29,7 +29,6 @@ from app.flet_app.theme import (
     COLOR_MUTED,
     COLOR_ON_SURFACE,
     COLOR_SUCCESS,
-    COLOR_SURFACE,
     COLOR_SURFACE_HIGH,
     surface_card,
 )
@@ -136,7 +135,7 @@ class BindingsView:
         self._refresh_btn = ft.IconButton(
             icon=ft.Icons.REFRESH,
             tooltip="Обновить список жестов из БД",
-            on_click=lambda _e: self._refresh_gestures(),
+            on_click=lambda _e: self._refresh_all_lists(),
         )
 
         self._error_text = ft.Text("", color=COLOR_DANGER, size=13, visible=False)
@@ -187,6 +186,10 @@ class BindingsView:
             self._default_command_dd.update()
         except Exception:
             pass
+
+    def _refresh_all_lists(self) -> None:
+        self._refresh_default_commands()
+        self._refresh_gestures()
 
     def _refresh_gestures(self) -> None:
         self._gestures = self._controller.get_db_gestures()
@@ -418,8 +421,8 @@ class BindingsView:
             self._show_message(error=err)
             return
         self._show_message(info=f"Сохранено: «{g['label']}» → {name}")
-        # Перечитать жесты, чтобы статус «уже привязано» обновился.
-        self._refresh_gestures()
+        # Перечитать списки, чтобы статус «уже привязано» и команды обновились.
+        self._refresh_all_lists()
 
     def _on_test_click(self, _e) -> None:
         """Запускает текущую команду (если она уже сохранена в БД) — удобно

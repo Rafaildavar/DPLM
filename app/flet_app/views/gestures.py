@@ -158,7 +158,8 @@ class GesturesView:
         else:
             self._info_text.value = (
                 f"✓ Синхронизировано: добавлено {summary['created']}, "
-                f"обновлено {summary['updated']}, всего классов: {summary['total']}"
+                f"обновлено {summary['updated']}, классов: {summary['total']}, "
+                f"сэмплов: {summary.get('samples', 0)}"
             )
             self._info_text.color = COLOR_SUCCESS
         try:

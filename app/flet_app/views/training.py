@@ -3,8 +3,8 @@
 ``cv/train_classifier.py``.
 
 Шаг 1. Запись примеров. Поля «имя жеста / число сэмплов / длина / 2 руки»
-→ запускает CLI как subprocess. CLI открывает отдельное OpenCV окно
-(там клавиши s/n/q, как в скрипте), а live-лог транслируется в наше окно.
+→ запускает CLI как subprocess. CLI открывает отдельное OpenCV окно,
+а live-лог транслируется в наше окно.
 
 Шаг 2. Обучение KNN. Поля «папка датасета / выходной путь / соседи»
 → запускает CLI; live-лог + статус «модель сохранена в …».
@@ -23,8 +23,6 @@ from app.flet_app.theme import (
     COLOR_DANGER,
     COLOR_MUTED,
     COLOR_ON_SURFACE,
-    COLOR_SUCCESS,
-    COLOR_SURFACE,
     COLOR_SURFACE_HIGH,
     surface_card,
 )
@@ -128,9 +126,8 @@ class TrainingView:
         )
 
         # --- Список записанных классов ------------------------------------
-        self._datasets_text = ft.Text(
-            "—", size=12, color=COLOR_MUTED, selectable=True
-        )
+        self._datasets_column = ft.Column(spacing=8)
+        self._pending_delete_label = ""
 
     # ---- Жизненный цикл --------------------------------------------------
 
@@ -144,17 +141,99 @@ class TrainingView:
 
     def _refresh_datasets(self) -> None:
         rows = self._controller.list_recorded_gestures()
+        self._datasets_column.controls.clear()
         if not rows:
-            self._datasets_text.value = (
-                "В папке data/gestures/ пока ничего нет — запишите первый жест выше."
+            self._datasets_column.controls.append(
+                ft.Text(
+                    "В папке data/gestures/ пока ничего нет — запишите первый жест выше.",
+                    size=12,
+                    color=COLOR_MUTED,
+                )
             )
         else:
-            parts = [f"{r['label']}: {r['samples']} сэмплов" for r in rows]
-            self._datasets_text.value = "\n".join(parts)
+            for row in rows:
+                label = str(row["label"])
+                samples = int(row["samples"])
+                pending_delete = self._pending_delete_label == label
+                actions: list[ft.Control]
+                if pending_delete:
+                    actions = [
+                        ft.Text("подтвердить", size=12, color=COLOR_DANGER),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE_FOREVER,
+                            icon_color=COLOR_DANGER,
+                            tooltip=f"Подтвердить удаление {label}",
+                            on_click=lambda _e, value=label: self._delete_samples(value),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE,
+                            icon_color=COLOR_MUTED,
+                            tooltip="Отмена",
+                            on_click=lambda _e: self._cancel_delete_samples(),
+                        ),
+                    ]
+                else:
+                    actions = [
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE,
+                            icon_color=COLOR_DANGER,
+                            tooltip=f"Удалить семплы {label}",
+                            on_click=lambda _e, value=label: self._request_delete_samples(value),
+                        )
+                    ]
+                self._datasets_column.controls.append(
+                    ft.Container(
+                        bgcolor="#262636",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                        content=ft.Row(
+                            spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Icon(ft.Icons.FOLDER, size=18, color=COLOR_ACCENT),
+                                ft.Text(
+                                    label,
+                                    size=13,
+                                    weight=ft.FontWeight.W_600,
+                                    color=COLOR_ON_SURFACE,
+                                    expand=True,
+                                ),
+                                ft.Text(
+                                    f"{samples} сэмплов",
+                                    size=12,
+                                    color=COLOR_MUTED,
+                                ),
+                                *actions,
+                            ],
+                        ),
+                    )
+                )
         try:
-            self._datasets_text.update()
+            self._datasets_column.update()
         except Exception:
             pass
+
+    def _request_delete_samples(self, label: str) -> None:
+        self._pending_delete_label = label
+        self._refresh_datasets()
+
+    def _cancel_delete_samples(self) -> None:
+        self._pending_delete_label = ""
+        self._refresh_datasets()
+
+    def _delete_samples(self, label: str) -> None:
+        self._pending_delete_label = ""
+        summary = self._controller.delete_recorded_samples(label)
+        if summary.get("ok"):
+            self._append_log(
+                f"[✓] Удалены семплы «{label}»: файлов {summary['filesDeleted']}, "
+                f"строк БД {summary['sampleRowsDeleted']}, "
+                f"отвязано команд {summary['commandsUnbound']}"
+            )
+            self._append_log("[i] Переобучи модель, чтобы удалить этот класс из knn.pkl/classes.json")
+        else:
+            self._append_log(f"[!] Удаление «{label}»: {summary.get('error') or 'ошибка'}")
+        self._refresh_datasets()
 
     def _append_log(self, line: str) -> None:
         # Этот метод вызывается из фонового потока — маршалируем в UI.
@@ -208,8 +287,8 @@ class TrainingView:
             + (" (две руки)" if two_hands else "")
         )
         self._append_log(
-            "Откроется отдельное окно OpenCV. Клавиши: s — старт/стоп записи, "
-            "n — сохранить семпл, q — выход."
+            "Откроется отдельное окно OpenCV. Клавиши: Пробел/s — старт, "
+            "Enter/n — сохранить семпл, Esc/q — выход."
         )
 
         ok = self._controller.start_recording(
@@ -346,7 +425,7 @@ class TrainingView:
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    self._datasets_text,
+                    self._datasets_column,
                 ],
             ),
             padding=16,

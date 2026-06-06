@@ -130,6 +130,7 @@ class HomeView:
         controller.confidence_changed.connect(self._on_confidence)
         controller.status_changed.connect(self._on_status)
         controller.recognizing_changed.connect(self._on_recognizing)
+        controller.camera_active_changed.connect(self._on_camera_active)
         controller.two_hands_changed.connect(self._on_two_hands)
         controller.gesture_mode_changed.connect(self._on_gesture_mode)
         controller.pointer_mode_changed.connect(self._on_pointer_mode)
@@ -150,19 +151,22 @@ class HomeView:
 
     # ---- Логика кнопки ----------------------------------------------------
 
+    def _is_running(self) -> bool:
+        return bool(self._controller.is_recognizing or self._controller.is_camera_active)
+
     def _btn_label(self) -> str:
-        return "Стоп" if self._controller.is_recognizing else "Старт"
+        return "Стоп" if self._is_running() else "Старт"
 
     def _btn_icon(self) -> str:
         return (
             ft.Icons.STOP_CIRCLE
-            if self._controller.is_recognizing
+            if self._is_running()
             else ft.Icons.PLAY_CIRCLE
         )
 
     def _btn_style(self) -> ft.ButtonStyle:
         return ft.ButtonStyle(
-            bgcolor=COLOR_DANGER if self._controller.is_recognizing else COLOR_SUCCESS,
+            bgcolor=COLOR_DANGER if self._is_running() else COLOR_SUCCESS,
             color=ft.Colors.WHITE,
             padding=ft.Padding.symmetric(horizontal=24, vertical=14),
         )
@@ -302,6 +306,15 @@ class HomeView:
 
     def _on_recognizing(self, _v: bool) -> None:
         self._page.run_thread(self._apply_button_state)
+
+    def _on_camera_active(self, active: bool) -> None:
+        self._page.run_thread(self._apply_camera_active, active)
+
+    def _apply_camera_active(self, active: bool) -> None:
+        if not active:
+            self._camera_image.src = _PLACEHOLDER_DATA_URL
+            self._camera_image.visible = False
+        self._apply_button_state()
 
     def _apply_button_state(self) -> None:
         self._toggle_btn.content = ft.Text(
