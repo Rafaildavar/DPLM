@@ -156,6 +156,33 @@
   - `models/dynamic_svm.pkl`
   - `models/dynamic_extra_trees.pkl`
 
+### H-006: Candidate-модели нельзя сохранять в один файл
+
+Статус: `validated`
+
+Гипотеза: если KNN, SVM и деревья сохраняются в один и тот же
+`models/dynamic_knn.pkl`, мы теряем воспроизводимость эксперимента и не можем
+честно собирать live-метрики по кандидатам.
+
+Что проверяли:
+- Пользователь обучил dynamic-модель на KNN, SVM и дереве.
+- Последняя обученная модель перезаписала `models/dynamic_knn.pkl`.
+- При проверке файл `models/dynamic_knn.pkl` оказался `ExtraTreesClassifier`.
+
+Что получилось:
+- UI теперь подставляет файл модели по выбранному типу:
+  - `knn` -> `models/dynamic_knn.pkl`;
+  - `svm` -> `models/dynamic_svm.pkl`;
+  - `extra_trees` -> `models/dynamic_extra_trees.pkl`;
+  - `rf` -> `models/dynamic_rf.pkl`;
+  - `logreg` -> `models/dynamic_logreg.pkl`.
+- Если пользователь вручную ввел кастомный путь, UI его не перезаписывает.
+
+Решение:
+- Dynamic-candidate модели сохраняются в отдельные файлы.
+- Метрики по кандидатам собираем после обучения одинакового набора данных и
+  фиксируем в этом журнале.
+
 ## Текущий ML-пайплайн
 
 1. Запись:

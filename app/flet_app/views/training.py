@@ -36,6 +36,13 @@ _DEFAULT_MODEL_OUT = "models/knn.pkl"
 _DEFAULT_RECORD_SAMPLES = 20
 _DEFAULT_RECORD_FRAMES = 30
 _DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_knn.pkl"
+_DYNAMIC_MODEL_OUT_BY_TYPE = {
+    "knn": "models/dynamic_knn.pkl",
+    "svm": "models/dynamic_svm.pkl",
+    "extra_trees": "models/dynamic_extra_trees.pkl",
+    "rf": "models/dynamic_rf.pkl",
+    "logreg": "models/dynamic_logreg.pkl",
+}
 _DEFAULT_DYNAMIC_CLASSES_OUT = "models/dynamic_classes.json"
 _DEFAULT_DYNAMIC_FEATURE_DIM_OUT = "models/dynamic_feature_dim.txt"
 _DEFAULT_DYNAMIC_FEATURE_MODE_OUT = "models/dynamic_feature_mode.txt"
@@ -49,6 +56,15 @@ _PLACEHOLDER_DATA_URL = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4"
     "2mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 )
+
+
+def _dynamic_model_out_for_type(model_type: str) -> str:
+    clean = str(model_type or _DEFAULT_MODEL_TYPE).strip().lower()
+    return _DYNAMIC_MODEL_OUT_BY_TYPE.get(clean, f"models/dynamic_{clean}.pkl")
+
+
+def _known_dynamic_model_outputs() -> set[str]:
+    return set(_DYNAMIC_MODEL_OUT_BY_TYPE.values())
 
 
 class TrainingView:
@@ -178,6 +194,7 @@ class TrainingView:
                 ft.DropdownOption(key="logreg", text="logreg"),
             ],
             editable=False,
+            on_select=self._on_dynamic_model_type_changed,
         )
         self._dyn_model_out = ft.TextField(
             label="Файл dynamic-модели",
@@ -573,6 +590,16 @@ class TrainingView:
         except (TypeError, ValueError):
             return default
 
+    def _on_dynamic_model_type_changed(self, _e) -> None:
+        current = str(self._dyn_model_out.value or "").strip()
+        suggested = _dynamic_model_out_for_type(str(self._dyn_model_type.value or "knn"))
+        if not current or current in _known_dynamic_model_outputs():
+            self._dyn_model_out.value = suggested
+            try:
+                self._dyn_model_out.update()
+            except Exception:
+                pass
+
     def _on_record_start(self, _e, *, mode: str = "developer") -> None:
         if mode == "user":
             label = (self._user_rec_label.value or "").strip()
@@ -654,7 +681,6 @@ class TrainingView:
             self._append_log("[i] Обучение KNN со стандартными параметрами проекта")
         elif mode == "dynamic":
             data_root = _DEFAULT_DATA_ROOT
-            out_path = (self._dyn_model_out.value or _DEFAULT_DYNAMIC_MODEL_OUT).strip()
             neighbors = max(
                 1,
                 self._parse_int(self._dyn_tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
@@ -665,6 +691,10 @@ class TrainingView:
                 or _DEFAULT_DYNAMIC_FEATURE_MODE
             )
             model_type = str(self._dyn_model_type.value or _DEFAULT_MODEL_TYPE).strip()
+            out_path = (
+                self._dyn_model_out.value
+                or _dynamic_model_out_for_type(model_type)
+            ).strip()
             classes_out_path = _DEFAULT_DYNAMIC_CLASSES_OUT
             feature_dim_out_path = _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
             feature_mode_out_path = _DEFAULT_DYNAMIC_FEATURE_MODE_OUT

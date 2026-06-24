@@ -11,6 +11,7 @@ from app.flet_app.views.training import (
     _DEFAULT_K_NEIGHBORS,
     _DEFAULT_MODEL_OUT,
     _DEFAULT_RECORD_FRAMES,
+    _dynamic_model_out_for_type,
 )
 
 
@@ -126,10 +127,27 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
 
     training_call = controller.training_calls[-1]
     assert training_call["data_root"] == _DEFAULT_DATA_ROOT
-    assert training_call["out_path"] == _DEFAULT_DYNAMIC_MODEL_OUT
+    assert training_call["out_path"] == _dynamic_model_out_for_type("svm")
     assert training_call["neighbors"] == _DEFAULT_K_NEIGHBORS
     assert training_call["model_type"] == "svm"
     assert training_call["feature_mode"] == _DEFAULT_DYNAMIC_FEATURE_MODE
     assert training_call["classes_out_path"] == _DEFAULT_DYNAMIC_CLASSES_OUT
     assert training_call["feature_dim_out_path"] == _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
     assert training_call["feature_mode_out_path"] == _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
+
+
+def test_dynamic_model_type_updates_default_output_path_without_overriding_custom_path():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+
+    view._dyn_model_type.value = "extra_trees"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._on_dynamic_model_type_changed(None)
+
+    assert view._dyn_model_out.value == _dynamic_model_out_for_type("extra_trees")
+
+    view._dyn_model_type.value = "svm"
+    view._dyn_model_out.value = "models/custom_dynamic.pkl"
+    view._on_dynamic_model_type_changed(None)
+
+    assert view._dyn_model_out.value == "models/custom_dynamic.pkl"
