@@ -48,6 +48,6 @@
 ```bash
 python -m scripts.jmlc_dataset_profile
 python -m scripts.compare_models
+python -m scripts.threshold_report
 python -m scripts.benchmark_latency --mode ml
 ```
-

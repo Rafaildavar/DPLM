@@ -1,4 +1,4 @@
-.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models
+.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report
 
 PYTHON ?= python
 
@@ -13,6 +13,7 @@ test-jmlc-ml:
 		tests/unit/test_jmlc_dataset_profile.py \
 		tests/unit/test_gesture_features.py \
 		tests/unit/test_compare_models.py \
+		tests/unit/test_threshold_report.py \
 		-q -o addopts=''
 
 jmlc-profile:
@@ -25,3 +26,6 @@ jmlc-clean-profile:
 
 compare-models:
 	$(PYTHON) -m scripts.compare_models
+
+threshold-report:
+	$(PYTHON) -m scripts.threshold_report
