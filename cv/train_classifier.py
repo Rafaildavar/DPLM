@@ -5,7 +5,20 @@ from typing import Iterable, List, Optional, Tuple
 
 import joblib
 import numpy as np
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
+from cv.gesture_features import (
+    FEATURE_STATIC_MEAN,
+    SUPPORTED_FEATURE_MODES,
+    build_feature_vector,
+)
+
+SUPPORTED_MODEL_TYPES = ("knn", "svm", "extra_trees", "rf", "logreg")
 
 
 # --------------------------------------------------
@@ -19,11 +32,12 @@ def load_dataset(
     expect_dim: Optional[int] = None,
     include_labels: Optional[Iterable[str]] = None,
     lowercase_labels: bool = False,
+    feature_mode: str = FEATURE_STATIC_MEAN,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Загружает семплы из data_root/<label>/sample_*.npy
     Возвращает (X, y, classes), где:
-      - X: (N, D) — усреднённые по времени признаки семплов
+      - X: (N, D) — признаки семплов в выбранном feature_mode
       - y: (N,) — индексы классов
       - classes: список имён классов по индексу
     """
@@ -64,8 +78,7 @@ def load_dataset(
                 print(f"[!] Неожиданная форма {sf}: {arr.shape}, пропуск")
                 continue
 
-            # Простая агрегация по времени: усреднение -> (D,)
-            feat = arr.mean(axis=0)
+            feat = build_feature_vector(arr, mode=feature_mode, target_dim=expect_dim)
             # Сохраняем как есть, выровняем позже
             feats_raw.append(feat.astype(np.float32, copy=False))
             y_list.append(class_idx)
@@ -98,13 +111,77 @@ def load_dataset(
     return X, y, classes
 
 
+def build_classifier(
+    model_type: str,
+    *,
+    neighbors: int = 5,
+    weights: str = "distance",
+    random_state: int = 42,
+):
+    model = str(model_type or "knn").strip().lower()
+    if model == "knn":
+        return KNeighborsClassifier(
+            n_neighbors=max(1, int(neighbors)),
+            metric="euclidean",
+            weights=weights,
+        )
+    if model == "svm":
+        return make_pipeline(
+            StandardScaler(),
+            SVC(
+                kernel="rbf",
+                C=2.0,
+                gamma="scale",
+                class_weight="balanced",
+                probability=True,
+                random_state=int(random_state),
+            ),
+        )
+    if model == "extra_trees":
+        return ExtraTreesClassifier(
+            n_estimators=250,
+            random_state=int(random_state),
+            class_weight="balanced",
+        )
+    if model == "rf":
+        return RandomForestClassifier(
+            n_estimators=200,
+            random_state=int(random_state),
+            class_weight="balanced",
+        )
+    if model == "logreg":
+        return make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2000,
+                class_weight="balanced",
+                random_state=int(random_state),
+            ),
+        )
+    raise ValueError(f"unsupported model type: {model_type}")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Обучение KNN классификатора жестов")
     p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
     p.add_argument("--out", default="models/knn.pkl", help="Путь для сохранения модели")
     p.add_argument("--classes-out", default=None, help="Путь для сохранения classes.json")
     p.add_argument("--feature-dim-out", default=None, help="Путь для сохранения feature_dim.txt")
+    p.add_argument("--feature-mode-out", default=None, help="Путь для сохранения feature_mode.txt")
+    p.add_argument(
+        "--feature-mode",
+        choices=SUPPORTED_FEATURE_MODES,
+        default=FEATURE_STATIC_MEAN,
+        help="Режим признаков: static_mean — текущий production baseline; dynamic_stats/hybrid_stats — JMLC-эксперименты",
+    )
     p.add_argument("--neighbors", type=int, default=5, help="Число соседей KNN")
+    p.add_argument(
+        "--model-type",
+        choices=SUPPORTED_MODEL_TYPES,
+        default="knn",
+        help="Тип классификатора: knn, svm, extra_trees, rf или logreg",
+    )
+    p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
     p.add_argument(
         "--weights",
         choices=["uniform", "distance"],
@@ -137,13 +214,19 @@ def main() -> None:
         expect_dim=args.expect_dim,
         include_labels=args.include_label,
         lowercase_labels=bool(args.lowercase_labels),
+        feature_mode=str(args.feature_mode),
     )
-    print(f"[i] Загружено семплов: {len(X)}; классов: {len(classes)}; размер признака: {X.shape[1]}")
+    print(
+        f"[i] Загружено семплов: {len(X)}; классов: {len(classes)}; "
+        f"режим признаков: {args.feature_mode}; размер признака: {X.shape[1]}; "
+        f"модель: {args.model_type}"
+    )
 
-    clf = KNeighborsClassifier(
-        n_neighbors=args.neighbors,
-        metric="euclidean",
-        weights=args.weights,
+    clf = build_classifier(
+        str(args.model_type),
+        neighbors=int(args.neighbors),
+        weights=str(args.weights),
+        random_state=int(args.random_state),
     )
     clf.fit(X, y)
 
@@ -157,11 +240,18 @@ def main() -> None:
         if args.feature_dim_out
         else (out_path.parent / "feature_dim.txt")
     )
+    feature_mode_out = (
+        Path(args.feature_mode_out)
+        if args.feature_mode_out
+        else (out_path.parent / "feature_mode.txt")
+    )
     classes_out.parent.mkdir(parents=True, exist_ok=True)
     feature_dim_out.parent.mkdir(parents=True, exist_ok=True)
+    feature_mode_out.parent.mkdir(parents=True, exist_ok=True)
     classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
     feature_dim_out.write_text(str(X.shape[1]))
-    print(f"[✓] Метаданные сохранены: {classes_out}, {feature_dim_out}")
+    feature_mode_out.write_text(str(args.feature_mode))
+    print(f"[✓] Метаданные сохранены: {classes_out}, {feature_dim_out}, {feature_mode_out}")
 
 
 if __name__ == "__main__":

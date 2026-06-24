@@ -82,6 +82,17 @@ class HomeView:
             height=56,
         )
 
+        self._model_mode_dd = ft.Dropdown(
+            label="Модель",
+            value=controller.recognition_model_mode,
+            width=150,
+            dense=True,
+            options=[
+                ft.DropdownOption(key="static", text="static"),
+                ft.DropdownOption(key="dynamic", text="dynamic"),
+            ],
+            on_select=self._on_model_mode_changed,
+        )
         self._two_hands_switch = ft.Switch(
             value=controller.two_hands_mode,
             label="Режим двух рук",
@@ -135,6 +146,7 @@ class HomeView:
         controller.gesture_mode_changed.connect(self._on_gesture_mode)
         controller.pointer_mode_changed.connect(self._on_pointer_mode)
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
+        controller.recognition_model_mode_changed.connect(self._on_model_mode)
 
     # ---- Жизненный цикл (вызывается shell при показе/скрытии) ------------
 
@@ -152,7 +164,13 @@ class HomeView:
     # ---- Логика кнопки ----------------------------------------------------
 
     def _is_running(self) -> bool:
-        return bool(self._controller.is_recognizing or self._controller.is_camera_active)
+        return bool(
+            getattr(
+                self._controller,
+                "live_recognition_active",
+                self._controller.is_recognizing,
+            )
+        )
 
     def _btn_label(self) -> str:
         return "Стоп" if self._is_running() else "Старт"
@@ -187,6 +205,11 @@ class HomeView:
 
     def _on_pointer_toggle(self, _e) -> None:
         self._controller.set_pointer_mode(bool(self._pointer_switch.value))
+
+    def _on_model_mode_changed(self, _e) -> None:
+        self._controller.set_recognition_model_mode(
+            str(self._model_mode_dd.value or "static")
+        )
 
     # ---- Слушатели событий контроллера (приходят из фонового потока) ----
 
@@ -371,6 +394,17 @@ class HomeView:
         except Exception:
             pass
 
+    def _on_model_mode(self, value: str) -> None:
+        self._page.run_thread(self._apply_model_mode, value)
+
+    def _apply_model_mode(self, value: str) -> None:
+        if self._model_mode_dd.value != value:
+            self._model_mode_dd.value = value
+        try:
+            self._model_mode_dd.update()
+        except Exception:
+            pass
+
     # ---- Сборка дерева ---------------------------------------------------
 
     def build(self) -> ft.Control:
@@ -380,6 +414,7 @@ class HomeView:
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 self._toggle_btn,
+                self._model_mode_dd,
                 self._gesture_switch,
                 self._pointer_switch,
                 self._landmarks_switch,

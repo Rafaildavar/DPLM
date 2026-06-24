@@ -13,6 +13,13 @@ from typing import Any, Deque, Dict, List, Optional
 
 import numpy as np
 
+from cv.gesture_features import (
+    FEATURE_DYNAMIC_STATS,
+    FEATURE_HYBRID_STATS,
+    FEATURE_STATIC_MEAN,
+    FEATURE_STATIC_STATS,
+    build_feature_vector,
+)
 from cv.hand_landmarker import (
     DetectedHand,
     HandLandmarkerVideo,
@@ -41,6 +48,8 @@ class GestureOnlineInfer:
         model_path: Optional[Path] = None,
         classes_path: Optional[Path] = None,
         feature_dim_path: Optional[Path] = None,
+        feature_mode_path: Optional[Path] = None,
+        feature_mode: Optional[str] = None,
         gesture_signatures_path: Optional[Path] = None,
         window: int = 30,
         two_hands: bool = False,
@@ -51,6 +60,8 @@ class GestureOnlineInfer:
         self._clf: Any = None
         self._classes: List[str] = []
         self._feature_dim = 42
+        self._feature_mode = FEATURE_STATIC_MEAN
+        self._raw_feature_dim = 42
         # Режим классификатора (фиксируется обученной моделью):
         self._classifier_two_hands = False
         # Режим детектора рук (что мы реально ловим/рисуем). В auto-hand
@@ -65,6 +76,7 @@ class GestureOnlineInfer:
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
         feature_dim_path = feature_dim_path or (PROJECT_ROOT / "models" / "feature_dim.txt")
+        feature_mode_path = feature_mode_path or (model_path.parent / "feature_mode.txt")
         gesture_signatures_path = gesture_signatures_path or (
             model_path.parent / "gesture_signatures.json"
         )
@@ -80,6 +92,16 @@ class GestureOnlineInfer:
                 self._feature_dim = int(feature_dim_path.read_text(encoding="utf-8").strip())
             except Exception:
                 self._feature_dim = 42
+        if feature_mode:
+            self._feature_mode = str(feature_mode).strip() or FEATURE_STATIC_MEAN
+        elif feature_mode_path.exists():
+            try:
+                self._feature_mode = (
+                    feature_mode_path.read_text(encoding="utf-8").strip()
+                    or FEATURE_STATIC_MEAN
+                )
+            except Exception:
+                self._feature_mode = FEATURE_STATIC_MEAN
 
         if classes_path.exists():
             try:
@@ -118,7 +140,8 @@ class GestureOnlineInfer:
             self._clf = None
             if not self._model_error:
                 self._model_error = "Нет models/knn.pkl"
-        self._classifier_two_hands = self._feature_dim == 84
+        self._raw_feature_dim = self._infer_raw_feature_dim()
+        self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
 
@@ -131,6 +154,93 @@ class GestureOnlineInfer:
         except Exception as e:
             self._init_error = str(e)
             self._detector = None
+
+    def _infer_raw_feature_dim(self) -> int:
+        if self._feature_mode == FEATURE_STATIC_MEAN:
+            return int(self._feature_dim)
+        multipliers = {
+            FEATURE_STATIC_STATS: 4,
+            FEATURE_DYNAMIC_STATS: 6,
+            FEATURE_HYBRID_STATS: 10,
+        }
+        multiplier = multipliers.get(self._feature_mode)
+        if not multiplier:
+            return int(self._feature_dim)
+        if self._feature_dim % multiplier != 0:
+            return int(self._feature_dim)
+        return max(1, int(self._feature_dim // multiplier))
+
+    def _is_two_hand_feature_dim(self, raw_feature_dim: int) -> bool:
+        if raw_feature_dim in {84, 88}:
+            return True
+        if raw_feature_dim % 2 != 0:
+            return False
+        per_hand_dim = raw_feature_dim // 2
+        return per_hand_dim in {42, 44}
+
+    def _hand_frame_feature(
+        self,
+        hand: DetectedHand,
+        normalized: np.ndarray,
+        *,
+        target_dim: int,
+    ) -> np.ndarray:
+        pose = normalized.reshape(-1).astype(np.float32, copy=False)
+        target = int(target_dim)
+        if target <= pose.shape[0]:
+            return pose[:target]
+
+        pts = np.asarray(hand.landmarks, dtype=np.float32)
+        if pts.shape == (21, 2):
+            wrist = pts[0]
+            center = pts.mean(axis=0)
+            size = pts.max(axis=0) - pts.min(axis=0)
+            extras = np.concatenate([wrist, center, size], axis=0)
+        else:
+            extras = np.zeros(0, dtype=np.float32)
+
+        missing = target - pose.shape[0]
+        if extras.shape[0] < missing:
+            extras = np.concatenate(
+                [extras, np.zeros(missing - extras.shape[0], dtype=np.float32)],
+                axis=0,
+            )
+        return np.concatenate([pose, extras[:missing]], axis=0).astype(
+            np.float32,
+            copy=False,
+        )
+
+    def _build_model_feature(self) -> np.ndarray:
+        sequence = np.stack(tuple(self._window), axis=0)
+        raw_dim = int(getattr(self, "_raw_feature_dim", self._feature_dim))
+        mode = str(
+            getattr(self, "_feature_mode", FEATURE_STATIC_MEAN) or FEATURE_STATIC_MEAN
+        )
+        try:
+            feat = build_feature_vector(sequence, mode=mode, target_dim=raw_dim)
+        except ValueError:
+            feat = build_feature_vector(
+                sequence,
+                mode=FEATURE_STATIC_MEAN,
+                target_dim=raw_dim,
+            )
+        if feat.shape[0] != self._feature_dim:
+            if feat.shape[0] > self._feature_dim:
+                feat = feat[: self._feature_dim]
+            else:
+                pad = np.zeros(self._feature_dim - feat.shape[0], dtype=feat.dtype)
+                feat = np.concatenate([feat, pad], axis=0)
+        return feat.astype(np.float32, copy=False)
+
+    def _uses_temporal_features(self) -> bool:
+        mode = getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
+        return mode in {FEATURE_DYNAMIC_STATS, FEATURE_HYBRID_STATS}
+
+    def _window_ready_for_prediction(self) -> bool:
+        if not self._uses_temporal_features():
+            return len(self._window) > 0
+        target = int(self._window.maxlen or 1)
+        return len(self._window) >= target
 
     def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
         metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
@@ -178,6 +288,8 @@ class GestureOnlineInfer:
 
     def _pose_matches_prediction(self, label: str, current_count: int | None) -> bool:
         if current_count is None or not label:
+            return True
+        if self._uses_temporal_features():
             return True
 
         signature = self._gesture_signatures.get(label) or self._gesture_signatures.get(
@@ -312,22 +424,37 @@ class GestureOnlineInfer:
 
         current_finger_count = self._stable_non_thumb_count(hands)
 
+        raw_feature_dim = int(getattr(self, "_raw_feature_dim", self._feature_dim))
         if self._classifier_two_hands:
+            per_hand_dim = max(1, raw_feature_dim // 2)
             if len(normalized) >= 2:
-                frame_vec = np.concatenate(normalized[:2], axis=0)
+                hand_features = [
+                    self._hand_frame_feature(hands[0], normalized[0], target_dim=per_hand_dim),
+                    self._hand_frame_feature(hands[1], normalized[1], target_dim=per_hand_dim),
+                ]
             elif len(normalized) == 1:
-                frame_vec = np.concatenate(
-                    [normalized[0], np.zeros((21, 2), dtype=np.float32)], axis=0
-                )
-        else:
-            frame_vec = normalized[0]
-
-        feat = frame_vec.reshape(-1)
-        if feat.shape[0] != self._feature_dim:
-            if feat.shape[0] > self._feature_dim:
-                feat = feat[: self._feature_dim]
+                hand_features = [
+                    self._hand_frame_feature(hands[0], normalized[0], target_dim=per_hand_dim),
+                    np.zeros(per_hand_dim, dtype=np.float32),
+                ]
             else:
-                pad = np.zeros(self._feature_dim - feat.shape[0], dtype=feat.dtype)
+                hand_features = [
+                    np.zeros(per_hand_dim, dtype=np.float32),
+                    np.zeros(per_hand_dim, dtype=np.float32),
+                ]
+            feat = np.concatenate(hand_features, axis=0)
+        else:
+            feat = self._hand_frame_feature(
+                hands[0],
+                normalized[0],
+                target_dim=raw_feature_dim,
+            )
+
+        if feat.shape[0] != raw_feature_dim:
+            if feat.shape[0] > raw_feature_dim:
+                feat = feat[:raw_feature_dim]
+            else:
+                pad = np.zeros(raw_feature_dim - feat.shape[0], dtype=feat.dtype)
                 feat = np.concatenate([feat, pad], axis=0)
 
         self._window.append(feat)
@@ -335,16 +462,16 @@ class GestureOnlineInfer:
         label = ""
         confidence = 0.0
 
-        if self._clf is not None and self._classes and len(self._window) > 0:
-            avg_feat = np.mean(np.stack(tuple(self._window), axis=0), axis=0).reshape(1, -1)
+        if self._clf is not None and self._classes and self._window_ready_for_prediction():
+            model_feat = self._build_model_feature().reshape(1, -1)
             try:
-                pred_idx = int(self._clf.predict(avg_feat)[0])
+                pred_idx = int(self._clf.predict(model_feat)[0])
                 label = (
                     self._classes[pred_idx]
                     if 0 <= pred_idx < len(self._classes)
                     else str(pred_idx)
                 )
-                proba = self._clf.predict_proba(avg_feat)[0]
+                proba = self._clf.predict_proba(model_feat)[0]
                 confidence = float(np.max(proba))
             except Exception as e:
                 print(f"[!] classifier prediction failed: {e}", flush=True)
@@ -354,7 +481,7 @@ class GestureOnlineInfer:
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
                 }
-        elif normalized:
+        elif normalized and not self._uses_temporal_features():
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
 
         if label and not self._pose_matches_prediction(label, current_finger_count):

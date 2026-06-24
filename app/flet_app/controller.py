@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import json
 from pathlib import Path
 from threading import Thread
 from typing import Any, Callable, Optional
@@ -170,6 +171,10 @@ class _Event:
 
 
 GESTURE_CONFIRM_FRAMES = 6
+RECOGNITION_MODEL_STATIC = "static"
+RECOGNITION_MODEL_DYNAMIC = "dynamic"
+DYNAMIC_RECOGNITION_WINDOW = 36
+DYNAMIC_GESTURE_CONFIRM_FRAMES = 2
 
 
 class AppController:
@@ -191,6 +196,8 @@ class AppController:
         landmark_overlay_changed(bool)
         voice_assistant_state_changed(str)
         two_hands_changed(bool)
+        recognition_model_mode_changed(str)
+        sample_recording_changed(dict)
     """
 
     def __init__(self) -> None:
@@ -208,6 +215,7 @@ class AppController:
         self._is_recognizing: bool = False
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
+        self._recognition_model_mode: str = RECOGNITION_MODEL_STATIC
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
@@ -234,6 +242,8 @@ class AppController:
         self.landmark_overlay_changed = _Event()
         self.voice_assistant_state_changed = _Event()
         self.two_hands_changed = _Event()
+        self.recognition_model_mode_changed = _Event()
+        self.sample_recording_changed = _Event()
 
         # Камера -------------------------------------------------------------
         self._camera_cap: Any | None = None
@@ -274,6 +284,10 @@ class AppController:
 
         # Subprocess для записи/обучения (CLI-обёртка) ---------------------
         self._training_proc: Optional[subprocess.Popen] = None
+        self._sample_recording: dict[str, Any] | None = None
+        self._sample_recording_detector: Any | None = None
+        self._sample_recording_lock = threading.Lock()
+        self._sample_recording_detector_lock = threading.RLock()
 
         # Подхватить уже запущенный фоновый процесс ---------------------------
         if self._is_recognition_pid_active():
@@ -297,8 +311,16 @@ class AppController:
         return self._is_camera_active
 
     @property
+    def live_recognition_active(self) -> bool:
+        return bool(self._embedded_active or self._is_recognizing)
+
+    @property
     def two_hands_mode(self) -> bool:
         return self._two_hands_mode
+
+    @property
+    def recognition_model_mode(self) -> str:
+        return str(getattr(self, "_recognition_model_mode", RECOGNITION_MODEL_STATIC))
 
     @property
     def gesture_mode(self) -> bool:
@@ -330,6 +352,10 @@ class AppController:
     def frame_size(self) -> tuple[int, int]:
         with self._frame_lock:
             return (self._frame_w, self._frame_h)
+
+    @property
+    def sample_recording_state(self) -> dict[str, Any]:
+        return self._sample_recording_snapshot()
 
     @property
     def cv2_available(self) -> bool:
@@ -485,6 +511,41 @@ class AppController:
     def _configured_log_dir(self) -> Path:
         return self._configured_path(self._config.paths.log_dir)
 
+    def _configured_feature_mode_path(self) -> Path:
+        return self._configured_models_dir() / "feature_mode.txt"
+
+    def _dynamic_model_path(self) -> Path:
+        return self._configured_models_dir() / "dynamic_knn.pkl"
+
+    def _dynamic_classes_path(self) -> Path:
+        return self._configured_models_dir() / "dynamic_classes.json"
+
+    def _dynamic_feature_dim_path(self) -> Path:
+        return self._configured_models_dir() / "dynamic_feature_dim.txt"
+
+    def _dynamic_feature_mode_path(self) -> Path:
+        return self._configured_models_dir() / "dynamic_feature_mode.txt"
+
+    def _embedded_model_paths(self) -> tuple[Path, Path, Path, Path]:
+        if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
+            return (
+                self._dynamic_model_path(),
+                self._dynamic_classes_path(),
+                self._dynamic_feature_dim_path(),
+                self._dynamic_feature_mode_path(),
+            )
+        return (
+            self._configured_model_path(),
+            self._configured_classes_path(),
+            self._configured_feature_dim_path(),
+            self._configured_feature_mode_path(),
+        )
+
+    def _embedded_recognition_window(self) -> int:
+        if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
+            return DYNAMIC_RECOGNITION_WINDOW
+        return 30
+
     def _mask_database_url(self, url: str) -> str:
         if "://" not in url or "@" not in url:
             return url
@@ -529,6 +590,11 @@ class AppController:
         self._pending_frames = 0
         self._pending_confidence_total = 0.0
 
+    def _gesture_confirm_frames(self) -> int:
+        if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
+            return DYNAMIC_GESTURE_CONFIRM_FRAMES
+        return GESTURE_CONFIRM_FRAMES
+
     def _update_gesture_confirmation(self, label: str, confidence: float) -> tuple[bool, float]:
         clean = (label or "").strip()
         if not clean:
@@ -546,7 +612,7 @@ class AppController:
             ) + float(confidence)
 
         avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
-        return self._pending_frames >= GESTURE_CONFIRM_FRAMES, avg_conf
+        return self._pending_frames >= self._gesture_confirm_frames(), avg_conf
 
     def _ensure_pointer_control(self) -> Any | None:
         if not POINTER_CONTROL_AVAILABLE or PointerControlService is None:
@@ -624,6 +690,135 @@ class AppController:
         except Exception as e:
             print(f"[w] draw_landmarks_on_frame: {e}", flush=True)
 
+    def _sample_recording_snapshot_from_session(
+        self,
+        session: dict[str, Any] | None,
+        *,
+        active: bool,
+        message: str = "",
+    ) -> dict[str, Any]:
+        if session is None:
+            return {
+                "active": False,
+                "label": "",
+                "saved": 0,
+                "target": 0,
+                "sampleIndex": 0,
+                "currentFrames": 0,
+                "targetFrames": 0,
+                "progress": 0.0,
+                "twoHands": False,
+                "message": message,
+            }
+
+        target = max(1, int(session.get("target") or 1))
+        saved = max(0, int(session.get("saved") or 0))
+        target_frames = max(1, int(session.get("frames") or 1))
+        current_frames = len(session.get("frames_buf") or [])
+        if saved >= target:
+            sample_index = target
+            progress = 1.0
+            current_frames = target_frames
+        else:
+            sample_index = saved + 1
+            done_steps = saved * target_frames + current_frames
+            progress = min(1.0, done_steps / float(target * target_frames))
+
+        return {
+            "active": bool(active),
+            "label": str(session.get("label") or ""),
+            "saved": saved,
+            "target": target,
+            "sampleIndex": sample_index,
+            "currentFrames": current_frames,
+            "targetFrames": target_frames,
+            "progress": progress,
+            "twoHands": bool(session.get("two_hands")),
+            "message": message or str(session.get("last_message") or ""),
+        }
+
+    def _sample_recording_snapshot(self) -> dict[str, Any]:
+        with self._sample_recording_lock:
+            session = self._sample_recording
+        return self._sample_recording_snapshot_from_session(
+            session,
+            active=session is not None,
+        )
+
+    def _emit_sample_recording_changed(
+        self,
+        session: dict[str, Any] | None = None,
+        *,
+        active: bool | None = None,
+        message: str = "",
+    ) -> None:
+        if session is None:
+            with self._sample_recording_lock:
+                session = self._sample_recording
+        snapshot = self._sample_recording_snapshot_from_session(
+            session,
+            active=(session is not None if active is None else active),
+            message=message,
+        )
+        event = getattr(self, "sample_recording_changed", None)
+        if event is not None:
+            event.emit(snapshot)
+
+    def _draw_sample_recording_overlay_on_frame(self, frame_bgr: Any) -> None:
+        with self._sample_recording_lock:
+            session = self._sample_recording
+        if session is None:
+            return
+
+        try:
+            import cv2
+
+            snap = self._sample_recording_snapshot_from_session(
+                session,
+                active=True,
+            )
+            height, width = frame_bgr.shape[:2]
+            box_w = min(width - 24, 430)
+            cv2.rectangle(frame_bgr, (12, 12), (12 + box_w, 104), (16, 16, 28), -1)
+            cv2.rectangle(frame_bgr, (12, 12), (12 + box_w, 104), (64, 64, 92), 1)
+            cv2.circle(frame_bgr, (34, 36), 9, (40, 40, 255), -1, cv2.LINE_AA)
+            cv2.putText(
+                frame_bgr,
+                "REC",
+                (52, 43),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.72,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                frame_bgr,
+                snap["label"][:28],
+                (20, 72),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (235, 245, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            detail = (
+                f"sample {snap['sampleIndex']}/{snap['target']}  "
+                f"frames {snap['currentFrames']}/{snap['targetFrames']}"
+            )
+            cv2.putText(
+                frame_bgr,
+                detail,
+                (20, 96),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (170, 230, 255),
+                1,
+                cv2.LINE_AA,
+            )
+        except Exception as e:
+            print(f"[w] draw_sample_recording_overlay_on_frame: {e}", flush=True)
+
     def _ensure_embedded_recognition_for_live_controls(self) -> None:
         if self._embedded_active:
             return
@@ -633,12 +828,17 @@ class AppController:
             self._set_recognizing(False)
 
     def _live_recognition_status(self) -> str:
+        model_suffix = (
+            " (dynamic)"
+            if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC
+            else ""
+        )
         if self._gesture_mode and self._pointer_mode:
-            return "Жесты и указатель включены"
+            return f"Жесты и указатель включены{model_suffix}"
         if self._pointer_mode:
             return "Указатель: указательный палец двигает курсор"
         if self._gesture_mode:
-            return "Распознавание жестов включено"
+            return f"Распознавание жестов включено{model_suffix}"
         if self._show_landmark_overlay:
             return "Точки руки включены"
         return "Камера включена"
@@ -649,11 +849,16 @@ class AppController:
         try:
             from app.gesture_online_infer import GestureOnlineInfer
 
+            model_path, classes_path, feature_dim_path, feature_mode_path = (
+                self._embedded_model_paths()
+            )
             print("[ctrl.embedded] creating GestureOnlineInfer in camera thread…")
             infer = GestureOnlineInfer(
-                model_path=self._configured_model_path(),
-                classes_path=self._configured_classes_path(),
-                feature_dim_path=self._configured_feature_dim_path(),
+                model_path=model_path,
+                classes_path=classes_path,
+                feature_dim_path=feature_dim_path,
+                feature_mode_path=feature_mode_path,
+                window=self._embedded_recognition_window(),
                 two_hands=self._two_hands_mode,
             )
             print(
@@ -771,10 +976,19 @@ class AppController:
             frame_bgr = cv2.flip(frame_bgr, 1)
             landmarks_json = "[]"
 
+            if self._sample_recording is not None:
+                try:
+                    recording_landmarks = self._process_sample_recording_frame(frame_bgr)
+                    if recording_landmarks:
+                        landmarks_json = recording_landmarks
+                except Exception as e:
+                    print(f"[!] embedded recording frame error: {e}")
+                    self._finish_sample_recording(1, f"[!] Ошибка записи сэмпла: {e}")
+
             # Встроенный CV (MediaPipe + KNN) — синхронно в этом же потоке;
             # как в исходной версии, это безопасно потому что MediaPipe-объекты
             # создаются и используются в одном потоке.
-            if self._embedded_active:
+            if self._embedded_active and self._sample_recording is None:
                 try:
                     if self._embedded_infer is None:
                         self._embedded_infer = self._create_embedded_infer()
@@ -798,6 +1012,7 @@ class AppController:
                     print(f"[!] embedded CV frame error: {e}")
 
             self._draw_landmarks_on_frame(frame_bgr, landmarks_json)
+            self._draw_sample_recording_overlay_on_frame(frame_bgr)
 
             # Кодирование в JPEG для Flet ``Image(src=bytes)``.
             # 720p @ q=75 → 30-70 КБ на кадр, на M-серии тянет 30 fps без
@@ -820,6 +1035,263 @@ class AppController:
                 time.sleep(sleep)
             else:
                 next_t = now  # отстаём — сбрасываем расписание
+
+    def _hands_landmarks_json(self, hands: list[Any]) -> str:
+        payload: list[list[list[float]]] = []
+        for hand in hands:
+            landmarks = getattr(hand, "landmarks", None) or []
+            payload.append([[float(x), float(y)] for (x, y) in landmarks])
+        return json.dumps(payload, separators=(",", ":"))
+
+    def _sample_frame_from_hands(
+        self,
+        hands: list[Any],
+        *,
+        two_hands: bool,
+        include_global_motion: bool = False,
+    ) -> Any | None:
+        import numpy as np
+
+        from cv.hand_landmarker import normalize_landmarks
+
+        def hand_feature(hand: Any) -> Any:
+            normalized = normalize_landmarks(hand.landmarks)
+            if not include_global_motion:
+                return normalized
+
+            pts = np.asarray(hand.landmarks, dtype=np.float32)
+            pose = normalized.reshape(-1)
+            if pts.shape == (21, 2):
+                wrist = pts[0]
+            else:
+                wrist = np.zeros(2, dtype=np.float32)
+            return np.concatenate([pose, wrist], axis=0).astype(np.float32, copy=False)
+
+        features: list[Any] = []
+        for hand in hands:
+            try:
+                features.append(hand_feature(hand))
+            except Exception:
+                continue
+
+        if two_hands:
+            if include_global_motion:
+                per_hand_dim = 44
+                if len(features) >= 2:
+                    return np.concatenate(features[:2], axis=0)
+                if len(features) == 1:
+                    return np.concatenate(
+                        [features[0], np.zeros(per_hand_dim, dtype=np.float32)],
+                        axis=0,
+                    )
+            else:
+                if len(features) >= 2:
+                    return np.concatenate(features[:2], axis=0)
+                if len(features) == 1:
+                    return np.concatenate(
+                        [features[0], np.zeros((21, 2), dtype=np.float32)],
+                        axis=0,
+                    )
+            return None
+
+        if features:
+            return features[0]
+        return None
+
+    def _ensure_sample_recording_detector(self, *, two_hands: bool) -> Any:
+        if self._sample_recording_detector is not None:
+            return self._sample_recording_detector
+
+        from cv.hand_landmarker import HandLandmarkerVideo
+
+        self._sample_recording_detector = HandLandmarkerVideo(
+            num_hands=2 if two_hands else 1,
+            min_detection_confidence=0.6,
+            min_presence_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
+        return self._sample_recording_detector
+
+    def _next_sample_path(self, label_dir: Path) -> Path:
+        existing = sorted(label_dir.glob("sample_*.npy"))
+        used: set[int] = set()
+        for path in existing:
+            try:
+                used.add(int(path.stem.rsplit("_", 1)[1]))
+            except (IndexError, ValueError):
+                continue
+        index = 0
+        while index in used:
+            index += 1
+        return label_dir / f"sample_{index:04d}.npy"
+
+    def _process_sample_recording_frame(self, frame_bgr: Any) -> str:
+        import cv2
+        import numpy as np
+
+        with self._sample_recording_lock:
+            session = self._sample_recording
+        if session is None:
+            return ""
+
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+        if w > 640:
+            scale = 640.0 / w
+            rgb = cv2.resize(
+                rgb,
+                (640, max(1, int(round(h * scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+            rgb = np.ascontiguousarray(rgb)
+
+        with self._sample_recording_detector_lock:
+            detector = self._ensure_sample_recording_detector(
+                two_hands=bool(session.get("two_hands"))
+            )
+            hands = detector.detect_for_video_rgb(rgb)
+        landmarks_json = self._hands_landmarks_json(hands)
+        frame_vec = self._sample_frame_from_hands(
+            hands,
+            two_hands=bool(session.get("two_hands")),
+            include_global_motion=bool(session.get("include_global_motion")),
+        )
+
+        now = time.monotonic()
+        on_line = session.get("on_line")
+        if frame_vec is None:
+            last_no_hand = float(session.get("last_no_hand_log", 0.0) or 0.0)
+            if on_line and now - last_no_hand > 1.25:
+                session["last_no_hand_log"] = now
+                session["last_message"] = "Держи руку в кадре"
+                on_line("[i] Держи руку в кадре — сэмпл начнёт собираться автоматически")
+                self._emit_sample_recording_changed(
+                    session,
+                    active=True,
+                    message="Держи руку в кадре",
+                )
+            return landmarks_json
+
+        if now < float(session.get("next_allowed_at", 0.0) or 0.0):
+            return landmarks_json
+
+        warmup_until = float(session.get("warmup_until", 0.0) or 0.0)
+        if now < warmup_until:
+            remaining = max(0.0, warmup_until - now)
+            message = f"Подготовка к записи: {remaining:.1f} с"
+            session["last_message"] = message
+            last_progress_emit = float(session.get("last_progress_emit", 0.0) or 0.0)
+            if now - last_progress_emit >= 0.15:
+                session["last_progress_emit"] = now
+                self._emit_sample_recording_changed(
+                    session,
+                    active=True,
+                    message=message,
+                )
+            return landmarks_json
+
+        frames = session.setdefault("frames_buf", [])
+        frames.append(frame_vec)
+        session["last_message"] = "Идет запись сэмпла"
+        target_frames = int(session["frames"])
+        progress_step = max(1, target_frames // 3)
+        if on_line and len(frames) in {1, progress_step, progress_step * 2}:
+            on_line(
+                f"[i] Сбор сэмпла {int(session['saved']) + 1}/"
+                f"{int(session['target'])}: {len(frames)}/{target_frames} кадров"
+            )
+        last_progress_emit = float(session.get("last_progress_emit", 0.0) or 0.0)
+        if now - last_progress_emit >= 0.12 or len(frames) >= target_frames:
+            session["last_progress_emit"] = now
+            self._emit_sample_recording_changed(
+                session,
+                active=True,
+                message="Идет запись сэмпла",
+            )
+
+        if len(frames) < target_frames:
+            return landmarks_json
+
+        label_dir = Path(session["out_dir"])
+        label_dir.mkdir(parents=True, exist_ok=True)
+        out_path = self._next_sample_path(label_dir)
+        arr = np.asarray(frames[:target_frames], dtype=np.float32)
+        np.save(out_path, arr)
+        session["saved"] = int(session["saved"]) + 1
+        session["frames_buf"] = []
+        session["next_allowed_at"] = now + 0.45
+        session["last_message"] = f"Сохранено: {out_path.name}"
+        if on_line:
+            on_line(f"[✓] Сохранено: {out_path}")
+        self._emit_sample_recording_changed(
+            session,
+            active=True,
+            message=f"Сохранено: {out_path.name}",
+        )
+
+        if int(session["saved"]) >= int(session["target"]):
+            self._finish_sample_recording(
+                0,
+                f"[✓] Запись «{session['label']}» завершена: "
+                f"{session['saved']} сэмплов",
+            )
+
+        return landmarks_json
+
+    def _finish_sample_recording(self, code: int, message: str = "") -> None:
+        with self._sample_recording_lock:
+            session = self._sample_recording
+            self._sample_recording = None
+
+        with self._sample_recording_detector_lock:
+            detector = self._sample_recording_detector
+            self._sample_recording_detector = None
+            if detector is not None:
+                try:
+                    detector.close()
+                except Exception:
+                    pass
+
+        if session is None:
+            return
+
+        on_line = session.get("on_line")
+        on_done = session.get("on_done")
+        if message and on_line:
+            try:
+                on_line(message)
+            except Exception:
+                pass
+
+        if int(code) == 0:
+            try:
+                summary = self.sync_dataset_to_db()
+                if on_line:
+                    on_line(
+                        f"[✓] БД жестов синхронизирована: "
+                        f"добавлено {summary['created']}, "
+                        f"обновлено {summary['updated']}, "
+                        f"классов: {summary['total']}, "
+                        f"сэмплов: {summary['samples']}"
+                    )
+            except Exception as e:
+                if on_line:
+                    on_line(f"[w] sync_dataset_to_db: {e}")
+
+        self._emit_sample_recording_changed(
+            session,
+            active=False,
+            message=message or "Запись завершена",
+        )
+
+        if on_done:
+            try:
+                on_done(int(code))
+            except Exception:
+                pass
+
+        if self._status.startswith("Запись"):
+            self._set_status("Camera: streaming" if self._is_camera_active else "Idle")
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
         label = (out.get("label") or "").strip()
@@ -872,6 +1344,7 @@ class AppController:
         if self._embedded_active:
             return
         self.stop_recognition()
+        self._set_recognizing(True)
         self._set_status("CV: загрузка MediaPipe…")
         self._embedded_infer = None
         self._embedded_active = True
@@ -907,6 +1380,8 @@ class AppController:
             or self._status.startswith("Указатель:")
         ):
             self._set_status("Idle")
+        if not self._is_recognition_pid_active():
+            self._set_recognizing(False)
 
     # ----------------------------------------------------------------------
     # Subprocess realtime_infer (фоновое распознавание для глобальных команд)
@@ -1016,6 +1491,34 @@ class AppController:
         if self._is_recognition_pid_active():
             self.stop_recognition()
             self.start_recognition()
+
+    def set_recognition_model_mode(self, mode: str) -> None:
+        target = str(mode or "").strip().lower()
+        if target not in {RECOGNITION_MODEL_STATIC, RECOGNITION_MODEL_DYNAMIC}:
+            target = RECOGNITION_MODEL_STATIC
+        if target == self.recognition_model_mode:
+            return
+
+        self._recognition_model_mode = target
+        self._reset_gesture_confirmation()
+        self._set_confidence(0.0)
+        if self._last_label:
+            self._last_label = ""
+            self.gesture_detected.emit("")
+
+        infer = self._embedded_infer
+        self._embedded_infer = None
+        if infer is not None:
+            try:
+                infer.close()
+            except Exception:
+                pass
+
+        event = getattr(self, "recognition_model_mode_changed", None)
+        if event is not None:
+            event.emit(target)
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
 
     def set_show_landmark_overlay(self, enabled: bool) -> None:
         target = bool(enabled)
@@ -1222,7 +1725,6 @@ class AppController:
         if (
             self._is_recognizing
             or self._embedded_active
-            or self._is_camera_active
             or self._is_recognition_pid_active()
         ):
             self.stop_embedded_recognition()
@@ -1230,7 +1732,6 @@ class AppController:
             self.stop_camera()
             self._set_recognizing(False)
         else:
-            self._set_recognizing(True)
             self.start_embedded_recognition()
 
     # ----------------------------------------------------------------------
@@ -1931,94 +2432,77 @@ class AppController:
         num_samples: int = 20,
         frames: int = 30,
         two_hands: bool = False,
+        include_global_motion: bool = False,
         on_line: Optional[Callable[[str], None]] = None,
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
-        """Запустить ``cv/record_gestures.py`` как subprocess.
+        """Запустить встроенную запись сэмплов через Flet-камеру.
 
-        ``on_line`` будет вызываться из фонового потока с каждой строкой
-        stdout/stderr CLI-скрипта. ``on_done(exit_code)`` — по завершению.
+        Раньше кнопка открывала отдельное окно OpenCV через
+        ``cv.record_gestures``. Для пользовательского UI это выглядело как
+        неработающая кнопка: запись уходила в другое окно и требовала
+        клавиатурного управления. Теперь сэмплы собираются в текущем camera
+        loop, а прогресс выводится в журнал вкладки «Обучение».
         """
         if self._training_proc is not None and self._training_proc.poll() is None:
             return False
+        with self._sample_recording_lock:
+            if self._sample_recording is not None:
+                return False
+
         clean = (label or "").strip()
         if not clean:
             return False
 
-        project_root = Path(__file__).resolve().parents[2]
-        cmd = [
-            sys.executable,
-            "-u",
-            "-m",
-            "cv.record_gestures",
-            "--label",
-            clean,
-            "--num-samples",
-            str(int(num_samples)),
-            "--frames",
-            str(int(frames)),
-            "--data-root",
-            str(self._configured_data_dir()),
-            "--camera-index",
-            str(int(self._config.recognition.camera_index)),
-            "--fps",
-            str(int(self._config.recognition.target_fps)),
-        ]
-        if two_hands:
-            cmd.append("--two-hands")
+        self.stop_recognition()
+        self.stop_embedded_recognition()
 
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                bufsize=1,
-                text=True,
+        data_dir = self._configured_data_dir()
+        out_dir = data_dir / clean
+        target_samples = max(1, int(num_samples))
+        target_frames = max(1, int(frames))
+        session = {
+            "label": clean,
+            "target": target_samples,
+            "frames": target_frames,
+            "two_hands": bool(two_hands),
+            "include_global_motion": bool(include_global_motion),
+            "saved": 0,
+            "frames_buf": [],
+            "out_dir": out_dir,
+            "on_line": on_line,
+            "on_done": on_done,
+            "next_allowed_at": 0.0,
+            "last_no_hand_log": 0.0,
+            "last_progress_emit": 0.0,
+            "warmup_until": time.monotonic() + 1.5,
+            "last_message": "Подготовка камеры",
+        }
+        with self._sample_recording_lock:
+            self._sample_recording = session
+            self._sample_recording_detector = None
+        self._emit_sample_recording_changed(
+            session,
+            active=True,
+            message="Подготовка камеры",
+        )
+
+        if on_line:
+            on_line(
+                f"[i] Встроенная запись «{clean}»: {target_samples} сэмплов, "
+                f"{target_frames} кадров"
+                + (" (две руки)" if two_hands else "")
+                + (" + глобальное движение" if include_global_motion else "")
             )
-        except Exception as e:
-            if on_line:
-                on_line(f"[!] Не удалось запустить процесс: {e}")
+            on_line("[i] Держи жест перед камерой — запись начнётся через пару секунд")
+
+        if not self._is_camera_active:
+            self.start_camera()
+        if not self._is_camera_active:
+            self._finish_sample_recording(1, "[!] Камера не открылась, запись остановлена")
             return False
 
-        self._training_proc = proc
-        if on_line:
-            on_line(f"[i] PID={proc.pid}: {' '.join(cmd)}")
-
-        def reader() -> None:
-            try:
-                assert proc.stdout is not None
-                for line in proc.stdout:
-                    if on_line:
-                        try:
-                            on_line(line.rstrip())
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-            finally:
-                code = proc.wait()
-                if int(code) == 0:
-                    try:
-                        summary = self.sync_dataset_to_db()
-                        if on_line:
-                            on_line(
-                                f"[✓] БД жестов синхронизирована: "
-                                f"добавлено {summary['created']}, "
-                                f"обновлено {summary['updated']}, "
-                                f"классов: {summary['total']}, "
-                                f"сэмплов: {summary['samples']}"
-                            )
-                    except Exception as e:
-                        if on_line:
-                            on_line(f"[w] sync_dataset_to_db: {e}")
-                if on_done:
-                    try:
-                        on_done(int(code))
-                    except Exception:
-                        pass
-
-        Thread(target=reader, daemon=True).start()
+        self._set_status(f"Запись жеста: {clean}")
         return True
 
     def start_training(
@@ -2027,6 +2511,11 @@ class AppController:
         out_path: str = "",
         neighbors: int = 5,
         expect_dim: Optional[int] = None,
+        feature_mode: str = "static_mean",
+        model_type: str = "knn",
+        classes_out_path: str = "",
+        feature_dim_out_path: str = "",
+        feature_mode_out_path: str = "",
         on_line: Optional[Callable[[str], None]] = None,
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
@@ -2034,11 +2523,21 @@ class AppController:
         if self._training_proc is not None and self._training_proc.poll() is None:
             return False
         project_root = Path(__file__).resolve().parents[2]
+        try:
+            self.sync_dataset_to_db()
+        except Exception as e:
+            if on_line:
+                on_line(f"[w] sync_dataset_to_db before training: {e}")
         cmd = self._build_training_command(
             data_root=data_root,
             out_path=out_path,
             neighbors=neighbors,
             expect_dim=expect_dim,
+            feature_mode=feature_mode,
+            model_type=model_type,
+            classes_out_path=classes_out_path,
+            feature_dim_out_path=feature_dim_out_path,
+            feature_mode_out_path=feature_mode_out_path,
         )
 
         try:
@@ -2104,9 +2603,20 @@ class AppController:
         out_path: str = "",
         neighbors: int = 5,
         expect_dim: Optional[int] = None,
+        feature_mode: str = "static_mean",
+        model_type: str = "knn",
+        classes_out_path: str = "",
+        feature_dim_out_path: str = "",
+        feature_mode_out_path: str = "",
     ) -> list[str]:
         actual_data_root = data_root or str(self._configured_data_dir())
         actual_out_path = out_path or str(self._configured_model_path())
+        actual_classes_out = classes_out_path or str(self._configured_classes_path())
+        actual_feature_dim_out = feature_dim_out_path or str(self._configured_feature_dim_path())
+        actual_feature_mode_out = (
+            feature_mode_out_path
+            or str(Path(actual_out_path).with_name("feature_mode.txt"))
+        )
         cmd = [
             sys.executable,
             "-u",
@@ -2117,9 +2627,15 @@ class AppController:
             "--out",
             actual_out_path,
             "--classes-out",
-            str(self._configured_classes_path()),
+            actual_classes_out,
             "--feature-dim-out",
-            str(self._configured_feature_dim_path()),
+            actual_feature_dim_out,
+            "--feature-mode-out",
+            actual_feature_mode_out,
+            "--feature-mode",
+            str(feature_mode or "static_mean"),
+            "--model-type",
+            str(model_type or "knn"),
             "--neighbors",
             str(int(neighbors)),
             "--lowercase-labels",
@@ -2132,6 +2648,8 @@ class AppController:
 
     def cancel_training(self) -> None:
         """Прервать текущий тренировочный subprocess (если запущен)."""
+        if self.cancel_sample_recording():
+            return
         proc = self._training_proc
         if proc is None:
             return
@@ -2145,7 +2663,22 @@ class AppController:
 
     @property
     def is_training_active(self) -> bool:
-        return self._training_proc is not None and self._training_proc.poll() is None
+        return (
+            self._training_proc is not None and self._training_proc.poll() is None
+        ) or self.is_sample_recording_active
+
+    @property
+    def is_sample_recording_active(self) -> bool:
+        with self._sample_recording_lock:
+            return self._sample_recording is not None
+
+    def cancel_sample_recording(self) -> bool:
+        with self._sample_recording_lock:
+            active = self._sample_recording is not None
+        if not active:
+            return False
+        self._finish_sample_recording(130, "[i] Запись сэмплов остановлена")
+        return True
 
     # ----------------------------------------------------------------------
     # Завершение
@@ -2163,6 +2696,10 @@ class AppController:
             pass
         try:
             self.stop_camera()
+        except Exception:
+            pass
+        try:
+            self.cancel_sample_recording()
         except Exception:
             pass
         if self._voice_assistant is not None:

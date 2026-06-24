@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
 
 import json
+import threading
 
 import numpy as np
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.flet_app.controller import AppController, GESTURE_CONFIRM_FRAMES, _Event
+from app.flet_app.controller import (
+    AppController,
+    DYNAMIC_RECOGNITION_WINDOW,
+    GESTURE_CONFIRM_FRAMES,
+    _Event,
+)
 from app.models.database import Base, Command, Gesture, GestureHistory, GestureSample
 
 
@@ -85,6 +91,63 @@ def test_build_training_command_filters_to_active_db_labels(monkeypatch, tmp_pat
     assert cmd[cmd.index("--expect-dim") + 1] == "42"
 
 
+def test_build_training_command_can_write_dynamic_model_metadata(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    monkeypatch.setattr(controller, "_active_training_labels_from_db", lambda: ["swipe_right"])
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: tmp_path / "classes.json")
+    monkeypatch.setattr(controller, "_configured_feature_dim_path", lambda: tmp_path / "feature_dim.txt")
+
+    cmd = controller._build_training_command(
+        data_root=str(tmp_path / "gestures"),
+        out_path=str(tmp_path / "dynamic_knn.pkl"),
+        neighbors=5,
+        feature_mode="dynamic_stats",
+        model_type="extra_trees",
+        classes_out_path=str(tmp_path / "dynamic_classes.json"),
+        feature_dim_out_path=str(tmp_path / "dynamic_feature_dim.txt"),
+        feature_mode_out_path=str(tmp_path / "dynamic_feature_mode.txt"),
+    )
+
+    assert cmd[cmd.index("--feature-mode") + 1] == "dynamic_stats"
+    assert cmd[cmd.index("--model-type") + 1] == "extra_trees"
+    assert cmd[cmd.index("--classes-out") + 1].endswith("dynamic_classes.json")
+    assert cmd[cmd.index("--feature-dim-out") + 1].endswith("dynamic_feature_dim.txt")
+    assert cmd[cmd.index("--feature-mode-out") + 1].endswith("dynamic_feature_mode.txt")
+
+
+def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "static"
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+    monkeypatch.setattr(controller, "_configured_model_path", lambda: model_dir / "knn.pkl")
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: model_dir / "classes.json")
+    monkeypatch.setattr(controller, "_configured_feature_dim_path", lambda: model_dir / "feature_dim.txt")
+
+    static_paths = controller._embedded_model_paths()
+    static_window = controller._embedded_recognition_window()
+    controller._recognition_model_mode = "dynamic"
+    dynamic_paths = controller._embedded_model_paths()
+    dynamic_window = controller._embedded_recognition_window()
+
+    assert [path.name for path in static_paths] == [
+        "knn.pkl",
+        "classes.json",
+        "feature_dim.txt",
+        "feature_mode.txt",
+    ]
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_knn.pkl",
+        "dynamic_classes.json",
+        "dynamic_feature_dim.txt",
+        "dynamic_feature_mode.txt",
+    ]
+    assert static_window == 30
+    assert dynamic_window == DYNAMIC_RECOGNITION_WINDOW
+
+
 def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp_path):
     import app.flet_app.controller as controller_module
 
@@ -144,6 +207,198 @@ def test_list_recorded_gestures_hides_empty_folders(monkeypatch, tmp_path):
     monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
 
     assert controller.list_recorded_gestures() == [{"label": "FULL", "samples": 1}]
+
+
+def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._training_proc = None
+    controller._sample_recording = None
+    controller._sample_recording_detector = None
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    controller._is_camera_active = False
+    controller._status = "Idle"
+    controller.status_changed = _Event()
+    calls = []
+    lines = []
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(controller, "stop_recognition", lambda: calls.append("background"))
+    monkeypatch.setattr(controller, "stop_embedded_recognition", lambda: calls.append("embedded"))
+
+    def fake_start_camera():
+        calls.append("camera")
+        controller._is_camera_active = True
+
+    monkeypatch.setattr(controller, "start_camera", fake_start_camera)
+
+    ok = controller.start_recording(
+        label="Wave",
+        num_samples=3,
+        frames=7,
+        two_hands=True,
+        on_line=lines.append,
+    )
+
+    assert ok is True
+    assert calls == ["background", "embedded", "camera"]
+    assert controller._sample_recording is not None
+    assert controller._sample_recording["label"] == "Wave"
+    assert controller._sample_recording["target"] == 3
+    assert controller._sample_recording["frames"] == 7
+    assert controller._sample_recording["two_hands"] is True
+    assert controller._sample_recording["include_global_motion"] is False
+    assert controller._sample_recording["out_dir"] == tmp_path / "gestures" / "Wave"
+    assert controller._status == "Запись жеста: Wave"
+    assert any("Встроенная запись" in line for line in lines)
+
+
+def test_cancel_sample_recording_closes_session_and_notifies_done():
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    done_codes = []
+    lines = []
+
+    class FakeDetector:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    detector = FakeDetector()
+    controller._sample_recording_detector = detector
+    controller._sample_recording = {
+        "label": "Wave",
+        "on_line": lines.append,
+        "on_done": done_codes.append,
+    }
+    controller._status = "Запись жеста: Wave"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+
+    assert controller.cancel_sample_recording() is True
+
+    assert controller._sample_recording is None
+    assert controller._sample_recording_detector is None
+    assert detector.closed is True
+    assert done_codes == [130]
+    assert lines == ["[i] Запись сэмплов остановлена"]
+    assert controller._status == "Camera: streaming"
+
+
+def test_process_sample_recording_frame_saves_npy(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "Wave"
+    lines = []
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+
+    class FakeDetector:
+        def __init__(self):
+            self.closed = False
+
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            self.closed = True
+
+    detector = FakeDetector()
+    controller._sample_recording_detector = detector
+    controller._sample_recording = {
+        "label": "Wave",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": lines.append,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: Wave"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(
+        controller,
+        "sync_dataset_to_db",
+        lambda: {"created": 1, "updated": 0, "total": 1, "samples": 1},
+    )
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    sample = label_dir / "sample_0000.npy"
+    assert sample.exists()
+    assert np.load(sample).shape == (2, 21, 2)
+    assert controller._sample_recording is None
+    assert controller._sample_recording_detector is None
+    assert detector.closed is True
+    assert done_codes == [0]
+    assert any("Сохранено" in line for line in lines)
+
+
+def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "SwipeLeft"
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+
+    class FakeDetector:
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            pass
+
+    controller._sample_recording_detector = FakeDetector()
+    controller._sample_recording = {
+        "label": "SwipeLeft",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "include_global_motion": True,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": None,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: SwipeLeft"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(
+        controller,
+        "sync_dataset_to_db",
+        lambda: {"created": 1, "updated": 0, "total": 1, "samples": 1},
+    )
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    sample = np.load(label_dir / "sample_0000.npy")
+    assert sample.shape == (2, 44)
+    assert np.allclose(sample[0, -2:], [0.0, 0.0])
+    assert done_codes == [0]
 
 
 def test_delete_recorded_samples_removes_files_and_deactivates_gesture(monkeypatch, tmp_path):
@@ -246,7 +501,7 @@ def test_delete_db_command_removes_history_and_executor_entry(monkeypatch):
         assert session.query(GestureHistory).count() == 0
 
 
-def test_toggle_recognition_stops_camera_when_recognizing_flag_is_stale():
+def test_toggle_recognition_starts_cv_when_only_camera_is_active():
     controller = AppController.__new__(AppController)
     controller._is_recognizing = False
     controller._embedded_active = False
@@ -267,9 +522,42 @@ def test_toggle_recognition_stops_camera_when_recognizing_flag_is_stale():
 
     controller.toggle_recognition()
 
-    assert calls == ["embedded", "background", "camera"]
+    assert calls == ["start"]
     assert controller._is_recognizing is False
-    assert controller._is_camera_active is False
+    assert controller._is_camera_active is True
+
+
+def test_start_embedded_recognition_keeps_recognizing_enabled_after_background_stop():
+    controller = AppController.__new__(AppController)
+    controller._embedded_active = False
+    controller._embedded_infer = object()
+    controller._is_recognizing = True
+    controller._is_camera_active = True
+    controller._status = "Idle"
+    controller._last_label = "old"
+    controller._landmarks_json = "[[]]"
+    controller._confidence = 0.5
+    controller._pending_label = "old"
+    controller._pending_frames = 2
+    controller._pending_confidence_total = 1.0
+    controller.status_changed = _Event()
+    controller.recognizing_changed = _Event()
+    controller.confidence_changed = _Event()
+    controller.landmarks_changed = _Event()
+
+    def fake_stop_background():
+        controller._set_recognizing(False)
+
+    controller.stop_recognition = fake_stop_background
+    controller.start_camera = lambda: None
+
+    controller.start_embedded_recognition()
+
+    assert controller._embedded_active is True
+    assert controller._is_recognizing is True
+    assert controller._embedded_infer is None
+    assert controller._last_label == ""
+    assert controller._pending_frames == 0
 
 
 def test_dispatch_waits_for_stable_gesture_before_execution():
@@ -304,6 +592,32 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
 
     assert emitted == ["new"]
     assert executed == [("new", pytest.approx(0.8))]
+
+
+def test_dynamic_dispatch_confirms_gesture_faster():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    emitted = []
+    executed = []
+    recorded = []
+    controller.gesture_detected.connect(emitted.append)
+    controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
+    controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
+
+    controller._dispatch_infer_result(
+        {"label": "hand_left", "confidence": 0.9, "landmarks_json": "[]"}
+    )
+
+    assert emitted == []
+    assert executed == []
+
+    controller._dispatch_infer_result(
+        {"label": "hand_left", "confidence": 0.8, "landmarks_json": "[]"}
+    )
+
+    assert emitted == ["hand_left"]
+    assert executed == [("hand_left", pytest.approx(0.85))]
+    assert recorded == [("hand_left", pytest.approx(0.85), True)]
 
 
 def test_dispatch_resets_confirmation_when_label_changes():

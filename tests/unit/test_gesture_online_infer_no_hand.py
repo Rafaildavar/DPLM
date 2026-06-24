@@ -145,6 +145,55 @@ def test_two_hand_classifier_gets_84_features_with_one_hand_padded() -> None:
     assert np.allclose(clf.features[0, 42:], 0.0)
 
 
+def test_dynamic_classifier_gets_expanded_sequence_features() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _FeatureCaptureClassifier(252)
+    infer._detector = _OneHandDetector()
+    infer._clf = clf
+    infer._classes = ["hand_left"]
+    infer._feature_dim = 252
+    infer._raw_feature_dim = 42
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=60)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {"hand_left": {"non_thumb_count": 0, "stability": 1.0}}
+
+    for _ in range(59):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+        assert out["label"] == ""
+        assert clf.features is None
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == "hand_left"
+    assert clf.features is not None
+    assert clf.features.shape == (1, 252)
+
+
+def test_dynamic_global_classifier_gets_wrist_motion_features() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _FeatureCaptureClassifier(264)
+    infer._detector = _OneHandDetector()
+    infer._clf = clf
+    infer._classes = ["swipe_left"]
+    infer._feature_dim = 264
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=60)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    for _ in range(60):
+        infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert clf.features is not None
+    assert clf.features.shape == (1, 264)
+    assert infer._window[-1].shape == (44,)
+    assert np.allclose(infer._window[-1][-2:], [0.5, 0.82])
+
+
 def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:
     infer = object.__new__(GestureOnlineInfer)
     infer._detector = _OneHandDetector()
