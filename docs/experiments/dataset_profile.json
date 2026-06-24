@@ -1,0 +1,202 @@
+{
+  "generated_at": "2026-06-24T10:08:00+00:00",
+  "data_root": "data/gestures",
+  "class_count": 15,
+  "active_class_count": 6,
+  "empty_class_count": 9,
+  "sample_count": 121,
+  "valid_sample_count": 121,
+  "invalid_sample_count": 0,
+  "active_sample_min": 20,
+  "active_sample_max": 21,
+  "imbalance_ratio": 1.05,
+  "frame_min": 30,
+  "frame_max": 30,
+  "frame_mean": 30.0,
+  "feature_dims": [
+    42
+  ],
+  "classes": [
+    {
+      "label": "CTRLZ",
+      "sample_count": 21,
+      "valid_sample_count": 21,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "Hend",
+      "sample_count": 20,
+      "valid_sample_count": 20,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "Newest",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "Open",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "UP",
+      "sample_count": 20,
+      "valid_sample_count": 20,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "gun",
+      "sample_count": 20,
+      "valid_sample_count": 20,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "hello",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "palm",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "peace_sign",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "sh3",
+      "sample_count": 20,
+      "valid_sample_count": 20,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "swipe_right",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "test_gesture",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "three",
+      "sample_count": 20,
+      "valid_sample_count": 20,
+      "invalid_sample_count": 0,
+      "frame_min": 30,
+      "frame_max": 30,
+      "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "thumbs_up",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    },
+    {
+      "label": "ываы",
+      "sample_count": 0,
+      "valid_sample_count": 0,
+      "invalid_sample_count": 0,
+      "frame_min": null,
+      "frame_max": null,
+      "frame_mean": null,
+      "feature_dims": [],
+      "issues": []
+    }
+  ],
+  "risks": [
+    "low_samples_per_class:CTRLZ,Hend,UP,gun,sh3,three",
+    "empty_classes:Newest,Open,hello,palm,peace_sign,swipe_right,test_gesture,thumbs_up,ываы"
+  ]
+}
