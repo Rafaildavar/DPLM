@@ -867,6 +867,17 @@ class AppController:
                 "timeout_seconds": payload.get("timeout_seconds"),
                 "attempts": payload.get("attempts", []),
             }
+            if event_type == "attempt":
+                row.update(
+                    {
+                        "attempt": payload.get("attempt"),
+                        "expected": payload.get("expected"),
+                        "predicted": payload.get("predicted"),
+                        "confidence": payload.get("confidence"),
+                        "result": payload.get("result"),
+                        "elapsed_seconds": payload.get("elapsed_seconds"),
+                    }
+                )
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
         except Exception as e:

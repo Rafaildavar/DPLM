@@ -86,6 +86,14 @@ accuracy или missed attempts без ручного протокола вид�
 
 Результаты попыток пишутся в `~/.dplm/logs/live_evaluation.jsonl`.
 
+После серии тестов собрать отчет:
+
+```bash
+python scripts/live_evaluation_report.py \
+  --out-md docs/experiments/live_evaluation_report.md \
+  --out-json docs/experiments/live_evaluation_report.json
+```
+
 Шаблон отчета:
 
 | Expected | Attempts | Correct | Wrong label | Missed | Notes |

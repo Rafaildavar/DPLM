@@ -387,6 +387,8 @@ Threshold sweep:
   запускал системные команды.
 - Подробные попытки пишутся в:
   `~/.dplm/logs/live_evaluation.jsonl`.
+- Отчет по попыткам собирается командой:
+  `python scripts/live_evaluation_report.py --out-md docs/experiments/live_evaluation_report.md --out-json docs/experiments/live_evaluation_report.json`.
 
 Правила текущего протокола:
 - recommended attempts: `10` на класс;
