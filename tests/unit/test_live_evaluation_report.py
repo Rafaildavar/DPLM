@@ -3,6 +3,7 @@ from pathlib import Path
 
 from scripts.live_evaluation_report import (
     build_markdown_report,
+    load_completed_runs,
     load_attempts,
     summarize_attempts,
 )
@@ -88,3 +89,55 @@ def test_live_evaluation_report_falls_back_to_run_attempts(tmp_path):
     assert report.total_attempts == 1
     assert report.correct == 1
     assert report.labels[0].expected == "swipe_up"
+
+
+def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
+    log_path = tmp_path / "live_evaluation.jsonl"
+    _write_jsonl(
+        log_path,
+        [
+            {
+                "event_type": "attempt",
+                "expected": "swipe_down",
+                "predicted": "swipe_down",
+                "confidence": 0.9,
+                "result": "correct",
+            },
+            {
+                "event_type": "run_completed",
+                "expected_label": "swipe_down",
+                "recorded_at": 100.0,
+                "min_confidence": 0.8,
+                "timeout_seconds": 0.0,
+                "attempts": [
+                    {
+                        "expected": "swipe_down",
+                        "predicted": "swipe_down",
+                        "confidence": 0.9,
+                        "result": "correct",
+                    },
+                    {
+                        "expected": "swipe_down",
+                        "predicted": "",
+                        "confidence": 0.0,
+                        "result": "missed",
+                    },
+                ],
+            },
+        ],
+    )
+
+    runs = load_completed_runs(log_path)
+    report = summarize_attempts(
+        load_attempts(log_path),
+        source=str(log_path),
+        runs=runs,
+    )
+
+    assert len(report.runs) == 1
+    assert report.runs[0].accuracy == 0.5
+    assert report.runs[0].accepted_accuracy == 1.0
+
+    markdown = build_markdown_report(report)
+    assert "Latest Completed Run By Label" in markdown
+    assert "| `swipe_down` | 2 | 1 | 0 | 1 | 0.500 | 1.000" in markdown

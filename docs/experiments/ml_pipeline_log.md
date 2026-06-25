@@ -551,6 +551,52 @@ Offline comparison:
   live dynamic profile на `dynamic_extra_trees.pkl`, либо дозаписать
   `swipe_down` до `20` сэмплов с разной скоростью/амплитудой.
 
+### H-016: Live-validation `swipe_down` после trajectory-признаков
+
+Статус: `live-validated-small-sample`
+
+Источник:
+- Home -> `Live evaluation`;
+- expected label: `swipe_down`;
+- attempts: `10`;
+- min confidence: `0.80`;
+- timeout: `0`;
+- модель: обновленный `models/dynamic_knn.pkl`;
+- feature mode: `dynamic_stats`, feature dim `271`;
+- скрин пользователя от 2026-06-25 20:28;
+- отчет: `docs/experiments/live_evaluation_report.md`.
+
+Результат последнего completed run:
+- raw correct: `8/10`;
+- raw wrong: `1/10`;
+- raw missed: `1/10`;
+- raw accuracy: `0.800`;
+- accepted attempts: `9`;
+- accepted accuracy: `8/9 = 0.889` (`89%`, в UI округлено до `90%`);
+- avg confidence accepted predictions: `0.924`;
+- wrong label: `swipe_up` (`1` раз).
+
+Сравнение с H-014:
+- было: `swipe_down = 5/10`, wrong `5/10`, все ошибки в `swipe_up`;
+- стало: `swipe_down = 8/10`, wrong `1/10`, missed `1/10`;
+- improvement raw accuracy: `+30 pp`;
+- target `>= 8/10` достигнут на первом live-прогоне после фикса.
+
+Вывод:
+- Trajectory-признаки подтверждены не только offline, но и live: конфликт
+  `swipe_down -> swipe_up` заметно снизился.
+- Оставшаяся ошибка все еще уходит в `swipe_up`, значит пара `up/down`
+  остается главным кандидатом для следующего улучшения.
+- Один `missed` показывает, что кроме классификации важен gate/сегментация
+  попытки: иногда жест не засчитывается как accepted prediction.
+
+Следующий шаг:
+- Повторить `swipe_down` еще один run на `10` attempts для устойчивости.
+- Если снова будет `8/10+`, считать `swipe_down` временно стабилизированным и
+  переходить к `swipe_right`.
+- Если результат упадет ниже `8/10`, проверить live на
+  `models/dynamic_extra_trees.pkl`, потому что offline он лучший.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -569,11 +615,11 @@ Offline comparison:
 
 ## Следующие эксперименты
 
-1. Исправить разделение `swipe_up`/`swipe_down` через trajectory-признаки.
-2. Переобучить dynamic-модели в отдельные файлы:
-   - `dynamic_knn.pkl`;
-   - `dynamic_svm.pkl`;
-   - `dynamic_extra_trees.pkl`.
-3. Повторить live-test `swipe_down`: target `>= 8/10`.
-4. После стабилизации добавить `swipe_right` и записать `10-20` sample.
-5. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+1. Повторить `swipe_down` live-test еще раз: target `>= 8/10`.
+2. Если второй run стабильный, добавить `swipe_right` и записать `10-20`
+   sample.
+3. Если второй run нестабильный, проверить live на
+   `models/dynamic_extra_trees.pkl`.
+4. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+5. Сравнить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` по live-run
+   метрикам, а не только offline CV.
