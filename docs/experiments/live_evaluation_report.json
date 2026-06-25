@@ -1,21 +1,32 @@
 {
   "source": "/Users/remi/.dplm/logs/live_evaluation.jsonl",
-  "total_attempts": 10,
-  "correct": 8,
-  "wrong": 1,
+  "total_attempts": 30,
+  "correct": 23,
+  "wrong": 6,
   "missed": 1,
-  "accuracy": 0.8,
+  "accuracy": 0.7666666666666667,
   "manual_adjustment": {
     "reason": "One swipe_left missed attempt was an accidental skip button press.",
     "excluded_missed": 1,
-    "valid_attempts": 9,
-    "correct": 8,
-    "wrong": 1,
+    "valid_attempts": 29,
+    "correct": 23,
+    "wrong": 6,
     "missed": 0,
-    "adjusted_accuracy": 0.8888888888888888,
-    "rounded_adjusted_accuracy": 0.9
+    "adjusted_accuracy": 0.7931034482758621
   },
   "labels": [
+    {
+      "expected": "swipe_down",
+      "attempts": 10,
+      "correct": 5,
+      "wrong": 5,
+      "missed": 0,
+      "accuracy": 0.5,
+      "avg_confidence": 0.971409920792571,
+      "wrong_labels": {
+        "swipe_up": 5
+      }
+    },
     {
       "expected": "swipe_left",
       "attempts": 10,
@@ -37,6 +48,16 @@
       "wrong_labels": {
         "swipe_up": 1
       }
+    },
+    {
+      "expected": "swipe_up",
+      "attempts": 10,
+      "correct": 10,
+      "wrong": 0,
+      "missed": 0,
+      "accuracy": 1.0,
+      "avg_confidence": 1.0,
+      "wrong_labels": {}
     }
   ]
 }

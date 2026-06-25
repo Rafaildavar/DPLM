@@ -441,6 +441,56 @@ Threshold sweep:
 - После этого сравнить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` на
   одинаковом наборе.
 
+### H-014: Live-test `swipe_up` и `swipe_down` при пороге `0.80`
+
+Статус: `needs-data-fix`
+
+Источник:
+- Home -> `Live evaluation`;
+- attempts: `10` на класс;
+- min confidence: `0.80`;
+- timeout: `0` (ручной режим без авто-пропуска);
+- отчет: `docs/experiments/live_evaluation_report.md`;
+- скрины пользователя от 2026-06-25 20:07 и 20:09.
+
+Raw summary по актуальным live-тестам:
+- total attempts: `30`;
+- correct: `23`;
+- wrong: `6`;
+- missed: `1`;
+- raw accuracy: `23/30 = 0.767`.
+
+Adjusted summary:
+- `missed=1` у `swipe_left` исключен как случайное нажатие `Пропуск`;
+- valid attempts: `29`;
+- adjusted accuracy: `23/29 = 0.793`.
+
+По классам:
+- `swipe_up`: `10/10`, accuracy `1.000`, avg confidence `1.000`;
+- `swipe_left`: raw `8/10`, adjusted `8/9 = 0.889` (`90%`);
+- `swipe_down`: `5/10`, accuracy `0.500`, avg confidence `0.971`;
+- все ошибки `swipe_down` ушли в `swipe_up` (`5/10`).
+
+Вывод:
+- Текущий dynamic-пайплайн уже способен стабильно распознавать отдельные
+  динамические классы: `swipe_up` прошел live-test на `100%`.
+- Главный дефект сейчас не общий, а направленный: модель путает `swipe_down`
+  с `swipe_up` при высокой уверенности, значит confidence threshold сам по
+  себе проблему не решит.
+- Вероятная причина: текущие признаки/датасет недостаточно кодируют знак
+  вертикального смещения или `swipe_down` записан несимметрично относительно
+  `swipe_up`.
+
+Следующий шаг:
+- Не добавлять новые классы до фикса `swipe_down`.
+- Проверить feature vector для `swipe_up`/`swipe_down`: отдельно вывести
+  агрегаты `dy`, `path`, `dominant_axis`, `start_y`, `end_y`.
+- Добавить в dynamic features явные trajectory-признаки:
+  `delta_x`, `delta_y`, `abs_delta_x`, `abs_delta_y`, `path_length`,
+  `direction_cos`, `direction_sin`.
+- Переобучить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` и повторить
+  live-test `swipe_down` 10 раз.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -458,12 +508,11 @@ Threshold sweep:
 
 ## Следующие эксперименты
 
-1. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+1. Исправить разделение `swipe_up`/`swipe_down` через trajectory-признаки.
 2. Переобучить dynamic-модели в отдельные файлы:
    - `dynamic_knn.pkl`;
    - `dynamic_svm.pkl`;
    - `dynamic_extra_trees.pkl`.
-3. Добавить в Home выбор конкретного dynamic model file или model profile.
-4. Повторить `scripts.compare_models --target-dim 44`.
-5. Зафиксировать live-результаты по каждому dynamic-жесту:
-   `swipe_up`, `hand_left`, затем добавить `swipe_down` и `swipe_right`.
+3. Повторить live-test `swipe_down`: target `>= 8/10`.
+4. После стабилизации добавить `swipe_right` и записать `10-20` sample.
+5. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
