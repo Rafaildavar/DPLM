@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.flet_app.controller import (
     AppController,
+    DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
     _Event,
@@ -38,6 +39,7 @@ def _dispatch_controller():
     controller.gesture_detected = _Event()
     controller.gesture_mode_changed = _Event()
     controller.status_changed = _Event()
+    controller.dynamic_model_profile_changed = _Event()
     controller.live_evaluation_changed = _Event()
     controller._update_pointer_from_landmarks = lambda _landmarks: None
     return controller
@@ -152,6 +154,48 @@ def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
     ]
     assert static_window == 30
     assert dynamic_window == DYNAMIC_RECOGNITION_WINDOW
+
+
+def test_embedded_dynamic_model_path_uses_selected_profile(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_EXTRA_TREES
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+
+    dynamic_paths = controller._embedded_model_paths()
+
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_extra_trees.pkl",
+        "dynamic_classes.json",
+        "dynamic_feature_dim.txt",
+        "dynamic_feature_mode.txt",
+    ]
+
+
+def test_set_dynamic_model_profile_restarts_embedded_infer():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = "knn"
+    controller._embedded_active = True
+    closed = []
+    emitted = []
+
+    class FakeInfer:
+        def close(self):
+            closed.append(True)
+
+    controller._embedded_infer = FakeInfer()
+    controller.dynamic_model_profile_changed.connect(emitted.append)
+
+    controller.set_dynamic_model_profile("extra_trees")
+
+    assert controller.dynamic_model_profile == "extra_trees"
+    assert controller._embedded_infer is None
+    assert closed == [True]
+    assert emitted == ["extra_trees"]
+    assert "dynamic:extra_trees" in controller.status
 
 
 def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp_path):

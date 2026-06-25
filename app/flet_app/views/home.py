@@ -198,6 +198,19 @@ class HomeView:
             ],
             on_select=self._on_model_mode_changed,
         )
+        self._dynamic_profile_dd = ft.Dropdown(
+            label="Dynamic",
+            value=controller.dynamic_model_profile,
+            width=170,
+            dense=True,
+            visible=controller.recognition_model_mode == "dynamic",
+            options=[
+                ft.DropdownOption(key="knn", text="knn"),
+                ft.DropdownOption(key="svm", text="svm"),
+                ft.DropdownOption(key="extra_trees", text="extra_trees"),
+            ],
+            on_select=self._on_dynamic_profile_changed,
+        )
         self._two_hands_switch = ft.Switch(
             value=controller.two_hands_mode,
             label="Режим двух рук",
@@ -252,6 +265,7 @@ class HomeView:
         controller.pointer_mode_changed.connect(self._on_pointer_mode)
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
         controller.recognition_model_mode_changed.connect(self._on_model_mode)
+        controller.dynamic_model_profile_changed.connect(self._on_dynamic_profile)
         controller.live_evaluation_changed.connect(self._on_live_evaluation)
 
     # ---- Жизненный цикл (вызывается shell при показе/скрытии) ------------
@@ -349,6 +363,11 @@ class HomeView:
             str(self._model_mode_dd.value or "static")
         )
         self._refresh_eval_labels()
+
+    def _on_dynamic_profile_changed(self, _e) -> None:
+        self._controller.set_dynamic_model_profile(
+            str(self._dynamic_profile_dd.value or "knn")
+        )
 
     def _parse_int_field(self, field: ft.TextField, default: int) -> int:
         try:
@@ -580,11 +599,30 @@ class HomeView:
     def _apply_model_mode(self, value: str) -> None:
         if self._model_mode_dd.value != value:
             self._model_mode_dd.value = value
+        self._dynamic_profile_dd.visible = value == "dynamic"
         try:
             self._model_mode_dd.update()
         except Exception:
             pass
+        try:
+            self._dynamic_profile_dd.update()
+        except Exception:
+            pass
         self._refresh_eval_labels()
+
+    def _on_dynamic_profile(self, value: str) -> None:
+        self._page.run_thread(self._apply_dynamic_profile, value)
+
+    def _apply_dynamic_profile(self, value: str) -> None:
+        if self._dynamic_profile_dd.value != value:
+            self._dynamic_profile_dd.value = value
+        self._dynamic_profile_dd.visible = (
+            self._controller.recognition_model_mode == "dynamic"
+        )
+        try:
+            self._dynamic_profile_dd.update()
+        except Exception:
+            pass
 
     def _on_live_evaluation(self, snapshot: dict) -> None:
         self._page.run_thread(self._apply_live_evaluation, snapshot)
@@ -637,6 +675,7 @@ class HomeView:
         self._eval_attempts.disabled = active
         self._eval_timeout.disabled = active
         self._eval_threshold.disabled = active
+        self._dynamic_profile_dd.disabled = active
         self._eval_start_btn.disabled = active
         self._eval_stop_btn.disabled = not active
         self._eval_miss_btn.disabled = not active
@@ -659,6 +698,7 @@ class HomeView:
             self._eval_attempts,
             self._eval_timeout,
             self._eval_threshold,
+            self._dynamic_profile_dd,
             self._eval_start_btn,
             self._eval_stop_btn,
             self._auto_exec_switch,
@@ -678,6 +718,7 @@ class HomeView:
             controls=[
                 self._toggle_btn,
                 self._model_mode_dd,
+                self._dynamic_profile_dd,
                 self._gesture_switch,
                 self._pointer_switch,
                 self._landmarks_switch,

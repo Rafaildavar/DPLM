@@ -173,6 +173,19 @@ class _Event:
 GESTURE_CONFIRM_FRAMES = 6
 RECOGNITION_MODEL_STATIC = "static"
 RECOGNITION_MODEL_DYNAMIC = "dynamic"
+DYNAMIC_MODEL_PROFILE_KNN = "knn"
+DYNAMIC_MODEL_PROFILE_SVM = "svm"
+DYNAMIC_MODEL_PROFILE_EXTRA_TREES = "extra_trees"
+DYNAMIC_MODEL_PROFILES = (
+    DYNAMIC_MODEL_PROFILE_KNN,
+    DYNAMIC_MODEL_PROFILE_SVM,
+    DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
+)
+DYNAMIC_MODEL_FILENAMES = {
+    DYNAMIC_MODEL_PROFILE_KNN: "dynamic_knn.pkl",
+    DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
+    DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
+}
 DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 2
 SAMPLE_RECORDING_READY_FRAMES = 6
@@ -206,6 +219,7 @@ class AppController:
         voice_assistant_state_changed(str)
         two_hands_changed(bool)
         recognition_model_mode_changed(str)
+        dynamic_model_profile_changed(str)
         sample_recording_changed(dict)
         live_evaluation_changed(dict)
     """
@@ -226,6 +240,7 @@ class AppController:
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
         self._recognition_model_mode: str = RECOGNITION_MODEL_STATIC
+        self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_KNN
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
@@ -256,6 +271,7 @@ class AppController:
         self.voice_assistant_state_changed = _Event()
         self.two_hands_changed = _Event()
         self.recognition_model_mode_changed = _Event()
+        self.dynamic_model_profile_changed = _Event()
         self.sample_recording_changed = _Event()
         self.live_evaluation_changed = _Event()
 
@@ -335,6 +351,18 @@ class AppController:
     @property
     def recognition_model_mode(self) -> str:
         return str(getattr(self, "_recognition_model_mode", RECOGNITION_MODEL_STATIC))
+
+    @property
+    def dynamic_model_profile(self) -> str:
+        profile = str(
+            getattr(self, "_dynamic_model_profile", DYNAMIC_MODEL_PROFILE_KNN)
+            or DYNAMIC_MODEL_PROFILE_KNN
+        ).strip()
+        return (
+            profile
+            if profile in DYNAMIC_MODEL_PROFILES
+            else DYNAMIC_MODEL_PROFILE_KNN
+        )
 
     @property
     def gesture_mode(self) -> bool:
@@ -529,7 +557,11 @@ class AppController:
         return self._configured_models_dir() / "feature_mode.txt"
 
     def _dynamic_model_path(self) -> Path:
-        return self._configured_models_dir() / "dynamic_knn.pkl"
+        filename = DYNAMIC_MODEL_FILENAMES.get(
+            self.dynamic_model_profile,
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_KNN],
+        )
+        return self._configured_models_dir() / filename
 
     def _dynamic_classes_path(self) -> Path:
         return self._configured_models_dir() / "dynamic_classes.json"
@@ -1225,7 +1257,7 @@ class AppController:
 
     def _live_recognition_status(self) -> str:
         model_suffix = (
-            " (dynamic)"
+            f" (dynamic:{self.dynamic_model_profile})"
             if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC
             else ""
         )
@@ -2086,6 +2118,34 @@ class AppController:
                 pass
 
         event = getattr(self, "recognition_model_mode_changed", None)
+        if event is not None:
+            event.emit(target)
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
+
+    def set_dynamic_model_profile(self, profile: str) -> None:
+        target = str(profile or "").strip().lower()
+        if target not in DYNAMIC_MODEL_PROFILES:
+            target = DYNAMIC_MODEL_PROFILE_KNN
+        if target == self.dynamic_model_profile:
+            return
+
+        self._dynamic_model_profile = target
+        self._reset_gesture_confirmation()
+        self._set_confidence(0.0)
+        if self._last_label:
+            self._last_label = ""
+            self.gesture_detected.emit("")
+
+        infer = self._embedded_infer
+        self._embedded_infer = None
+        if infer is not None:
+            try:
+                infer.close()
+            except Exception:
+                pass
+
+        event = getattr(self, "dynamic_model_profile_changed", None)
         if event is not None:
             event.emit(target)
         if self._embedded_active:

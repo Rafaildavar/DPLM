@@ -597,6 +597,63 @@ Offline comparison:
 - Если результат упадет ниже `8/10`, проверить live на
   `models/dynamic_extra_trees.pkl`, потому что offline он лучший.
 
+### H-017: Повторный live-test `swipe_down` на dynamic KNN
+
+Статус: `model-unstable-live`
+
+Источник:
+- Home -> `Live evaluation`;
+- expected label: `swipe_down`;
+- attempts: `10`;
+- min confidence: `0.80`;
+- timeout: `0`;
+- модель: `models/dynamic_knn.pkl`;
+- feature mode: `dynamic_stats`, feature dim `271`;
+- скрин пользователя от 2026-06-25 20:48;
+- отчет: `docs/experiments/live_evaluation_report.md`.
+
+Результат последнего completed run:
+- raw correct: `7/10`;
+- raw wrong: `2/10`;
+- raw missed: `1/10`;
+- raw accuracy: `0.700`;
+- accepted attempts: `9`;
+- accepted accuracy: `7/9 = 0.778`;
+- avg confidence accepted predictions: `0.968`;
+- wrong label: `swipe_up` (`2` раза).
+
+Сравнение:
+- до trajectory-признаков: `5/10`;
+- первый run после trajectory-признаков: `8/10`;
+- второй run после trajectory-признаков: `7/10`;
+- итог: стало лучше baseline, но `dynamic_knn` нестабилен для `swipe_down`.
+
+Вывод:
+- Trajectory-признаки помогли, но KNN не закрывает целевую стабильность
+  `>= 8/10` на двух подряд live-run.
+- Ошибки по-прежнему концентрируются в `swipe_up`, значит проблема именно в
+  границе пары `up/down`, а не в случайной путанице всех классов.
+- Следующий честный ML-шаг: проверить live на другой модели, а не добирать
+  данные вслепую.
+
+Что сделали:
+- Добавлен выбор dynamic model profile в Home: `knn`, `svm`, `extra_trees`.
+- Embedded live inference теперь может использовать:
+  - `models/dynamic_knn.pkl`;
+  - `models/dynamic_svm.pkl`;
+  - `models/dynamic_extra_trees.pkl`.
+- При смене profile текущий embedded infer пересоздается, чтобы следующий
+  live-run шел уже на выбранной модели.
+
+Следующий шаг:
+- Переключить на главной:
+  - `Модель`: `dynamic`;
+  - `Dynamic`: `extra_trees`;
+  - `Live evaluation`: `swipe_down`, `10` attempts, threshold `0.80`,
+    timeout `0`.
+- Если `extra_trees >= 8/10`, использовать его как основной dynamic-profile.
+- Если `extra_trees` тоже ниже `8/10`, добрать `swipe_down` до `20` сэмплов.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -610,16 +667,16 @@ Offline comparison:
    - поддерживаемые модели: `knn`, `svm`, `extra_trees`, `rf`, `logreg`.
 4. Live:
    - Home dropdown `Модель`: `static` / `dynamic`;
-   - dynamic live currently reads `models/dynamic_knn.pkl`;
+   - Home dropdown `Dynamic`: `knn` / `svm` / `extra_trees`;
    - offline best candidate: `models/dynamic_extra_trees.pkl`.
 
 ## Следующие эксперименты
 
-1. Повторить `swipe_down` live-test еще раз: target `>= 8/10`.
-2. Если второй run стабильный, добавить `swipe_right` и записать `10-20`
+1. Проверить `swipe_down` live-test на `dynamic_extra_trees.pkl`:
+   target `>= 8/10`.
+2. Если `extra_trees` стабилен, добавить `swipe_right` и записать `10-20`
    sample.
-3. Если второй run нестабильный, проверить live на
-   `models/dynamic_extra_trees.pkl`.
+3. Если `extra_trees` нестабилен, добрать `swipe_down` до `20` сэмплов.
 4. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
 5. Сравнить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` по live-run
    метрикам, а не только offline CV.

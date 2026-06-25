@@ -1,21 +1,21 @@
 {
   "source": "/Users/remi/.dplm/logs/live_evaluation.jsonl",
-  "total_attempts": 40,
-  "correct": 31,
-  "wrong": 7,
-  "missed": 2,
-  "accuracy": 0.775,
+  "total_attempts": 50,
+  "correct": 38,
+  "wrong": 9,
+  "missed": 3,
+  "accuracy": 0.76,
   "labels": [
     {
       "expected": "swipe_down",
-      "attempts": 20,
-      "correct": 13,
-      "wrong": 6,
-      "missed": 1,
-      "accuracy": 0.65,
-      "avg_confidence": 0.9487205436693424,
+      "attempts": 30,
+      "correct": 20,
+      "wrong": 8,
+      "missed": 2,
+      "accuracy": 0.6666666666666666,
+      "avg_confidence": 0.9547838795597604,
       "wrong_labels": {
-        "swipe_up": 6
+        "swipe_up": 8
       }
     },
     {
@@ -116,6 +116,22 @@
       "avg_confidence": 0.9235101246435329,
       "wrong_labels": {
         "swipe_up": 1
+      },
+      "min_confidence": 0.8,
+      "timeout_seconds": 0.0
+    },
+    {
+      "expected": "swipe_down",
+      "recorded_at": 1782409686.22795,
+      "attempts": 10,
+      "correct": 7,
+      "wrong": 2,
+      "missed": 1,
+      "accuracy": 0.7,
+      "accepted_accuracy": 0.7777777777777778,
+      "avg_confidence": 0.9675842553284203,
+      "wrong_labels": {
+        "swipe_up": 2
       },
       "min_confidence": 0.8,
       "timeout_seconds": 0.0
