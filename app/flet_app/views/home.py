@@ -93,9 +93,9 @@ class HomeView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._eval_timeout = ft.TextField(
-            label="Таймаут",
-            value="3.0",
-            width=104,
+            label="Таймаут 0=нет",
+            value="0",
+            width=132,
             border_color=COLOR_SURFACE_HIGH,
         )
         self._eval_threshold = ft.TextField(
@@ -120,6 +120,12 @@ class HomeView:
             disabled=True,
             on_click=self._on_eval_stop,
         )
+        self._eval_miss_btn = ft.OutlinedButton(
+            content=ft.Text("Пропуск"),
+            icon=ft.Icons.SKIP_NEXT,
+            disabled=True,
+            on_click=self._on_eval_miss,
+        )
         self._eval_progress_text = ft.Text("0/10", size=13, color=COLOR_ON_SURFACE)
         self._eval_correct_text = ft.Text("Верно 0", size=13, color=COLOR_SUCCESS)
         self._eval_wrong_text = ft.Text("Ошибка 0", size=13, color=COLOR_DANGER)
@@ -130,6 +136,47 @@ class HomeView:
             value=0.0,
             color=COLOR_ACCENT,
             bgcolor=COLOR_SURFACE_HIGH,
+        )
+        self._eval_overlay_title = ft.Text(
+            "Live evaluation",
+            size=14,
+            weight=ft.FontWeight.W_700,
+            color=COLOR_ON_SURFACE,
+        )
+        self._eval_overlay = ft.Container(
+            visible=False,
+            width=540,
+            padding=ft.Padding(14, 12, 14, 12),
+            bgcolor="#151526",
+            border_radius=12,
+            content=ft.Column(
+                spacing=10,
+                controls=[
+                    ft.Row(
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            self._eval_overlay_title,
+                            ft.Container(expand=True),
+                            self._eval_miss_btn,
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=16,
+                        wrap=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            self._eval_progress_text,
+                            self._eval_correct_text,
+                            self._eval_wrong_text,
+                            self._eval_missed_text,
+                            self._eval_accuracy_text,
+                        ],
+                    ),
+                    self._eval_last_text,
+                    self._eval_progress_bar,
+                ],
+            ),
         )
 
         self._toggle_btn = ft.FilledButton(
@@ -328,7 +375,7 @@ class HomeView:
     def _on_eval_start(self, _e) -> None:
         expected = str(self._eval_expected.value or "").strip()
         attempts = self._parse_int_field(self._eval_attempts, 10)
-        timeout = self._parse_float_field(self._eval_timeout, 3.0)
+        timeout = self._parse_float_field(self._eval_timeout, 0.0)
         threshold = self._parse_float_field(self._eval_threshold, 0.60)
         if self._controller.start_live_evaluation(
             expected,
@@ -340,6 +387,9 @@ class HomeView:
 
     def _on_eval_stop(self, _e) -> None:
         self._controller.cancel_live_evaluation()
+
+    def _on_eval_miss(self, _e) -> None:
+        self._controller.mark_live_evaluation_missed()
 
     # ---- Слушатели событий контроллера (приходят из фонового потока) ----
 
@@ -558,6 +608,9 @@ class HomeView:
         self._eval_progress_text.value = (
             f"{total}/{target}" if not active else f"{attempt_index}/{target}"
         )
+        self._eval_overlay_title.value = (
+            f"Тест: {expected}" if expected else "Live evaluation"
+        )
         self._eval_correct_text.value = f"Верно {correct}"
         self._eval_wrong_text.value = f"Ошибка {wrong}"
         self._eval_missed_text.value = f"Пропуск {missed}"
@@ -586,10 +639,14 @@ class HomeView:
         self._eval_threshold.disabled = active
         self._eval_start_btn.disabled = active
         self._eval_stop_btn.disabled = not active
+        self._eval_miss_btn.disabled = not active
+        self._eval_overlay.visible = bool(active or total)
         if self._auto_exec_switch.value != self._controller.auto_execute:
             self._auto_exec_switch.value = self._controller.auto_execute
 
         for control in (
+            self._eval_overlay,
+            self._eval_overlay_title,
             self._eval_progress_text,
             self._eval_correct_text,
             self._eval_wrong_text,
@@ -597,6 +654,7 @@ class HomeView:
             self._eval_accuracy_text,
             self._eval_last_text,
             self._eval_progress_bar,
+            self._eval_miss_btn,
             self._eval_expected,
             self._eval_attempts,
             self._eval_timeout,
@@ -648,6 +706,11 @@ class HomeView:
                         content=self._camera_image,
                         expand=True,
                         alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Container(
+                        content=self._eval_overlay,
+                        left=18,
+                        top=18,
                     ),
                 ],
             ),
@@ -721,23 +784,6 @@ class HomeView:
                             self._eval_stop_btn,
                         ],
                     ),
-                    ft.Row(
-                        spacing=18,
-                        wrap=True,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        controls=[
-                            self._eval_progress_text,
-                            self._eval_correct_text,
-                            self._eval_wrong_text,
-                            self._eval_missed_text,
-                            self._eval_accuracy_text,
-                            ft.Container(
-                                content=self._eval_last_text,
-                                expand=True,
-                            ),
-                        ],
-                    ),
-                    self._eval_progress_bar,
                 ],
             ),
         )

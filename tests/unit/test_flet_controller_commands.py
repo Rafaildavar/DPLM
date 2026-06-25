@@ -733,7 +733,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert controller.start_live_evaluation(
         "swipe_down",
         attempts=3,
-        timeout_seconds=1.0,
+        timeout_seconds=0.0,
         min_confidence=0.6,
     )
     controller._live_evaluation["attempt_started_at"] = 10.0
@@ -741,7 +741,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
 
     controller._consume_live_evaluation_prediction("swipe_down", 0.9, now=10.0)
     controller._consume_live_evaluation_prediction("swipe_left", 0.8, now=12.0)
-    controller._update_live_evaluation_timeout(now=14.0)
+    assert controller.mark_live_evaluation_missed() is True
 
     snapshot = controller.current_live_evaluation()
     assert snapshot["active"] is False
@@ -753,7 +753,10 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert (tmp_path / "live_evaluation.jsonl").exists()
 
 
-def test_live_evaluation_ignores_below_threshold_until_timeout(monkeypatch, tmp_path):
+def test_live_evaluation_ignores_below_threshold_without_default_timeout(
+    monkeypatch,
+    tmp_path,
+):
     controller = _dispatch_controller()
     controller._ensure_embedded_recognition_for_live_controls = lambda: None
     monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
@@ -761,7 +764,7 @@ def test_live_evaluation_ignores_below_threshold_until_timeout(monkeypatch, tmp_
     assert controller.start_live_evaluation(
         "swipe_down",
         attempts=1,
-        timeout_seconds=1.0,
+        timeout_seconds=0.0,
         min_confidence=0.8,
     )
     controller._live_evaluation["attempt_started_at"] = 20.0
@@ -774,6 +777,11 @@ def test_live_evaluation_ignores_below_threshold_until_timeout(monkeypatch, tmp_
     assert snapshot["lastResult"] == "below_threshold"
 
     controller._update_live_evaluation_timeout(now=22.0)
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is True
+    assert snapshot["missed"] == 0
+
+    assert controller.mark_live_evaluation_missed() is True
     snapshot = controller.current_live_evaluation()
     assert snapshot["active"] is False
     assert snapshot["missed"] == 1

@@ -374,12 +374,15 @@ Threshold sweep:
 - Пользователь выбирает:
   - `Expected`;
   - `Attempts`;
-  - `Timeout`;
+  - `Timeout` (`0` = ждать жест без авто-пропуска);
   - `Min conf`.
 - Контроллер считает попытки автоматически:
   - `Correct`, если accepted prediction совпал с expected label;
   - `Wrong`, если accepted prediction не совпал;
-  - `Missed`, если за timeout не пришел accepted prediction.
+  - `Missed`, если пользователь нажал `Пропуск`; опционально можно включить
+    авто-missed через timeout больше `0`.
+- Индикация текущего теста перенесена в overlay внутри camera preview, чтобы
+  результат считывался рядом с live-кадром.
 - Во время evaluation auto-execute временно отключается, чтобы тест метрик не
   запускал системные команды.
 - Подробные попытки пишутся в:
@@ -388,7 +391,7 @@ Threshold sweep:
 Правила текущего протокола:
 - recommended attempts: `10` на класс;
 - initial min confidence: `0.60`;
-- timeout: `3.0` секунды;
+- timeout: `0` для ручной проверки без гонки с таймером;
 - между попытками убрать руку из кадра, чтобы тот же label не засчитался
   повторно.
 

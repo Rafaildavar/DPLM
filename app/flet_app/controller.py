@@ -181,7 +181,7 @@ SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
 DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
 DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
 LIVE_EVAL_DEFAULT_ATTEMPTS = 10
-LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 3.0
+LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 0.0
 LIVE_EVAL_DEFAULT_MIN_CONFIDENCE = 0.60
 LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
 
@@ -754,7 +754,7 @@ class AppController:
             return False
 
         target_attempts = max(1, min(int(attempts or LIVE_EVAL_DEFAULT_ATTEMPTS), 100))
-        timeout = max(0.5, min(float(timeout_seconds), 15.0))
+        timeout = max(0.0, min(float(timeout_seconds), 15.0))
         threshold = max(0.0, min(float(min_confidence), 1.0))
         now = time.monotonic()
         session = {
@@ -797,6 +797,21 @@ class AppController:
         if session is None:
             return False
         self._finish_live_evaluation("stopped")
+        return True
+
+    def mark_live_evaluation_missed(self) -> bool:
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            if session is None or not bool(session.get("active")):
+                return False
+            if time.monotonic() < float(session.get("next_ready_at") or 0.0):
+                return False
+            self._record_live_evaluation_attempt(
+                session,
+                result="missed",
+                predicted_label="",
+                confidence=0.0,
+            )
         return True
 
     def _finish_live_evaluation(self, reason: str = "completed") -> None:
@@ -972,6 +987,8 @@ class AppController:
                 return
             started = float(session.get("attempt_started_at") or monotonic_now)
             timeout = float(session.get("timeout_seconds") or LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS)
+            if timeout <= 0.0:
+                return
             if monotonic_now - started < timeout:
                 return
             self._record_live_evaluation_attempt(
