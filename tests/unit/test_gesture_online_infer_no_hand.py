@@ -147,11 +147,11 @@ def test_two_hand_classifier_gets_84_features_with_one_hand_padded() -> None:
 
 def test_dynamic_classifier_gets_expanded_sequence_features() -> None:
     infer = object.__new__(GestureOnlineInfer)
-    clf = _FeatureCaptureClassifier(252)
+    clf = _FeatureCaptureClassifier(259)
     infer._detector = _OneHandDetector()
     infer._clf = clf
     infer._classes = ["hand_left"]
-    infer._feature_dim = 252
+    infer._feature_dim = 259
     infer._raw_feature_dim = 42
     infer._feature_mode = "dynamic_stats"
     infer._classifier_two_hands = False
@@ -168,16 +168,16 @@ def test_dynamic_classifier_gets_expanded_sequence_features() -> None:
 
     assert out["label"] == "hand_left"
     assert clf.features is not None
-    assert clf.features.shape == (1, 252)
+    assert clf.features.shape == (1, 259)
 
 
 def test_dynamic_global_classifier_gets_wrist_motion_features() -> None:
     infer = object.__new__(GestureOnlineInfer)
-    clf = _FeatureCaptureClassifier(264)
+    clf = _FeatureCaptureClassifier(271)
     infer._detector = _OneHandDetector()
     infer._clf = clf
     infer._classes = ["swipe_left"]
-    infer._feature_dim = 264
+    infer._feature_dim = 271
     infer._raw_feature_dim = 44
     infer._feature_mode = "dynamic_stats"
     infer._classifier_two_hands = False
@@ -189,9 +189,20 @@ def test_dynamic_global_classifier_gets_wrist_motion_features() -> None:
         infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert clf.features is not None
-    assert clf.features.shape == (1, 264)
+    assert clf.features.shape == (1, 271)
     assert infer._window[-1].shape == (44,)
     assert np.allclose(infer._window[-1][-2:], [0.5, 0.82])
+
+
+def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._feature_mode = "dynamic_stats"
+
+    infer._feature_dim = 271
+    assert infer._infer_raw_feature_dim() == 44
+
+    infer._feature_dim = 264
+    assert infer._infer_raw_feature_dim() == 44
 
 
 def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:

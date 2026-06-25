@@ -19,6 +19,9 @@ FEATURE_STATIC_STATS = "static_stats"
 FEATURE_DYNAMIC_STATS = "dynamic_stats"
 FEATURE_HYBRID_STATS = "hybrid_stats"
 
+DYNAMIC_STATS_BASE_MULTIPLIER = 6
+DYNAMIC_TRAJECTORY_FEATURE_DIM = 7
+
 SUPPORTED_FEATURE_MODES = (
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
@@ -118,6 +121,68 @@ def static_stats_features(sequence: np.ndarray, target_dim: int | None = None) -
     ).astype(np.float32, copy=False)
 
 
+def _trajectory_xy(sequence: np.ndarray) -> np.ndarray:
+    """Return a compact per-frame hand trajectory as ``(frames, 2)``.
+
+    Dynamic samples recorded from the Flet UI can append global wrist ``x/y`` to
+    each hand block: 42 normalized pose features + 2 global coordinates. Those
+    coordinates carry the actual screen-space motion that separates
+    ``swipe_up`` from ``swipe_down``. Older 42-feature samples do not have this
+    global signal, so we fall back to the normalized landmark center.
+    """
+    seq = sequence_to_matrix(sequence)
+    dims = int(seq.shape[1])
+    if dims >= 44 and dims % 44 == 0:
+        wrists: list[np.ndarray] = []
+        for offset in range(0, dims, 44):
+            wrist = seq[:, offset + 42 : offset + 44]
+            if np.any(np.abs(wrist) > 1e-6):
+                wrists.append(wrist)
+        if wrists:
+            return np.mean(np.stack(wrists, axis=0), axis=0).astype(np.float32, copy=False)
+
+    usable = (dims // 2) * 2
+    if usable >= 2:
+        pts = seq[:, :usable].reshape(seq.shape[0], usable // 2, 2)
+        return pts.mean(axis=1).astype(np.float32, copy=False)
+    return np.zeros((seq.shape[0], 2), dtype=np.float32)
+
+
+def trajectory_features(sequence: np.ndarray, target_dim: int | None = None) -> np.ndarray:
+    """Global motion summary for dynamic gestures.
+
+    The vector layout is:
+    ``delta_x, delta_y, abs_delta_x, abs_delta_y, path_length,
+    direction_cos, direction_sin``.
+    """
+    seq = _as_aligned(sequence, target_dim)
+    xy = _trajectory_xy(seq)
+    if xy.shape[0] <= 1:
+        return np.zeros(DYNAMIC_TRAJECTORY_FEATURE_DIM, dtype=np.float32)
+
+    delta = xy[-1] - xy[0]
+    steps = np.diff(xy, axis=0)
+    path_length = float(np.linalg.norm(steps, axis=1).sum())
+    displacement = float(np.linalg.norm(delta))
+    if displacement > 1e-6:
+        direction = delta / displacement
+    else:
+        direction = np.zeros(2, dtype=np.float32)
+
+    return np.asarray(
+        [
+            float(delta[0]),
+            float(delta[1]),
+            abs(float(delta[0])),
+            abs(float(delta[1])),
+            path_length,
+            float(direction[0]),
+            float(direction[1]),
+        ],
+        dtype=np.float32,
+    )
+
+
 def dynamic_stats_features(sequence: np.ndarray, target_dim: int | None = None) -> np.ndarray:
     seq = _as_aligned(sequence, target_dim)
     if seq.shape[0] > 1:
@@ -142,6 +207,7 @@ def dynamic_stats_features(sequence: np.ndarray, target_dim: int | None = None) 
             velocity_abs_mean,
             path_abs_sum,
             max_step,
+            trajectory_features(seq),
         ],
         axis=0,
     ).astype(np.float32, copy=False)
@@ -155,6 +221,52 @@ def hybrid_stats_features(sequence: np.ndarray, target_dim: int | None = None) -
         ],
         axis=0,
     ).astype(np.float32, copy=False)
+
+
+def feature_vector_size(mode: str, target_dim: int) -> int:
+    raw_dim = int(target_dim)
+    if raw_dim <= 0:
+        raise ValueError("target_dim must be positive")
+    if mode == FEATURE_STATIC_MEAN:
+        return raw_dim
+    if mode == FEATURE_STATIC_STATS:
+        return raw_dim * 4
+    if mode == FEATURE_DYNAMIC_STATS:
+        return raw_dim * DYNAMIC_STATS_BASE_MULTIPLIER + DYNAMIC_TRAJECTORY_FEATURE_DIM
+    if mode == FEATURE_HYBRID_STATS:
+        return raw_dim * 10 + DYNAMIC_TRAJECTORY_FEATURE_DIM
+    raise ValueError(f"unsupported feature mode: {mode}")
+
+
+def infer_raw_dim_from_feature_size(mode: str, feature_dim: int) -> int:
+    """Infer the per-frame raw dimension from a trained model feature size.
+
+    ``dynamic_stats`` used to be exactly ``raw_dim * 6``. New models append
+    trajectory features, so their size is ``raw_dim * 6 + 7``. The old form is
+    still accepted to keep already-trained local models usable.
+    """
+    size = int(feature_dim)
+    if size <= 0:
+        return size
+    if mode == FEATURE_STATIC_MEAN:
+        return size
+    if mode == FEATURE_STATIC_STATS:
+        return size // 4 if size % 4 == 0 else size
+    if mode == FEATURE_DYNAMIC_STATS:
+        shifted = size - DYNAMIC_TRAJECTORY_FEATURE_DIM
+        if shifted > 0 and shifted % DYNAMIC_STATS_BASE_MULTIPLIER == 0:
+            return shifted // DYNAMIC_STATS_BASE_MULTIPLIER
+        if size % DYNAMIC_STATS_BASE_MULTIPLIER == 0:
+            return size // DYNAMIC_STATS_BASE_MULTIPLIER
+        return size
+    if mode == FEATURE_HYBRID_STATS:
+        shifted = size - DYNAMIC_TRAJECTORY_FEATURE_DIM
+        if shifted > 0 and shifted % 10 == 0:
+            return shifted // 10
+        if size % 10 == 0:
+            return size // 10
+        return size
+    return size
 
 
 def build_feature_vector(
@@ -270,4 +382,3 @@ def build_feature_matrix(
     X = np.stack(features, axis=0)
     y = np.asarray([label_to_idx[record.label] for record in records], dtype=np.int64)
     return X, y, labels
-

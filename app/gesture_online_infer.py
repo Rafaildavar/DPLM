@@ -19,6 +19,7 @@ from cv.gesture_features import (
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     build_feature_vector,
+    infer_raw_dim_from_feature_size,
 )
 from cv.hand_landmarker import (
     DetectedHand,
@@ -156,19 +157,15 @@ class GestureOnlineInfer:
             self._detector = None
 
     def _infer_raw_feature_dim(self) -> int:
-        if self._feature_mode == FEATURE_STATIC_MEAN:
-            return int(self._feature_dim)
-        multipliers = {
-            FEATURE_STATIC_STATS: 4,
-            FEATURE_DYNAMIC_STATS: 6,
-            FEATURE_HYBRID_STATS: 10,
-        }
-        multiplier = multipliers.get(self._feature_mode)
-        if not multiplier:
-            return int(self._feature_dim)
-        if self._feature_dim % multiplier != 0:
-            return int(self._feature_dim)
-        return max(1, int(self._feature_dim // multiplier))
+        return max(
+            1,
+            int(
+                infer_raw_dim_from_feature_size(
+                    str(self._feature_mode or FEATURE_STATIC_MEAN),
+                    int(self._feature_dim),
+                )
+            ),
+        )
 
     def _is_two_hand_feature_dim(self, raw_feature_dim: int) -> bool:
         if raw_feature_dim in {84, 88}:

@@ -7,6 +7,7 @@ from cv.gesture_features import (
     FEATURE_HYBRID_STATS,
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
+    DYNAMIC_TRAJECTORY_FEATURE_DIM,
     MOTION_DYNAMIC_LIKE,
     MOTION_STATIC_LIKE,
     align_sequence,
@@ -16,6 +17,7 @@ from cv.gesture_features import (
     infer_target_dim,
     sequence_motion_energy,
     sequence_to_matrix,
+    trajectory_features,
 )
 
 
@@ -57,10 +59,28 @@ def test_feature_modes_have_expected_sizes_and_motion_signal():
 
     assert static_mean.shape == (4,)
     assert static_stats.shape == (16,)
-    assert dynamic_stats.shape == (24,)
-    assert hybrid_stats.shape == (40,)
+    assert dynamic_stats.shape == (24 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
+    assert hybrid_stats.shape == (40 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
     assert np.allclose(dynamic_stats[:4], 3.0)
     assert sequence_motion_energy(sequence) > 0
+
+
+def test_trajectory_features_capture_vertical_direction_from_global_wrist():
+    up = np.zeros((3, 44), dtype=np.float32)
+    down = np.zeros((3, 44), dtype=np.float32)
+    up[:, -2] = 0.5
+    down[:, -2] = 0.5
+    up[:, -1] = [0.8, 0.6, 0.3]
+    down[:, -1] = [0.3, 0.6, 0.8]
+
+    up_features = trajectory_features(up, target_dim=44)
+    down_features = trajectory_features(down, target_dim=44)
+
+    assert up_features.shape == (DYNAMIC_TRAJECTORY_FEATURE_DIM,)
+    assert up_features[1] < 0.0
+    assert down_features[1] > 0.0
+    assert up_features[6] < 0.0
+    assert down_features[6] > 0.0
 
 
 def test_build_feature_matrix_returns_sorted_labels():
@@ -103,4 +123,3 @@ def test_class_motion_profiles_separate_static_and_dynamic():
 
     assert by_label["static"].suggested_type == MOTION_STATIC_LIKE
     assert by_label["dynamic"].suggested_type == MOTION_DYNAMIC_LIKE
-

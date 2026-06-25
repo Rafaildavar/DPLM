@@ -491,6 +491,66 @@ Adjusted summary:
 - Переобучить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` и повторить
   live-test `swipe_down` 10 раз.
 
+### H-015: Trajectory-признаки для разделения `swipe_up`/`swipe_down`
+
+Статус: `offline-validated`
+
+Гипотеза:
+- Ошибка `swipe_down -> swipe_up` возникала не из-за низкого confidence, а из-за
+  недостаточно явного кодирования направления движения в feature vector.
+- Если добавить компактные признаки траектории запястья, модель должна лучше
+  различать знак вертикального смещения.
+
+Что сделали:
+- В `dynamic_stats` добавлены признаки:
+  `delta_x`, `delta_y`, `abs_delta_x`, `abs_delta_y`, `path_length`,
+  `direction_cos`, `direction_sin`.
+- Размерность dynamic-признаков для raw `44` стала `271` вместо `264`.
+- Сохранена совместимость со старыми dynamic-моделями `raw * 6`: инференс
+  умеет вывести raw dimension и для старой, и для новой размерности.
+- Исправлен баг обучения: `--expect-dim 44` теперь трактуется как raw
+  per-frame dimension и не обрезает итоговый `dynamic_stats` vector до `44`.
+
+Диагностика данных:
+- `swipe_up`: `n=30`, mean `dy=-0.2172`, median `dy=-0.1820`,
+  median `path=0.9624`;
+- `swipe_down`: `n=10`, mean `dy=+0.4501`, median `dy=+0.4876`,
+  median `path=0.5207`;
+- `swipe_left`: `n=10`, mean `dx=-0.3618`, median `dx=-0.3823`.
+
+Offline comparison:
+- команда:
+  `python scripts/compare_models.py --feature-modes dynamic_stats --models knn,svm,extra_trees --target-dim 44 --min-samples-per-class 10`;
+- лучший кандидат: `dynamic_stats + extra_trees`;
+- accuracy: `0.8209`;
+- macro F1: `0.8136`;
+- `swipe_down`: precision `0.9091`, recall `1.0000`, F1 `0.9524`;
+- `swipe_up`: precision `1.0000`, recall `0.9667`, F1 `0.9831`;
+- в CV-матрице лучшей модели `swipe_down` больше не путается со
+  `swipe_up`.
+
+Модели:
+- `models/dynamic_knn.pkl`: feature dim `271`;
+- `models/dynamic_svm.pkl`: feature dim `271`;
+- `models/dynamic_extra_trees.pkl`: feature dim `271`;
+- metadata: `models/dynamic_feature_dim.txt = 271`,
+  `models/dynamic_feature_mode.txt = dynamic_stats`.
+
+Вывод:
+- Гипотеза подтверждена offline: траекторные признаки явно разделяют
+  `swipe_up` и `swipe_down` на записанном датасете.
+- `extra_trees` сейчас сильнее `knn` и `svm` по cross-validation, но live
+  подтверждение еще нужно.
+
+Следующий шаг:
+- Перезапустить приложение, чтобы оно подхватило новую модель и feature dim.
+- Повторить `Live evaluation` для `swipe_down`: `10` attempts,
+  threshold `0.80`, timeout `0`.
+- Цель: минимум `8/10`, идеал `9/10+`.
+- Если `swipe_down` останется ниже `8/10`, следующий фикс: либо переключить
+  live dynamic profile на `dynamic_extra_trees.pkl`, либо дозаписать
+  `swipe_down` до `20` сэмплов с разной скоростью/амплитудой.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -498,13 +558,14 @@ Adjusted summary:
    - dynamic: `(36, 44)`.
 2. Feature extraction:
    - static baseline: `static_mean`;
-   - dynamic baseline: `dynamic_stats`.
+   - dynamic baseline: `dynamic_stats` with trajectory features.
 3. Обучение:
    - CLI: `cv.train_classifier`;
    - поддерживаемые модели: `knn`, `svm`, `extra_trees`, `rf`, `logreg`.
 4. Live:
    - Home dropdown `Модель`: `static` / `dynamic`;
-   - dynamic live currently reads `models/dynamic_knn.pkl`.
+   - dynamic live currently reads `models/dynamic_knn.pkl`;
+   - offline best candidate: `models/dynamic_extra_trees.pkl`.
 
 ## Следующие эксперименты
 

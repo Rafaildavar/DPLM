@@ -1,20 +1,25 @@
 {
   "dataset": {
     "data_root": "data/gestures",
-    "sample_count": 121,
-    "class_count": 6,
+    "sample_count": 201,
+    "class_count": 10,
     "class_counts": {
       "CTRLZ": 21,
       "Hend": 20,
       "UP": 20,
       "gun": 20,
+      "hand_left": 30,
       "sh3": 20,
+      "swipe_down": 10,
+      "swipe_left": 10,
+      "swipe_up": 30,
       "three": 20
     },
     "raw_feature_dims": [
-      42
+      42,
+      44
     ],
-    "target_dim": 42,
+    "target_dim": 44,
     "cv_folds": 5,
     "motion_threshold": 0.015,
     "motion_profiles": [
@@ -55,6 +60,15 @@
         "suggested_type": "static_like"
       },
       {
+        "label": "hand_left",
+        "sample_count": 30,
+        "mean_motion_energy": 0.019784,
+        "median_motion_energy": 0.018496,
+        "mean_displacement": 0.175443,
+        "median_displacement": 0.112683,
+        "suggested_type": "dynamic_like"
+      },
+      {
         "label": "sh3",
         "sample_count": 20,
         "mean_motion_energy": 0.01179,
@@ -62,6 +76,33 @@
         "mean_displacement": 0.14004,
         "median_displacement": 0.107974,
         "suggested_type": "static_like"
+      },
+      {
+        "label": "swipe_down",
+        "sample_count": 10,
+        "mean_motion_energy": 0.020317,
+        "median_motion_energy": 0.020193,
+        "mean_displacement": 0.344912,
+        "median_displacement": 0.346038,
+        "suggested_type": "dynamic_like"
+      },
+      {
+        "label": "swipe_left",
+        "sample_count": 10,
+        "mean_motion_energy": 0.012265,
+        "median_motion_energy": 0.012552,
+        "mean_displacement": 0.107165,
+        "median_displacement": 0.105022,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "swipe_up",
+        "sample_count": 30,
+        "mean_motion_energy": 0.036255,
+        "median_motion_energy": 0.036464,
+        "mean_displacement": 0.220967,
+        "median_displacement": 0.172417,
+        "suggested_type": "dynamic_like"
       },
       {
         "label": "three",
@@ -76,1291 +117,175 @@
   },
   "results": [
     {
-      "feature_mode": "static_mean",
-      "model_name": "knn",
-      "accuracy": 0.9835,
-      "macro_f1": 0.9835,
-      "macro_precision": 0.9845,
-      "macro_recall": 0.9833,
-      "macro_false_positive_rate": 0.0033,
-      "static_like_macro_f1": 0.9835,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 1.079,
-      "threshold": {
-        "threshold": 0.0,
-        "coverage": 1.0,
-        "accepted_accuracy": 0.9835,
-        "rejected_count": 0
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9545,
-          "recall": 1.0,
-          "f1": 0.9767,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          21,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          1,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_mean",
-      "model_name": "svm",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9753,
-      "macro_precision": 0.9776,
-      "macro_recall": 0.975,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9753,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.01,
-      "threshold": {
-        "threshold": 0.75,
-        "coverage": 0.9256,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 9
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.913,
-          "recall": 1.0,
-          "f1": 0.9545,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 1.0,
-          "recall": 0.9,
-          "f1": 0.9474,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          21,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          2,
-          18,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          1,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_mean",
-      "model_name": "rf",
-      "accuracy": 0.9669,
-      "macro_f1": 0.9672,
-      "macro_precision": 0.9681,
-      "macro_recall": 0.9671,
-      "macro_false_positive_rate": 0.0066,
-      "static_like_macro_f1": 0.9672,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.14,
-      "threshold": {
-        "threshold": 0.7,
-        "coverage": 0.9256,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 9
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9091,
-          "recall": 0.9524,
-          "f1": 0.9302,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9474,
-          "recall": 0.9,
-          "f1": 0.9231,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          2,
-          18,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          1,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_mean",
-      "model_name": "extra_trees",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9754,
-      "macro_precision": 0.9758,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9754,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.172,
-      "threshold": {
-        "threshold": 0.7,
-        "coverage": 0.9504,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 6
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          1,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_mean",
-      "model_name": "logreg",
-      "accuracy": 0.9669,
-      "macro_f1": 0.9672,
-      "macro_precision": 0.9681,
-      "macro_recall": 0.9671,
-      "macro_false_positive_rate": 0.0066,
-      "static_like_macro_f1": 0.9672,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.005,
-      "threshold": {
-        "threshold": 0.75,
-        "coverage": 0.9752,
-        "accepted_accuracy": 0.9915,
-        "rejected_count": 3
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9091,
-          "recall": 0.9524,
-          "f1": 0.9302,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9474,
-          "recall": 0.9,
-          "f1": 0.9231,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          2,
-          18,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          1,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_stats",
-      "model_name": "knn",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9754,
-      "macro_precision": 0.9758,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9754,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.044,
-      "threshold": {
-        "threshold": 0.45,
-        "coverage": 0.9835,
-        "accepted_accuracy": 0.9916,
-        "rejected_count": 2
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          19,
-          1,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_stats",
-      "model_name": "svm",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9756,
-      "macro_precision": 0.9762,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9756,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.014,
-      "threshold": {
-        "threshold": 0.5,
-        "coverage": 0.9587,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 5
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9048,
-          "recall": 0.95,
-          "f1": 0.9268,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_stats",
-      "model_name": "rf",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9754,
-      "macro_precision": 0.9758,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9754,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.14,
-      "threshold": {
-        "threshold": 0.6,
-        "coverage": 0.9587,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 5
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          0,
-          0,
-          0,
-          1,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_stats",
-      "model_name": "extra_trees",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9756,
-      "macro_precision": 0.9762,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9756,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.175,
-      "threshold": {
-        "threshold": 0.6,
-        "coverage": 0.9669,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 4
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9048,
-          "recall": 0.95,
-          "f1": 0.9268,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "static_stats",
-      "model_name": "logreg",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9754,
-      "macro_precision": 0.9758,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9754,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.006,
-      "threshold": {
-        "threshold": 0.55,
-        "coverage": 0.9917,
-        "accepted_accuracy": 0.9833,
-        "rejected_count": 1
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.9524,
-          "recall": 1.0,
-          "f1": 0.9756,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          19,
-          1,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
       "feature_mode": "dynamic_stats",
       "model_name": "knn",
-      "accuracy": 0.6446,
-      "macro_f1": 0.6294,
-      "macro_precision": 0.6232,
-      "macro_recall": 0.6425,
-      "macro_false_positive_rate": 0.071,
-      "static_like_macro_f1": 0.6294,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.057,
+      "accuracy": 0.6219,
+      "macro_f1": 0.6166,
+      "macro_precision": 0.611,
+      "macro_recall": 0.634,
+      "macro_false_positive_rate": 0.0422,
+      "static_like_macro_f1": 0.5112,
+      "dynamic_like_macro_f1": 0.8625,
+      "latency_ms_per_sample": 1.084,
       "threshold": {
-        "threshold": 0.8,
-        "coverage": 0.3388,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 80
+        "threshold": 0.85,
+        "coverage": 0.2587,
+        "accepted_accuracy": 0.9423,
+        "rejected_count": 149
       },
       "per_class": [
         {
           "label": "CTRLZ",
-          "precision": 0.8261,
-          "recall": 0.9048,
-          "f1": 0.8636,
+          "precision": 0.4074,
+          "recall": 0.5238,
+          "f1": 0.4583,
           "support": 21,
           "motion_type": "static_like"
         },
         {
           "label": "Hend",
-          "precision": 0.4,
-          "recall": 0.4,
-          "f1": 0.4,
+          "precision": 0.3333,
+          "recall": 0.25,
+          "f1": 0.2857,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "UP",
-          "precision": 0.619,
-          "recall": 0.65,
-          "f1": 0.6341,
+          "precision": 0.4,
+          "recall": 0.5,
+          "f1": 0.4444,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "gun",
-          "precision": 0.3846,
-          "recall": 0.25,
-          "f1": 0.303,
+          "precision": 0.3333,
+          "recall": 0.2,
+          "f1": 0.25,
           "support": 20,
           "motion_type": "static_like"
+        },
+        {
+          "label": "hand_left",
+          "precision": 0.8214,
+          "recall": 0.7667,
+          "f1": 0.7931,
+          "support": 30,
+          "motion_type": "dynamic_like"
         },
         {
           "label": "sh3",
-          "precision": 0.6522,
-          "recall": 0.75,
-          "f1": 0.6977,
+          "precision": 0.625,
+          "recall": 0.5,
+          "f1": 0.5556,
           "support": 20,
           "motion_type": "static_like"
         },
         {
-          "label": "three",
-          "precision": 0.8571,
+          "label": "swipe_down",
+          "precision": 0.8333,
+          "recall": 1.0,
+          "f1": 0.9091,
+          "support": 10,
+          "motion_type": "dynamic_like"
+        },
+        {
+          "label": "swipe_left",
+          "precision": 0.8182,
           "recall": 0.9,
-          "f1": 0.878,
+          "f1": 0.8571,
+          "support": 10,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "swipe_up",
+          "precision": 0.871,
+          "recall": 0.9,
+          "f1": 0.8852,
+          "support": 30,
+          "motion_type": "dynamic_like"
+        },
+        {
+          "label": "three",
+          "precision": 0.6667,
+          "recall": 0.8,
+          "f1": 0.7273,
           "support": 20,
           "motion_type": "static_like"
         }
       ],
       "confusion_matrix": [
         [
-          19,
-          0,
-          0,
-          1,
-          1,
-          0
-        ],
-        [
-          3,
-          8,
+          11,
+          4,
           2,
-          3,
-          3,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
           1
         ],
         [
-          0,
+          6,
+          5,
           3,
-          13,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          3
+        ],
+        [
+          3,
+          0,
+          10,
+          6,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
           4,
+          4,
+          7,
+          4,
+          1,
+          0,
+          0,
+          0,
           0,
           0
         ],
         [
           0,
-          8,
-          5,
-          5,
+          0,
+          0,
+          0,
+          23,
           2,
+          0,
+          2,
+          3,
           0
         ],
         [
-          1,
-          1,
+          3,
+          2,
           1,
           0,
-          15,
+          0,
+          10,
+          1,
+          0,
+          1,
           2
         ],
         [
@@ -1368,304 +293,362 @@
           0,
           0,
           0,
-          2,
-          18
-        ]
-      ]
-    },
-    {
-      "feature_mode": "dynamic_stats",
-      "model_name": "svm",
-      "accuracy": 0.4959,
-      "macro_f1": 0.4818,
-      "macro_precision": 0.507,
-      "macro_recall": 0.4937,
-      "macro_false_positive_rate": 0.1012,
-      "static_like_macro_f1": 0.4818,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.025,
-      "threshold": {
-        "threshold": 0.55,
-        "coverage": 0.1157,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 107
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.3478,
-          "recall": 0.7619,
-          "f1": 0.4776,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.1,
-          "recall": 0.05,
-          "f1": 0.0667,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.5,
-          "recall": 0.35,
-          "f1": 0.4118,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 0.375,
-          "recall": 0.3,
-          "f1": 0.3333,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.7778,
-          "recall": 0.7,
-          "f1": 0.7368,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 0.9412,
-          "recall": 0.8,
-          "f1": 0.8649,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          16,
-          1,
-          1,
-          3,
+          0,
+          0,
+          10,
+          0,
           0,
           0
         ],
         [
-          7,
-          1,
-          3,
-          5,
-          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          9,
+          0,
           1
         ],
         [
-          10,
-          1,
-          7,
-          2,
-          0,
-          0
-        ],
-        [
-          6,
-          5,
-          3,
-          6,
-          0,
-          0
-        ],
-        [
-          5,
-          1,
           0,
           0,
-          14,
-          0
-        ],
-        [
+          0,
+          0,
           2,
           1,
           0,
           0,
+          27,
+          0
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
           1,
+          1,
+          0,
+          0,
+          0,
           16
         ]
       ]
     },
     {
       "feature_mode": "dynamic_stats",
-      "model_name": "rf",
-      "accuracy": 0.7273,
-      "macro_f1": 0.7238,
-      "macro_precision": 0.7354,
-      "macro_recall": 0.7262,
+      "model_name": "svm",
+      "accuracy": 0.5124,
+      "macro_f1": 0.5019,
+      "macro_precision": 0.5105,
+      "macro_recall": 0.5262,
       "macro_false_positive_rate": 0.0545,
-      "static_like_macro_f1": 0.7238,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.143,
+      "static_like_macro_f1": 0.335,
+      "dynamic_like_macro_f1": 0.8914,
+      "latency_ms_per_sample": 0.038,
       "threshold": {
-        "threshold": 0.65,
-        "coverage": 0.2975,
+        "threshold": 0.6,
+        "coverage": 0.2637,
         "accepted_accuracy": 1.0,
-        "rejected_count": 85
+        "rejected_count": 148
       },
       "per_class": [
         {
           "label": "CTRLZ",
-          "precision": 0.9474,
-          "recall": 0.8571,
-          "f1": 0.9,
+          "precision": 0.2571,
+          "recall": 0.4286,
+          "f1": 0.3214,
           "support": 21,
           "motion_type": "static_like"
         },
         {
           "label": "Hend",
-          "precision": 0.6923,
-          "recall": 0.45,
-          "f1": 0.5455,
+          "precision": 0.2,
+          "recall": 0.05,
+          "f1": 0.08,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "UP",
-          "precision": 0.7619,
-          "recall": 0.8,
-          "f1": 0.7805,
+          "precision": 0.2041,
+          "recall": 0.5,
+          "f1": 0.2899,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "gun",
-          "precision": 0.5455,
-          "recall": 0.6,
-          "f1": 0.5714,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
           "support": 20,
           "motion_type": "static_like"
+        },
+        {
+          "label": "hand_left",
+          "precision": 0.7879,
+          "recall": 0.8667,
+          "f1": 0.8254,
+          "support": 30,
+          "motion_type": "dynamic_like"
         },
         {
           "label": "sh3",
-          "precision": 0.6154,
-          "recall": 0.8,
-          "f1": 0.6957,
+          "precision": 0.5833,
+          "recall": 0.35,
+          "f1": 0.4375,
           "support": 20,
           "motion_type": "static_like"
         },
         {
+          "label": "swipe_down",
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 10,
+          "motion_type": "dynamic_like"
+        },
+        {
+          "label": "swipe_left",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 10,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "swipe_up",
+          "precision": 0.9286,
+          "recall": 0.8667,
+          "f1": 0.8966,
+          "support": 30,
+          "motion_type": "dynamic_like"
+        },
+        {
           "label": "three",
-          "precision": 0.85,
-          "recall": 0.85,
-          "f1": 0.85,
+          "precision": 0.2353,
+          "recall": 0.2,
+          "f1": 0.2162,
           "support": 20,
           "motion_type": "static_like"
         }
       ],
       "confusion_matrix": [
         [
-          18,
-          0,
-          0,
-          2,
-          1,
-          0
-        ],
-        [
+          9,
           0,
           9,
+          0,
+          0,
+          0,
+          0,
+          0,
           1,
-          4,
-          4,
           2
         ],
         [
+          6,
+          1,
+          4,
+          1,
+          1,
+          3,
           0,
           0,
-          16,
+          0,
+          4
+        ],
+        [
+          8,
+          0,
+          10,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
           4,
           0,
-          0
-        ],
-        [
-          1,
-          2,
-          3,
-          12,
-          2,
-          0
-        ],
-        [
+          13,
           0,
-          2,
           1,
           0,
-          16,
+          1,
+          0,
+          0,
           1
         ],
         [
+          1,
+          1,
+          0,
+          0,
+          26,
+          0,
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          2,
+          3,
+          4,
+          0,
+          1,
+          7,
+          0,
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          10,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          10,
+          0,
+          0
+        ],
+        [
           0,
           0,
           0,
           0,
           3,
-          17
+          1,
+          0,
+          0,
+          26,
+          0
+        ],
+        [
+          5,
+          0,
+          9,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          4
         ]
       ]
     },
     {
       "feature_mode": "dynamic_stats",
       "model_name": "extra_trees",
-      "accuracy": 0.719,
-      "macro_f1": 0.7133,
-      "macro_precision": 0.715,
-      "macro_recall": 0.7175,
-      "macro_false_positive_rate": 0.0561,
-      "static_like_macro_f1": 0.7133,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.187,
+      "accuracy": 0.8209,
+      "macro_f1": 0.8136,
+      "macro_precision": 0.8116,
+      "macro_recall": 0.8238,
+      "macro_false_positive_rate": 0.02,
+      "static_like_macro_f1": 0.7563,
+      "dynamic_like_macro_f1": 0.9472,
+      "latency_ms_per_sample": 0.125,
       "threshold": {
         "threshold": 0.6,
-        "coverage": 0.2975,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 85
+        "coverage": 0.5323,
+        "accepted_accuracy": 0.9907,
+        "rejected_count": 94
       },
       "per_class": [
         {
           "label": "CTRLZ",
-          "precision": 0.9048,
+          "precision": 0.95,
           "recall": 0.9048,
-          "f1": 0.9048,
+          "f1": 0.9268,
           "support": 21,
           "motion_type": "static_like"
         },
         {
           "label": "Hend",
-          "precision": 0.5882,
+          "precision": 0.625,
           "recall": 0.5,
-          "f1": 0.5405,
+          "f1": 0.5556,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "UP",
-          "precision": 0.7727,
+          "precision": 0.7083,
           "recall": 0.85,
-          "f1": 0.8095,
+          "f1": 0.7727,
           "support": 20,
           "motion_type": "static_like"
         },
         {
           "label": "gun",
-          "precision": 0.5294,
-          "recall": 0.45,
-          "f1": 0.4865,
+          "precision": 0.5714,
+          "recall": 0.4,
+          "f1": 0.4706,
           "support": 20,
           "motion_type": "static_like"
         },
         {
+          "label": "hand_left",
+          "precision": 0.8529,
+          "recall": 0.9667,
+          "f1": 0.9062,
+          "support": 30,
+          "motion_type": "dynamic_like"
+        },
+        {
           "label": "sh3",
-          "precision": 0.6,
-          "recall": 0.75,
-          "f1": 0.6667,
+          "precision": 0.6957,
+          "recall": 0.8,
+          "f1": 0.7442,
           "support": 20,
           "motion_type": "static_like"
+        },
+        {
+          "label": "swipe_down",
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 10,
+          "motion_type": "dynamic_like"
+        },
+        {
+          "label": "swipe_left",
+          "precision": 0.9091,
+          "recall": 1.0,
+          "f1": 0.9524,
+          "support": 10,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "swipe_up",
+          "precision": 1.0,
+          "recall": 0.9667,
+          "f1": 0.9831,
+          "support": 30,
+          "motion_type": "dynamic_like"
         },
         {
           "label": "three",
@@ -1682,839 +665,243 @@
           0,
           0,
           1,
+          0,
+          0,
           1,
+          0,
+          0,
           0
         ],
         [
           1,
+          10,
+          1,
+          2,
+          2,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          17,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          4,
+          5,
+          8,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          29,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          0,
+          1,
+          16,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
           10,
           0,
-          4,
-          4,
-          1
-        ],
-        [
-          1,
-          0,
-          17,
-          2,
           0,
           0
         ],
         [
           0,
-          5,
-          4,
-          9,
-          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          10,
+          0,
           0
         ],
         [
           0,
-          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
           1,
-          1,
-          15,
-          1
+          29,
+          0
         ],
         [
           0,
+          1,
+          0,
+          0,
+          1,
+          1,
           0,
           0,
           0,
-          3,
           17
-        ]
-      ]
-    },
-    {
-      "feature_mode": "dynamic_stats",
-      "model_name": "logreg",
-      "accuracy": 0.7355,
-      "macro_f1": 0.7313,
-      "macro_precision": 0.7342,
-      "macro_recall": 0.7345,
-      "macro_false_positive_rate": 0.0529,
-      "static_like_macro_f1": 0.7313,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.006,
-      "threshold": {
-        "threshold": 0.75,
-        "coverage": 0.5702,
-        "accepted_accuracy": 0.8551,
-        "rejected_count": 52
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.8571,
-          "recall": 0.8571,
-          "f1": 0.8571,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.5217,
-          "recall": 0.6,
-          "f1": 0.5581,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 0.7391,
-          "recall": 0.85,
-          "f1": 0.7907,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 0.5,
-          "recall": 0.4,
-          "f1": 0.4444,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.8824,
-          "recall": 0.75,
-          "f1": 0.8108,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 0.9048,
-          "recall": 0.95,
-          "f1": 0.9268,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          18,
-          1,
-          0,
-          2,
-          0,
-          0
-        ],
-        [
-          1,
-          12,
-          1,
-          3,
-          1,
-          2
-        ],
-        [
-          1,
-          1,
-          17,
-          1,
-          0,
-          0
-        ],
-        [
-          1,
-          7,
-          4,
-          8,
-          0,
-          0
-        ],
-        [
-          0,
-          2,
-          1,
-          2,
-          15,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          1,
-          19
-        ]
-      ]
-    },
-    {
-      "feature_mode": "hybrid_stats",
-      "model_name": "knn",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9756,
-      "macro_precision": 0.9769,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9756,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.143,
-      "threshold": {
-        "threshold": 0.6,
-        "coverage": 0.9835,
-        "accepted_accuracy": 0.9916,
-        "rejected_count": 2
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.9091,
-          "recall": 1.0,
-          "f1": 0.9524,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          0,
-          0,
-          0,
-          1,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          19,
-          1,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "hybrid_stats",
-      "model_name": "svm",
-      "accuracy": 0.9421,
-      "macro_f1": 0.9439,
-      "macro_precision": 0.9507,
-      "macro_recall": 0.9421,
-      "macro_false_positive_rate": 0.0116,
-      "static_like_macro_f1": 0.9439,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.028,
-      "threshold": {
-        "threshold": 0.35,
-        "coverage": 0.9256,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 9
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 1.0,
-          "recall": 0.9524,
-          "f1": 0.9756,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9444,
-          "recall": 0.85,
-          "f1": 0.8947,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.76,
-          "recall": 0.95,
-          "f1": 0.8444,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          0,
-          0,
-          0,
-          1,
-          0
-        ],
-        [
-          0,
-          17,
-          0,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          19,
-          1,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          0,
-          19,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          1,
-          19
-        ]
-      ]
-    },
-    {
-      "feature_mode": "hybrid_stats",
-      "model_name": "rf",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9756,
-      "macro_precision": 0.9762,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9756,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.138,
-      "threshold": {
-        "threshold": 0.65,
-        "coverage": 0.9421,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 7
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9048,
-          "recall": 0.95,
-          "f1": 0.9268,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "hybrid_stats",
-      "model_name": "extra_trees",
-      "accuracy": 0.9752,
-      "macro_f1": 0.9756,
-      "macro_precision": 0.9762,
-      "macro_recall": 0.9754,
-      "macro_false_positive_rate": 0.005,
-      "static_like_macro_f1": 0.9756,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.176,
-      "threshold": {
-        "threshold": 0.55,
-        "coverage": 0.9587,
-        "accepted_accuracy": 1.0,
-        "rejected_count": 5
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9048,
-          "recall": 0.95,
-          "f1": 0.9268,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 1.0,
-          "recall": 0.95,
-          "f1": 0.9744,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          19,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          20,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
-        ]
-      ]
-    },
-    {
-      "feature_mode": "hybrid_stats",
-      "model_name": "logreg",
-      "accuracy": 0.9587,
-      "macro_f1": 0.9587,
-      "macro_precision": 0.9587,
-      "macro_recall": 0.9587,
-      "macro_false_positive_rate": 0.0083,
-      "static_like_macro_f1": 0.9587,
-      "dynamic_like_macro_f1": null,
-      "latency_ms_per_sample": 0.008,
-      "threshold": {
-        "threshold": 0.95,
-        "coverage": 0.8843,
-        "accepted_accuracy": 0.972,
-        "rejected_count": 14
-      },
-      "per_class": [
-        {
-          "label": "CTRLZ",
-          "precision": 0.9524,
-          "recall": 0.9524,
-          "f1": 0.9524,
-          "support": 21,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "Hend",
-          "precision": 0.9,
-          "recall": 0.9,
-          "f1": 0.9,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "UP",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "gun",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "sh3",
-          "precision": 0.95,
-          "recall": 0.95,
-          "f1": 0.95,
-          "support": 20,
-          "motion_type": "static_like"
-        },
-        {
-          "label": "three",
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1": 1.0,
-          "support": 20,
-          "motion_type": "static_like"
-        }
-      ],
-      "confusion_matrix": [
-        [
-          20,
-          1,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          1,
-          18,
-          0,
-          0,
-          1,
-          0
-        ],
-        [
-          0,
-          0,
-          20,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          19,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          1,
-          19,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          0,
-          20
         ]
       ]
     }
   ],
   "best_overall": {
-    "feature_mode": "static_mean",
-    "model_name": "knn",
-    "accuracy": 0.9835,
-    "macro_f1": 0.9835,
-    "macro_precision": 0.9845,
-    "macro_recall": 0.9833,
-    "macro_false_positive_rate": 0.0033,
-    "static_like_macro_f1": 0.9835,
-    "dynamic_like_macro_f1": null,
-    "latency_ms_per_sample": 1.079,
+    "feature_mode": "dynamic_stats",
+    "model_name": "extra_trees",
+    "accuracy": 0.8209,
+    "macro_f1": 0.8136,
+    "macro_precision": 0.8116,
+    "macro_recall": 0.8238,
+    "macro_false_positive_rate": 0.02,
+    "static_like_macro_f1": 0.7563,
+    "dynamic_like_macro_f1": 0.9472,
+    "latency_ms_per_sample": 0.125,
     "threshold": {
-      "threshold": 0.0,
-      "coverage": 1.0,
-      "accepted_accuracy": 0.9835,
-      "rejected_count": 0
+      "threshold": 0.6,
+      "coverage": 0.5323,
+      "accepted_accuracy": 0.9907,
+      "rejected_count": 94
     },
     "per_class": [
       {
         "label": "CTRLZ",
-        "precision": 0.9545,
-        "recall": 1.0,
-        "f1": 0.9767,
+        "precision": 0.95,
+        "recall": 0.9048,
+        "f1": 0.9268,
         "support": 21,
         "motion_type": "static_like"
       },
       {
         "label": "Hend",
-        "precision": 1.0,
-        "recall": 0.95,
-        "f1": 0.9744,
+        "precision": 0.625,
+        "recall": 0.5,
+        "f1": 0.5556,
         "support": 20,
         "motion_type": "static_like"
       },
       {
         "label": "UP",
-        "precision": 0.9524,
-        "recall": 1.0,
-        "f1": 0.9756,
+        "precision": 0.7083,
+        "recall": 0.85,
+        "f1": 0.7727,
         "support": 20,
         "motion_type": "static_like"
       },
       {
         "label": "gun",
-        "precision": 1.0,
-        "recall": 0.95,
-        "f1": 0.9744,
+        "precision": 0.5714,
+        "recall": 0.4,
+        "f1": 0.4706,
         "support": 20,
         "motion_type": "static_like"
+      },
+      {
+        "label": "hand_left",
+        "precision": 0.8529,
+        "recall": 0.9667,
+        "f1": 0.9062,
+        "support": 30,
+        "motion_type": "dynamic_like"
       },
       {
         "label": "sh3",
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0,
+        "precision": 0.6957,
+        "recall": 0.8,
+        "f1": 0.7442,
         "support": 20,
         "motion_type": "static_like"
       },
       {
-        "label": "three",
-        "precision": 1.0,
+        "label": "swipe_down",
+        "precision": 0.9091,
         "recall": 1.0,
-        "f1": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "swipe_left",
+        "precision": 0.9091,
+        "recall": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "swipe_up",
+        "precision": 1.0,
+        "recall": 0.9667,
+        "f1": 0.9831,
+        "support": 30,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "three",
+        "precision": 0.8947,
+        "recall": 0.85,
+        "f1": 0.8718,
         "support": 20,
         "motion_type": "static_like"
       }
     ],
     "confusion_matrix": [
       [
-        21,
+        19,
         0,
         0,
+        1,
+        0,
+        0,
+        1,
         0,
         0,
         0
       ],
       [
         1,
-        19,
+        10,
+        1,
+        2,
+        2,
+        4,
         0,
         0,
         0,
@@ -2523,116 +910,220 @@
       [
         0,
         0,
-        20,
+        17,
+        3,
+        0,
+        0,
+        0,
         0,
         0,
         0
       ],
       [
+        0,
+        4,
+        5,
+        8,
+        1,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        29,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        1,
+        16,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
         0,
         0,
         1,
-        19,
-        0,
+        29,
         0
       ],
       [
         0,
+        1,
+        0,
+        0,
+        1,
+        1,
         0,
         0,
         0,
-        20,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        0,
-        0,
-        20
+        17
       ]
     ]
   },
   "best_static_like": {
-    "feature_mode": "static_mean",
-    "model_name": "knn",
-    "accuracy": 0.9835,
-    "macro_f1": 0.9835,
-    "macro_precision": 0.9845,
-    "macro_recall": 0.9833,
-    "macro_false_positive_rate": 0.0033,
-    "static_like_macro_f1": 0.9835,
-    "dynamic_like_macro_f1": null,
-    "latency_ms_per_sample": 1.079,
+    "feature_mode": "dynamic_stats",
+    "model_name": "extra_trees",
+    "accuracy": 0.8209,
+    "macro_f1": 0.8136,
+    "macro_precision": 0.8116,
+    "macro_recall": 0.8238,
+    "macro_false_positive_rate": 0.02,
+    "static_like_macro_f1": 0.7563,
+    "dynamic_like_macro_f1": 0.9472,
+    "latency_ms_per_sample": 0.125,
     "threshold": {
-      "threshold": 0.0,
-      "coverage": 1.0,
-      "accepted_accuracy": 0.9835,
-      "rejected_count": 0
+      "threshold": 0.6,
+      "coverage": 0.5323,
+      "accepted_accuracy": 0.9907,
+      "rejected_count": 94
     },
     "per_class": [
       {
         "label": "CTRLZ",
-        "precision": 0.9545,
-        "recall": 1.0,
-        "f1": 0.9767,
+        "precision": 0.95,
+        "recall": 0.9048,
+        "f1": 0.9268,
         "support": 21,
         "motion_type": "static_like"
       },
       {
         "label": "Hend",
-        "precision": 1.0,
-        "recall": 0.95,
-        "f1": 0.9744,
+        "precision": 0.625,
+        "recall": 0.5,
+        "f1": 0.5556,
         "support": 20,
         "motion_type": "static_like"
       },
       {
         "label": "UP",
-        "precision": 0.9524,
-        "recall": 1.0,
-        "f1": 0.9756,
+        "precision": 0.7083,
+        "recall": 0.85,
+        "f1": 0.7727,
         "support": 20,
         "motion_type": "static_like"
       },
       {
         "label": "gun",
-        "precision": 1.0,
-        "recall": 0.95,
-        "f1": 0.9744,
+        "precision": 0.5714,
+        "recall": 0.4,
+        "f1": 0.4706,
         "support": 20,
         "motion_type": "static_like"
+      },
+      {
+        "label": "hand_left",
+        "precision": 0.8529,
+        "recall": 0.9667,
+        "f1": 0.9062,
+        "support": 30,
+        "motion_type": "dynamic_like"
       },
       {
         "label": "sh3",
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0,
+        "precision": 0.6957,
+        "recall": 0.8,
+        "f1": 0.7442,
         "support": 20,
         "motion_type": "static_like"
       },
       {
-        "label": "three",
-        "precision": 1.0,
+        "label": "swipe_down",
+        "precision": 0.9091,
         "recall": 1.0,
-        "f1": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "swipe_left",
+        "precision": 0.9091,
+        "recall": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "swipe_up",
+        "precision": 1.0,
+        "recall": 0.9667,
+        "f1": 0.9831,
+        "support": 30,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "three",
+        "precision": 0.8947,
+        "recall": 0.85,
+        "f1": 0.8718,
         "support": 20,
         "motion_type": "static_like"
       }
     ],
     "confusion_matrix": [
       [
-        21,
+        19,
         0,
         0,
+        1,
+        0,
+        0,
+        1,
         0,
         0,
         0
       ],
       [
         1,
-        19,
+        10,
+        1,
+        2,
+        2,
+        4,
         0,
         0,
         0,
@@ -2641,41 +1132,328 @@
       [
         0,
         0,
-        20,
+        17,
+        3,
+        0,
+        0,
+        0,
         0,
         0,
         0
       ],
       [
+        0,
+        4,
+        5,
+        8,
+        1,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        29,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        1,
+        16,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
         0,
         0,
         1,
-        19,
-        0,
+        29,
         0
       ],
       [
         0,
+        1,
+        0,
+        0,
+        1,
+        1,
         0,
         0,
         0,
-        20,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        0,
-        0,
-        20
+        17
       ]
     ]
   },
-  "best_dynamic_like": null,
-  "recommendation": "Текущий датасет выглядит static-like по выбранному motion threshold. Пока рано доказывать отдельную dynamic-модель: нужно записать жесты с выраженным движением и повторить benchmark.",
+  "best_dynamic_like": {
+    "feature_mode": "dynamic_stats",
+    "model_name": "extra_trees",
+    "accuracy": 0.8209,
+    "macro_f1": 0.8136,
+    "macro_precision": 0.8116,
+    "macro_recall": 0.8238,
+    "macro_false_positive_rate": 0.02,
+    "static_like_macro_f1": 0.7563,
+    "dynamic_like_macro_f1": 0.9472,
+    "latency_ms_per_sample": 0.125,
+    "threshold": {
+      "threshold": 0.6,
+      "coverage": 0.5323,
+      "accepted_accuracy": 0.9907,
+      "rejected_count": 94
+    },
+    "per_class": [
+      {
+        "label": "CTRLZ",
+        "precision": 0.95,
+        "recall": 0.9048,
+        "f1": 0.9268,
+        "support": 21,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "Hend",
+        "precision": 0.625,
+        "recall": 0.5,
+        "f1": 0.5556,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "UP",
+        "precision": 0.7083,
+        "recall": 0.85,
+        "f1": 0.7727,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "gun",
+        "precision": 0.5714,
+        "recall": 0.4,
+        "f1": 0.4706,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "hand_left",
+        "precision": 0.8529,
+        "recall": 0.9667,
+        "f1": 0.9062,
+        "support": 30,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "sh3",
+        "precision": 0.6957,
+        "recall": 0.8,
+        "f1": 0.7442,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "swipe_down",
+        "precision": 0.9091,
+        "recall": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "swipe_left",
+        "precision": 0.9091,
+        "recall": 1.0,
+        "f1": 0.9524,
+        "support": 10,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "swipe_up",
+        "precision": 1.0,
+        "recall": 0.9667,
+        "f1": 0.9831,
+        "support": 30,
+        "motion_type": "dynamic_like"
+      },
+      {
+        "label": "three",
+        "precision": 0.8947,
+        "recall": 0.85,
+        "f1": 0.8718,
+        "support": 20,
+        "motion_type": "static_like"
+      }
+    ],
+    "confusion_matrix": [
+      [
+        19,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        10,
+        1,
+        2,
+        2,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        17,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        4,
+        5,
+        8,
+        1,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        29,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        1,
+        16,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        29,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        17
+      ]
+    ]
+  },
+  "recommendation": "На текущем датасете достаточно единого пайплайна `dynamic_stats` + `extra_trees`: он не проигрывает отдельно static-like/dynamic-like группам.",
   "notes": [
-    "Активные классы в сравнении: CTRLZ, Hend, UP, gun, sh3, three",
-    "CV folds: 5; минимальный размер класса: 20"
+    "Активные классы в сравнении: CTRLZ, Hend, UP, gun, hand_left, sh3, swipe_down, swipe_left, swipe_up, three",
+    "CV folds: 5; минимальный размер класса: 10",
+    "Обнаружены разные исходные размерности признаков; benchmark выравнивает семплы до target_dim 44.",
+    "Дисбаланс классов высокий; macro-метрики важнее accuracy."
   ]
 }

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
+from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
 from cv.train_classifier import build_classifier, load_dataset
 
 
@@ -43,9 +44,24 @@ def test_load_dataset_supports_dynamic_feature_mode(tmp_path):
         feature_mode="dynamic_stats",
     )
 
-    assert x.shape == (2, 42 * 6)
+    assert x.shape == (2, 42 * 6 + DYNAMIC_TRAJECTORY_FEATURE_DIM)
     assert y.tolist() == [0, 1]
     assert classes == ["circle", "swipe"]
+
+
+def test_load_dataset_expect_dim_expands_dynamic_feature_size(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "swipe", 0, value=0.0)
+    _write_sample(data_root, "circle", 0, value=1.0)
+
+    x, _, _ = load_dataset(
+        data_root,
+        expect_dim=44,
+        include_labels=["swipe", "circle"],
+        feature_mode="dynamic_stats",
+    )
+
+    assert x.shape == (2, 44 * 6 + DYNAMIC_TRAJECTORY_FEATURE_DIM)
 
 
 def test_build_classifier_supports_non_knn_models():

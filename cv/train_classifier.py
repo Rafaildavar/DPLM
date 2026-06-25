@@ -16,6 +16,7 @@ from cv.gesture_features import (
     FEATURE_STATIC_MEAN,
     SUPPORTED_FEATURE_MODES,
     build_feature_vector,
+    feature_vector_size,
 )
 
 SUPPORTED_MODEL_TYPES = ("knn", "svm", "extra_trees", "rf", "logreg")
@@ -88,12 +89,24 @@ def load_dataset(
     if not feats_raw:
         raise RuntimeError("Датасет пуст — не найдено ни одного семпла")
 
-    # Определяем целевую размерность признака
-    target_dim = expect_dim if expect_dim is not None else max_dim
-    if expect_dim is not None and max_dim > expect_dim:
-        print(f"[w] Найдены признаки длиной {max_dim} > ожидаемой {expect_dim}. Лишние компоненты будут обрезаны.")
-    if expect_dim is None and len(set(f.shape[0] for f in feats_raw)) > 1:
-        print(f"[i] Выравниваем разные длины признаков до {target_dim} (дополнение нулями/обрезка)")
+    # ``expect_dim`` describes the raw per-frame dimension passed to
+    # build_feature_vector. The final model feature dimension depends on the
+    # selected feature mode, e.g. dynamic_stats expands 44 raw values to 271.
+    target_dim = (
+        feature_vector_size(feature_mode, expect_dim)
+        if expect_dim is not None
+        else max_dim
+    )
+    if expect_dim is not None and max_dim > target_dim:
+        print(
+            f"[w] Найдены признаки длиной {max_dim} > ожидаемой {target_dim}. "
+            "Лишние компоненты будут обрезаны."
+        )
+    if len(set(f.shape[0] for f in feats_raw)) > 1:
+        print(
+            f"[i] Выравниваем разные длины признаков до {target_dim} "
+            "(дополнение нулями/обрезка)"
+        )
 
     # Выровнять признаки до target_dim: обрезать или дополнить нулями
     X_aligned: List[np.ndarray] = []
