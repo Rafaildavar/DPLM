@@ -401,6 +401,40 @@ def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
     assert done_codes == [0]
 
 
+def test_dynamic_sample_quality_report_accepts_expected_motion():
+    controller = AppController.__new__(AppController)
+    sample = np.zeros((36, 44), dtype=np.float32)
+    movement = np.linspace(0.0, -0.8, sample.shape[0], dtype=np.float32)
+    sample[:] = movement[:, None]
+
+    report = controller._sample_quality_report(
+        sample,
+        label="swipe_up",
+        include_global_motion=True,
+    )
+
+    assert report["ok"] is True
+    assert report["dy"] < -0.05
+    assert report["warnings"] == []
+
+
+def test_dynamic_sample_quality_report_flags_wrong_direction():
+    controller = AppController.__new__(AppController)
+    sample = np.zeros((36, 44), dtype=np.float32)
+    movement = np.linspace(0.0, 0.8, sample.shape[0], dtype=np.float32)
+    sample[:] = movement[:, None]
+
+    report = controller._sample_quality_report(
+        sample,
+        label="hand_left",
+        include_global_motion=True,
+    )
+
+    assert report["ok"] is False
+    assert "expected_left" in report["warnings"]
+    assert report["dx"] > 0.05
+
+
 def test_delete_recorded_samples_removes_files_and_deactivates_gesture(monkeypatch, tmp_path):
     import app.flet_app.controller as controller_module
 

@@ -175,6 +175,11 @@ RECOGNITION_MODEL_STATIC = "static"
 RECOGNITION_MODEL_DYNAMIC = "dynamic"
 DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 2
+SAMPLE_RECORDING_READY_FRAMES = 6
+SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
+SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
+DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
+DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
 
 
 class AppController:
@@ -1125,6 +1130,154 @@ class AppController:
             index += 1
         return label_dir / f"sample_{index:04d}.npy"
 
+    def _reset_sample_recording_ready_gate(self, session: dict[str, Any]) -> None:
+        session["ready_buffer"] = []
+        session["countdown_until"] = 0.0
+        session["ready_stability"] = None
+
+    def _sample_recording_ready_gate(
+        self,
+        session: dict[str, Any],
+        frame_vec: Any,
+        now: float,
+        on_line: Optional[Callable[[str], None]],
+    ) -> bool:
+        import numpy as np
+
+        required = max(
+            1,
+            int(session.get("ready_required_frames", SAMPLE_RECORDING_READY_FRAMES)),
+        )
+        threshold = float(
+            session.get("stability_threshold", SAMPLE_RECORDING_STABILITY_THRESHOLD)
+        )
+        countdown_seconds = max(
+            0.0,
+            float(session.get("countdown_seconds", SAMPLE_RECORDING_COUNTDOWN_SECONDS)),
+        )
+        vector = np.asarray(frame_vec, dtype=np.float32).reshape(-1)
+        if vector.size <= 0:
+            return False
+
+        buffer = session.setdefault("ready_buffer", [])
+        buffer.append(vector)
+        if len(buffer) > required:
+            del buffer[:-required]
+
+        message: str
+        if len(buffer) < required:
+            session["countdown_until"] = 0.0
+            session["ready_stability"] = None
+            message = f"Зафиксируй стартовую позу: {len(buffer)}/{required}"
+        else:
+            deltas = [
+                float(np.linalg.norm(buffer[i] - buffer[i - 1]) / np.sqrt(vector.size))
+                for i in range(1, len(buffer))
+            ]
+            stability = max(deltas) if deltas else 0.0
+            session["ready_stability"] = stability
+            if stability > threshold:
+                buffer[:] = [vector]
+                session["countdown_until"] = 0.0
+                message = f"Зафиксируй стартовую позу: jitter={stability:.3f}"
+            else:
+                countdown_until = float(session.get("countdown_until", 0.0) or 0.0)
+                if countdown_until <= 0.0:
+                    countdown_until = now + countdown_seconds
+                    session["countdown_until"] = countdown_until
+                    if on_line:
+                        on_line(
+                            "[i] Рука стабильна — запись начнётся после короткого отсчета"
+                        )
+
+                remaining = max(0.0, countdown_until - now)
+                if remaining > 0.0:
+                    message = f"Запись через {remaining:.1f} с"
+                else:
+                    self._reset_sample_recording_ready_gate(session)
+                    session["last_message"] = "Идет запись сэмпла"
+                    return True
+
+        session["last_message"] = message
+        last_emit = float(session.get("last_progress_emit", 0.0) or 0.0)
+        if now - last_emit >= 0.15:
+            session["last_progress_emit"] = now
+            self._emit_sample_recording_changed(
+                session,
+                active=True,
+                message=message,
+            )
+
+        last_ready_log = float(session.get("last_ready_log", 0.0) or 0.0)
+        if on_line and now - last_ready_log >= 1.1 and not message.startswith("Запись"):
+            session["last_ready_log"] = now
+            on_line(f"[i] {message}")
+
+        return False
+
+    def _sample_quality_report(
+        self,
+        sequence: Any,
+        *,
+        label: str,
+        include_global_motion: bool,
+    ) -> dict[str, Any]:
+        from cv.gesture_features import (
+            sequence_displacement,
+            sequence_motion_energy,
+            sequence_to_matrix,
+        )
+
+        seq = sequence_to_matrix(sequence)
+        motion_energy = sequence_motion_energy(seq)
+        displacement = sequence_displacement(seq)
+        dx: float | None = None
+        dy: float | None = None
+        warnings: list[str] = []
+
+        has_global_motion = bool(include_global_motion and seq.shape[1] >= 44)
+        if has_global_motion:
+            dx = float(seq[-1, -2] - seq[0, -2])
+            dy = float(seq[-1, -1] - seq[0, -1])
+            if motion_energy < DYNAMIC_SAMPLE_MIN_MOTION_ENERGY:
+                warnings.append("low_motion")
+
+            clean_label = str(label or "").strip().lower()
+            direction_specs = (
+                ("left", "dx", -1.0),
+                ("right", "dx", 1.0),
+                ("up", "dy", -1.0),
+                ("down", "dy", 1.0),
+            )
+            for token, axis, sign in direction_specs:
+                if token not in clean_label:
+                    continue
+                value = dx if axis == "dx" else dy
+                if value is None or (value * sign) < DYNAMIC_SAMPLE_DIRECTION_THRESHOLD:
+                    warnings.append(f"expected_{token}")
+                break
+
+        return {
+            "ok": not warnings,
+            "shape": tuple(int(x) for x in seq.shape),
+            "motion_energy": motion_energy,
+            "displacement": displacement,
+            "dx": dx,
+            "dy": dy,
+            "warnings": warnings,
+        }
+
+    def _format_sample_quality_line(self, path: Path, report: dict[str, Any]) -> str:
+        parts = [
+            f"motion={float(report['motion_energy']):.4f}",
+            f"disp={float(report['displacement']):.4f}",
+        ]
+        if report.get("dx") is not None and report.get("dy") is not None:
+            parts.append(f"dx={float(report['dx']):+.3f}")
+            parts.append(f"dy={float(report['dy']):+.3f}")
+        verdict = "OK" if report.get("ok") else "WARN: " + ",".join(report["warnings"])
+        return f"[✓] Сохранено: {path} | {' '.join(parts)} | {verdict}"
+
     def _process_sample_recording_frame(self, frame_bgr: Any) -> str:
         import cv2
         import numpy as np
@@ -1160,6 +1313,12 @@ class AppController:
         now = time.monotonic()
         on_line = session.get("on_line")
         if frame_vec is None:
+            if bool(session.get("quality_gate")):
+                self._reset_sample_recording_ready_gate(session)
+                if session.get("frames_buf"):
+                    session["frames_buf"] = []
+                    if on_line:
+                        on_line("[w] Сэмпл сброшен: рука пропала из кадра")
             last_no_hand = float(session.get("last_no_hand_log", 0.0) or 0.0)
             if on_line and now - last_no_hand > 1.25:
                 session["last_no_hand_log"] = now
@@ -1191,6 +1350,10 @@ class AppController:
             return landmarks_json
 
         frames = session.setdefault("frames_buf", [])
+        if bool(session.get("quality_gate")) and not frames:
+            if not self._sample_recording_ready_gate(session, frame_vec, now, on_line):
+                return landmarks_json
+
         frames.append(frame_vec)
         session["last_message"] = "Идет запись сэмпла"
         target_frames = int(session["frames"])
@@ -1217,16 +1380,25 @@ class AppController:
         out_path = self._next_sample_path(label_dir)
         arr = np.asarray(frames[:target_frames], dtype=np.float32)
         np.save(out_path, arr)
+        report = self._sample_quality_report(
+            arr,
+            label=str(session.get("label") or ""),
+            include_global_motion=bool(session.get("include_global_motion")),
+        )
         session["saved"] = int(session["saved"]) + 1
         session["frames_buf"] = []
+        self._reset_sample_recording_ready_gate(session)
+        reports = session.setdefault("quality_reports", [])
+        reports.append({"path": out_path.name, **report})
         session["next_allowed_at"] = now + 0.45
-        session["last_message"] = f"Сохранено: {out_path.name}"
+        verdict = "OK" if report["ok"] else "WARN"
+        session["last_message"] = f"Сохранено: {out_path.name} ({verdict})"
         if on_line:
-            on_line(f"[✓] Сохранено: {out_path}")
+            on_line(self._format_sample_quality_line(out_path, report))
         self._emit_sample_recording_changed(
             session,
             active=True,
-            message=f"Сохранено: {out_path.name}",
+            message=f"Сохранено: {out_path.name} ({verdict})",
         )
 
         if int(session["saved"]) >= int(session["target"]):
@@ -2474,8 +2646,16 @@ class AppController:
             "on_done": on_done,
             "next_allowed_at": 0.0,
             "last_no_hand_log": 0.0,
+            "last_ready_log": 0.0,
             "last_progress_emit": 0.0,
             "warmup_until": time.monotonic() + 1.5,
+            "quality_gate": True,
+            "ready_required_frames": SAMPLE_RECORDING_READY_FRAMES,
+            "ready_buffer": [],
+            "countdown_until": 0.0,
+            "countdown_seconds": SAMPLE_RECORDING_COUNTDOWN_SECONDS,
+            "stability_threshold": SAMPLE_RECORDING_STABILITY_THRESHOLD,
+            "quality_reports": [],
             "last_message": "Подготовка камеры",
         }
         with self._sample_recording_lock:
@@ -2494,7 +2674,9 @@ class AppController:
                 + (" (две руки)" if two_hands else "")
                 + (" + глобальное движение" if include_global_motion else "")
             )
-            on_line("[i] Держи жест перед камерой — запись начнётся через пару секунд")
+            on_line(
+                "[i] Держи стартовую позу неподвижно — после отсчета записывай движение"
+            )
 
         if not self._is_camera_active:
             self.start_camera()
