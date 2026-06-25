@@ -290,6 +290,42 @@ live-проверка будут расходиться.
 - Если `5-10` сэмплов после аугментаций дают стабильный live-result, уменьшаем
   recommended recording count для новых gestures.
 
+### H-010: Новые `swipe_down` и `swipe_left` надо проверить на семантику движения
+
+Статус: `fixed`
+
+Что записано:
+- `swipe_up`: `30` сэмплов, shape `(36, 44)`;
+- `swipe_down`: `10` сэмплов, shape `(36, 44)`;
+- `swipe_left`: `10` сэмплов, shape `(36, 44)`;
+- `swipe_right`: `0` сэмплов.
+
+Проблема:
+- пользователь подтвердил, что при записи перепутал названия
+  `swipe_down` и `swipe_left`;
+- папки `data/gestures/swipe_down` и `data/gestures/swipe_left` были
+  аккуратно поменяны местами без удаления сэмплов;
+- `models/dynamic_knn.pkl` переобучен после swap.
+
+Диагностика global wrist motion:
+
+| Label | Expected | Median dx | Median dy | Interpretation |
+|---|---|---:|---:|---|
+| `swipe_up` | `dy < -0.05` | `+0.0135` | `-0.1820` | OK |
+| `swipe_down` | `dy > +0.05` | `-0.0130` | `+0.4876` | OK |
+| `swipe_left` | `dx < -0.05` | `-0.3823` | `+0.0212` | OK |
+
+Offline prediction with current `models/dynamic_knn.pkl`:
+- `swipe_up`: `30/30` -> `swipe_up`;
+- `swipe_down`: `10/10` -> `swipe_down`;
+- `swipe_left`: `10/10` -> `swipe_left`;
+- old `hand_left`: mostly predicted as `swipe_up`/`swipe_left`, not reliable
+  because shape is `(60, 42)`.
+
+Вывод:
+- Семантика `swipe_down` и `swipe_left` исправлена.
+- Следующий шаг: live-test этих двух классов, затем запись `swipe_right`.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
