@@ -73,6 +73,64 @@ class HomeView:
             scroll=ft.ScrollMode.AUTO,
             controls=[ft.Text("Пока нет событий", size=12, color=COLOR_MUTED)],
         )
+        eval_labels = self._recognition_label_options()
+        default_eval_label = "swipe_down" if "swipe_down" in eval_labels else (
+            eval_labels[0] if eval_labels else ""
+        )
+        self._eval_expected = ft.Dropdown(
+            label="Ожидаем",
+            value=default_eval_label,
+            width=180,
+            options=[
+                ft.DropdownOption(key=label, text=label)
+                for label in eval_labels
+            ],
+        )
+        self._eval_attempts = ft.TextField(
+            label="Попыток",
+            value="10",
+            width=104,
+            border_color=COLOR_SURFACE_HIGH,
+        )
+        self._eval_timeout = ft.TextField(
+            label="Таймаут",
+            value="3.0",
+            width=104,
+            border_color=COLOR_SURFACE_HIGH,
+        )
+        self._eval_threshold = ft.TextField(
+            label="Порог",
+            value="0.60",
+            width=112,
+            border_color=COLOR_SURFACE_HIGH,
+        )
+        self._eval_start_btn = ft.FilledButton(
+            content=ft.Text("Начать тест", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.PLAYLIST_PLAY,
+            style=ft.ButtonStyle(
+                bgcolor=COLOR_ACCENT,
+                color=ft.Colors.WHITE,
+                padding=ft.Padding.symmetric(horizontal=18, vertical=12),
+            ),
+            on_click=self._on_eval_start,
+        )
+        self._eval_stop_btn = ft.OutlinedButton(
+            content=ft.Text("Стоп"),
+            icon=ft.Icons.STOP,
+            disabled=True,
+            on_click=self._on_eval_stop,
+        )
+        self._eval_progress_text = ft.Text("0/10", size=13, color=COLOR_ON_SURFACE)
+        self._eval_correct_text = ft.Text("Верно 0", size=13, color=COLOR_SUCCESS)
+        self._eval_wrong_text = ft.Text("Ошибка 0", size=13, color=COLOR_DANGER)
+        self._eval_missed_text = ft.Text("Пропуск 0", size=13, color=COLOR_MUTED)
+        self._eval_accuracy_text = ft.Text("Accuracy —", size=13, color=COLOR_ON_SURFACE)
+        self._eval_last_text = ft.Text("—", size=12, color=COLOR_MUTED)
+        self._eval_progress_bar = ft.ProgressBar(
+            value=0.0,
+            color=COLOR_ACCENT,
+            bgcolor=COLOR_SURFACE_HIGH,
+        )
 
         self._toggle_btn = ft.FilledButton(
             content=ft.Text(self._btn_label(), size=15, weight=ft.FontWeight.BOLD),
@@ -147,19 +205,52 @@ class HomeView:
         controller.pointer_mode_changed.connect(self._on_pointer_mode)
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
         controller.recognition_model_mode_changed.connect(self._on_model_mode)
+        controller.live_evaluation_changed.connect(self._on_live_evaluation)
 
     # ---- Жизненный цикл (вызывается shell при показе/скрытии) ------------
 
     def on_show(self) -> None:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
+        self._refresh_eval_labels()
         self._refresh_activity()
+        self._apply_live_evaluation(self._controller.current_live_evaluation())
 
     def on_hide(self) -> None:
         # При уходе с главной — НЕ останавливаем распознавание, потому что
         # «жест → команда ОС» должно работать в фоне (как в QML с subprocess).
         # Останавливать камеру/CV нужно только явной кнопкой «Стоп».
         pass
+
+    def _recognition_label_options(self) -> list[str]:
+        try:
+            labels = self._controller.list_recognition_labels()
+        except Exception:
+            labels = []
+        fallback = ["swipe_up", "swipe_down", "swipe_left", "swipe_right"]
+        out: list[str] = []
+        seen: set[str] = set()
+        for label in [*labels, *fallback]:
+            clean = str(label or "").strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                out.append(clean)
+                seen.add(key)
+        return out
+
+    def _refresh_eval_labels(self) -> None:
+        labels = self._recognition_label_options()
+        current = str(self._eval_expected.value or "")
+        self._eval_expected.options = [
+            ft.DropdownOption(key=label, text=label)
+            for label in labels
+        ]
+        if current not in labels:
+            self._eval_expected.value = labels[0] if labels else ""
+        try:
+            self._eval_expected.update()
+        except Exception:
+            pass
 
     # ---- Логика кнопки ----------------------------------------------------
 
@@ -210,6 +301,45 @@ class HomeView:
         self._controller.set_recognition_model_mode(
             str(self._model_mode_dd.value or "static")
         )
+        self._refresh_eval_labels()
+
+    def _parse_int_field(self, field: ft.TextField, default: int) -> int:
+        try:
+            return int(str(field.value or "").strip())
+        except (TypeError, ValueError):
+            field.value = str(default)
+            try:
+                field.update()
+            except Exception:
+                pass
+            return default
+
+    def _parse_float_field(self, field: ft.TextField, default: float) -> float:
+        try:
+            return float(str(field.value or "").strip().replace(",", "."))
+        except (TypeError, ValueError):
+            field.value = f"{default:.2f}"
+            try:
+                field.update()
+            except Exception:
+                pass
+            return default
+
+    def _on_eval_start(self, _e) -> None:
+        expected = str(self._eval_expected.value or "").strip()
+        attempts = self._parse_int_field(self._eval_attempts, 10)
+        timeout = self._parse_float_field(self._eval_timeout, 3.0)
+        threshold = self._parse_float_field(self._eval_threshold, 0.60)
+        if self._controller.start_live_evaluation(
+            expected,
+            attempts=attempts,
+            timeout_seconds=timeout,
+            min_confidence=threshold,
+        ):
+            self._apply_live_evaluation(self._controller.current_live_evaluation())
+
+    def _on_eval_stop(self, _e) -> None:
+        self._controller.cancel_live_evaluation()
 
     # ---- Слушатели событий контроллера (приходят из фонового потока) ----
 
@@ -404,6 +534,81 @@ class HomeView:
             self._model_mode_dd.update()
         except Exception:
             pass
+        self._refresh_eval_labels()
+
+    def _on_live_evaluation(self, snapshot: dict) -> None:
+        self._page.run_thread(self._apply_live_evaluation, snapshot)
+
+    def _apply_live_evaluation(self, snapshot: dict) -> None:
+        active = bool(snapshot.get("active"))
+        target = int(snapshot.get("targetAttempts") or 0)
+        total = int(snapshot.get("total") or 0)
+        correct = int(snapshot.get("correct") or 0)
+        wrong = int(snapshot.get("wrong") or 0)
+        missed = int(snapshot.get("missed") or 0)
+        accuracy = float(snapshot.get("accuracy") or 0.0)
+        progress = float(snapshot.get("progress") or 0.0)
+        expected = str(snapshot.get("expectedLabel") or "")
+        attempt_index = int(snapshot.get("attemptIndex") or 0)
+        last_result = str(snapshot.get("lastResult") or "")
+        last_prediction = str(snapshot.get("lastPrediction") or "")
+        last_conf = float(snapshot.get("lastConfidence") or 0.0)
+        message = str(snapshot.get("message") or "")
+
+        self._eval_progress_text.value = (
+            f"{total}/{target}" if not active else f"{attempt_index}/{target}"
+        )
+        self._eval_correct_text.value = f"Верно {correct}"
+        self._eval_wrong_text.value = f"Ошибка {wrong}"
+        self._eval_missed_text.value = f"Пропуск {missed}"
+        self._eval_accuracy_text.value = (
+            f"Accuracy {accuracy * 100:.0f}%" if total else "Accuracy —"
+        )
+        if last_result == "below_threshold" and last_prediction:
+            self._eval_last_text.value = (
+                f"{last_prediction} {last_conf * 100:.0f}% < threshold"
+            )
+        elif last_result and last_prediction:
+            self._eval_last_text.value = (
+                f"{last_result}: {last_prediction} {last_conf * 100:.0f}%"
+            )
+        elif message:
+            self._eval_last_text.value = message
+        elif expected:
+            self._eval_last_text.value = expected
+        else:
+            self._eval_last_text.value = "—"
+        self._eval_progress_bar.value = max(0.0, min(1.0, progress))
+
+        self._eval_expected.disabled = active
+        self._eval_attempts.disabled = active
+        self._eval_timeout.disabled = active
+        self._eval_threshold.disabled = active
+        self._eval_start_btn.disabled = active
+        self._eval_stop_btn.disabled = not active
+        if self._auto_exec_switch.value != self._controller.auto_execute:
+            self._auto_exec_switch.value = self._controller.auto_execute
+
+        for control in (
+            self._eval_progress_text,
+            self._eval_correct_text,
+            self._eval_wrong_text,
+            self._eval_missed_text,
+            self._eval_accuracy_text,
+            self._eval_last_text,
+            self._eval_progress_bar,
+            self._eval_expected,
+            self._eval_attempts,
+            self._eval_timeout,
+            self._eval_threshold,
+            self._eval_start_btn,
+            self._eval_stop_btn,
+            self._auto_exec_switch,
+        ):
+            try:
+                control.update()
+            except Exception:
+                pass
 
     # ---- Сборка дерева ---------------------------------------------------
 
@@ -490,6 +695,52 @@ class HomeView:
                 ],
             ),
         )
+        eval_panel = ft.Container(
+            padding=ft.Padding(18, 14, 18, 14),
+            bgcolor="#202033",
+            border_radius=12,
+            content=ft.Column(
+                spacing=12,
+                controls=[
+                    ft.Row(
+                        spacing=12,
+                        wrap=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Text(
+                                "Live evaluation",
+                                size=14,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                            ),
+                            self._eval_expected,
+                            self._eval_attempts,
+                            self._eval_timeout,
+                            self._eval_threshold,
+                            self._eval_start_btn,
+                            self._eval_stop_btn,
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=18,
+                        wrap=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            self._eval_progress_text,
+                            self._eval_correct_text,
+                            self._eval_wrong_text,
+                            self._eval_missed_text,
+                            self._eval_accuracy_text,
+                            ft.Container(
+                                content=self._eval_last_text,
+                                expand=True,
+                            ),
+                        ],
+                    ),
+                    self._eval_progress_bar,
+                ],
+            ),
+        )
 
         return ft.Column(
             spacing=18,
@@ -500,5 +751,6 @@ class HomeView:
                 toolbar,
                 camera_card,
                 result_panel,
+                eval_panel,
             ],
         )

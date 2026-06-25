@@ -360,6 +360,44 @@ Threshold sweep:
   `expected_label`, `attempt`, `predicted_label`, `confidence`, `result`.
 - Повторить тест по `10` попыток на каждый dynamic class.
 
+### H-012: Нужен attempt-level live evaluation mode
+
+Статус: `implemented`
+
+Гипотеза:
+- Event-level `recognition_logs` недостаточно для JMLC-метрик: там есть
+  predicted label и confidence, но нет `expected_label`, поэтому невозможно
+  честно посчитать `Missed` и attempt-level accuracy.
+
+Что сделали:
+- На Home добавлен блок `Live evaluation`.
+- Пользователь выбирает:
+  - `Expected`;
+  - `Attempts`;
+  - `Timeout`;
+  - `Min conf`.
+- Контроллер считает попытки автоматически:
+  - `Correct`, если accepted prediction совпал с expected label;
+  - `Wrong`, если accepted prediction не совпал;
+  - `Missed`, если за timeout не пришел accepted prediction.
+- Во время evaluation auto-execute временно отключается, чтобы тест метрик не
+  запускал системные команды.
+- Подробные попытки пишутся в:
+  `~/.dplm/logs/live_evaluation.jsonl`.
+
+Правила текущего протокола:
+- recommended attempts: `10` на класс;
+- initial min confidence: `0.60`;
+- timeout: `3.0` секунды;
+- между попытками убрать руку из кадра, чтобы тот же label не засчитался
+  повторно.
+
+Следующий тест:
+- `swipe_up`: 10 attempts;
+- `swipe_down`: 10 attempts;
+- `swipe_left`: 10 attempts;
+- после записи `swipe_right`: 10 attempts.
+
 ## Текущий ML-пайплайн
 
 1. Запись:

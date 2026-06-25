@@ -25,14 +25,20 @@ def _dispatch_controller():
     controller._pending_label = ""
     controller._pending_frames = 0
     controller._pending_confidence_total = 0.0
+    controller._live_evaluation = None
+    controller._last_live_evaluation_snapshot = None
+    controller._live_evaluation_lock = threading.RLock()
     controller._gesture_mode = True
     controller._pointer_mode = False
     controller._show_landmark_overlay = True
     controller._auto_execute_on_gesture = True
+    controller._status = "Idle"
     controller.confidence_changed = _Event()
     controller.landmarks_changed = _Event()
     controller.gesture_detected = _Event()
     controller.gesture_mode_changed = _Event()
+    controller.status_changed = _Event()
+    controller.live_evaluation_changed = _Event()
     controller._update_pointer_from_landmarks = lambda _landmarks: None
     return controller
 
@@ -717,6 +723,60 @@ def test_dispatch_cursor_only_ignores_gesture_execution_but_keeps_landmarks():
     assert executed == []
     assert controller._confidence == 0.0
     assert controller._pending_frames == 0
+
+
+def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        "swipe_down",
+        attempts=3,
+        timeout_seconds=1.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["attempt_started_at"] = 10.0
+    controller._live_evaluation["next_ready_at"] = 10.0
+
+    controller._consume_live_evaluation_prediction("swipe_down", 0.9, now=10.0)
+    controller._consume_live_evaluation_prediction("swipe_left", 0.8, now=12.0)
+    controller._update_live_evaluation_timeout(now=14.0)
+
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is False
+    assert snapshot["correct"] == 1
+    assert snapshot["wrong"] == 1
+    assert snapshot["missed"] == 1
+    assert snapshot["total"] == 3
+    assert snapshot["accuracy"] == pytest.approx(1 / 3)
+    assert (tmp_path / "live_evaluation.jsonl").exists()
+
+
+def test_live_evaluation_ignores_below_threshold_until_timeout(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        "swipe_down",
+        attempts=1,
+        timeout_seconds=1.0,
+        min_confidence=0.8,
+    )
+    controller._live_evaluation["attempt_started_at"] = 20.0
+    controller._live_evaluation["next_ready_at"] = 20.0
+
+    controller._consume_live_evaluation_prediction("swipe_down", 0.7, now=20.0)
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is True
+    assert snapshot["total"] == 0
+    assert snapshot["lastResult"] == "below_threshold"
+
+    controller._update_live_evaluation_timeout(now=22.0)
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is False
+    assert snapshot["missed"] == 1
 
 
 def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():

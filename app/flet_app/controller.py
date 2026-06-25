@@ -180,6 +180,10 @@ SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
 DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
 DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
+LIVE_EVAL_DEFAULT_ATTEMPTS = 10
+LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 3.0
+LIVE_EVAL_DEFAULT_MIN_CONFIDENCE = 0.60
+LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
 
 
 class AppController:
@@ -203,6 +207,7 @@ class AppController:
         two_hands_changed(bool)
         recognition_model_mode_changed(str)
         sample_recording_changed(dict)
+        live_evaluation_changed(dict)
     """
 
     def __init__(self) -> None:
@@ -231,6 +236,9 @@ class AppController:
         self._pending_label: str = ""
         self._pending_frames: int = 0
         self._pending_confidence_total: float = 0.0
+        self._live_evaluation: dict[str, Any] | None = None
+        self._last_live_evaluation_snapshot: dict[str, Any] | None = None
+        self._live_evaluation_lock = threading.RLock()
 
         # События ------------------------------------------------------------
         self.status_changed = _Event()
@@ -249,6 +257,7 @@ class AppController:
         self.two_hands_changed = _Event()
         self.recognition_model_mode_changed = _Event()
         self.sample_recording_changed = _Event()
+        self.live_evaluation_changed = _Event()
 
         # Камера -------------------------------------------------------------
         self._camera_cap: Any | None = None
@@ -618,6 +627,360 @@ class AppController:
 
         avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
         return self._pending_frames >= self._gesture_confirm_frames(), avg_conf
+
+    def _live_evaluation_snapshot_from_session(
+        self,
+        session: dict[str, Any] | None,
+        *,
+        message: str = "",
+    ) -> dict[str, Any]:
+        if session is None:
+            return {
+                "active": False,
+                "expectedLabel": "",
+                "targetAttempts": 0,
+                "attemptIndex": 0,
+                "total": 0,
+                "correct": 0,
+                "wrong": 0,
+                "missed": 0,
+                "accuracy": 0.0,
+                "progress": 0.0,
+                "minConfidence": LIVE_EVAL_DEFAULT_MIN_CONFIDENCE,
+                "timeoutSeconds": LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS,
+                "lastPrediction": "",
+                "lastConfidence": 0.0,
+                "lastResult": "",
+                "message": message,
+                "attempts": [],
+            }
+
+        target = max(1, int(session.get("target_attempts") or 1))
+        total = max(0, int(session.get("total") or 0))
+        correct = max(0, int(session.get("correct") or 0))
+        wrong = max(0, int(session.get("wrong") or 0))
+        missed = max(0, int(session.get("missed") or 0))
+        active = bool(session.get("active"))
+        attempt_index = min(target, total + 1) if active and total < target else total
+        accuracy = correct / total if total else 0.0
+        return {
+            "active": active,
+            "expectedLabel": str(session.get("expected_label") or ""),
+            "targetAttempts": target,
+            "attemptIndex": attempt_index,
+            "total": total,
+            "correct": correct,
+            "wrong": wrong,
+            "missed": missed,
+            "accuracy": accuracy,
+            "progress": min(1.0, total / float(target)),
+            "minConfidence": float(session.get("min_confidence") or 0.0),
+            "timeoutSeconds": float(session.get("timeout_seconds") or 0.0),
+            "lastPrediction": str(session.get("last_prediction") or ""),
+            "lastConfidence": float(session.get("last_confidence") or 0.0),
+            "lastResult": str(session.get("last_result") or ""),
+            "message": message or str(session.get("message") or ""),
+            "attempts": list(session.get("attempts") or []),
+        }
+
+    def _emit_live_evaluation_changed(
+        self,
+        session: dict[str, Any] | None = None,
+        *,
+        message: str = "",
+    ) -> None:
+        if session is None:
+            with self._live_evaluation_lock:
+                session = self._live_evaluation
+        event = getattr(self, "live_evaluation_changed", None)
+        if event is not None:
+            event.emit(
+                self._live_evaluation_snapshot_from_session(
+                    session,
+                    message=message,
+                )
+            )
+
+    def current_live_evaluation(self) -> dict[str, Any]:
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            if session is None and self._last_live_evaluation_snapshot is not None:
+                return dict(self._last_live_evaluation_snapshot)
+        return self._live_evaluation_snapshot_from_session(session)
+
+    def live_evaluation_active(self) -> bool:
+        with self._live_evaluation_lock:
+            return bool(self._live_evaluation and self._live_evaluation.get("active"))
+
+    def list_recognition_labels(self) -> list[str]:
+        labels: list[str] = []
+        seen: set[str] = set()
+
+        def add(value: str) -> None:
+            clean = str(value or "").strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                labels.append(clean)
+                seen.add(key)
+
+        for path in (
+            self._dynamic_classes_path(),
+            self._configured_classes_path(),
+        ):
+            try:
+                if path.exists():
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(data, list):
+                        for item in data:
+                            add(str(item))
+            except Exception as e:
+                print(f"[w] list_recognition_labels {path}: {e}", flush=True)
+
+        for row in self.list_recorded_gestures():
+            add(str(row.get("label") or ""))
+
+        return sorted(labels, key=lambda x: x.lower())
+
+    def start_live_evaluation(
+        self,
+        expected_label: str,
+        *,
+        attempts: int = LIVE_EVAL_DEFAULT_ATTEMPTS,
+        timeout_seconds: float = LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS,
+        min_confidence: float = LIVE_EVAL_DEFAULT_MIN_CONFIDENCE,
+    ) -> bool:
+        clean = str(expected_label or "").strip()
+        if not clean:
+            return False
+
+        target_attempts = max(1, min(int(attempts or LIVE_EVAL_DEFAULT_ATTEMPTS), 100))
+        timeout = max(0.5, min(float(timeout_seconds), 15.0))
+        threshold = max(0.0, min(float(min_confidence), 1.0))
+        now = time.monotonic()
+        session = {
+            "active": True,
+            "expected_label": clean,
+            "target_attempts": target_attempts,
+            "timeout_seconds": timeout,
+            "min_confidence": threshold,
+            "cooldown_seconds": LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS,
+            "attempt_started_at": now,
+            "next_ready_at": now,
+            "total": 0,
+            "correct": 0,
+            "wrong": 0,
+            "missed": 0,
+            "attempts": [],
+            "last_prediction": "",
+            "last_confidence": 0.0,
+            "last_result": "",
+            "message": f"Тест {clean}: попытка 1/{target_attempts}",
+            "started_at": time.time(),
+            "auto_execute_was_enabled": bool(self._auto_execute_on_gesture),
+        }
+        with self._live_evaluation_lock:
+            self._live_evaluation = session
+            self._last_live_evaluation_snapshot = None
+
+        if self._auto_execute_on_gesture:
+            self._auto_execute_on_gesture = False
+        self._reset_gesture_confirmation()
+        self._last_label = ""
+        self._emit_live_evaluation_changed(session, message=session["message"])
+        self._set_status(f"Live eval: {clean} 1/{target_attempts}")
+        self._ensure_embedded_recognition_for_live_controls()
+        return True
+
+    def cancel_live_evaluation(self) -> bool:
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+        if session is None:
+            return False
+        self._finish_live_evaluation("stopped")
+        return True
+
+    def _finish_live_evaluation(self, reason: str = "completed") -> None:
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            self._live_evaluation = None
+        if session is None:
+            return
+        session["active"] = False
+        session["message"] = self._live_evaluation_finish_message(session, reason)
+        if bool(session.get("auto_execute_was_enabled")):
+            self._auto_execute_on_gesture = True
+        self._append_live_evaluation_jsonl(session, event_type=f"run_{reason}")
+        self._last_live_evaluation_snapshot = self._live_evaluation_snapshot_from_session(
+            session,
+            message=session["message"],
+        )
+        self._emit_live_evaluation_changed(session, message=session["message"])
+        if self._status.startswith("Live eval"):
+            self._set_status(self._live_recognition_status())
+
+    def _live_evaluation_finish_message(self, session: dict[str, Any], reason: str) -> str:
+        total = int(session.get("total") or 0)
+        target = int(session.get("target_attempts") or 0)
+        correct = int(session.get("correct") or 0)
+        wrong = int(session.get("wrong") or 0)
+        missed = int(session.get("missed") or 0)
+        prefix = "Завершено" if reason == "completed" else "Остановлено"
+        return (
+            f"{prefix}: {session.get('expected_label')} "
+            f"{correct}/{total or target} correct, wrong={wrong}, missed={missed}"
+        )
+
+    def _append_live_evaluation_jsonl(
+        self,
+        payload: dict[str, Any],
+        *,
+        event_type: str,
+    ) -> None:
+        try:
+            path = self._configured_log_dir() / "live_evaluation.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            row = {
+                "event_type": event_type,
+                "recorded_at": time.time(),
+                "expected_label": payload.get("expected_label"),
+                "target_attempts": payload.get("target_attempts"),
+                "total": payload.get("total"),
+                "correct": payload.get("correct"),
+                "wrong": payload.get("wrong"),
+                "missed": payload.get("missed"),
+                "min_confidence": payload.get("min_confidence"),
+                "timeout_seconds": payload.get("timeout_seconds"),
+                "attempts": payload.get("attempts", []),
+            }
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        except Exception as e:
+            print(f"[w] live evaluation log write failed: {e}", flush=True)
+
+    def _record_live_evaluation_attempt(
+        self,
+        session: dict[str, Any],
+        *,
+        result: str,
+        predicted_label: str = "",
+        confidence: float = 0.0,
+        now: float | None = None,
+    ) -> None:
+        timestamp = time.time()
+        monotonic_now = time.monotonic() if now is None else float(now)
+        attempt_no = int(session.get("total") or 0) + 1
+        expected = str(session.get("expected_label") or "")
+        elapsed = max(
+            0.0,
+            monotonic_now - float(session.get("attempt_started_at") or monotonic_now),
+        )
+        row = {
+            "attempt": attempt_no,
+            "expected": expected,
+            "predicted": str(predicted_label or ""),
+            "confidence": float(confidence or 0.0),
+            "result": result,
+            "elapsed_seconds": round(elapsed, 3),
+            "recorded_at": timestamp,
+        }
+        attempts = session.setdefault("attempts", [])
+        attempts.append(row)
+        session["total"] = attempt_no
+        if result == "correct":
+            session["correct"] = int(session.get("correct") or 0) + 1
+        elif result == "wrong":
+            session["wrong"] = int(session.get("wrong") or 0) + 1
+        elif result == "missed":
+            session["missed"] = int(session.get("missed") or 0) + 1
+        session["last_prediction"] = row["predicted"]
+        session["last_confidence"] = row["confidence"]
+        session["last_result"] = result
+        attempt_payload = dict(row)
+        attempt_payload.update(
+            {
+                "expected_label": expected,
+                "target_attempts": session.get("target_attempts"),
+                "total": session.get("total"),
+                "correct": session.get("correct"),
+                "wrong": session.get("wrong"),
+                "missed": session.get("missed"),
+                "min_confidence": session.get("min_confidence"),
+                "timeout_seconds": session.get("timeout_seconds"),
+            }
+        )
+        self._append_live_evaluation_jsonl(attempt_payload, event_type="attempt")
+
+        target = int(session.get("target_attempts") or 1)
+        if attempt_no >= target:
+            session["message"] = self._live_evaluation_finish_message(session, "completed")
+            self._finish_live_evaluation("completed")
+            return
+
+        cooldown = float(session.get("cooldown_seconds") or LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS)
+        session["next_ready_at"] = monotonic_now + cooldown
+        session["attempt_started_at"] = monotonic_now + cooldown
+        session["message"] = (
+            f"Тест {expected}: попытка {attempt_no + 1}/{target}"
+        )
+        self._emit_live_evaluation_changed(session, message=session["message"])
+        self._set_status(f"Live eval: {expected} {attempt_no + 1}/{target}")
+
+    def _consume_live_evaluation_prediction(
+        self,
+        label: str,
+        confidence: float,
+        *,
+        now: float | None = None,
+    ) -> None:
+        monotonic_now = time.monotonic() if now is None else float(now)
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            if session is None or not bool(session.get("active")):
+                return
+            if monotonic_now < float(session.get("next_ready_at") or 0.0):
+                return
+
+            clean_label = str(label or "").strip()
+            conf = float(confidence or 0.0)
+            session["last_prediction"] = clean_label
+            session["last_confidence"] = conf
+            if conf < float(session.get("min_confidence") or 0.0):
+                session["last_result"] = "below_threshold"
+                self._emit_live_evaluation_changed(
+                    session,
+                    message=f"{clean_label}: confidence {conf:.2f} ниже порога",
+                )
+                return
+
+            expected = str(session.get("expected_label") or "")
+            result = "correct" if clean_label == expected else "wrong"
+            self._record_live_evaluation_attempt(
+                session,
+                result=result,
+                predicted_label=clean_label,
+                confidence=conf,
+                now=monotonic_now,
+            )
+
+    def _update_live_evaluation_timeout(self, *, now: float | None = None) -> None:
+        monotonic_now = time.monotonic() if now is None else float(now)
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            if session is None or not bool(session.get("active")):
+                return
+            if monotonic_now < float(session.get("next_ready_at") or 0.0):
+                return
+            started = float(session.get("attempt_started_at") or monotonic_now)
+            timeout = float(session.get("timeout_seconds") or LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS)
+            if monotonic_now - started < timeout:
+                return
+            self._record_live_evaluation_attempt(
+                session,
+                result="missed",
+                predicted_label="",
+                confidence=0.0,
+                now=monotonic_now,
+            )
 
     def _ensure_pointer_control(self) -> Any | None:
         if not POINTER_CONTROL_AVAILABLE or PointerControlService is None:
@@ -1466,6 +1829,7 @@ class AppController:
             self._set_status("Camera: streaming" if self._is_camera_active else "Idle")
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
+        self._update_live_evaluation_timeout()
         label = (out.get("label") or "").strip()
         conf = float(out.get("confidence") or 0.0)
         lj = out.get("landmarks_json") or "[]"
@@ -1494,17 +1858,24 @@ class AppController:
                 f"frames={self._pending_frames} prev={self._last_label!r}",
                 flush=True,
             )
+            evaluation_active = self.live_evaluation_active()
+            self._consume_live_evaluation_prediction(label, stable_conf)
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-
             # бридж (R4/R5/R6 политика — порог уверенности, cooldown, фильтр
             # опасных действий). Это даёт «жест → команда ОС» — главную фичу
             # диплома.
-            if self._auto_execute_on_gesture:
+            if self._auto_execute_on_gesture and not evaluation_active:
                 executed = self.execute_for_gesture(label, stable_conf)
             else:
                 executed = False
-                print("[ctrl.gesture] auto-execute выключен — команда не запускается", flush=True)
+                reason = (
+                    "live-evaluation активен"
+                    if evaluation_active
+                    else "auto-execute выключен"
+                )
+                print(f"[ctrl.gesture] {reason} — команда не запускается", flush=True)
             self._record_recognition_event(label, stable_conf, executed)
 
     # ----------------------------------------------------------------------
@@ -1899,6 +2270,7 @@ class AppController:
             or self._embedded_active
             or self._is_recognition_pid_active()
         ):
+            self.cancel_live_evaluation()
             self.stop_embedded_recognition()
             self.stop_recognition()
             self.stop_camera()

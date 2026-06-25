@@ -71,7 +71,17 @@ accuracy или missed attempts без ручного протокола вид�
 
 ## Next Measurement
 
-Для полноценной JMLC-метрики нужен протокол попыток:
+Для полноценной JMLC-метрики теперь используется Home -> `Live evaluation`.
+Параметры режима:
+
+- `Expected` — какой жест сейчас тестируется;
+- `Attempts` — сколько попыток нужно собрать;
+- `Timeout` — сколько секунд ждать accepted prediction до `Missed`;
+- `Min conf` — минимальная confidence для зачета `Correct/Wrong`.
+
+Результаты попыток пишутся в `~/.dplm/logs/live_evaluation.jsonl`.
+
+Шаблон отчета:
 
 | Expected | Attempts | Correct | Wrong label | Missed | Notes |
 |---|---:|---:|---:|---:|---|
@@ -79,6 +89,3 @@ accuracy или missed attempts без ручного протокола вид�
 | `swipe_down` | 10 |  |  |  |  |
 | `swipe_left` | 10 |  |  |  |  |
 | `swipe_right` | 10 |  |  |  |  |
-
-Пока в БД нет `expected_label`, поэтому attempt-level accuracy надо либо
-заполнять вручную, либо добавить в dev-интерфейс live-evaluation mode.
