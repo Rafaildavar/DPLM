@@ -1,0 +1,22 @@
+{
+  "source": "/Users/remi/.dplm/logs/live_evaluation.jsonl",
+  "total_attempts": 10,
+  "correct": 8,
+  "wrong": 1,
+  "missed": 1,
+  "accuracy": 0.8,
+  "labels": [
+    {
+      "expected": "swipe_left",
+      "attempts": 10,
+      "correct": 8,
+      "wrong": 1,
+      "missed": 1,
+      "accuracy": 0.8,
+      "avg_confidence": 0.9469491780438986,
+      "wrong_labels": {
+        "swipe_up": 1
+      }
+    }
+  ]
+}

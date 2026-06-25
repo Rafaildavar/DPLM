@@ -403,6 +403,40 @@ Threshold sweep:
 - `swipe_left`: 10 attempts;
 - после записи `swipe_right`: 10 attempts.
 
+### H-013: Первый attempt-level live-test для `swipe_left`
+
+Статус: `validated-small-sample`
+
+Источник:
+- Home -> `Live evaluation`;
+- expected label: `swipe_left`;
+- attempts: `10`;
+- min confidence: `0.80`;
+- timeout: `0` (ручной режим без авто-пропуска);
+- отчет: `docs/experiments/live_evaluation_report.md`.
+
+Результат:
+- correct: `8/10`;
+- wrong: `1/10`;
+- missed: `1/10`;
+- accuracy: `0.800`;
+- avg confidence accepted predictions: `0.947`;
+- wrong label: `swipe_up` (`1` раз).
+
+Вывод:
+- `swipe_left` уже распознается live, но качество пока ниже целевого уровня
+  для конкурсной демонстрации.
+- Основная ошибка: смешение с `swipe_up`, значит текущих данных/признаков
+  недостаточно для стабильного разделения диагональных/неидеальных движений.
+
+Следующий шаг:
+- Повторить такой же test для `swipe_up` и `swipe_down`.
+- Если `swipe_up` тоже конфликтует с `swipe_left`, усилить датасет:
+  добрать `swipe_left` до `20-30` сэмплов и записывать более чистое движение
+  по горизонтали.
+- После этого сравнить `dynamic_knn`, `dynamic_svm`, `dynamic_extra_trees` на
+  одинаковом наборе.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
