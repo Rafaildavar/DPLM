@@ -326,6 +326,40 @@ Offline prediction with current `models/dynamic_knn.pkl`:
 - Семантика `swipe_down` и `swipe_left` исправлена.
 - Следующий шаг: live-test этих двух классов, затем запись `swipe_right`.
 
+### H-011: Live dynamic logs дают первичный confidence threshold
+
+Статус: `validated-small-sample`
+
+Источник:
+- PostgreSQL `recognition_logs`;
+- live-окно: `2026-06-25 14:42:18` - `14:44:00` UTC;
+- подробный отчет:
+  `docs/experiments/live_dynamic_metrics.md`.
+
+Что увидели:
+- всего events: `19`;
+- target swipe events: `17`;
+- non-target events: `2` (`sh3`, `hand_left`);
+- raw target purity: `17/19 = 0.895`.
+
+Threshold sweep:
+- `confidence >= 0.50`: target purity `0.944`, target event recall `1.000`;
+- `confidence >= 0.60`: target purity `1.000`, target event recall `1.000`;
+- `confidence >= 0.65`: target purity `1.000`, target event recall `0.941`.
+
+Вывод:
+- Для текущего small live-test лучший кандидат порога: `0.60`.
+- При `0.60` оба non-target события отсекаются, а все target swipe events
+  остаются.
+- Это пока event-level метрика: в `recognition_logs` нет ground truth
+  `expected_label`, поэтому attempt-level accuracy и missed attempts нельзя
+  честно посчитать автоматически.
+
+Следующий шаг:
+- Добавить или вручную вести live-evaluation protocol:
+  `expected_label`, `attempt`, `predicted_label`, `confidence`, `result`.
+- Повторить тест по `10` попыток на каждый dynamic class.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
