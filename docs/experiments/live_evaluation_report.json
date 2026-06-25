@@ -5,6 +5,16 @@
   "wrong": 1,
   "missed": 1,
   "accuracy": 0.8,
+  "manual_adjustment": {
+    "reason": "One swipe_left missed attempt was an accidental skip button press.",
+    "excluded_missed": 1,
+    "valid_attempts": 9,
+    "correct": 8,
+    "wrong": 1,
+    "missed": 0,
+    "adjusted_accuracy": 0.8888888888888888,
+    "rounded_adjusted_accuracy": 0.9
+  },
   "labels": [
     {
       "expected": "swipe_left",
@@ -13,6 +23,16 @@
       "wrong": 1,
       "missed": 1,
       "accuracy": 0.8,
+      "manual_adjustment": {
+        "reason": "Accidental skip button press.",
+        "excluded_missed": 1,
+        "valid_attempts": 9,
+        "correct": 8,
+        "wrong": 1,
+        "missed": 0,
+        "adjusted_accuracy": 0.8888888888888888,
+        "rounded_adjusted_accuracy": 0.9
+      },
       "avg_confidence": 0.9469491780438986,
       "wrong_labels": {
         "swipe_up": 1

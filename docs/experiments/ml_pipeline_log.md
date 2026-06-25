@@ -416,18 +416,22 @@ Threshold sweep:
 - отчет: `docs/experiments/live_evaluation_report.md`.
 
 Результат:
-- correct: `8/10`;
-- wrong: `1/10`;
-- missed: `1/10`;
-- accuracy: `0.800`;
+- raw correct: `8/10`;
+- raw wrong: `1/10`;
+- raw missed: `1/10`;
+- raw accuracy: `0.800`;
+- manual note: `missed=1` был случайным нажатием `Пропуск`, не реальным
+  пропуском модели;
+- adjusted valid attempts: `9`;
+- adjusted accuracy: `8/9 = 0.889` (округленно `90%`);
 - avg confidence accepted predictions: `0.947`;
 - wrong label: `swipe_up` (`1` раз).
 
 Вывод:
-- `swipe_left` уже распознается live, но качество пока ниже целевого уровня
-  для конкурсной демонстрации.
-- Основная ошибка: смешение с `swipe_up`, значит текущих данных/признаков
-  недостаточно для стабильного разделения диагональных/неидеальных движений.
+- `swipe_left` уже распознается live на уровне около `90%` в ручном
+  attempt-level тесте.
+- Реальная ошибка пока одна: смешение с `swipe_up`; это сигнал проверить пару
+  `swipe_left`/`swipe_up`, а не переписывать весь класс немедленно.
 
 Следующий шаг:
 - Повторить такой же test для `swipe_up` и `swipe_down`.
