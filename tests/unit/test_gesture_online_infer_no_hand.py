@@ -22,13 +22,18 @@ class _CountingClassifier:
         return np.asarray([[1.0]])
 
 
-def _open_hand_landmarks(x: float = 0.5):
-    landmarks = [[x, 0.5] for _ in range(21)]
-    landmarks[0] = [x, 0.82]
-    landmarks[5] = [x, 0.56]
-    landmarks[6] = [x, 0.42]
-    landmarks[7] = [x, 0.30]
-    landmarks[8] = [x, 0.18]
+def _open_hand_landmarks(x: float = 0.5, wrist_y: float = 0.82):
+    offset_y = wrist_y - 0.82
+
+    def y(value: float) -> float:
+        return value + offset_y
+
+    landmarks = [[x, y(0.5)] for _ in range(21)]
+    landmarks[0] = [x, y(0.82)]
+    landmarks[5] = [x, y(0.56)]
+    landmarks[6] = [x, y(0.42)]
+    landmarks[7] = [x, y(0.30)]
+    landmarks[8] = [x, y(0.18)]
     return landmarks
 
 
@@ -48,6 +53,26 @@ class _OneHandDetector:
         from cv.hand_landmarker import DetectedHand
 
         return [DetectedHand(landmarks=_open_hand_landmarks(), handedness="Right", score=1.0)]
+
+
+class _MovingOneHandDetector:
+    def __init__(self, *, start_y: float = 0.82, step_y: float = -0.01) -> None:
+        self.index = 0
+        self.start_y = start_y
+        self.step_y = step_y
+
+    def detect_for_video_rgb(self, _frame_rgb):
+        from cv.hand_landmarker import DetectedHand
+
+        wrist_y = self.start_y + self.step_y * self.index
+        self.index += 1
+        return [
+            DetectedHand(
+                landmarks=_open_hand_landmarks(wrist_y=wrist_y),
+                handedness="Right",
+                score=1.0,
+            )
+        ]
 
 
 class _ShapeCheckingClassifier:
@@ -174,9 +199,9 @@ def test_dynamic_classifier_gets_expanded_sequence_features() -> None:
 def test_dynamic_global_classifier_gets_wrist_motion_features() -> None:
     infer = object.__new__(GestureOnlineInfer)
     clf = _FeatureCaptureClassifier(271)
-    infer._detector = _OneHandDetector()
+    infer._detector = _MovingOneHandDetector(start_y=0.82, step_y=-0.01)
     infer._clf = clf
-    infer._classes = ["swipe_left"]
+    infer._classes = ["swipe_up"]
     infer._feature_dim = 271
     infer._raw_feature_dim = 44
     infer._feature_mode = "dynamic_stats"
@@ -191,7 +216,53 @@ def test_dynamic_global_classifier_gets_wrist_motion_features() -> None:
     assert clf.features is not None
     assert clf.features.shape == (1, 271)
     assert infer._window[-1].shape == (44,)
-    assert np.allclose(infer._window[-1][-2:], [0.5, 0.82])
+    assert infer._window[-1][-1] < infer._window[0][-1]
+
+
+def test_dynamic_motion_gate_rejects_static_global_window() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _CountingClassifier()
+    infer._detector = _OneHandDetector()
+    infer._clf = clf
+    infer._classes = ["swipe_up"]
+    infer._feature_dim = 271
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=36)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = {}
+    for _ in range(36):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert clf.predict_calls == 0
+
+
+def test_dynamic_motion_gate_rejects_wrong_direction_label() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _CountingClassifier()
+    infer._detector = _MovingOneHandDetector(start_y=0.30, step_y=0.01)
+    infer._clf = clf
+    infer._classes = ["swipe_up"]
+    infer._feature_dim = 271
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=36)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = {}
+    for _ in range(36):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert clf.predict_calls == 1
 
 
 def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:

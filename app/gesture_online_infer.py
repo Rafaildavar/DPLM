@@ -20,6 +20,7 @@ from cv.gesture_features import (
     FEATURE_STATIC_STATS,
     build_feature_vector,
     infer_raw_dim_from_feature_size,
+    trajectory_features,
 )
 from cv.hand_landmarker import (
     DetectedHand,
@@ -34,6 +35,9 @@ from cv.gesture_pose_signature import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DYNAMIC_GATE_MIN_PATH_LENGTH = 0.12
+DYNAMIC_GATE_MIN_DISPLACEMENT = 0.06
+DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.05
 
 
 class GestureOnlineInfer:
@@ -238,6 +242,56 @@ class GestureOnlineInfer:
             return len(self._window) > 0
         target = int(self._window.maxlen or 1)
         return len(self._window) >= target
+
+    def _uses_global_dynamic_motion(self) -> bool:
+        return self._uses_temporal_features() and int(self._raw_feature_dim) >= 44
+
+    def _dynamic_motion_gate(self) -> tuple[bool, dict[str, float]]:
+        if not self._uses_global_dynamic_motion():
+            return True, {}
+        if not self._window_ready_for_prediction():
+            return False, {}
+
+        sequence = np.stack(tuple(self._window), axis=0)
+        dx, dy, abs_dx, abs_dy, path_length, direction_cos, direction_sin = [
+            float(value)
+            for value in trajectory_features(
+                sequence,
+                target_dim=int(self._raw_feature_dim),
+            )
+        ]
+        displacement = float(np.hypot(dx, dy))
+        motion = {
+            "dx": dx,
+            "dy": dy,
+            "abs_dx": abs_dx,
+            "abs_dy": abs_dy,
+            "path_length": path_length,
+            "displacement": displacement,
+            "direction_cos": direction_cos,
+            "direction_sin": direction_sin,
+        }
+        if path_length < DYNAMIC_GATE_MIN_PATH_LENGTH:
+            return False, motion
+        if displacement < DYNAMIC_GATE_MIN_DISPLACEMENT:
+            return False, motion
+        return True, motion
+
+    def _dynamic_label_matches_motion(self, label: str, motion: dict[str, float]) -> bool:
+        if not motion:
+            return True
+        clean = str(label or "").strip().lower()
+        dx = float(motion.get("dx") or 0.0)
+        dy = float(motion.get("dy") or 0.0)
+        if "left" in clean:
+            return dx <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+        if "right" in clean:
+            return dx >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+        if "up" in clean:
+            return dy <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+        if "down" in clean:
+            return dy >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+        return True
 
     def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
         metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
@@ -460,6 +514,13 @@ class GestureOnlineInfer:
         confidence = 0.0
 
         if self._clf is not None and self._classes and self._window_ready_for_prediction():
+            motion_ok, motion = self._dynamic_motion_gate()
+            if not motion_ok:
+                return {
+                    "label": "",
+                    "confidence": 0.0,
+                    "landmarks_json": landmarks_json,
+                }
             model_feat = self._build_model_feature().reshape(1, -1)
             try:
                 pred_idx = int(self._clf.predict(model_feat)[0])
@@ -470,6 +531,9 @@ class GestureOnlineInfer:
                 )
                 proba = self._clf.predict_proba(model_feat)[0]
                 confidence = float(np.max(proba))
+                if label and not self._dynamic_label_matches_motion(label, motion):
+                    label = ""
+                    confidence = 0.0
             except Exception as e:
                 print(f"[!] classifier prediction failed: {e}", flush=True)
                 self._window.clear()

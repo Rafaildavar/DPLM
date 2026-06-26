@@ -887,6 +887,45 @@ Live:
 - Добавить motion gate / Recognition Router Agent, чтобы dynamic-модель вообще
   не вызывалась на статичном или неканоничном движении.
 
+### H-023: Motion gate защищает live dynamic inference от статичных кадров
+
+Статус: `implemented`
+
+Проблема:
+- Даже после фильтрации training labels dynamic-модель может получать окно,
+  где рука почти не двигалась.
+- Для KNN это опасно: модель все равно ищет ближайший известный dynamic-класс
+  и может вернуть `swipe_*` на статичной руке.
+
+Что сделали:
+- В `GestureOnlineInfer` добавлен runtime dynamic motion gate для новых
+  global dynamic samples с размерностью `44`.
+- Gate считается по trajectory features:
+  - `dx`, `dy`;
+  - `path_length`;
+  - `displacement`;
+  - направление движения.
+- Если `path_length < 0.12` или `displacement < 0.06`, dynamic-модель не
+  вызывается вообще.
+- Если модель предсказала направление, которое противоречит фактическому
+  движению (`swipe_up` при положительном `dy`, `swipe_left` при положительном
+  `dx` и т.д.), результат очищается до no gesture.
+
+Что получилось:
+- Статичная рука больше не должна исполнять dynamic-жесты.
+- Ошибки вида `swipe_down -> swipe_up` теперь частично блокируются на уровне
+  признаков движения, а не только классификатором.
+- Legacy dynamic samples с `42` признаками не ломаются: gate включается только
+  для global motion формата `>= 44`.
+
+Проверка:
+- unit tests: `36 passed`;
+- `py_compile` для runtime inference и связанных Flet модулей проходит.
+
+Следующий шаг:
+- Доделать Recognition Router Agent: единый live-интерфейс без ручного выбора
+  static/dynamic, route metrics и явный `no_gesture`.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
