@@ -16,6 +16,7 @@ venv/
 # Testing
 .pytest_cache/
 .coverage
+htmlcov/
 
 # Data
 data/**/*.npy
@@ -39,11 +40,25 @@ alembic/versions/__pycache__/
 *.doc
 *.docx
 *.pdf
+*.ppt
+*.pptx
+docs/articles/assets/
+docs/articles/drafts/
+docs/diploma/drafts/
+docs/diploma/slides/
 
 # Temporary files
 *.tmp
 *.log
 ~$*
+tmp/
+outputs/
+node_modules/
+app/flet_app/runtime_cache/*
+!app/flet_app/runtime_cache/.gitkeep
+docs/rendered_*/
+docs/gesture_metrics_results_current.json
+docs/latency_benchmark_*_current.json
 app/services/command_executor 2.py
 
 # Environment files

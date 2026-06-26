@@ -213,7 +213,7 @@ P1-метрики:
 К третьей волне должны быть готовы:
 
 - `README.md` с быстрым запуском и JMLC-разделом;
-- `JMLC.md` как обзор проекта;
+- `docs/contest/JMLC.md` как обзор проекта;
 - `docs/experiments/dataset_profile.md`;
 - `docs/experiments/model_comparison.md`;
 - `docs/experiments/threshold_report.md`;
@@ -223,4 +223,3 @@ P1-метрики:
 - презентация на 5 минут;
 - описание проекта до 3 страниц;
 - резервное demo-видео.
-

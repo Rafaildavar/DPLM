@@ -23,7 +23,7 @@
 
 P0:
 
-- добавить свежий `JMLC.md` и этот plan-документ;
+- добавить свежий `docs/contest/JMLC.md` и этот plan-документ;
 - восстановить/обновить `cv/gesture_features.py`;
 - восстановить/обновить `scripts/compare_models.py`;
 - создать `docs/experiments/README.md`;
@@ -153,4 +153,3 @@ Acceptance:
 - для ML-результатов сохранены JSON/Markdown артефакты;
 - ограничения явно описаны;
 - задача привязана к критерию JMLC.
-
