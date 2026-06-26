@@ -193,6 +193,7 @@ class HomeView:
             width=150,
             dense=True,
             options=[
+                ft.DropdownOption(key="auto", text="auto"),
                 ft.DropdownOption(key="static", text="static"),
                 ft.DropdownOption(key="dynamic", text="dynamic"),
             ],
@@ -360,7 +361,7 @@ class HomeView:
 
     def _on_model_mode_changed(self, _e) -> None:
         self._controller.set_recognition_model_mode(
-            str(self._model_mode_dd.value or "static")
+            str(self._model_mode_dd.value or "auto")
         )
         self._refresh_eval_labels()
 
@@ -675,6 +676,7 @@ class HomeView:
         self._eval_attempts.disabled = active
         self._eval_timeout.disabled = active
         self._eval_threshold.disabled = active
+        self._model_mode_dd.disabled = active
         self._dynamic_profile_dd.disabled = active
         self._eval_start_btn.disabled = active
         self._eval_stop_btn.disabled = not active
@@ -698,6 +700,7 @@ class HomeView:
             self._eval_attempts,
             self._eval_timeout,
             self._eval_threshold,
+            self._model_mode_dd,
             self._dynamic_profile_dd,
             self._eval_start_btn,
             self._eval_stop_btn,

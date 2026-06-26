@@ -926,6 +926,55 @@ Live:
 - Доделать Recognition Router Agent: единый live-интерфейс без ручного выбора
   static/dynamic, route metrics и явный `no_gesture`.
 
+### H-024: Recognition Router Agent объединяет static и dynamic inference
+
+Статус: `implemented`
+
+Проблема:
+- На главной странице пользователь вручную выбирал `static` или `dynamic`.
+- Для полноценной системы это слабое место: пользователь не должен заранее
+  знать, какой тип жеста он сейчас показывает.
+- Dynamic-модель также не должна побеждать, если она вдруг вернула
+  quasi-static/static label.
+
+Что сделали:
+- Добавлен `GestureRecognitionRouter` как runtime routing-agent.
+- Добавлен режим `recognition_model_mode="auto"` и он стал режимом по
+  умолчанию в Flet controller.
+- В `auto` controller создает два канала:
+  - static inference: `models/knn.pkl`;
+  - dynamic inference: выбранный `models/dynamic_*.pkl`.
+- Router выбирает dynamic-result только если:
+  - есть label;
+  - confidence `>= 0.60`;
+  - taxonomy подтверждает, что label относится к `dynamic`.
+- Если dynamic не прошел guard, используется static-result.
+- В output добавляется route metadata:
+  - `route`;
+  - `static_label`, `static_confidence`;
+  - `dynamic_label`, `dynamic_confidence`;
+  - `dynamic_threshold`.
+
+Что получилось:
+- Главная страница теперь может работать как unified live interface через
+  `auto`.
+- Dynamic-классы больше не смешиваются с quasi-static/static на уровне
+  runtime routing.
+- Для live-evaluation можно собирать метрики именно в `auto` режиме.
+
+Ограничение текущей версии:
+- Static и dynamic inference пока используют два отдельных MediaPipe detector.
+- Это правильно для MVP и тестируемо, но следующим инженерным улучшением надо
+  вынести shared detection, чтобы не платить двойную стоимость на каждый кадр.
+
+Проверка:
+- unit tests: `60 passed`;
+- `py_compile` для router, controller, home view и online inference проходит.
+
+Следующий шаг:
+- Добавить route metrics / MLOps-срез: сколько раз router выбрал
+  `static`, `dynamic`, `none`, и какие confidence/ошибки были в live-test.
+
 ## Текущий ML-пайплайн
 
 1. Запись:

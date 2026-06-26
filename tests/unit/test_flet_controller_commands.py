@@ -11,8 +11,10 @@ from sqlalchemy.orm import sessionmaker
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
+    DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
+    RECOGNITION_MODEL_AUTO,
     _Event,
 )
 from app.models.database import Base, Command, Gesture, GestureHistory, GestureSample
@@ -32,6 +34,8 @@ def _dispatch_controller():
     controller._gesture_mode = True
     controller._pointer_mode = False
     controller._show_landmark_overlay = True
+    controller._recognition_model_mode = "static"
+    controller._dynamic_model_profile = "knn"
     controller._auto_execute_on_gesture = True
     controller._status = "Idle"
     controller.confidence_changed = _Event()
@@ -40,6 +44,7 @@ def _dispatch_controller():
     controller.gesture_mode_changed = _Event()
     controller.status_changed = _Event()
     controller.dynamic_model_profile_changed = _Event()
+    controller.recognition_model_mode_changed = _Event()
     controller.live_evaluation_changed = _Event()
     controller._update_pointer_from_landmarks = lambda _landmarks: None
     return controller
@@ -201,6 +206,27 @@ def test_embedded_dynamic_model_path_uses_selected_profile(monkeypatch, tmp_path
         "dynamic_feature_dim.txt",
         "dynamic_feature_mode.txt",
     ]
+
+
+def test_set_recognition_model_mode_accepts_auto_and_falls_back_to_auto():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "static"
+    controller._embedded_active = False
+    controller._embedded_infer = None
+    controller._is_recognizing = False
+    controller._is_camera_active = False
+    emitted = []
+    controller.recognition_model_mode_changed.connect(emitted.append)
+
+    controller.set_recognition_model_mode("auto")
+
+    assert controller.recognition_model_mode == RECOGNITION_MODEL_AUTO
+    assert emitted == [RECOGNITION_MODEL_AUTO]
+
+    controller.set_recognition_model_mode("unknown")
+
+    assert controller.recognition_model_mode == RECOGNITION_MODEL_AUTO
+    assert emitted == [RECOGNITION_MODEL_AUTO]
 
 
 def test_set_dynamic_model_profile_restarts_embedded_infer():
@@ -731,6 +757,26 @@ def test_dynamic_dispatch_confirms_gesture_faster():
     assert emitted == ["hand_left"]
     assert executed == [("hand_left", pytest.approx(0.85))]
     assert recorded == [("hand_left", pytest.approx(0.85), True)]
+
+
+def test_auto_dispatch_confirms_taxonomy_dynamic_label_faster():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    emitted = []
+    executed = []
+    recorded = []
+    controller.gesture_detected.connect(emitted.append)
+    controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
+    controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
+
+    for _ in range(DYNAMIC_GESTURE_CONFIRM_FRAMES):
+        controller._dispatch_infer_result(
+            {"label": "swipe_up", "confidence": 0.9, "landmarks_json": "[]"}
+        )
+
+    assert emitted == ["swipe_up"]
+    assert executed == [("swipe_up", pytest.approx(0.9))]
+    assert recorded == [("swipe_up", pytest.approx(0.9), True)]
 
 
 def test_dispatch_resets_confirmation_when_label_changes():

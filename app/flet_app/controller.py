@@ -37,7 +37,9 @@ from app.services.app_config import (
 )
 from app.services.gesture_taxonomy import (
     DEFAULT_TAXONOMY_PATH,
+    GESTURE_TYPE_DYNAMIC,
     labels_for_gesture_types,
+    load_gesture_taxonomy,
     parse_gesture_type_scope,
 )
 
@@ -176,6 +178,7 @@ class _Event:
 
 
 GESTURE_CONFIRM_FRAMES = 6
+RECOGNITION_MODEL_AUTO = "auto"
 RECOGNITION_MODEL_STATIC = "static"
 RECOGNITION_MODEL_DYNAMIC = "dynamic"
 DYNAMIC_MODEL_PROFILE_KNN = "knn"
@@ -244,7 +247,7 @@ class AppController:
         self._is_recognizing: bool = False
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
-        self._recognition_model_mode: str = RECOGNITION_MODEL_STATIC
+        self._recognition_model_mode: str = RECOGNITION_MODEL_AUTO
         self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_KNN
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._gesture_mode: bool = True
@@ -259,6 +262,7 @@ class AppController:
         self._live_evaluation: dict[str, Any] | None = None
         self._last_live_evaluation_snapshot: dict[str, Any] | None = None
         self._live_evaluation_lock = threading.RLock()
+        self._gesture_taxonomy_cache: Any | None = None
 
         # События ------------------------------------------------------------
         self.status_changed = _Event()
@@ -355,7 +359,7 @@ class AppController:
 
     @property
     def recognition_model_mode(self) -> str:
-        return str(getattr(self, "_recognition_model_mode", RECOGNITION_MODEL_STATIC))
+        return str(getattr(self, "_recognition_model_mode", RECOGNITION_MODEL_AUTO))
 
     @property
     def dynamic_model_profile(self) -> str:
@@ -644,9 +648,22 @@ class AppController:
         self._pending_frames = 0
         self._pending_confidence_total = 0.0
 
-    def _gesture_confirm_frames(self) -> int:
+    def _gesture_type_for_label(self, label: str) -> str:
+        taxonomy = getattr(self, "_gesture_taxonomy_cache", None)
+        if taxonomy is None:
+            taxonomy = load_gesture_taxonomy(self._configured_taxonomy_path())
+            self._gesture_taxonomy_cache = taxonomy
+        return taxonomy.gesture_type_for_label(label)
+
+    def _gesture_confirm_frames(self, label: str = "") -> int:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
             return DYNAMIC_GESTURE_CONFIRM_FRAMES
+        if self.recognition_model_mode == RECOGNITION_MODEL_AUTO and label:
+            try:
+                if self._gesture_type_for_label(label) == GESTURE_TYPE_DYNAMIC:
+                    return DYNAMIC_GESTURE_CONFIRM_FRAMES
+            except Exception as e:
+                print(f"[w] dynamic confirmation taxonomy: {e}", flush=True)
         return GESTURE_CONFIRM_FRAMES
 
     def _update_gesture_confirmation(self, label: str, confidence: float) -> tuple[bool, float]:
@@ -666,7 +683,7 @@ class AppController:
             ) + float(confidence)
 
         avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
-        return self._pending_frames >= self._gesture_confirm_frames(), avg_conf
+        return self._pending_frames >= self._gesture_confirm_frames(clean), avg_conf
 
     def _live_evaluation_snapshot_from_session(
         self,
@@ -1278,11 +1295,12 @@ class AppController:
             self._set_recognizing(False)
 
     def _live_recognition_status(self) -> str:
-        model_suffix = (
-            f" (dynamic:{self.dynamic_model_profile})"
-            if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC
-            else ""
-        )
+        if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
+            model_suffix = f" (dynamic:{self.dynamic_model_profile})"
+        elif self.recognition_model_mode == RECOGNITION_MODEL_AUTO:
+            model_suffix = f" (auto:{self.dynamic_model_profile})"
+        else:
+            model_suffix = ""
         if self._gesture_mode and self._pointer_mode:
             return f"Жесты и указатель включены{model_suffix}"
         if self._pointer_mode:
@@ -1299,18 +1317,43 @@ class AppController:
         try:
             from app.gesture_online_infer import GestureOnlineInfer
 
-            model_path, classes_path, feature_dim_path, feature_mode_path = (
-                self._embedded_model_paths()
-            )
-            print("[ctrl.embedded] creating GestureOnlineInfer in camera thread…")
-            infer = GestureOnlineInfer(
-                model_path=model_path,
-                classes_path=classes_path,
-                feature_dim_path=feature_dim_path,
-                feature_mode_path=feature_mode_path,
-                window=self._embedded_recognition_window(),
-                two_hands=self._two_hands_mode,
-            )
+            if self.recognition_model_mode == RECOGNITION_MODEL_AUTO:
+                from app.services.recognition_router import GestureRecognitionRouter
+
+                print("[ctrl.embedded] creating GestureRecognitionRouter in camera thread…")
+                static_infer = GestureOnlineInfer(
+                    model_path=self._configured_model_path(),
+                    classes_path=self._configured_classes_path(),
+                    feature_dim_path=self._configured_feature_dim_path(),
+                    feature_mode_path=self._configured_feature_mode_path(),
+                    window=30,
+                    two_hands=self._two_hands_mode,
+                )
+                dynamic_infer = GestureOnlineInfer(
+                    model_path=self._dynamic_model_path(),
+                    classes_path=self._dynamic_classes_path(),
+                    feature_dim_path=self._dynamic_feature_dim_path(),
+                    feature_mode_path=self._dynamic_feature_mode_path(),
+                    window=DYNAMIC_RECOGNITION_WINDOW,
+                    two_hands=self._two_hands_mode,
+                )
+                infer = GestureRecognitionRouter(
+                    static_infer=static_infer,
+                    dynamic_infer=dynamic_infer,
+                )
+            else:
+                model_path, classes_path, feature_dim_path, feature_mode_path = (
+                    self._embedded_model_paths()
+                )
+                print("[ctrl.embedded] creating GestureOnlineInfer in camera thread…")
+                infer = GestureOnlineInfer(
+                    model_path=model_path,
+                    classes_path=classes_path,
+                    feature_dim_path=feature_dim_path,
+                    feature_mode_path=feature_mode_path,
+                    window=self._embedded_recognition_window(),
+                    two_hands=self._two_hands_mode,
+                )
             print(
                 "[ctrl.embedded] infer created; "
                 f"init_error={getattr(infer, 'init_error', '')!r}",
@@ -2119,8 +2162,12 @@ class AppController:
 
     def set_recognition_model_mode(self, mode: str) -> None:
         target = str(mode or "").strip().lower()
-        if target not in {RECOGNITION_MODEL_STATIC, RECOGNITION_MODEL_DYNAMIC}:
-            target = RECOGNITION_MODEL_STATIC
+        if target not in {
+            RECOGNITION_MODEL_AUTO,
+            RECOGNITION_MODEL_STATIC,
+            RECOGNITION_MODEL_DYNAMIC,
+        }:
+            target = RECOGNITION_MODEL_AUTO
         if target == self.recognition_model_mode:
             return
 
