@@ -729,6 +729,88 @@ Offline comparison:
 - Это должно снизить зависимость качества ML от памяти пользователя и сделать
   демонстрацию более воспроизводимой.
 
+### H-020: Dynamic data analysis показывает offline/live distribution shift
+
+Статус: `accepted-analysis`
+
+Артефакты:
+- `scripts/dynamic_data_analysis.py`;
+- `docs/experiments/dynamic_data_analysis.md`;
+- `docs/experiments/dynamic_data_analysis.json`.
+
+Команда воспроизведения:
+
+```bash
+python -m scripts.dynamic_data_analysis --out-md docs/experiments/dynamic_data_analysis.md --out-json docs/experiments/dynamic_data_analysis.json
+```
+
+Данные:
+- анализировались классы `swipe_*`;
+- классы: `3`;
+- сэмплы: `50`;
+- raw dim: `44`;
+- target dim: `44`;
+- `swipe_down`: `10` сэмплов;
+- `swipe_left`: `10` сэмплов;
+- `swipe_up`: `30` сэмплов.
+
+Ключевые признаки по mutual information:
+- `direction_sin`: `0.8027`;
+- `dy`: `0.6806`;
+- `vertical_ratio`: `0.6521`;
+- `horizontal_ratio`: `0.6521`;
+- `direction_cos`: `0.6463`;
+- `straightness`: `0.6400`;
+- `motion_energy`: `0.4813`;
+- `abs_dx`: `0.4597`.
+
+Offline:
+- модель: `knn(distance)`;
+- feature mode: `dynamic_stats`;
+- CV folds: `5`;
+- accuracy: `0.9800`;
+- macro F1: `0.9785`;
+- единственная offline-ошибка: `swipe_up/sample_0003.npy` ->
+  `swipe_left`.
+
+Live:
+- источник: `~/.dplm/logs/live_evaluation.jsonl`;
+- runs: `9`;
+- attempts: `62`;
+- correct: `39`;
+- wrong: `12`;
+- missed: `11`;
+- accuracy: `0.6290`;
+- все wrong labels: `swipe_up:12`;
+- `swipe_down` live: `21/42`, accuracy `0.5000`;
+- `swipe_left` live: `8/10`, accuracy `0.8000`;
+- `swipe_up` live: `10/10`, accuracy `1.0000`.
+
+Вывод:
+- На сохраненных файлах KNN почти идеально разделяет dynamic-классы, но live
+  распознавание слабее. Это distribution shift между записанными sample и тем,
+  как жест показывается в live.
+- `swipe_down` не обязательно "плохой" в файлах: saved `swipe_down` выглядит
+  достаточно прямым (`dy median = 0.4876`, `straightness median = 0.9194`).
+- Главная зона риска: `swipe_up` стал слишком широким/шумным классом:
+  `direction_ok_rate = 0.6667`, `low_straightness = 20/30`,
+  `expected_up = 10/30`, `axis_drift = 10/30`.
+- Поэтому live `swipe_down -> swipe_up` может быть не только проблемой
+  `swipe_down`, но и следствием слишком широкого decision region у `swipe_up`.
+
+Решения по обработке данных:
+- держать отдельный dynamic pipeline до подтверждения unified model в live;
+- балансировать dynamic-классы минимум до `20` сэмплов на класс;
+- использовать quality gates при записи:
+  - знак ожидаемого направления;
+  - minimum global path;
+  - axis alignment;
+  - straightness;
+  - pose motion energy;
+- считать высокий offline CV при слабом live как distribution shift;
+- следующий preprocessing experiment: выделять active motion segment и
+  resample до `36` кадров, чтобы скорость меньше ломала признаки.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -750,5 +832,7 @@ Offline comparison:
 1. Перезаписать `swipe_down` по канону H-019: `20` сэмплов.
 2. Переобучить `dynamic_knn.pkl`.
 3. Повторить `swipe_down` live-test два раза: target `>= 8/10` оба раза.
-4. Если стабильно, добавить `swipe_right` и записать `10-20` sample.
-5. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+4. Если `swipe_down` все еще уходит в `swipe_up`, почистить/перезаписать
+   шумные `swipe_up` sample из `docs/experiments/dynamic_data_analysis.md`.
+5. Если стабильно, добавить `swipe_right` и записать `10-20` sample.
+6. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.

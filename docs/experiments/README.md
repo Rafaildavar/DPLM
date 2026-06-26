@@ -11,6 +11,9 @@
 
 - `dataset_profile.json` / `dataset_profile.md` - паспорт датасета жестов:
   классы, семплы, длины записей, размерности, дисбаланс и проблемы данных.
+- `dynamic_data_analysis.json` / `dynamic_data_analysis.md` - анализ dynamic
+  жестов: качество траекторий, важность motion-признаков, offline/live gap и
+  решения по предобработке.
 - `model_comparison.json` / `model_comparison.md` - сравнение признаков и
   моделей на одинаковом validation protocol.
 - `threshold_report.json` / `threshold_report.md` - выбор confidence threshold:
@@ -47,6 +50,7 @@
 
 ```bash
 python -m scripts.jmlc_dataset_profile
+python -m scripts.dynamic_data_analysis
 python -m scripts.compare_models
 python -m scripts.threshold_report
 python -m scripts.benchmark_latency --mode ml
