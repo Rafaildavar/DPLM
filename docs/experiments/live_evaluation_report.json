@@ -1,21 +1,21 @@
 {
   "source": "/Users/remi/.dplm/logs/live_evaluation.jsonl",
-  "total_attempts": 50,
+  "total_attempts": 52,
   "correct": 38,
-  "wrong": 9,
+  "wrong": 11,
   "missed": 3,
-  "accuracy": 0.76,
+  "accuracy": 0.7307692307692307,
   "labels": [
     {
       "expected": "swipe_down",
-      "attempts": 30,
+      "attempts": 32,
       "correct": 20,
-      "wrong": 8,
+      "wrong": 10,
       "missed": 2,
-      "accuracy": 0.6666666666666666,
-      "avg_confidence": 0.9547838795597604,
+      "accuracy": 0.625,
+      "avg_confidence": 0.9488649542557763,
       "wrong_labels": {
-        "swipe_up": 8
+        "swipe_up": 10
       }
     },
     {
@@ -43,6 +43,7 @@
   ],
   "runs": [
     {
+      "event_type": "run_completed",
       "expected": "swipe_down",
       "recorded_at": 1782403674.2738152,
       "attempts": 10,
@@ -56,9 +57,12 @@
         "swipe_up": 1
       },
       "min_confidence": 0.6,
-      "timeout_seconds": 3.0
+      "timeout_seconds": 3.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     },
     {
+      "event_type": "run_completed",
       "expected": "swipe_left",
       "recorded_at": 1782406649.2635012,
       "attempts": 10,
@@ -72,9 +76,12 @@
         "swipe_up": 1
       },
       "min_confidence": 0.8,
-      "timeout_seconds": 0.0
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     },
     {
+      "event_type": "run_completed",
       "expected": "swipe_up",
       "recorded_at": 1782407263.185945,
       "attempts": 10,
@@ -86,9 +93,12 @@
       "avg_confidence": 1.0,
       "wrong_labels": {},
       "min_confidence": 0.8,
-      "timeout_seconds": 0.0
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     },
     {
+      "event_type": "run_completed",
       "expected": "swipe_down",
       "recorded_at": 1782407391.194327,
       "attempts": 10,
@@ -102,9 +112,12 @@
         "swipe_up": 5
       },
       "min_confidence": 0.8,
-      "timeout_seconds": 0.0
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     },
     {
+      "event_type": "run_completed",
       "expected": "swipe_down",
       "recorded_at": 1782408490.154519,
       "attempts": 10,
@@ -118,9 +131,12 @@
         "swipe_up": 1
       },
       "min_confidence": 0.8,
-      "timeout_seconds": 0.0
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     },
     {
+      "event_type": "run_completed",
       "expected": "swipe_down",
       "recorded_at": 1782409686.22795,
       "attempts": 10,
@@ -134,7 +150,62 @@
         "swipe_up": 2
       },
       "min_confidence": 0.8,
-      "timeout_seconds": 0.0
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
+    },
+    {
+      "event_type": "run_stopped",
+      "expected": "swipe_down",
+      "recorded_at": 1782410194.721695,
+      "attempts": 2,
+      "correct": 0,
+      "wrong": 2,
+      "missed": 0,
+      "accuracy": 0.0,
+      "accepted_accuracy": 0.0,
+      "avg_confidence": 0.866,
+      "wrong_labels": {
+        "swipe_up": 2
+      },
+      "min_confidence": 0.8,
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
+    },
+    {
+      "event_type": "run_stopped",
+      "expected": "swipe_down",
+      "recorded_at": 1782410204.23776,
+      "attempts": 0,
+      "correct": 0,
+      "wrong": 0,
+      "missed": 0,
+      "accuracy": 0.0,
+      "accepted_accuracy": null,
+      "avg_confidence": null,
+      "wrong_labels": {},
+      "min_confidence": 0.8,
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
+    },
+    {
+      "event_type": "run_stopped",
+      "expected": "swipe_down",
+      "recorded_at": 1782410242.01933,
+      "attempts": 0,
+      "correct": 0,
+      "wrong": 0,
+      "missed": 0,
+      "accuracy": 0.0,
+      "accepted_accuracy": null,
+      "avg_confidence": null,
+      "wrong_labels": {},
+      "min_confidence": 0.8,
+      "timeout_seconds": 0.0,
+      "recognition_model_mode": "",
+      "dynamic_model_profile": ""
     }
   ]
 }

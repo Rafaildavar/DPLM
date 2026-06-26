@@ -35,6 +35,7 @@ class LabelMetrics:
 
 @dataclass(frozen=True)
 class RunMetrics:
+    event_type: str
     expected: str
     recorded_at: float
     attempts: int
@@ -47,6 +48,8 @@ class RunMetrics:
     wrong_labels: dict[str, int]
     min_confidence: float | None
     timeout_seconds: float | None
+    recognition_model_mode: str
+    dynamic_model_profile: str
 
 
 @dataclass(frozen=True)
@@ -129,7 +132,11 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
             item.predicted or "unknown" for item in attempts if item.result == "wrong"
         )
     else:
-        attempts_count = int(row.get("total") or row.get("target_attempts") or 0)
+        attempts_count = int(
+            row["total"]
+            if row.get("total") is not None
+            else row.get("target_attempts") or 0
+        )
         correct = int(row.get("correct") or 0)
         wrong = int(row.get("wrong") or 0)
         missed = int(row.get("missed") or 0)
@@ -138,6 +145,7 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
 
     accepted = correct + wrong
     return RunMetrics(
+        event_type=_clean_label(row.get("event_type")),
         expected=expected,
         recorded_at=float(row.get("recorded_at") or 0.0),
         attempts=attempts_count,
@@ -150,6 +158,8 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
         wrong_labels=dict(sorted(wrong_labels.items())),
         min_confidence=_parse_float(row.get("min_confidence")),
         timeout_seconds=_parse_float(row.get("timeout_seconds")),
+        recognition_model_mode=_clean_label(row.get("recognition_model_mode")),
+        dynamic_model_profile=_clean_label(row.get("dynamic_model_profile")),
     )
 
 
@@ -186,7 +196,7 @@ def load_attempts(path: Path) -> list[AttemptRecord]:
     return attempts
 
 
-def load_completed_runs(path: Path) -> list[RunMetrics]:
+def load_runs(path: Path) -> list[RunMetrics]:
     runs: list[RunMetrics] = []
     if not path.exists():
         return runs
@@ -198,12 +208,16 @@ def load_completed_runs(path: Path) -> list[RunMetrics]:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if row.get("event_type") != "run_completed":
+        if row.get("event_type") not in {"run_completed", "run_stopped"}:
             continue
         run = _summarize_run(row)
         if run is not None:
             runs.append(run)
     return runs
+
+
+def load_completed_runs(path: Path) -> list[RunMetrics]:
+    return [run for run in load_runs(path) if run.event_type == "run_completed"]
 
 
 def summarize_attempts(
@@ -298,57 +312,73 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
     if report.runs:
         latest_by_label: dict[str, RunMetrics] = {}
         for run in report.runs:
+            if run.event_type != "run_completed":
+                continue
             latest_by_label[run.expected] = run
 
-        lines.extend(
-            [
-                "",
-                "## Latest Completed Run By Label",
-                "",
-                (
-                    "| Expected | Attempts | Correct | Wrong | Missed | Accuracy | "
-                    "Accepted accuracy | Avg confidence | Wrong labels |"
-                ),
-                "|---|---:|---:|---:|---:|---:|---:|---:|---|",
-            ]
-        )
-        for run in sorted(latest_by_label.values(), key=lambda item: item.expected):
-            accepted_accuracy = (
-                "n/a"
-                if run.accepted_accuracy is None
-                else f"{run.accepted_accuracy:.3f}"
+        if latest_by_label:
+            lines.extend(
+                [
+                    "",
+                    "## Latest Completed Run By Label",
+                    "",
+                    (
+                        "| Expected | Model | Attempts | Correct | Wrong | Missed | "
+                        "Accuracy | Accepted accuracy | Avg confidence | Wrong labels |"
+                    ),
+                    "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                ]
             )
-            avg_conf = "n/a" if run.avg_confidence is None else f"{run.avg_confidence:.3f}"
-            wrong_labels = (
-                ", ".join(f"{name}:{count}" for name, count in run.wrong_labels.items())
-                if run.wrong_labels
-                else ""
-            )
-            lines.append(
-                f"| `{run.expected}` | {run.attempts} | {run.correct} | "
-                f"{run.wrong} | {run.missed} | {run.accuracy:.3f} | "
-                f"{accepted_accuracy} | {avg_conf} | {wrong_labels} |"
-            )
+            for run in sorted(latest_by_label.values(), key=lambda item: item.expected):
+                accepted_accuracy = (
+                    "n/a"
+                    if run.accepted_accuracy is None
+                    else f"{run.accepted_accuracy:.3f}"
+                )
+                avg_conf = "n/a" if run.avg_confidence is None else f"{run.avg_confidence:.3f}"
+                wrong_labels = (
+                    ", ".join(f"{name}:{count}" for name, count in run.wrong_labels.items())
+                    if run.wrong_labels
+                    else ""
+                )
+                model = _format_run_model(run)
+                lines.append(
+                    f"| `{run.expected}` | {model} | {run.attempts} | {run.correct} | "
+                    f"{run.wrong} | {run.missed} | {run.accuracy:.3f} | "
+                    f"{accepted_accuracy} | {avg_conf} | {wrong_labels} |"
+                )
 
         lines.extend(
             [
                 "",
-                "## Completed Runs",
+                "## Recent Runs",
                 "",
-                "| Expected | Attempts | Correct | Wrong | Missed | Accuracy | Min conf | Timeout |",
-                "|---|---:|---:|---:|---:|---:|---:|---:|",
+                (
+                    "| Event | Expected | Model | Attempts | Correct | Wrong | Missed | "
+                    "Accuracy | Min conf | Timeout |"
+                ),
+                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
             ]
         )
         for run in report.runs[-8:]:
             min_conf = "n/a" if run.min_confidence is None else f"{run.min_confidence:.2f}"
             timeout = "n/a" if run.timeout_seconds is None else f"{run.timeout_seconds:.1f}"
+            event = run.event_type.removeprefix("run_") or "n/a"
             lines.append(
-                f"| `{run.expected}` | {run.attempts} | {run.correct} | "
-                f"{run.wrong} | {run.missed} | {run.accuracy:.3f} | "
-                f"{min_conf} | {timeout} |"
+                f"| `{event}` | `{run.expected}` | {_format_run_model(run)} | "
+                f"{run.attempts} | {run.correct} | {run.wrong} | "
+                f"{run.missed} | {run.accuracy:.3f} | {min_conf} | {timeout} |"
             )
     lines.append("")
     return "\n".join(lines)
+
+
+def _format_run_model(run: RunMetrics) -> str:
+    mode = run.recognition_model_mode or "n/a"
+    profile = run.dynamic_model_profile
+    if mode == "dynamic" and profile:
+        return f"`dynamic:{profile}`"
+    return f"`{mode}`"
 
 
 def parse_args() -> argparse.Namespace:
@@ -366,7 +396,7 @@ def main() -> None:
     report = summarize_attempts(
         load_attempts(input_path),
         source=str(input_path),
-        runs=load_completed_runs(input_path),
+        runs=load_runs(input_path),
     )
     markdown = build_markdown_report(report)
     print(markdown)

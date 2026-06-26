@@ -678,6 +678,8 @@ class AppController:
                 "missed": 0,
                 "accuracy": 0.0,
                 "progress": 0.0,
+                "recognitionModelMode": self.recognition_model_mode,
+                "dynamicModelProfile": self.dynamic_model_profile,
                 "minConfidence": LIVE_EVAL_DEFAULT_MIN_CONFIDENCE,
                 "timeoutSeconds": LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS,
                 "lastPrediction": "",
@@ -706,6 +708,12 @@ class AppController:
             "missed": missed,
             "accuracy": accuracy,
             "progress": min(1.0, total / float(target)),
+            "recognitionModelMode": str(
+                session.get("recognition_model_mode") or self.recognition_model_mode
+            ),
+            "dynamicModelProfile": str(
+                session.get("dynamic_model_profile") or self.dynamic_model_profile
+            ),
             "minConfidence": float(session.get("min_confidence") or 0.0),
             "timeoutSeconds": float(session.get("timeout_seconds") or 0.0),
             "lastPrediction": str(session.get("last_prediction") or ""),
@@ -795,6 +803,8 @@ class AppController:
             "target_attempts": target_attempts,
             "timeout_seconds": timeout,
             "min_confidence": threshold,
+            "recognition_model_mode": self.recognition_model_mode,
+            "dynamic_model_profile": self.dynamic_model_profile,
             "cooldown_seconds": LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS,
             "attempt_started_at": now,
             "next_ready_at": now,
@@ -897,6 +907,8 @@ class AppController:
                 "missed": payload.get("missed"),
                 "min_confidence": payload.get("min_confidence"),
                 "timeout_seconds": payload.get("timeout_seconds"),
+                "recognition_model_mode": payload.get("recognition_model_mode"),
+                "dynamic_model_profile": payload.get("dynamic_model_profile"),
                 "attempts": payload.get("attempts", []),
             }
             if event_type == "attempt":
@@ -964,6 +976,8 @@ class AppController:
                 "missed": session.get("missed"),
                 "min_confidence": session.get("min_confidence"),
                 "timeout_seconds": session.get("timeout_seconds"),
+                "recognition_model_mode": session.get("recognition_model_mode"),
+                "dynamic_model_profile": session.get("dynamic_model_profile"),
             }
         )
         self._append_live_evaluation_jsonl(attempt_payload, event_type="attempt")

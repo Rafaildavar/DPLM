@@ -107,6 +107,8 @@ def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
                 "event_type": "run_completed",
                 "expected_label": "swipe_down",
                 "recorded_at": 100.0,
+                "recognition_model_mode": "dynamic",
+                "dynamic_model_profile": "knn",
                 "min_confidence": 0.8,
                 "timeout_seconds": 0.0,
                 "attempts": [
@@ -135,9 +137,13 @@ def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
     )
 
     assert len(report.runs) == 1
+    assert report.runs[0].event_type == "run_completed"
+    assert report.runs[0].recognition_model_mode == "dynamic"
+    assert report.runs[0].dynamic_model_profile == "knn"
     assert report.runs[0].accuracy == 0.5
     assert report.runs[0].accepted_accuracy == 1.0
 
     markdown = build_markdown_report(report)
     assert "Latest Completed Run By Label" in markdown
-    assert "| `swipe_down` | 2 | 1 | 0 | 1 | 0.500 | 1.000" in markdown
+    assert "| `swipe_down` | `dynamic:knn` | 2 | 1 | 0 | 1 | 0.500 | 1.000" in markdown
+    assert "Recent Runs" in markdown

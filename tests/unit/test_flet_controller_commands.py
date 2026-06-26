@@ -771,6 +771,8 @@ def test_dispatch_cursor_only_ignores_gesture_execution_but_keeps_landmarks():
 
 def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = "knn"
     controller._ensure_embedded_recognition_for_live_controls = lambda: None
     monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
 
@@ -795,6 +797,13 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert snapshot["total"] == 3
     assert snapshot["accuracy"] == pytest.approx(1 / 3)
     assert (tmp_path / "live_evaluation.jsonl").exists()
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "live_evaluation.jsonl").read_text().splitlines()
+    ]
+    assert rows[-1]["event_type"] == "run_completed"
+    assert rows[-1]["recognition_model_mode"] == "dynamic"
+    assert rows[-1]["dynamic_model_profile"] == "knn"
 
 
 def test_live_evaluation_ignores_below_threshold_without_default_timeout(
