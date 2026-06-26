@@ -5,6 +5,10 @@ from app.services.recognition_router import (
     ROUTE_DYNAMIC,
     ROUTE_NONE,
     ROUTE_STATIC,
+    REASON_DYNAMIC_LABEL_REQUIRES_DYNAMIC_ROUTE,
+    REASON_LOW_CONFIDENCE,
+    REASON_NOT_DYNAMIC_TYPE,
+    REASON_STATIC_FALLBACK,
     GestureRecognitionRouter,
 )
 
@@ -65,8 +69,11 @@ def test_router_prefers_confident_dynamic_label() -> None:
     assert out["label"] == "swipe_up"
     assert out["confidence"] == 0.88
     assert out["route"] == ROUTE_DYNAMIC
+    assert out["route_reason"] == "dynamic_accepted"
     assert out["router"]["static_label"] == "palm"
     assert out["router"]["dynamic_label"] == "swipe_up"
+    assert out["router"]["static_type"] == "static"
+    assert out["router"]["dynamic_type"] == "dynamic"
     assert static.calls == 1
     assert dynamic.calls == 1
 
@@ -88,7 +95,10 @@ def test_router_rejects_dynamic_model_quasi_static_label() -> None:
 
     assert out["label"] == "palm"
     assert out["route"] == ROUTE_STATIC
+    assert out["route_reason"] == REASON_STATIC_FALLBACK
     assert out["router"]["dynamic_label"] == "hand_left"
+    assert out["router"]["dynamic_type"] == "quasi_static"
+    assert out["router"]["dynamic_reject_reason"] == REASON_NOT_DYNAMIC_TYPE
 
 
 def test_router_rejects_low_confidence_dynamic_label() -> None:
@@ -108,6 +118,53 @@ def test_router_rejects_low_confidence_dynamic_label() -> None:
 
     assert out["label"] == "palm"
     assert out["route"] == ROUTE_STATIC
+    assert out["router"]["dynamic_reject_reason"] == REASON_LOW_CONFIDENCE
+
+
+def test_router_rejects_low_confidence_static_label() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.40, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert out["route"] == ROUTE_NONE
+    assert out["router"]["static_reject_reason"] == REASON_LOW_CONFIDENCE
+
+
+def test_router_rejects_static_dynamic_label_without_dynamic_confirmation() -> None:
+    static = _FakeInfer(
+        [{"label": "swipe_up", "confidence": 0.99, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert out["route"] == ROUTE_NONE
+    assert out["router"]["static_type"] == "dynamic"
+    assert (
+        out["router"]["static_reject_reason"]
+        == REASON_DYNAMIC_LABEL_REQUIRES_DYNAMIC_ROUTE
+    )
 
 
 def test_router_returns_none_with_landmarks_when_no_candidate() -> None:
@@ -129,6 +186,7 @@ def test_router_returns_none_with_landmarks_when_no_candidate() -> None:
     assert out["confidence"] == 0.0
     assert out["landmarks_json"] == "[static]"
     assert out["route"] == ROUTE_NONE
+    assert out["route_reason"] == "no_valid_candidate"
 
 
 def test_router_forwards_lifecycle_calls() -> None:

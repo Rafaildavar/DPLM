@@ -204,7 +204,7 @@ class HomeView:
             value=controller.dynamic_model_profile,
             width=170,
             dense=True,
-            visible=controller.recognition_model_mode == "dynamic",
+            visible=controller.recognition_model_mode in {"auto", "dynamic"},
             options=[
                 ft.DropdownOption(key="knn", text="knn"),
                 ft.DropdownOption(key="svm", text="svm"),
@@ -600,7 +600,7 @@ class HomeView:
     def _apply_model_mode(self, value: str) -> None:
         if self._model_mode_dd.value != value:
             self._model_mode_dd.value = value
-        self._dynamic_profile_dd.visible = value == "dynamic"
+        self._dynamic_profile_dd.visible = value in {"auto", "dynamic"}
         try:
             self._model_mode_dd.update()
         except Exception:
@@ -618,7 +618,7 @@ class HomeView:
         if self._dynamic_profile_dd.value != value:
             self._dynamic_profile_dd.value = value
         self._dynamic_profile_dd.visible = (
-            self._controller.recognition_model_mode == "dynamic"
+            self._controller.recognition_model_mode in {"auto", "dynamic"}
         )
         try:
             self._dynamic_profile_dd.update()

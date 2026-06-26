@@ -1011,6 +1011,53 @@ Live:
 - Добавить команду/кнопку генерации markdown/json отчета по текущему
   `live_evaluation.jsonl` прямо из интерфейса или developer-панели.
 
+### H-026: Router policy должна запрещать dynamic-label через static fallback
+
+Статус: `implemented`
+
+Анализ:
+- Router не подключен к LLM и не должен вызывать LLM на каждом кадре:
+  per-frame распознавание должно быть быстрым, детерминированным и
+  воспроизводимым.
+- LLM полезнее использовать вне hot path: анализ качества записей,
+  рекомендации по перезаписи классов, генерация отчетов и подсказки
+  пользователю при сборе датасета.
+- Слабое место текущего router было в fallback-логике: если static-модель
+  случайно вернула `swipe_*`, этот dynamic-label мог пройти через static-route.
+- Еще одна проблема: у router не было явных причин отказа, поэтому в live-log
+  было видно `static/dynamic/none`, но не было видно, почему dynamic был
+  отклонен.
+
+Что сделали:
+- Добавлен static confidence threshold `0.50`.
+- Static-route теперь запрещает labels с типом `dynamic`.
+- Dynamic labels (`swipe_*`) могут пройти только через dynamic-route после:
+  - motion gate;
+  - dynamic confidence threshold `0.60`;
+  - taxonomy check.
+- Router payload теперь содержит:
+  - `selected_reason`;
+  - `static_type`, `static_reject_reason`, `static_threshold`;
+  - `dynamic_type`, `dynamic_reject_reason`, `dynamic_threshold`.
+- Live-evaluation JSONL сохраняет эти reason-поля.
+- В `auto` режиме dropdown dynamic-профиля теперь видим, чтобы было понятно,
+  какой `dynamic_knn/svm/extra_trees` участвует в unified routing.
+
+Что получилось:
+- Статичная рука больше не должна получать `swipe_*` через static fallback,
+  даже если static-модель загрязнена dynamic-классами.
+- Ошибки router-policy теперь можно анализировать по JSONL, а не только по
+  итоговой accuracy.
+
+Проверка:
+- unit tests: `65 passed`;
+- `py_compile` для router, controller, home view и live evaluation report
+  проходит.
+
+Следующий шаг:
+- Прогнать live-evaluation в `auto` режиме и посмотреть распределение:
+  `route`, `selected_reason`, `dynamic_reject_reason`.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -1023,13 +1070,16 @@ Live:
    - CLI: `cv.train_classifier`;
    - поддерживаемые модели: `knn`, `svm`, `extra_trees`, `rf`, `logreg`.
 4. Live:
-   - Home dropdown `Модель`: `static` / `dynamic`;
+   - Home dropdown `Модель`: `auto` / `static` / `dynamic`;
    - Home dropdown `Dynamic`: `knn` / `svm` / `extra_trees`;
+   - `auto` запускает static + dynamic channels и выбирает route через
+     `GestureRecognitionRouter`;
    - current live candidate: `models/dynamic_knn.pkl`.
 
 ## Следующие эксперименты
 
-1. Добавить motion gate / Recognition Router Agent перед dynamic inference.
+1. Прогнать live-evaluation в `auto` режиме по `swipe_up`, `swipe_down`,
+   `swipe_left`.
 2. Перезаписать `swipe_down`, `swipe_up`, `swipe_left` по канону H-019/H-021:
    одна и та же рука, `20` сэмплов на класс.
 3. Переобучить `dynamic_knn.pkl`.

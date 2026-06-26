@@ -950,10 +950,15 @@ class AppController:
                         "result": payload.get("result"),
                         "elapsed_seconds": payload.get("elapsed_seconds"),
                         "route": payload.get("route"),
+                        "selected_reason": payload.get("selected_reason"),
                         "static_label": payload.get("static_label"),
                         "static_confidence": payload.get("static_confidence"),
+                        "static_type": payload.get("static_type"),
+                        "static_reject_reason": payload.get("static_reject_reason"),
                         "dynamic_label": payload.get("dynamic_label"),
                         "dynamic_confidence": payload.get("dynamic_confidence"),
+                        "dynamic_type": payload.get("dynamic_type"),
+                        "dynamic_reject_reason": payload.get("dynamic_reject_reason"),
                     }
                 )
             with path.open("a", encoding="utf-8") as fh:
@@ -979,13 +984,22 @@ class AppController:
 
         return {
             "route": route,
+            "selected_reason": str(route_metadata.get("selected_reason") or ""),
             "static_label": str(route_metadata.get("static_label") or ""),
             "static_confidence": _float_or_none(
                 route_metadata.get("static_confidence")
             ),
+            "static_type": str(route_metadata.get("static_type") or ""),
+            "static_reject_reason": str(
+                route_metadata.get("static_reject_reason") or ""
+            ),
             "dynamic_label": str(route_metadata.get("dynamic_label") or ""),
             "dynamic_confidence": _float_or_none(
                 route_metadata.get("dynamic_confidence")
+            ),
+            "dynamic_type": str(route_metadata.get("dynamic_type") or ""),
+            "dynamic_reject_reason": str(
+                route_metadata.get("dynamic_reject_reason") or ""
             ),
         }
 

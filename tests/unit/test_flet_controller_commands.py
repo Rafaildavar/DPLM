@@ -865,10 +865,13 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
         0.9,
         route_metadata={
             "route": "dynamic",
+            "selected_reason": "dynamic_accepted",
             "static_label": "",
             "static_confidence": 0.0,
+            "static_reject_reason": "no_label",
             "dynamic_label": "swipe_down",
             "dynamic_confidence": 0.9,
+            "dynamic_type": "dynamic",
         },
         now=10.0,
     )
@@ -877,10 +880,12 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
         0.8,
         route_metadata={
             "route": "dynamic",
+            "selected_reason": "dynamic_accepted",
             "static_label": "palm",
             "static_confidence": 0.7,
             "dynamic_label": "swipe_left",
             "dynamic_confidence": 0.8,
+            "dynamic_type": "dynamic",
         },
         now=12.0,
     )
@@ -903,7 +908,10 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert rows[-1]["dynamic_model_profile"] == "knn"
     assert rows[-1]["route_counts"] == {"dynamic": 2, "none": 1}
     assert rows[0]["route"] == "dynamic"
+    assert rows[0]["selected_reason"] == "dynamic_accepted"
+    assert rows[0]["static_reject_reason"] == "no_label"
     assert rows[0]["dynamic_label"] == "swipe_down"
+    assert rows[0]["dynamic_type"] == "dynamic"
 
 
 def test_live_evaluation_ignores_below_threshold_without_default_timeout(
