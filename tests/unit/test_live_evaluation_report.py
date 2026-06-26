@@ -28,6 +28,7 @@ def test_live_evaluation_report_summarizes_attempt_rows(tmp_path):
                 "predicted": "swipe_down",
                 "confidence": 0.91,
                 "result": "correct",
+                "route": "dynamic",
             },
             {
                 "event_type": "attempt",
@@ -36,6 +37,7 @@ def test_live_evaluation_report_summarizes_attempt_rows(tmp_path):
                 "predicted": "swipe_left",
                 "confidence": 0.81,
                 "result": "wrong",
+                "route": "dynamic",
             },
             {
                 "event_type": "attempt",
@@ -44,6 +46,7 @@ def test_live_evaluation_report_summarizes_attempt_rows(tmp_path):
                 "predicted": "",
                 "confidence": 0.0,
                 "result": "missed",
+                "route": "none",
             },
         ],
     )
@@ -57,7 +60,9 @@ def test_live_evaluation_report_summarizes_attempt_rows(tmp_path):
     by_label = {row.expected: row for row in report.labels}
     assert by_label["swipe_down"].attempts == 2
     assert by_label["swipe_down"].wrong_labels == {"swipe_left": 1}
+    assert by_label["swipe_down"].routes == {"dynamic": 2}
     assert by_label["swipe_left"].missed == 1
+    assert by_label["swipe_left"].routes == {"none": 1}
 
     markdown = build_markdown_report(report)
     assert "# Live Evaluation Metrics" in markdown
@@ -78,6 +83,7 @@ def test_live_evaluation_report_falls_back_to_run_attempts(tmp_path):
                         "predicted": "swipe_up",
                         "confidence": 0.99,
                         "result": "correct",
+                        "route": "dynamic",
                     }
                 ],
             }
@@ -117,12 +123,14 @@ def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
                         "predicted": "swipe_down",
                         "confidence": 0.9,
                         "result": "correct",
+                        "route": "dynamic",
                     },
                     {
                         "expected": "swipe_down",
                         "predicted": "",
                         "confidence": 0.0,
                         "result": "missed",
+                        "route": "none",
                     },
                 ],
             },
@@ -142,8 +150,12 @@ def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
     assert report.runs[0].dynamic_model_profile == "knn"
     assert report.runs[0].accuracy == 0.5
     assert report.runs[0].accepted_accuracy == 1.0
+    assert report.runs[0].routes == {"dynamic": 1, "none": 1}
 
     markdown = build_markdown_report(report)
     assert "Latest Completed Run By Label" in markdown
-    assert "| `swipe_down` | `dynamic:knn` | 2 | 1 | 0 | 1 | 0.500 | 1.000" in markdown
+    assert (
+        "| `swipe_down` | `dynamic:knn` | 2 | 1 | 0 | 1 | 0.500 | "
+        "1.000 | 0.900 | dynamic:1, none:1 |  |"
+    ) in markdown
     assert "Recent Runs" in markdown

@@ -19,6 +19,7 @@ class AttemptRecord:
     result: str
     confidence: float
     elapsed_seconds: float | None = None
+    route: str = ""
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class LabelMetrics:
     accuracy: float
     avg_confidence: float | None
     wrong_labels: dict[str, int]
+    routes: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,7 @@ class RunMetrics:
     accepted_accuracy: float | None
     avg_confidence: float | None
     wrong_labels: dict[str, int]
+    routes: dict[str, int]
     min_confidence: float | None
     timeout_seconds: float | None
     recognition_model_mode: str
@@ -93,6 +96,7 @@ def _parse_attempt_row(row: dict[str, Any]) -> AttemptRecord | None:
         result=result,
         confidence=confidence,
         elapsed_seconds=elapsed,
+        route=_clean_label(row.get("route")),
     )
 
 
@@ -131,6 +135,7 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
         wrong_labels = Counter(
             item.predicted or "unknown" for item in attempts if item.result == "wrong"
         )
+        routes = Counter(item.route or "unknown" for item in attempts)
     else:
         attempts_count = int(
             row["total"]
@@ -142,6 +147,7 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
         missed = int(row.get("missed") or 0)
         confidences = []
         wrong_labels = Counter()
+        routes = Counter(row.get("route_counts") or {})
 
     accepted = correct + wrong
     return RunMetrics(
@@ -156,6 +162,7 @@ def _summarize_run(row: dict[str, Any]) -> RunMetrics | None:
         accepted_accuracy=(correct / accepted if accepted else None),
         avg_confidence=mean(confidences) if confidences else None,
         wrong_labels=dict(sorted(wrong_labels.items())),
+        routes=dict(sorted(routes.items())),
         min_confidence=_parse_float(row.get("min_confidence")),
         timeout_seconds=_parse_float(row.get("timeout_seconds")),
         recognition_model_mode=_clean_label(row.get("recognition_model_mode")),
@@ -247,6 +254,7 @@ def summarize_attempts(
             for row in rows
             if row.result == "wrong"
         )
+        routes = Counter(row.route or "unknown" for row in rows)
         attempts_count = len(rows)
         labels.append(
             LabelMetrics(
@@ -258,6 +266,7 @@ def summarize_attempts(
                 accuracy=correct / attempts_count if attempts_count else 0.0,
                 avg_confidence=mean(confidences) if confidences else None,
                 wrong_labels=dict(sorted(wrong_labels.items())),
+                routes=dict(sorted(routes.items())),
             )
         )
 
@@ -294,8 +303,11 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
         "",
         "## By Label",
         "",
-        "| Expected | Attempts | Correct | Wrong | Missed | Accuracy | Avg confidence | Wrong labels |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
+        (
+            "| Expected | Attempts | Correct | Wrong | Missed | Accuracy | "
+            "Avg confidence | Routes | Wrong labels |"
+        ),
+        "|---|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for label in report.labels:
         avg_conf = "n/a" if label.avg_confidence is None else f"{label.avg_confidence:.3f}"
@@ -307,7 +319,7 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
         lines.append(
             f"| `{label.expected}` | {label.attempts} | {label.correct} | "
             f"{label.wrong} | {label.missed} | {label.accuracy:.3f} | "
-            f"{avg_conf} | {wrong_labels} |"
+            f"{avg_conf} | {_format_counts(label.routes)} | {wrong_labels} |"
         )
     if report.runs:
         latest_by_label: dict[str, RunMetrics] = {}
@@ -324,9 +336,9 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
                     "",
                     (
                         "| Expected | Model | Attempts | Correct | Wrong | Missed | "
-                        "Accuracy | Accepted accuracy | Avg confidence | Wrong labels |"
+                        "Accuracy | Accepted accuracy | Avg confidence | Routes | Wrong labels |"
                     ),
-                    "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                    "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
                 ]
             )
             for run in sorted(latest_by_label.values(), key=lambda item: item.expected):
@@ -345,7 +357,8 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
                 lines.append(
                     f"| `{run.expected}` | {model} | {run.attempts} | {run.correct} | "
                     f"{run.wrong} | {run.missed} | {run.accuracy:.3f} | "
-                    f"{accepted_accuracy} | {avg_conf} | {wrong_labels} |"
+                    f"{accepted_accuracy} | {avg_conf} | {_format_counts(run.routes)} | "
+                    f"{wrong_labels} |"
                 )
 
         lines.extend(
@@ -355,9 +368,9 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
                 "",
                 (
                     "| Event | Expected | Model | Attempts | Correct | Wrong | Missed | "
-                    "Accuracy | Min conf | Timeout |"
+                    "Accuracy | Routes | Min conf | Timeout |"
                 ),
-                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+                "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|",
             ]
         )
         for run in report.runs[-8:]:
@@ -367,7 +380,8 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
             lines.append(
                 f"| `{event}` | `{run.expected}` | {_format_run_model(run)} | "
                 f"{run.attempts} | {run.correct} | {run.wrong} | "
-                f"{run.missed} | {run.accuracy:.3f} | {min_conf} | {timeout} |"
+                f"{run.missed} | {run.accuracy:.3f} | {_format_counts(run.routes)} | "
+                f"{min_conf} | {timeout} |"
             )
     lines.append("")
     return "\n".join(lines)
@@ -376,9 +390,15 @@ def build_markdown_report(report: LiveEvaluationReport) -> str:
 def _format_run_model(run: RunMetrics) -> str:
     mode = run.recognition_model_mode or "n/a"
     profile = run.dynamic_model_profile
-    if mode == "dynamic" and profile:
-        return f"`dynamic:{profile}`"
+    if mode in {"auto", "dynamic"} and profile:
+        return f"`{mode}:{profile}`"
+    if mode == "auto":
+        return "`auto`"
     return f"`{mode}`"
+
+
+def _format_counts(counts: dict[str, int]) -> str:
+    return ", ".join(f"{name}:{count}" for name, count in counts.items())
 
 
 def parse_args() -> argparse.Namespace:

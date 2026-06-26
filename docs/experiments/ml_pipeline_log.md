@@ -975,6 +975,42 @@ Live:
 - Добавить route metrics / MLOps-срез: сколько раз router выбрал
   `static`, `dynamic`, `none`, и какие confidence/ошибки были в live-test.
 
+### H-025: Route metrics делают live-evaluation пригодным для MLOps
+
+Статус: `implemented`
+
+Проблема:
+- После добавления `auto` недостаточно видеть только `correct/wrong/missed`.
+- Для анализа ошибок нужно понимать, какая ветка дала решение:
+  `static`, `dynamic` или `none`.
+- Иначе невозможно отличить ошибку модели от ошибки router-policy.
+
+Что сделали:
+- `_dispatch_infer_result` передает `router` metadata в live-evaluation.
+- Attempt rows в `live_evaluation.jsonl` теперь могут содержать:
+  - `route`;
+  - `static_label`, `static_confidence`;
+  - `dynamic_label`, `dynamic_confidence`.
+- Run rows получают `route_counts`.
+- `scripts/live_evaluation_report.py` читает route metadata и показывает
+  routes в:
+  - `By Label`;
+  - `Latest Completed Run By Label`;
+  - `Recent Runs`.
+
+Что получилось:
+- После live-test можно увидеть не только accuracy, но и то, чем она
+  объясняется: например, `dynamic:8, none:2`.
+- Это закрывает первый практический MLOps-срез для unified inference.
+
+Проверка:
+- unit tests: `63 passed`;
+- `py_compile` для controller, router и live evaluation report проходит.
+
+Следующий шаг:
+- Добавить команду/кнопку генерации markdown/json отчета по текущему
+  `live_evaluation.jsonl` прямо из интерфейса или developer-панели.
+
 ## Текущий ML-пайплайн
 
 1. Запись:

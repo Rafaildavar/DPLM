@@ -878,6 +878,7 @@ class AppController:
                 result="missed",
                 predicted_label="",
                 confidence=0.0,
+                route_metadata={"route": "none"},
             )
         return True
 
@@ -935,6 +936,9 @@ class AppController:
                 "recognition_model_mode": payload.get("recognition_model_mode"),
                 "dynamic_model_profile": payload.get("dynamic_model_profile"),
                 "attempts": payload.get("attempts", []),
+                "route_counts": self._live_evaluation_route_counts(
+                    payload.get("attempts", [])
+                ),
             }
             if event_type == "attempt":
                 row.update(
@@ -945,12 +949,56 @@ class AppController:
                         "confidence": payload.get("confidence"),
                         "result": payload.get("result"),
                         "elapsed_seconds": payload.get("elapsed_seconds"),
+                        "route": payload.get("route"),
+                        "static_label": payload.get("static_label"),
+                        "static_confidence": payload.get("static_confidence"),
+                        "dynamic_label": payload.get("dynamic_label"),
+                        "dynamic_confidence": payload.get("dynamic_confidence"),
                     }
                 )
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
         except Exception as e:
             print(f"[w] live evaluation log write failed: {e}", flush=True)
+
+    def _live_evaluation_route_fields(
+        self,
+        route_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if not isinstance(route_metadata, dict):
+            route_metadata = {}
+        route = str(route_metadata.get("route") or "").strip()
+        if not route:
+            return {}
+
+        def _float_or_none(value: Any) -> float | None:
+            try:
+                return None if value is None else float(value)
+            except (TypeError, ValueError):
+                return None
+
+        return {
+            "route": route,
+            "static_label": str(route_metadata.get("static_label") or ""),
+            "static_confidence": _float_or_none(
+                route_metadata.get("static_confidence")
+            ),
+            "dynamic_label": str(route_metadata.get("dynamic_label") or ""),
+            "dynamic_confidence": _float_or_none(
+                route_metadata.get("dynamic_confidence")
+            ),
+        }
+
+    def _live_evaluation_route_counts(self, attempts: Any) -> dict[str, int]:
+        if not isinstance(attempts, list):
+            return {}
+        counts: dict[str, int] = {}
+        for item in attempts:
+            if not isinstance(item, dict):
+                continue
+            route = str(item.get("route") or "").strip() or "unknown"
+            counts[route] = counts.get(route, 0) + 1
+        return dict(sorted(counts.items()))
 
     def _record_live_evaluation_attempt(
         self,
@@ -959,6 +1007,7 @@ class AppController:
         result: str,
         predicted_label: str = "",
         confidence: float = 0.0,
+        route_metadata: dict[str, Any] | None = None,
         now: float | None = None,
     ) -> None:
         timestamp = time.time()
@@ -978,6 +1027,7 @@ class AppController:
             "elapsed_seconds": round(elapsed, 3),
             "recorded_at": timestamp,
         }
+        row.update(self._live_evaluation_route_fields(route_metadata))
         attempts = session.setdefault("attempts", [])
         attempts.append(row)
         session["total"] = attempt_no
@@ -1027,6 +1077,7 @@ class AppController:
         label: str,
         confidence: float,
         *,
+        route_metadata: dict[str, Any] | None = None,
         now: float | None = None,
     ) -> None:
         monotonic_now = time.monotonic() if now is None else float(now)
@@ -1056,6 +1107,7 @@ class AppController:
                 result=result,
                 predicted_label=clean_label,
                 confidence=conf,
+                route_metadata=route_metadata,
                 now=monotonic_now,
             )
 
@@ -1078,6 +1130,7 @@ class AppController:
                 result="missed",
                 predicted_label="",
                 confidence=0.0,
+                route_metadata={"route": "none"},
                 now=monotonic_now,
             )
 
@@ -1957,6 +2010,9 @@ class AppController:
         self._update_live_evaluation_timeout()
         label = (out.get("label") or "").strip()
         conf = float(out.get("confidence") or 0.0)
+        route_metadata = out.get("router") if isinstance(out.get("router"), dict) else {}
+        if not route_metadata and out.get("route"):
+            route_metadata = {"route": out.get("route")}
         lj = out.get("landmarks_json") or "[]"
         self._set_landmarks(lj)
         self._update_pointer_from_landmarks(lj)
@@ -1984,7 +2040,11 @@ class AppController:
                 flush=True,
             )
             evaluation_active = self.live_evaluation_active()
-            self._consume_live_evaluation_prediction(label, stable_conf)
+            self._consume_live_evaluation_prediction(
+                label,
+                stable_conf,
+                route_metadata=route_metadata,
+            )
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-

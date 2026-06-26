@@ -860,8 +860,30 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     controller._live_evaluation["attempt_started_at"] = 10.0
     controller._live_evaluation["next_ready_at"] = 10.0
 
-    controller._consume_live_evaluation_prediction("swipe_down", 0.9, now=10.0)
-    controller._consume_live_evaluation_prediction("swipe_left", 0.8, now=12.0)
+    controller._consume_live_evaluation_prediction(
+        "swipe_down",
+        0.9,
+        route_metadata={
+            "route": "dynamic",
+            "static_label": "",
+            "static_confidence": 0.0,
+            "dynamic_label": "swipe_down",
+            "dynamic_confidence": 0.9,
+        },
+        now=10.0,
+    )
+    controller._consume_live_evaluation_prediction(
+        "swipe_left",
+        0.8,
+        route_metadata={
+            "route": "dynamic",
+            "static_label": "palm",
+            "static_confidence": 0.7,
+            "dynamic_label": "swipe_left",
+            "dynamic_confidence": 0.8,
+        },
+        now=12.0,
+    )
     assert controller.mark_live_evaluation_missed() is True
 
     snapshot = controller.current_live_evaluation()
@@ -879,6 +901,9 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert rows[-1]["event_type"] == "run_completed"
     assert rows[-1]["recognition_model_mode"] == "dynamic"
     assert rows[-1]["dynamic_model_profile"] == "knn"
+    assert rows[-1]["route_counts"] == {"dynamic": 2, "none": 1}
+    assert rows[0]["route"] == "dynamic"
+    assert rows[0]["dynamic_label"] == "swipe_down"
 
 
 def test_live_evaluation_ignores_below_threshold_without_default_timeout(
