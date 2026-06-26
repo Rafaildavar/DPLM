@@ -134,6 +134,7 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert training_call["classes_out_path"] == _DEFAULT_DYNAMIC_CLASSES_OUT
     assert training_call["feature_dim_out_path"] == _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
     assert training_call["feature_mode_out_path"] == _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
+    assert training_call["training_scope"] == "dynamic"
 
 
 def test_dynamic_model_type_updates_default_output_path_without_overriding_custom_path():

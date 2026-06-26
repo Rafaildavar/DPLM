@@ -35,6 +35,11 @@ from app.services.app_config import (
     database_url_from_config,
     resolve_config_path,
 )
+from app.services.gesture_taxonomy import (
+    DEFAULT_TAXONOMY_PATH,
+    labels_for_gesture_types,
+    parse_gesture_type_scope,
+)
 
 
 # ---- Опциональные зависимости (как в исходном app/main.py) -------------------
@@ -555,6 +560,9 @@ class AppController:
 
     def _configured_feature_mode_path(self) -> Path:
         return self._configured_models_dir() / "feature_mode.txt"
+
+    def _configured_taxonomy_path(self) -> Path:
+        return DEFAULT_TAXONOMY_PATH
 
     def _dynamic_model_path(self) -> Path:
         filename = DYNAMIC_MODEL_FILENAMES.get(
@@ -3072,6 +3080,17 @@ class AppController:
         finally:
             session.close()
 
+    def _training_labels_for_scope(self, training_scope: str = "") -> list[str]:
+        labels = self._active_training_labels_from_db()
+        scope = str(training_scope or "").strip()
+        if not scope:
+            return labels
+        return labels_for_gesture_types(
+            labels,
+            parse_gesture_type_scope(scope),
+            taxonomy_path=self._configured_taxonomy_path(),
+        )
+
     def start_recording(
         self,
         label: str,
@@ -3172,6 +3191,7 @@ class AppController:
         classes_out_path: str = "",
         feature_dim_out_path: str = "",
         feature_mode_out_path: str = "",
+        training_scope: str = "",
         on_line: Optional[Callable[[str], None]] = None,
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
@@ -3184,6 +3204,26 @@ class AppController:
         except Exception as e:
             if on_line:
                 on_line(f"[w] sync_dataset_to_db before training: {e}")
+        scope = str(training_scope or "").strip()
+        if scope:
+            try:
+                scoped_labels = self._training_labels_for_scope(scope)
+            except Exception as e:
+                if on_line:
+                    on_line(f"[!] Не удалось прочитать taxonomy для scope={scope}: {e}")
+                return False
+            if not scoped_labels:
+                if on_line:
+                    on_line(
+                        f"[!] Нет активных жестов для training scope={scope}. "
+                        "Проверь configs/gesture_taxonomy.json и список жестов."
+                    )
+                return False
+            if on_line:
+                on_line(
+                    f"[i] Training scope={scope}: "
+                    + ", ".join(scoped_labels)
+                )
         cmd = self._build_training_command(
             data_root=data_root,
             out_path=out_path,
@@ -3194,6 +3234,7 @@ class AppController:
             classes_out_path=classes_out_path,
             feature_dim_out_path=feature_dim_out_path,
             feature_mode_out_path=feature_mode_out_path,
+            training_scope=training_scope,
         )
 
         try:
@@ -3264,6 +3305,7 @@ class AppController:
         classes_out_path: str = "",
         feature_dim_out_path: str = "",
         feature_mode_out_path: str = "",
+        training_scope: str = "",
     ) -> list[str]:
         actual_data_root = data_root or str(self._configured_data_dir())
         actual_out_path = out_path or str(self._configured_model_path())
@@ -3296,7 +3338,7 @@ class AppController:
             str(int(neighbors)),
             "--lowercase-labels",
         ]
-        for label in self._active_training_labels_from_db():
+        for label in self._training_labels_for_scope(training_scope):
             cmd += ["--include-label", label]
         if expect_dim is not None:
             cmd += ["--expect-dim", str(int(expect_dim))]

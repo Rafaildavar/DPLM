@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "default_type": "static",
+  "types": {
+    "static": [
+      "CTRLZ",
+      "Hend",
+      "Newest",
+      "Open",
+      "UP",
+      "gun",
+      "hello",
+      "palm",
+      "peace_sign",
+      "sh3",
+      "test_gesture",
+      "three",
+      "thumbs_up",
+      "ываы"
+    ],
+    "quasi_static": [
+      "hand_left"
+    ],
+    "dynamic": [
+      "swipe_down",
+      "swipe_left",
+      "swipe_right",
+      "swipe_up"
+    ]
+  },
+  "patterns": {
+    "dynamic": [
+      "swipe_*"
+    ]
+  }
+}

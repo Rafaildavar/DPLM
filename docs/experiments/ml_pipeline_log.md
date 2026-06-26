@@ -850,6 +850,43 @@ Live:
 - Если mixed train ухудшит качество, разделять profile или явно хранить
   handedness metadata.
 
+### H-022: Training taxonomy защищает dynamic-модель от static-классов
+
+Статус: `implemented`
+
+Проблема:
+- Dynamic-модель обучалась через общий список активных DB-жестов.
+- Из-за этого в `models/dynamic_*.pkl` могли попадать static/quasi-static
+  классы, и dynamic-пайплайн начинал распознавать жест даже на статичной руке.
+
+Что сделали:
+- Добавлен `configs/gesture_taxonomy.json` с типами:
+  - `static`;
+  - `quasi_static`;
+  - `dynamic`.
+- Добавлен сервис `app/services/gesture_taxonomy.py`.
+- В training pipeline добавлен `training_scope`.
+- Dynamic-вкладка обучения теперь запускает обучение с
+  `training_scope="dynamic"`.
+- Controller передает в `cv.train_classifier` только labels из dynamic-scope.
+
+Текущее правило:
+- `swipe_down`, `swipe_left`, `swipe_right`, `swipe_up` -> `dynamic`;
+- `hand_left` временно вынесен в `quasi_static`, пока не будет перезаписан в
+  новом dynamic-формате;
+- неизвестные labels по умолчанию считаются `static`, чтобы они не попадали в
+  dynamic-модель случайно.
+
+Проверка:
+- unit tests: `38 passed`;
+- `configs/gesture_taxonomy.json` валиден;
+- `py_compile` для `gesture_taxonomy.py`, `controller.py`, `training.py`
+  проходит.
+
+Следующий шаг:
+- Добавить motion gate / Recognition Router Agent, чтобы dynamic-модель вообще
+  не вызывалась на статичном или неканоничном движении.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -868,12 +905,13 @@ Live:
 
 ## Следующие эксперименты
 
-1. Перезаписать `swipe_down`, `swipe_up`, `swipe_left` по канону H-019/H-021:
+1. Добавить motion gate / Recognition Router Agent перед dynamic inference.
+2. Перезаписать `swipe_down`, `swipe_up`, `swipe_left` по канону H-019/H-021:
    одна и та же рука, `20` сэмплов на класс.
-2. Переобучить `dynamic_knn.pkl`.
-3. Повторить live-test по каждому классу: target `>= 8/10` на двух run подряд.
-4. Если `swipe_down` все еще уходит в `swipe_up`, почистить/перезаписать
+3. Переобучить `dynamic_knn.pkl`.
+4. Повторить live-test по каждому классу: target `>= 8/10` на двух run подряд.
+5. Если `swipe_down` все еще уходит в `swipe_up`, почистить/перезаписать
    шумные `swipe_up` sample из `docs/experiments/dynamic_data_analysis.md`.
-5. После стабильного baseline проверить handedness experiment из H-021.
-6. Если стабильно, добавить `swipe_right` и записать `10-20` sample.
-7. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+6. После стабильного baseline проверить handedness experiment из H-021.
+7. Если стабильно, добавить `swipe_right` и записать `10-20` sample.
+8. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.

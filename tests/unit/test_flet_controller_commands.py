@@ -124,6 +124,35 @@ def test_build_training_command_can_write_dynamic_model_metadata(monkeypatch, tm
     assert cmd[cmd.index("--feature-mode-out") + 1].endswith("dynamic_feature_mode.txt")
 
 
+def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    monkeypatch.setattr(
+        controller,
+        "_active_training_labels_from_db",
+        lambda: ["palm", "swipe_down", "UP", "swipe_left", "hand_left"],
+    )
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: tmp_path / "classes.json")
+    monkeypatch.setattr(controller, "_configured_feature_dim_path", lambda: tmp_path / "feature_dim.txt")
+
+    cmd = controller._build_training_command(
+        data_root=str(tmp_path / "gestures"),
+        out_path=str(tmp_path / "dynamic_knn.pkl"),
+        feature_mode="dynamic_stats",
+        classes_out_path=str(tmp_path / "dynamic_classes.json"),
+        feature_dim_out_path=str(tmp_path / "dynamic_feature_dim.txt"),
+        feature_mode_out_path=str(tmp_path / "dynamic_feature_mode.txt"),
+        training_scope="dynamic",
+    )
+
+    include_values = [
+        cmd[index + 1]
+        for index, item in enumerate(cmd)
+        if item == "--include-label"
+    ]
+    assert include_values == ["swipe_down", "swipe_left"]
+
+
 def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
     controller._recognition_model_mode = "static"

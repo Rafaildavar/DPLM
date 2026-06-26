@@ -678,6 +678,7 @@ class TrainingView:
             classes_out_path = ""
             feature_dim_out_path = ""
             feature_mode_out_path = ""
+            training_scope = ""
             self._append_log("[i] Обучение KNN со стандартными параметрами проекта")
         elif mode == "dynamic":
             data_root = _DEFAULT_DATA_ROOT
@@ -698,9 +699,10 @@ class TrainingView:
             classes_out_path = _DEFAULT_DYNAMIC_CLASSES_OUT
             feature_dim_out_path = _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
             feature_mode_out_path = _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
+            training_scope = "dynamic"
             self._append_log(
                 f"[i] Обучение отдельной dynamic-модели: "
-                f"model={model_type}, feature_mode={feature_mode}"
+                f"model={model_type}, feature_mode={feature_mode}, scope={training_scope}"
             )
         else:
             data_root = (self._tr_data_root.value or _DEFAULT_DATA_ROOT).strip()
@@ -714,6 +716,7 @@ class TrainingView:
             classes_out_path = ""
             feature_dim_out_path = ""
             feature_mode_out_path = ""
+            training_scope = ""
 
         self._append_log(
             f"[i] Обучение: data={data_root}, out={out_path}, "
@@ -728,6 +731,7 @@ class TrainingView:
             classes_out_path=classes_out_path,
             feature_dim_out_path=feature_dim_out_path,
             feature_mode_out_path=feature_mode_out_path,
+            training_scope=training_scope,
             on_line=self._append_log,
             on_done=self._on_subprocess_done,
         )
