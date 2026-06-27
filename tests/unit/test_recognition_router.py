@@ -6,6 +6,7 @@ from app.services.recognition_router import (
     ROUTE_NONE,
     ROUTE_STATIC,
     REASON_DYNAMIC_LABEL_REQUIRES_DYNAMIC_ROUTE,
+    REASON_DYNAMIC_OBSERVATION_PENDING,
     REASON_LOW_CONFIDENCE,
     REASON_NOT_DYNAMIC_TYPE,
     REASON_STATIC_FALLBACK,
@@ -25,6 +26,7 @@ class _FakeInfer:
         self.has_classifier = True
         self.two_hands = False
         self.classifier_requires_two_hands = False
+        self.reset_calls = 0
 
     def process_frame_rgb(self, _frame_rgb):
         self.calls += 1
@@ -37,6 +39,9 @@ class _FakeInfer:
 
     def close(self):
         self.closed = True
+
+    def reset_temporal_state(self):
+        self.reset_calls += 1
 
 
 def _taxonomy() -> GestureTaxonomy:
@@ -189,6 +194,70 @@ def test_router_returns_none_with_landmarks_when_no_candidate() -> None:
     assert out["route_reason"] == "no_valid_candidate"
 
 
+def test_router_holds_static_while_dynamic_channel_is_warming_up() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.99, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": "[dynamic]",
+                "temporal": {
+                    "enabled": True,
+                    "phase": "warming_up",
+                    "frames": 6,
+                    "required_frames": 36,
+                },
+            }
+        ]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["route"] == ROUTE_NONE
+    assert out["route_reason"] == REASON_DYNAMIC_OBSERVATION_PENDING
+    assert out["router"]["static_label"] == "palm"
+
+
+def test_router_allows_static_after_dynamic_channel_becomes_idle() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.99, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": "[dynamic]",
+                "temporal": {
+                    "enabled": True,
+                    "phase": "idle",
+                    "frames": 36,
+                    "required_frames": 36,
+                },
+            }
+        ]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == "palm"
+    assert out["route"] == ROUTE_STATIC
+
+
 def test_router_forwards_lifecycle_calls() -> None:
     static = _FakeInfer([])
     dynamic = _FakeInfer([])
@@ -199,9 +268,11 @@ def test_router_forwards_lifecycle_calls() -> None:
     )
 
     router.set_two_hands(True)
+    router.reset_temporal_state()
     router.close()
 
     assert static.two_hands_values == [True]
     assert dynamic.two_hands_values == [True]
+    assert dynamic.reset_calls == 1
     assert static.closed is True
     assert dynamic.closed is True

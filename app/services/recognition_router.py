@@ -21,6 +21,7 @@ REASON_NO_LABEL = "no_label"
 REASON_LOW_CONFIDENCE = "low_confidence"
 REASON_NOT_DYNAMIC_TYPE = "not_dynamic_type"
 REASON_DYNAMIC_LABEL_REQUIRES_DYNAMIC_ROUTE = "dynamic_label_requires_dynamic_route"
+REASON_DYNAMIC_OBSERVATION_PENDING = "dynamic_observation_pending"
 DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.60
 DEFAULT_STATIC_CONFIDENCE_THRESHOLD = 0.50
 
@@ -129,6 +130,11 @@ class GestureRecognitionRouter:
             if callable(closer):
                 closer()
 
+    def reset_temporal_state(self) -> None:
+        resetter = getattr(self._dynamic_infer, "reset_temporal_state", None)
+        if callable(resetter):
+            resetter()
+
     def process_frame_rgb(self, frame_rgb: Any) -> dict[str, Any]:
         static_out = self._process(self._static_infer, frame_rgb)
         dynamic_out = self._process(self._dynamic_infer, frame_rgb)
@@ -165,6 +171,14 @@ class GestureRecognitionRouter:
                 dynamic_assessment=dynamic_assessment,
                 selected_reason=REASON_DYNAMIC_ACCEPTED,
             )
+        if static_assessment.accepted and self._should_hold_static(dynamic_out):
+            return self._without_candidate(
+                static_out,
+                dynamic_out,
+                static_assessment=static_assessment,
+                dynamic_assessment=dynamic_assessment,
+                selected_reason=REASON_DYNAMIC_OBSERVATION_PENDING,
+            )
         if static_assessment.accepted:
             return self._with_route(
                 static_candidate,
@@ -175,19 +189,42 @@ class GestureRecognitionRouter:
                 selected_reason=REASON_STATIC_FALLBACK,
             )
 
+        return self._without_candidate(
+            static_out,
+            dynamic_out,
+            static_assessment=static_assessment,
+            dynamic_assessment=dynamic_assessment,
+            selected_reason=REASON_NO_VALID_CANDIDATE,
+        )
+
+    def _should_hold_static(self, dynamic_out: dict[str, Any]) -> bool:
+        temporal = dynamic_out.get("temporal")
+        if not isinstance(temporal, dict) or not bool(temporal.get("enabled")):
+            return False
+        return str(temporal.get("phase") or "") in {"warming_up", "active"}
+
+    def _without_candidate(
+        self,
+        static_out: dict[str, Any],
+        dynamic_out: dict[str, Any],
+        *,
+        static_assessment: CandidateAssessment,
+        dynamic_assessment: CandidateAssessment,
+        selected_reason: str,
+    ) -> dict[str, Any]:
         base = static_out if static_out.get("landmarks_json") else dynamic_out
         out = dict(base or self._empty())
         out["label"] = ""
         out["confidence"] = 0.0
         out["route"] = ROUTE_NONE
-        out["route_reason"] = REASON_NO_VALID_CANDIDATE
+        out["route_reason"] = selected_reason
         out["router"] = self._router_payload(
             ROUTE_NONE,
             static_out,
             dynamic_out,
             static_assessment=static_assessment,
             dynamic_assessment=dynamic_assessment,
-            selected_reason=REASON_NO_VALID_CANDIDATE,
+            selected_reason=selected_reason,
         )
         return out
 

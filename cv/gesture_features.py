@@ -21,6 +21,7 @@ FEATURE_HYBRID_STATS = "hybrid_stats"
 
 DYNAMIC_STATS_BASE_MULTIPLIER = 6
 DYNAMIC_TRAJECTORY_FEATURE_DIM = 7
+DYNAMIC_TRAJECTORY_WEIGHT = 8.0
 
 SUPPORTED_FEATURE_MODES = (
     FEATURE_STATIC_MEAN,
@@ -199,6 +200,11 @@ def dynamic_stats_features(sequence: np.ndarray, target_dim: int | None = None) 
         path_abs_sum = np.zeros(seq.shape[1], dtype=np.float32)
         max_step = np.zeros(seq.shape[1], dtype=np.float32)
 
+    # Pose velocity has hundreds of components while the screen-space
+    # trajectory has only seven. Without weighting, Euclidean KNN distance is
+    # dominated by hand pose and can confuse a horizontal swipe with up/down
+    # when the live pose differs from the recording session.
+    weighted_trajectory = trajectory_features(seq) * DYNAMIC_TRAJECTORY_WEIGHT
     return np.concatenate(
         [
             seq[-1] - seq[0],
@@ -207,7 +213,7 @@ def dynamic_stats_features(sequence: np.ndarray, target_dim: int | None = None) 
             velocity_abs_mean,
             path_abs_sum,
             max_step,
-            trajectory_features(seq),
+            weighted_trajectory,
         ],
         axis=0,
     ).astype(np.float32, copy=False)

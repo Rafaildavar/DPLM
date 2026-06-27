@@ -75,6 +75,38 @@ class _MovingOneHandDetector:
         ]
 
 
+class _MovingHorizontalHandDetector:
+    def __init__(self, *, start_x: float = 0.80, step_x: float = -0.01) -> None:
+        self.index = 0
+        self.start_x = start_x
+        self.step_x = step_x
+
+    def detect_for_video_rgb(self, _frame_rgb):
+        from cv.hand_landmarker import DetectedHand
+
+        x = self.start_x + self.step_x * self.index
+        self.index += 1
+        return [
+            DetectedHand(
+                landmarks=_open_hand_landmarks(x=x),
+                handedness="Right",
+                score=1.0,
+            )
+        ]
+
+
+class _DirectionConfusedClassifier:
+    classes_ = np.asarray([0, 1, 2])
+
+    def predict(self, _features):
+        return np.asarray([2])
+
+    def predict_proba(self, _features):
+        # The pose-heavy model prefers up, but left remains the best candidate
+        # compatible with the measured horizontal trajectory.
+        return np.asarray([[0.1, 0.2, 0.7]])
+
+
 class _ShapeCheckingClassifier:
     def __init__(self, expected_dim: int = 42) -> None:
         self.expected_shape = (1, expected_dim)
@@ -263,6 +295,39 @@ def test_dynamic_motion_gate_rejects_wrong_direction_label() -> None:
     assert out["label"] == ""
     assert out["confidence"] == 0.0
     assert clf.predict_calls == 1
+
+
+def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._detector = _MovingHorizontalHandDetector()
+    infer._clf = _DirectionConfusedClassifier()
+    infer._classes = ["swipe_down", "swipe_left", "swipe_up"]
+    infer._feature_dim = 271
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=36)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = {}
+    for _ in range(36):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == "swipe_left"
+    assert out["confidence"] == 0.2
+    assert out["temporal"]["phase"] == "active"
+
+
+def test_reset_temporal_state_clears_dynamic_windows() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._window = deque([np.ones(44, dtype=np.float32)], maxlen=36)
+    infer._finger_count_window = deque([4], maxlen=5)
+
+    infer.reset_temporal_state()
+
+    assert not infer._window
+    assert not infer._finger_count_window
 
 
 def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:

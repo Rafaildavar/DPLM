@@ -1058,6 +1058,60 @@ Live:
 - Прогнать live-evaluation в `auto` режиме и посмотреть распределение:
   `route`, `selected_reason`, `dynamic_reject_reason`.
 
+### H-027: Auto routing должен ждать движение, а KNN должен опираться на траекторию
+
+Статус: `implemented`, требуется повторная live-валидация
+
+Наблюдение:
+- Live-run `swipe_up` в `auto`: `2/10 correct`, `8/10 wrong`.
+- Семь ошибок были не ошибками dynamic KNN, а перехватом static-route:
+  `gun` с confidence около `1.0` выбирался, пока dynamic-окно еще набирало
+  `36` кадров.
+- Live-run `swipe_left` был остановлен после `5` попыток:
+  `1 correct`, `4 wrong`; все решения пришли через dynamic-route, но модель
+  выбирала `swipe_up` или `swipe_down`.
+- На сохраненных `70` dynamic-сэмплах KNN дает `accuracy=1.0` и
+  `macro F1=1.0`. Это подтверждает distribution shift между записью и live,
+  а не отсутствие разделимости в train dataset.
+
+Гипотезы:
+1. Static fallback срабатывает раньше, чем temporal-модель успевает увидеть
+   движение.
+2. В `dynamic_stats` семь global trajectory features проигрывают по вкладу
+   сотням pose/velocity features в евклидовом расстоянии KNN.
+3. После распознавания в rolling window остается обратное движение руки, из-за
+   чего оно может стать следующей попыткой.
+
+Что сделали:
+- Dynamic inference отдает temporal phase:
+  `warming_up`, `active` или `idle`.
+- Router удерживает static fallback в фазах `warming_up` и `active`.
+  Статический жест остается доступен после короткого удержания до `idle`.
+- Global trajectory block в `dynamic_stats` получает вес `8.0` перед KNN.
+- Направление проходит axis-dominance guard: горизонтальный swipe не может
+  быть принят как `up/down`, если `abs(dx)` доминирует над `abs(dy)`.
+- Вероятности модели rerank-ятся только среди классов, совместимых с
+  измеренным направлением.
+- После подтвержденного dynamic-жеста temporal window очищается, чтобы возврат
+  руки не считался новым свайпом.
+- `dynamic_knn.pkl` переобучен только на:
+  `swipe_down=20`, `swipe_left=30`, `swipe_up=20`.
+
+Offline-проверка:
+- `70` samples, `3` classes, feature dimension `271`;
+- `5-fold CV accuracy=1.0`, `macro F1=1.0`;
+- профильные unit tests: `56 passed`.
+
+Критерий live-приемки:
+- для каждого класса два run по `10` попыток в `auto`;
+- `accuracy >= 80%`, `dynamic route rate >= 80%`;
+- `static hijack rate = 0%`;
+- directional confusion не более `1/10`.
+
+Следующий шаг:
+- Повторить baseline без переобучения между прогонами и сравнить новые run с
+  зафиксированными результатами H-027.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -1065,7 +1119,8 @@ Live:
    - dynamic: `(36, 44)`.
 2. Feature extraction:
    - static baseline: `static_mean`;
-   - dynamic baseline: `dynamic_stats` with trajectory features.
+   - dynamic baseline: `dynamic_stats` with trajectory features weighted by
+     `8.0` for distance-based KNN.
 3. Обучение:
    - CLI: `cv.train_classifier`;
    - поддерживаемые модели: `knn`, `svm`, `extra_trees`, `rf`, `logreg`.

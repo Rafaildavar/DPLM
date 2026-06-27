@@ -8,6 +8,7 @@ from cv.gesture_features import (
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     DYNAMIC_TRAJECTORY_FEATURE_DIM,
+    DYNAMIC_TRAJECTORY_WEIGHT,
     MOTION_DYNAMIC_LIKE,
     MOTION_STATIC_LIKE,
     align_sequence,
@@ -81,6 +82,24 @@ def test_trajectory_features_capture_vertical_direction_from_global_wrist():
     assert down_features[1] > 0.0
     assert up_features[6] < 0.0
     assert down_features[6] > 0.0
+
+
+def test_dynamic_stats_weight_global_trajectory_for_distance_models():
+    sequence = np.zeros((3, 44), dtype=np.float32)
+    sequence[:, -2] = [0.8, 0.6, 0.3]
+    sequence[:, -1] = 0.5
+
+    raw_trajectory = trajectory_features(sequence, target_dim=44)
+    dynamic = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_STATS,
+        target_dim=44,
+    )
+
+    assert np.allclose(
+        dynamic[-DYNAMIC_TRAJECTORY_FEATURE_DIM:],
+        raw_trajectory * DYNAMIC_TRAJECTORY_WEIGHT,
+    )
 
 
 def test_build_feature_matrix_returns_sorted_labels():

@@ -38,6 +38,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DYNAMIC_GATE_MIN_PATH_LENGTH = 0.12
 DYNAMIC_GATE_MIN_DISPLACEMENT = 0.06
 DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.05
+DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
+DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
+DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.20
 
 
 class GestureOnlineInfer:
@@ -277,21 +280,127 @@ class GestureOnlineInfer:
             return False, motion
         return True, motion
 
-    def _dynamic_label_matches_motion(self, label: str, motion: dict[str, float]) -> bool:
+    def _dynamic_temporal_state(self) -> dict[str, Any]:
+        if not self._uses_temporal_features():
+            return {}
+
+        frames = len(self._window)
+        required_frames = int(self._window.maxlen or 1)
+        state: dict[str, Any] = {
+            "enabled": True,
+            "phase": "warming_up",
+            "frames": frames,
+            "required_frames": required_frames,
+        }
+        if not self._uses_global_dynamic_motion() or frames < 2:
+            if frames >= required_frames:
+                state["phase"] = "idle"
+            return state
+
+        sequence = np.stack(tuple(self._window), axis=0)
+        dx, dy, abs_dx, abs_dy, path_length, direction_cos, direction_sin = [
+            float(value)
+            for value in trajectory_features(
+                sequence,
+                target_dim=int(self._raw_feature_dim),
+            )
+        ]
+        displacement = float(np.hypot(dx, dy))
+        state.update(
+            {
+                "dx": dx,
+                "dy": dy,
+                "abs_dx": abs_dx,
+                "abs_dy": abs_dy,
+                "path_length": path_length,
+                "displacement": displacement,
+                "direction_cos": direction_cos,
+                "direction_sin": direction_sin,
+            }
+        )
+        if (
+            path_length >= DYNAMIC_INTENT_MIN_PATH_LENGTH
+            and displacement >= DYNAMIC_INTENT_MIN_DISPLACEMENT
+        ):
+            state["phase"] = "active"
+        elif frames >= required_frames:
+            state["phase"] = "idle"
+        return state
+
+    def _dynamic_label_matches_motion(
+        self,
+        label: str,
+        motion: dict[str, float],
+    ) -> bool:
         if not motion:
             return True
         clean = str(label or "").strip().lower()
         dx = float(motion.get("dx") or 0.0)
         dy = float(motion.get("dy") or 0.0)
+        horizontal = abs(dx)
+        vertical = abs(dy)
         if "left" in clean:
-            return dx <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+            return (
+                dx <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+                and horizontal >= vertical * DYNAMIC_DIRECTION_DOMINANCE_RATIO
+            )
         if "right" in clean:
-            return dx >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+            return (
+                dx >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+                and horizontal >= vertical * DYNAMIC_DIRECTION_DOMINANCE_RATIO
+            )
         if "up" in clean:
-            return dy <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+            return (
+                dy <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+                and vertical >= horizontal * DYNAMIC_DIRECTION_DOMINANCE_RATIO
+            )
         if "down" in clean:
-            return dy >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+            return (
+                dy >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+                and vertical >= horizontal * DYNAMIC_DIRECTION_DOMINANCE_RATIO
+            )
         return True
+
+    def _dynamic_prediction(
+        self,
+        model_feat: np.ndarray,
+        motion: dict[str, float],
+    ) -> tuple[str, float]:
+        # Keep the estimator's native prediction call in the inference path.
+        # Some estimators populate diagnostics there, while probabilities are
+        # used below for motion-constrained reranking.
+        self._clf.predict(model_feat)
+        probabilities = np.asarray(self._clf.predict_proba(model_feat)[0], dtype=float)
+        estimator_classes = list(
+            getattr(self._clf, "classes_", range(len(probabilities)))
+        )
+        ranked: list[tuple[float, str]] = []
+        for column, probability in enumerate(probabilities):
+            raw_class = (
+                estimator_classes[column]
+                if column < len(estimator_classes)
+                else column
+            )
+            try:
+                class_index = int(raw_class)
+            except (TypeError, ValueError):
+                label = str(raw_class)
+            else:
+                label = (
+                    self._classes[class_index]
+                    if 0 <= class_index < len(self._classes)
+                    else str(raw_class)
+                )
+            ranked.append((float(probability), label))
+
+        for probability, label in sorted(ranked, reverse=True):
+            if self._dynamic_label_matches_motion(label, motion):
+                return label, probability
+        return "", 0.0
+
+    def reset_temporal_state(self) -> None:
+        self._window.clear()
+        self._finger_count_window.clear()
 
     def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
         metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
@@ -509,31 +618,37 @@ class GestureOnlineInfer:
                 feat = np.concatenate([feat, pad], axis=0)
 
         self._window.append(feat)
+        temporal_state = self._dynamic_temporal_state()
 
         label = ""
         confidence = 0.0
 
-        if self._clf is not None and self._classes and self._window_ready_for_prediction():
+        if (
+            self._clf is not None
+            and self._classes
+            and self._window_ready_for_prediction()
+        ):
             motion_ok, motion = self._dynamic_motion_gate()
             if not motion_ok:
                 return {
                     "label": "",
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
+                    "temporal": temporal_state,
                 }
             model_feat = self._build_model_feature().reshape(1, -1)
             try:
-                pred_idx = int(self._clf.predict(model_feat)[0])
-                label = (
-                    self._classes[pred_idx]
-                    if 0 <= pred_idx < len(self._classes)
-                    else str(pred_idx)
-                )
-                proba = self._clf.predict_proba(model_feat)[0]
-                confidence = float(np.max(proba))
-                if label and not self._dynamic_label_matches_motion(label, motion):
-                    label = ""
-                    confidence = 0.0
+                if self._uses_global_dynamic_motion():
+                    label, confidence = self._dynamic_prediction(model_feat, motion)
+                else:
+                    pred_idx = int(self._clf.predict(model_feat)[0])
+                    label = (
+                        self._classes[pred_idx]
+                        if 0 <= pred_idx < len(self._classes)
+                        else str(pred_idx)
+                    )
+                    proba = self._clf.predict_proba(model_feat)[0]
+                    confidence = float(np.max(proba))
             except Exception as e:
                 print(f"[!] classifier prediction failed: {e}", flush=True)
                 self._window.clear()
@@ -557,4 +672,5 @@ class GestureOnlineInfer:
             "label": label,
             "confidence": confidence,
             "landmarks_json": landmarks_json,
+            "temporal": temporal_state,
         }

@@ -2059,6 +2059,14 @@ class AppController:
                 stable_conf,
                 route_metadata=route_metadata,
             )
+            if str(route_metadata.get("route") or "") == "dynamic":
+                resetter = getattr(
+                    getattr(self, "_embedded_infer", None),
+                    "reset_temporal_state",
+                    None,
+                )
+                if callable(resetter):
+                    resetter()
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-
