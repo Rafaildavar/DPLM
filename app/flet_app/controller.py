@@ -969,6 +969,9 @@ class AppController:
                         "dynamic_segment_frames": payload.get(
                             "dynamic_segment_frames"
                         ),
+                        "dynamic_motion_scale": payload.get(
+                            "dynamic_motion_scale"
+                        ),
                     }
                 )
             with path.open("a", encoding="utf-8") as fh:
@@ -1014,6 +1017,9 @@ class AppController:
             "dynamic_phase": str(route_metadata.get("dynamic_phase") or ""),
             "dynamic_segment_frames": int(
                 route_metadata.get("dynamic_segment_frames") or 0
+            ),
+            "dynamic_motion_scale": _float_or_none(
+                route_metadata.get("dynamic_motion_scale")
             ),
         }
 
@@ -1861,6 +1867,8 @@ class AppController:
         if report.get("dx") is not None and report.get("dy") is not None:
             parts.append(f"dx={float(report['dx']):+.3f}")
             parts.append(f"dy={float(report['dy']):+.3f}")
+        if report.get("projected_hand_scale") is not None:
+            parts.append(f"hand_scale={float(report['projected_hand_scale']):.3f}")
         verdict = "OK" if report.get("ok") else "WARN: " + ",".join(report["warnings"])
         return f"[✓] Сохранено: {path} | {' '.join(parts)} | {verdict}"
 
@@ -1895,6 +1903,15 @@ class AppController:
             two_hands=bool(session.get("two_hands")),
             include_global_motion=bool(session.get("include_global_motion")),
         )
+        hand_scales: list[float] = []
+        for hand in hands:
+            points = np.asarray(getattr(hand, "landmarks", []), dtype=np.float32)
+            if points.shape == (21, 2):
+                size = points.max(axis=0) - points.min(axis=0)
+                hand_scales.append(float(np.linalg.norm(size)))
+        current_hand_scale = (
+            float(np.median(hand_scales)) if hand_scales else 0.0
+        )
 
         now = time.monotonic()
         on_line = session.get("on_line")
@@ -1903,6 +1920,7 @@ class AppController:
                 self._reset_sample_recording_ready_gate(session)
                 if session.get("frames_buf"):
                     session["frames_buf"] = []
+                    session["frame_scales"] = []
                     if on_line:
                         on_line("[w] Сэмпл сброшен: рука пропала из кадра")
             last_no_hand = float(session.get("last_no_hand_log", 0.0) or 0.0)
@@ -1941,6 +1959,7 @@ class AppController:
                 return landmarks_json
 
         frames.append(frame_vec)
+        session.setdefault("frame_scales", []).append(current_hand_scale)
         session["last_message"] = "Идет запись сэмпла"
         target_frames = int(session["frames"])
         progress_step = max(1, target_frames // 3)
@@ -1966,13 +1985,44 @@ class AppController:
         out_path = self._next_sample_path(label_dir)
         arr = np.asarray(frames[:target_frames], dtype=np.float32)
         np.save(out_path, arr)
+        projected_hand_scale: float | None = None
+        if bool(session.get("include_global_motion")):
+            scales = [
+                float(value)
+                for value in session.get("frame_scales", [])[:target_frames]
+                if float(value) > 0.0
+            ]
+            projected_hand_scale = (
+                float(np.median(scales)) if scales else None
+            )
+            metadata = {
+                "schema_version": 1,
+                "label": str(session.get("label") or ""),
+                "sample": out_path.name,
+                "frames": int(arr.shape[0]),
+                "raw_feature_dim": int(arr.shape[1]),
+                "projected_hand_scale_median": projected_hand_scale,
+                "projected_hand_scale_min": min(scales) if scales else None,
+                "projected_hand_scale_max": max(scales) if scales else None,
+                "recorded_at": time.time(),
+            }
+            try:
+                out_path.with_suffix(".meta.json").write_text(
+                    json.dumps(metadata, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                if on_line:
+                    on_line(f"[w] Не удалось сохранить metadata: {exc}")
         report = self._sample_quality_report(
             arr,
             label=str(session.get("label") or ""),
             include_global_motion=bool(session.get("include_global_motion")),
         )
+        report["projected_hand_scale"] = projected_hand_scale
         session["saved"] = int(session["saved"]) + 1
         session["frames_buf"] = []
+        session["frame_scales"] = []
         self._reset_sample_recording_ready_gate(session)
         reports = session.setdefault("quality_reports", [])
         reports.append({"path": out_path.name, **report})
@@ -3248,6 +3298,9 @@ class AppController:
                     continue
                 try:
                     sample_file.unlink()
+                    metadata_file = sample_file.with_suffix(".meta.json")
+                    if metadata_file.exists():
+                        metadata_file.unlink()
                     deleted_files += 1
                 except OSError as e:
                     session.rollback()
@@ -3360,6 +3413,7 @@ class AppController:
             "include_global_motion": bool(include_global_motion),
             "saved": 0,
             "frames_buf": [],
+            "frame_scales": [],
             "out_dir": out_dir,
             "on_line": on_line,
             "on_done": on_done,

@@ -1248,6 +1248,91 @@ Offline-проверка:
 - Перезапустить приложение, чтобы загрузить новую модель и state machine, и
   провести первый run для каждого dynamic-класса без переобучения между ними.
 
+### H-030: Dynamic representation должна быть инвариантна к позиции и дистанции
+
+Статус: `implemented`, требуется live near/mid/far validation
+
+Наблюдение пользователя:
+- Качество сильно зависит от начальной области кадра.
+- Если обучение выполнялось на одной дистанции от камеры, на другой дистанции
+  распознавание заметно ухудшается.
+
+Профиль текущего датасета:
+- `swipe_up`: start x `0.640-0.792`, start y `0.893-1.011`,
+  displacement median `0.542`.
+- `swipe_down`: start x `0.688-0.784`, start y `0.301-0.465`,
+  displacement median `0.493`.
+- `swipe_left`: start x `0.713-0.878`, start y `0.697-0.873`,
+  displacement median `0.465`.
+- Начальная позиция сильно коррелирует с label: up записан снизу, down сверху,
+  left справа.
+- Legacy sample `(36, 44)` содержит normalized pose и wrist `x/y`, но не
+  projected hand size. Поэтому дистанцию старых записей нельзя измерить
+  напрямую. Это зафиксированное ограничение датасета.
+
+Разбор причин:
+- Pose landmarks уже нормализованы относительно wrist и hand scale функцией
+  `normalize_landmarks`, поэтому pose block инвариантен к переносу и масштабу.
+- Global trajectory использовала delta, но сохраняла абсолютную экранную
+  амплитуду.
+- Fixed onset/path/still thresholds работали в координатах кадра. При удалении
+  от камеры физически одинаковый жест становился короче и мог не запустить
+  segmenter.
+
+Гипотеза:
+- ML должен видеть направление и форму траектории, но не место старта и не
+  projected amplitude.
+- Порог выделения движения должен измеряться относительно размера руки в
+  текущем кадре.
+
+Что сделали:
+- После active trim/resample wrist trajectory переносится в `(0, 0)`.
+- Полная displacement-норма приводится к reference `0.5`; направление и
+  относительная форма сохраняются.
+- Segmenter получает bbox diagonal руки как `motion_scale`.
+- Onset path, onset displacement и still-step автоматически уменьшаются для
+  маленькой руки вдали от камеры; для старых вызовов остается absolute
+  fallback.
+- Dynamic KNN переобучен на новой canonical representation.
+- Live route metadata и `live_evaluation.jsonl` дополнены
+  `dynamic_motion_scale`.
+- Новые dynamic samples сохраняют sidecar `sample_XXXX.meta.json`:
+  median/min/max projected hand scale. NPY остается `(frames, 44)`, поэтому
+  training compatibility не ломается.
+- При удалении sample его metadata-sidecar также удаляется.
+
+Offline-проверка:
+- Position invariance unit-test переносит gesture в другую часть кадра.
+- Scale invariance unit-test уменьшает амплитуду в `5` раз и получает тот же
+  canonical sequence.
+- Far-camera unit-test подтверждает onset для projected displacement `0.08`,
+  который не проходил прежний absolute threshold `0.04` на пяти кадрах.
+- `5-fold CV accuracy=1.0`, `macro F1=1.0` на `70` samples.
+- Проверено `210` combinations:
+  - amplitude factors `0.2`, `0.5`, `1.0`;
+  - start positions `(0.2,0.2)`, `(0.5,0.5)`, `(0.8,0.75)`;
+  - duration `18`, `36`, `60` frames плюс разный static padding.
+- Результат: `210/210 correct`, robustness accuracy `1.0`.
+- Расширенный ML/runtime набор после H-030: `94 passed`.
+
+Live-протокол проверки:
+1. Для каждого класса выполнить по `10` попыток на обычной дистанции.
+2. Повторить по `10` попыток примерно в `1.5` раза дальше от камеры.
+3. Повторить по `10` попыток ближе к камере.
+4. В каждой серии менять start position: центр, левее/правее, выше/ниже.
+5. Не переобучать модель между сериями.
+
+Критерий приемки:
+- Accuracy каждого класса и каждой дистанции `>=80%`.
+- Разница accuracy между near/mid/far не больше `10` процентных пунктов.
+- `dynamic_motion_scale` заметно различается между дистанциями, иначе тест
+  фактически проведен на одинаковом масштабе.
+- Directional confusion `<=1/10`.
+
+Следующий шаг:
+- Перезапустить приложение и выполнить сначала три run `swipe_left`:
+  mid, far, near. Это был наиболее проблемный класс и самый быстрый тест H-030.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -1256,6 +1341,8 @@ Offline-проверка:
 2. Feature extraction:
    - static baseline: `static_mean`;
    - dynamic baseline: active motion trim + resample to `36` frames;
+   - wrist trajectory: origin translation + amplitude normalization;
+   - segmentation thresholds: projected hand-scale aware;
    - `dynamic_stats` with trajectory features weighted by `8.0` for
      distance-based KNN.
 3. Обучение:

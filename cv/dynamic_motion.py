@@ -37,7 +37,7 @@ def canonical_dynamic_sequence(
     sequence: np.ndarray,
     *,
     target_frames: int = 36,
-    min_step: float = 0.003,
+    min_step: float = 0.0005,
     relative_step: float = 0.15,
     edge_context_frames: int = 2,
 ) -> np.ndarray:
@@ -65,7 +65,32 @@ def canonical_dynamic_sequence(
     end = min(seq.shape[0], int(moving_steps[-1]) + 2 + context)
     if end - start < 2:
         return resample_sequence(seq, target_frames)
-    return resample_sequence(seq[start:end], target_frames)
+    resampled = resample_sequence(seq[start:end], target_frames)
+    return normalize_global_trajectory(resampled)
+
+
+def normalize_global_trajectory(
+    sequence: np.ndarray,
+    *,
+    reference_displacement: float = 0.5,
+) -> np.ndarray:
+    """Remove screen position and projected motion amplitude from wrist paths."""
+    seq = sequence_to_matrix(sequence).copy()
+    dims = int(seq.shape[1])
+    if dims < 44 or dims % 44 != 0:
+        return seq
+
+    target = max(1e-6, float(reference_displacement))
+    for offset in range(0, dims, 44):
+        wrist = seq[:, offset + 42 : offset + 44]
+        if not np.any(np.abs(wrist) > 1e-6):
+            continue
+        delta = wrist[-1] - wrist[0]
+        displacement = float(np.linalg.norm(delta))
+        if displacement <= 1e-6:
+            continue
+        seq[:, offset + 42 : offset + 44] = (wrist - wrist[0]) * (target / displacement)
+    return seq.astype(np.float32, copy=False)
 
 
 class DynamicMotionSegmenter:
@@ -83,6 +108,9 @@ class DynamicMotionSegmenter:
         min_active_frames: int = 8,
         max_active_frames: int = 60,
         cooldown_frames: int = 8,
+        onset_path_scale_ratio: float = 0.15,
+        onset_displacement_scale_ratio: float = 0.10,
+        still_step_scale_ratio: float = 0.025,
     ) -> None:
         self.target_frames = max(2, int(target_frames))
         self.pre_roll_frames = max(3, int(pre_roll_frames))
@@ -93,8 +121,16 @@ class DynamicMotionSegmenter:
         self.min_active_frames = max(3, int(min_active_frames))
         self.max_active_frames = max(self.min_active_frames, int(max_active_frames))
         self.cooldown_frames = max(0, int(cooldown_frames))
+        self.onset_path_scale_ratio = max(0.0, float(onset_path_scale_ratio))
+        self.onset_displacement_scale_ratio = max(
+            0.0,
+            float(onset_displacement_scale_ratio),
+        )
+        self.still_step_scale_ratio = max(0.0, float(still_step_scale_ratio))
         self._pre_roll: Deque[np.ndarray] = deque(maxlen=self.pre_roll_frames)
+        self._pre_roll_scales: Deque[float] = deque(maxlen=self.pre_roll_frames)
         self._active: list[np.ndarray] = []
+        self._active_scales: list[float] = []
         self._still_frames = 0
         self._cooldown_remaining = 0
 
@@ -110,11 +146,18 @@ class DynamicMotionSegmenter:
 
     def reset(self) -> None:
         self._pre_roll.clear()
+        self._pre_roll_scales.clear()
         self._active.clear()
+        self._active_scales.clear()
         self._still_frames = 0
         self._cooldown_remaining = 0
 
-    def update(self, frame: np.ndarray) -> MotionSegmentUpdate:
+    def update(
+        self,
+        frame: np.ndarray,
+        *,
+        motion_scale: float | None = None,
+    ) -> MotionSegmentUpdate:
         vector = np.asarray(frame, dtype=np.float32).reshape(-1)
         if vector.size <= 0 or not np.isfinite(vector).all():
             self.reset()
@@ -128,19 +171,29 @@ class DynamicMotionSegmenter:
 
         if not self._active:
             self._pre_roll.append(vector)
+            self._pre_roll_scales.append(max(0.0, float(motion_scale or 0.0)))
             if len(self._pre_roll) < self.pre_roll_frames:
                 return MotionSegmentUpdate("warming_up", len(self._pre_roll))
             if not self._onset_detected():
                 return MotionSegmentUpdate("idle", len(self._pre_roll))
             self._active = [item.copy() for item in self._pre_roll]
+            self._active_scales = list(self._pre_roll_scales)
             self._still_frames = 0
             return MotionSegmentUpdate("active", len(self._active))
 
         previous = self._active[-1]
         self._active.append(vector)
+        current_scale = max(0.0, float(motion_scale or 0.0))
+        self._active_scales.append(current_scale)
         step_points = _global_points(np.stack([previous, vector], axis=0))
         step = float(np.linalg.norm(step_points[1] - step_points[0]))
-        self._still_frames = self._still_frames + 1 if step <= self.still_step else 0
+        still_threshold = self._scale_aware_threshold(
+            current_scale,
+            ratio=self.still_step_scale_ratio,
+            fallback=self.still_step,
+            minimum=0.002,
+        )
+        self._still_frames = self._still_frames + 1 if step <= still_threshold else 0
         enough_frames = len(self._active) >= self.min_active_frames
         ended = enough_frames and self._still_frames >= self.end_still_frames
         reached_limit = len(self._active) >= self.max_active_frames
@@ -156,7 +209,9 @@ class DynamicMotionSegmenter:
             target_frames=self.target_frames,
         )
         self._active.clear()
+        self._active_scales.clear()
         self._pre_roll.clear()
+        self._pre_roll_scales.clear()
         self._still_frames = 0
         self._cooldown_remaining = self.cooldown_frames
         return MotionSegmentUpdate(
@@ -169,10 +224,36 @@ class DynamicMotionSegmenter:
         sequence = np.stack(tuple(self._pre_roll), axis=0)
         motion = trajectory_features(sequence, target_dim=sequence.shape[1])
         displacement = float(np.hypot(float(motion[0]), float(motion[1])))
-        return (
-            float(motion[4]) >= self.onset_path
-            and displacement >= self.onset_displacement
+        valid_scales = [value for value in self._pre_roll_scales if value > 1e-6]
+        scale = float(np.median(valid_scales)) if valid_scales else 0.0
+        path_threshold = self._scale_aware_threshold(
+            scale,
+            ratio=self.onset_path_scale_ratio,
+            fallback=self.onset_path,
+            minimum=0.012,
         )
+        displacement_threshold = self._scale_aware_threshold(
+            scale,
+            ratio=self.onset_displacement_scale_ratio,
+            fallback=self.onset_displacement,
+            minimum=0.008,
+        )
+        return (
+            float(motion[4]) >= path_threshold
+            and displacement >= displacement_threshold
+        )
+
+    @staticmethod
+    def _scale_aware_threshold(
+        scale: float,
+        *,
+        ratio: float,
+        fallback: float,
+        minimum: float,
+    ) -> float:
+        if scale <= 1e-6:
+            return fallback
+        return min(fallback, max(minimum, scale * ratio))
 
 
 def _global_points(sequence: np.ndarray) -> np.ndarray:

@@ -132,6 +132,7 @@ def test_router_runs_one_shared_detection_for_both_models() -> None:
     assert out["performance"]["shared_detection"] is True
     assert out["router"]["shared_detection"] is True
     assert out["router"]["dynamic_phase"] == ""
+    assert out["router"]["dynamic_motion_scale"] == 0.0
 
 
 def test_router_rejects_dynamic_model_quasi_static_label() -> None:

@@ -85,6 +85,7 @@ class GestureOnlineInfer:
         self._dynamic_segmenter: DynamicMotionSegmenter | None = None
         self._pending_dynamic_prediction: tuple[str, float] | None = None
         self._pending_dynamic_repeats = 0
+        self._pending_dynamic_motion_scale = 0.0
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -417,6 +418,7 @@ class GestureOnlineInfer:
             segmenter.reset()
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
+        self._pending_dynamic_motion_scale = 0.0
 
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
@@ -424,6 +426,7 @@ class GestureOnlineInfer:
         self._finger_count_window.clear()
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
+        self._pending_dynamic_motion_scale = 0.0
 
     def _segmenter(self) -> DynamicMotionSegmenter:
         segmenter = getattr(self, "_dynamic_segmenter", None)
@@ -438,6 +441,8 @@ class GestureOnlineInfer:
         self,
         feat: np.ndarray,
         landmarks_json: str,
+        *,
+        motion_scale: float,
     ) -> Dict[str, Any]:
         pending = getattr(self, "_pending_dynamic_prediction", None)
         repeats = int(getattr(self, "_pending_dynamic_repeats", 0) or 0)
@@ -452,15 +457,19 @@ class GestureOnlineInfer:
                     "phase": "completed",
                     "frames": int(self._window.maxlen or 36),
                     "required_frames": int(self._window.maxlen or 36),
+                    "motion_scale": float(
+                        getattr(self, "_pending_dynamic_motion_scale", 0.0)
+                    ),
                 },
             }
 
-        update = self._segmenter().update(feat)
+        update = self._segmenter().update(feat, motion_scale=motion_scale)
         temporal_state = {
             "enabled": True,
             "phase": update.phase,
             "frames": update.frames,
             "required_frames": int(self._window.maxlen or 36),
+            "motion_scale": float(motion_scale),
         }
         if update.completed_sequence is None:
             return {
@@ -497,6 +506,7 @@ class GestureOnlineInfer:
         if label:
             self._pending_dynamic_prediction = (label, confidence)
             self._pending_dynamic_repeats = 1
+            self._pending_dynamic_motion_scale = float(motion_scale)
         return {
             "label": label,
             "confidence": confidence,
@@ -737,7 +747,22 @@ class GestureOnlineInfer:
                 feat = np.concatenate([feat, pad], axis=0)
 
         if self._uses_global_dynamic_motion():
-            return self._process_segmented_dynamic_frame(feat, landmarks_json)
+            hand_scales = []
+            for hand in hands:
+                points = np.asarray(hand.landmarks, dtype=np.float32)
+                if points.shape == (21, 2):
+                    size = points.max(axis=0) - points.min(axis=0)
+                    hand_scales.append(float(np.linalg.norm(size)))
+            motion_scale = (
+                float(np.median(hand_scales))
+                if hand_scales
+                else 0.0
+            )
+            return self._process_segmented_dynamic_frame(
+                feat,
+                landmarks_json,
+                motion_scale=motion_scale,
+            )
 
         self._window.append(feat)
         temporal_state = self._dynamic_temporal_state()

@@ -528,8 +528,13 @@ def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
     controller._process_sample_recording_frame(frame)
 
     sample = np.load(label_dir / "sample_0000.npy")
+    metadata = json.loads(
+        (label_dir / "sample_0000.meta.json").read_text(encoding="utf-8")
+    )
     assert sample.shape == (2, 44)
     assert np.allclose(sample[0, -2:], [0.0, 0.0])
+    assert metadata["raw_feature_dim"] == 44
+    assert metadata["projected_hand_scale_median"] > 0.0
     assert done_codes == [0]
 
 
@@ -577,6 +582,10 @@ def test_delete_recorded_samples_removes_files_and_deactivates_gesture(monkeypat
     for idx in range(2):
         sample_path = label_dir / f"sample_{idx:04d}.npy"
         np.save(sample_path, np.zeros((30, 21, 2), dtype=np.float32))
+        sample_path.with_suffix(".meta.json").write_text(
+            json.dumps({"projected_hand_scale_median": 0.2}),
+            encoding="utf-8",
+        )
         sample_paths.append(sample_path)
 
     engine = create_engine("sqlite:///:memory:")
@@ -935,6 +944,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
             "dynamic_label": "swipe_down",
             "dynamic_confidence": 0.9,
             "dynamic_type": "dynamic",
+            "dynamic_motion_scale": 0.22,
         },
         now=10.0,
     )
@@ -975,6 +985,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert rows[0]["static_reject_reason"] == "no_label"
     assert rows[0]["dynamic_label"] == "swipe_down"
     assert rows[0]["dynamic_type"] == "dynamic"
+    assert rows[0]["dynamic_motion_scale"] == pytest.approx(0.22)
 
 
 def test_live_evaluation_ignores_below_threshold_without_default_timeout(

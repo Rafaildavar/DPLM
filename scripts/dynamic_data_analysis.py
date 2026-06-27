@@ -585,6 +585,7 @@ def _preprocessing_decisions() -> list[str]:
         "Балансировать dynamic-классы минимум до 20 сэмплов на класс перед сравнением моделей; основной offline-показатель - macro F1.",
         "Высокий offline CV при слабом live считать distribution shift; каждую candidate-модель подтверждать live evaluation с expected_label.",
         "Production preprocessing выделяет active motion segment и resample до 36 кадров, чтобы медленные/быстрые жесты были сравнимы.",
+        "Global wrist trajectory переносится в начало координат и нормализуется по амплитуде; onset/stop thresholds масштабируются projected hand size.",
     ]
 
 

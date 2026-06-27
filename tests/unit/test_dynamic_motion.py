@@ -3,6 +3,7 @@ import numpy as np
 from cv.dynamic_motion import (
     DynamicMotionSegmenter,
     canonical_dynamic_sequence,
+    normalize_global_trajectory,
     resample_sequence,
 )
 from cv.gesture_features import trajectory_features
@@ -36,6 +37,27 @@ def test_canonical_dynamic_sequence_trims_static_edges():
     assert abs(float(motion[1])) < 1e-6
 
 
+def test_global_trajectory_is_position_and_amplitude_invariant():
+    base = np.stack([_frame(x, 0.5) for x in np.linspace(0.8, 0.3, 20)])
+    transformed = base.copy()
+    transformed[:, -2:] = (
+        np.asarray([0.2, 0.75], dtype=np.float32) + (base[:, -2:] - base[0, -2:]) * 0.2
+    )
+
+    base_normalized = canonical_dynamic_sequence(base, target_frames=36)
+    transformed_normalized = canonical_dynamic_sequence(
+        transformed,
+        target_frames=36,
+    )
+
+    assert np.allclose(base_normalized, transformed_normalized, atol=1e-5)
+    assert np.allclose(
+        normalize_global_trajectory(base_normalized),
+        base_normalized,
+        atol=1e-6,
+    )
+
+
 def test_segmenter_emits_one_completed_swipe_after_motion_stops():
     segmenter = DynamicMotionSegmenter(cooldown_frames=4)
     updates = []
@@ -66,6 +88,27 @@ def test_segmenter_handles_different_gesture_speeds():
 
         assert len(completed) == 1
         assert completed[0].shape == (36, 44)
+
+
+def test_segmenter_uses_hand_scale_for_far_camera_motion():
+    segmenter = DynamicMotionSegmenter()
+    points = [0.8] * 6 + list(np.linspace(0.8, 0.72, 14)) + [0.72] * 6
+
+    completed = [
+        update.completed_sequence
+        for x in points
+        if (
+            update := segmenter.update(
+                _frame(x, 0.5),
+                motion_scale=0.08,
+            )
+        ).completed_sequence
+        is not None
+    ]
+
+    assert len(completed) == 1
+    motion = trajectory_features(completed[0], target_dim=44)
+    assert np.isclose(motion[0], -0.5, atol=0.01)
 
 
 def test_segmenter_does_not_emit_for_stationary_hand():
