@@ -584,7 +584,7 @@ def _preprocessing_decisions() -> list[str]:
         "На сохранении применять quality gates: знак ожидаемого направления, minimum global path, axis alignment, straightness и pose motion energy.",
         "Балансировать dynamic-классы минимум до 20 сэмплов на класс перед сравнением моделей; основной offline-показатель - macro F1.",
         "Высокий offline CV при слабом live считать distribution shift; каждую candidate-модель подтверждать live evaluation с expected_label.",
-        "Следующий preprocessing experiment: выделять active motion segment и resample до 36 кадров, чтобы медленные/быстрые жесты были сравнимы.",
+        "Production preprocessing выделяет active motion segment и resample до 36 кадров, чтобы медленные/быстрые жесты были сравнимы.",
     ]
 
 
@@ -857,7 +857,7 @@ def build_markdown_report(report: DynamicDataAnalysis) -> str:
             "## Интерпретация для JMLC",
             "",
             "- Анализ документирует понимание данных, критерии предобработки, протокол валидации и live/offline mismatch.",
-            "- Следующая измеримая гипотеза - не очередная смена модели, а более чистые dynamic-данные плюс live-evaluation confirmation.",
+            "- Active-segment preprocessing реализован; следующая измеримая проверка - live-evaluation event-based inference против прежнего sliding-window baseline.",
             "",
             "## Воспроизведение",
             "",

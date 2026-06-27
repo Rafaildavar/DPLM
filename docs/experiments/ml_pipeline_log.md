@@ -1173,6 +1173,81 @@ Offline-проверка:
 - Запустить приложение минимум на `15` секунд в `auto`, затем сравнить
   `runtime_performance.jsonl` с live accuracy и route metrics.
 
+### H-029: Dynamic gesture должен быть событием, а не произвольным окном
+
+Статус: `implemented`, требуется повторная live-валидация
+
+Результат H-028 на реальной камере:
+- `shared_detection_rate=1.0` во всех пяти окнах.
+- Четыре окна: `inference_ms_avg=14.9-18.4`,
+  `inference_ms_p95=19.3-26.6`, capacity `54-67 FPS`.
+- Одно окно со spike: average `28.7 ms`, p95 `58.5 ms`, но average capacity
+  осталась `34.85 FPS` при target `30`.
+- Вывод: производительность могла усиливать ошибки, но не является основной
+  причиной нестабильного распознавания.
+- Сообщение `hend expected=4 current=0` означает, что finger-count guard
+  отклонил несовместимый static prediction. Это защитный отказ, а не
+  подтвержденный жест.
+
+Концептуальная проблема:
+- Train sample записывается как один управляемый фрагмент после стабильной
+  стартовой позы.
+- Старый live inference классифицировал последние `36` кадров на каждом кадре.
+- Такое окно могло содержать ожидание, только часть свайпа, остановку и возврат
+  руки одновременно.
+- Скорость пользователя меняла не только velocity, но и долю полезного
+  движения внутри фиксированного окна.
+
+Гипотеза:
+- Сначала нужно детерминированно выделить одно законченное движение, и только
+  затем передавать его ML-модели.
+- Train и live должны применять одинаковые trim/resample операции.
+
+Что сделали:
+- Добавлен `DynamicMotionSegmenter` со состояниями:
+  `warming_up -> idle -> active -> completed -> cooldown`.
+- Начало определяется по global wrist path/displacement.
+- Конец определяется по пяти последовательным кадрам покоя.
+- Variable-length active segment обрезается от статических краев и линейно
+  ресемплируется до `36` кадров.
+- `dynamic_stats` применяет ту же canonical normalization при обучении и
+  inference.
+- Модель делает один prediction после `completed`, а не prediction на каждом
+  sliding window.
+- Prediction повторяется два кадра только для confirmation policy, затем
+  emitted prediction подтверждается без сброса cooldown state.
+- Cooldown блокирует немедленный возврат руки как новый жест.
+- В `auto` статический класс требует deliberate dwell `15` кадров.
+- Во время live-test dynamic-класса static-route показывается, но не
+  засчитывается как ошибочная попытка.
+- Route log дополнен `dynamic_phase` и `dynamic_segment_frames`.
+- `dynamic_knn.pkl` переобучен на canonical active segments.
+
+Offline-проверка:
+- `5-fold CV accuracy=1.0`, `macro F1=1.0` на `70` исходных samples.
+- Создано `210` speed/padding augmentations: `18`, `36`, `60` motion frames с
+  разной длиной покоя по краям.
+- На этих вариантах сохранено `210/210 correct`, robustness accuracy `1.0`.
+- Unit tests покрывают static hand, разные скорости, motion stop, resampling и
+  cooldown возврата.
+- Расширенный ML/runtime набор: `92 passed`.
+
+Ограничение:
+- Жест теперь считается завершенным после короткой остановки руки в финальной
+  точке. Это осознанная event boundary, а не таймер попытки.
+- Live accuracy еще не измерена после H-029, поэтому production-гипотеза пока
+  не считается подтвержденной.
+
+Критерий live-приемки:
+- По два run `10` попыток для `swipe_up`, `swipe_down`, `swipe_left`.
+- После свайпа удерживать руку в финальной точке примерно `0.2` секунды.
+- `accuracy >= 80%`, `static hijack=0%`, directional confusion `<=1/10`.
+- В correct/wrong rows ожидается `dynamic_phase=completed`.
+
+Следующий шаг:
+- Перезапустить приложение, чтобы загрузить новую модель и state machine, и
+  провести первый run для каждого dynamic-класса без переобучения между ними.
+
 ## Текущий ML-пайплайн
 
 1. Запись:
@@ -1180,8 +1255,9 @@ Offline-проверка:
    - dynamic: `(36, 44)`.
 2. Feature extraction:
    - static baseline: `static_mean`;
-   - dynamic baseline: `dynamic_stats` with trajectory features weighted by
-     `8.0` for distance-based KNN.
+   - dynamic baseline: active motion trim + resample to `36` frames;
+   - `dynamic_stats` with trajectory features weighted by `8.0` for
+     distance-based KNN.
 3. Обучение:
    - CLI: `cv.train_classifier`;
    - поддерживаемые модели: `knn`, `svm`, `extra_trees`, `rf`, `logreg`.

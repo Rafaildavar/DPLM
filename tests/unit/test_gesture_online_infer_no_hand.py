@@ -286,7 +286,7 @@ def test_dynamic_motion_gate_rejects_static_global_window() -> None:
     infer._gesture_signatures = {}
 
     out = {}
-    for _ in range(36):
+    for _ in range(70):
         out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert out["label"] == ""
@@ -309,7 +309,7 @@ def test_dynamic_motion_gate_rejects_wrong_direction_label() -> None:
     infer._gesture_signatures = {}
 
     out = {}
-    for _ in range(36):
+    for _ in range(70):
         out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert out["label"] == ""
@@ -331,12 +331,12 @@ def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
     infer._gesture_signatures = {}
 
     out = {}
-    for _ in range(36):
+    for _ in range(60):
         out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert out["label"] == "swipe_left"
     assert out["confidence"] == 0.2
-    assert out["temporal"]["phase"] == "active"
+    assert out["temporal"]["phase"] == "completed"
 
 
 def test_reset_temporal_state_clears_dynamic_windows() -> None:
@@ -348,6 +348,25 @@ def test_reset_temporal_state_clears_dynamic_windows() -> None:
 
     assert not infer._window
     assert not infer._finger_count_window
+
+
+def test_acknowledge_dynamic_event_preserves_segmenter_cooldown() -> None:
+    from cv.dynamic_motion import DynamicMotionSegmenter
+
+    infer = object.__new__(GestureOnlineInfer)
+    infer._window = deque([np.ones(44, dtype=np.float32)], maxlen=36)
+    infer._finger_count_window = deque([4], maxlen=5)
+    infer._dynamic_segmenter = DynamicMotionSegmenter()
+    infer._dynamic_segmenter._cooldown_remaining = 5
+    infer._pending_dynamic_prediction = ("swipe_left", 0.9)
+    infer._pending_dynamic_repeats = 1
+
+    infer.acknowledge_dynamic_event()
+
+    assert not infer._window
+    assert not infer._finger_count_window
+    assert infer._pending_dynamic_prediction is None
+    assert infer._dynamic_segmenter.phase == "cooldown"
 
 
 def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:

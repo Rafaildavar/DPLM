@@ -178,6 +178,7 @@ class _Event:
 
 
 GESTURE_CONFIRM_FRAMES = 6
+AUTO_STATIC_GESTURE_CONFIRM_FRAMES = 15
 RECOGNITION_MODEL_AUTO = "auto"
 RECOGNITION_MODEL_STATIC = "static"
 RECOGNITION_MODEL_DYNAMIC = "dynamic"
@@ -666,6 +667,7 @@ class AppController:
             try:
                 if self._gesture_type_for_label(label) == GESTURE_TYPE_DYNAMIC:
                     return DYNAMIC_GESTURE_CONFIRM_FRAMES
+                return AUTO_STATIC_GESTURE_CONFIRM_FRAMES
             except Exception as e:
                 print(f"[w] dynamic confirmation taxonomy: {e}", flush=True)
         return GESTURE_CONFIRM_FRAMES
@@ -963,6 +965,10 @@ class AppController:
                         "dynamic_confidence": payload.get("dynamic_confidence"),
                         "dynamic_type": payload.get("dynamic_type"),
                         "dynamic_reject_reason": payload.get("dynamic_reject_reason"),
+                        "dynamic_phase": payload.get("dynamic_phase"),
+                        "dynamic_segment_frames": payload.get(
+                            "dynamic_segment_frames"
+                        ),
                     }
                 )
             with path.open("a", encoding="utf-8") as fh:
@@ -1004,6 +1010,10 @@ class AppController:
             "dynamic_type": str(route_metadata.get("dynamic_type") or ""),
             "dynamic_reject_reason": str(
                 route_metadata.get("dynamic_reject_reason") or ""
+            ),
+            "dynamic_phase": str(route_metadata.get("dynamic_phase") or ""),
+            "dynamic_segment_frames": int(
+                route_metadata.get("dynamic_segment_frames") or 0
             ),
         }
 
@@ -1119,6 +1129,15 @@ class AppController:
                 return
 
             expected = str(session.get("expected_label") or "")
+            expected_type = self._gesture_type_for_label(expected)
+            route = str((route_metadata or {}).get("route") or "")
+            if expected_type == GESTURE_TYPE_DYNAMIC and route != "dynamic":
+                session["last_result"] = "ignored_wrong_route"
+                self._emit_live_evaluation_changed(
+                    session,
+                    message=f"{clean_label}: static-route игнорируется в dynamic-тесте",
+                )
+                return
             result = "correct" if clean_label == expected else "wrong"
             self._record_live_evaluation_attempt(
                 session,
@@ -2075,13 +2094,13 @@ class AppController:
                 route_metadata=route_metadata,
             )
             if str(route_metadata.get("route") or "") == "dynamic":
-                resetter = getattr(
+                acknowledger = getattr(
                     getattr(self, "_embedded_infer", None),
-                    "reset_temporal_state",
+                    "acknowledge_dynamic_event",
                     None,
                 )
-                if callable(resetter):
-                    resetter()
+                if callable(acknowledger):
+                    acknowledger()
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-

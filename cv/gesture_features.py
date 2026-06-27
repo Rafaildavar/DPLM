@@ -186,6 +186,11 @@ def trajectory_features(sequence: np.ndarray, target_dim: int | None = None) -> 
 
 def dynamic_stats_features(sequence: np.ndarray, target_dim: int | None = None) -> np.ndarray:
     seq = _as_aligned(sequence, target_dim)
+    # Import locally to avoid a module cycle: the segmenter reuses the public
+    # sequence parsing and trajectory helpers from this module.
+    from cv.dynamic_motion import canonical_dynamic_sequence
+
+    seq = canonical_dynamic_sequence(seq, target_frames=36)
     if seq.shape[0] > 1:
         velocity = np.diff(seq, axis=0)
         velocity_mean = velocity.mean(axis=0)

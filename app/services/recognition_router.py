@@ -136,6 +136,15 @@ class GestureRecognitionRouter:
         if callable(resetter):
             resetter()
 
+    def acknowledge_dynamic_event(self) -> None:
+        acknowledger = getattr(
+            self._dynamic_infer,
+            "acknowledge_dynamic_event",
+            None,
+        )
+        if callable(acknowledger):
+            acknowledger()
+
     def process_frame_rgb(self, frame_rgb: Any) -> dict[str, Any]:
         started = perf_counter()
         shared_detection = self._supports_shared_detection()
@@ -254,7 +263,11 @@ class GestureRecognitionRouter:
         temporal = dynamic_out.get("temporal")
         if not isinstance(temporal, dict) or not bool(temporal.get("enabled")):
             return False
-        return str(temporal.get("phase") or "") in {"warming_up", "active"}
+        return str(temporal.get("phase") or "") in {
+            "warming_up",
+            "active",
+            "cooldown",
+        }
 
     def _without_candidate(
         self,
@@ -396,6 +409,9 @@ class GestureRecognitionRouter:
         dynamic_assessment: CandidateAssessment,
         selected_reason: str,
     ) -> dict[str, Any]:
+        dynamic_temporal = dynamic_out.get("temporal")
+        if not isinstance(dynamic_temporal, dict):
+            dynamic_temporal = {}
         return {
             "route": route,
             "selected_reason": selected_reason,
@@ -413,6 +429,8 @@ class GestureRecognitionRouter:
                 "" if dynamic_assessment.accepted else dynamic_assessment.reason
             ),
             "dynamic_threshold": self._dynamic_confidence_threshold,
+            "dynamic_phase": str(dynamic_temporal.get("phase") or ""),
+            "dynamic_segment_frames": int(dynamic_temporal.get("frames") or 0),
         }
 
     def _empty(self) -> dict[str, Any]:

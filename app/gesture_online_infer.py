@@ -22,6 +22,7 @@ from cv.gesture_features import (
     infer_raw_dim_from_feature_size,
     trajectory_features,
 )
+from cv.dynamic_motion import DynamicMotionSegmenter
 from cv.hand_landmarker import (
     DetectedHand,
     HandLandmarkerVideo,
@@ -81,6 +82,9 @@ class GestureOnlineInfer:
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
+        self._dynamic_segmenter: DynamicMotionSegmenter | None = None
+        self._pending_dynamic_prediction: tuple[str, float] | None = None
+        self._pending_dynamic_repeats = 0
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -151,6 +155,11 @@ class GestureOnlineInfer:
                 self._model_error = "Нет models/knn.pkl"
         self._raw_feature_dim = self._infer_raw_feature_dim()
         self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
+        if self._uses_global_dynamic_motion():
+            self._dynamic_segmenter = DynamicMotionSegmenter(
+                target_frames=max(2, int(window)),
+                max_active_frames=max(60, int(window) * 2),
+            )
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
 
@@ -403,6 +412,97 @@ class GestureOnlineInfer:
     def reset_temporal_state(self) -> None:
         self._window.clear()
         self._finger_count_window.clear()
+        segmenter = getattr(self, "_dynamic_segmenter", None)
+        if segmenter is not None:
+            segmenter.reset()
+        self._pending_dynamic_prediction = None
+        self._pending_dynamic_repeats = 0
+
+    def acknowledge_dynamic_event(self) -> None:
+        """Clear emitted prediction while preserving return-motion cooldown."""
+        self._window.clear()
+        self._finger_count_window.clear()
+        self._pending_dynamic_prediction = None
+        self._pending_dynamic_repeats = 0
+
+    def _segmenter(self) -> DynamicMotionSegmenter:
+        segmenter = getattr(self, "_dynamic_segmenter", None)
+        if segmenter is None:
+            segmenter = DynamicMotionSegmenter(
+                target_frames=int(self._window.maxlen or 36),
+            )
+            self._dynamic_segmenter = segmenter
+        return segmenter
+
+    def _process_segmented_dynamic_frame(
+        self,
+        feat: np.ndarray,
+        landmarks_json: str,
+    ) -> Dict[str, Any]:
+        pending = getattr(self, "_pending_dynamic_prediction", None)
+        repeats = int(getattr(self, "_pending_dynamic_repeats", 0) or 0)
+        if pending is not None and repeats > 0:
+            self._pending_dynamic_repeats = repeats - 1
+            return {
+                "label": pending[0],
+                "confidence": pending[1],
+                "landmarks_json": landmarks_json,
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "frames": int(self._window.maxlen or 36),
+                    "required_frames": int(self._window.maxlen or 36),
+                },
+            }
+
+        update = self._segmenter().update(feat)
+        temporal_state = {
+            "enabled": True,
+            "phase": update.phase,
+            "frames": update.frames,
+            "required_frames": int(self._window.maxlen or 36),
+        }
+        if update.completed_sequence is None:
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+                "temporal": temporal_state,
+            }
+
+        self._window.clear()
+        self._window.extend(update.completed_sequence)
+        motion_ok, motion = self._dynamic_motion_gate()
+        if not motion_ok or self._clf is None or not self._classes:
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+                "temporal": temporal_state,
+            }
+
+        try:
+            model_feat = self._build_model_feature().reshape(1, -1)
+            label, confidence = self._dynamic_prediction(model_feat, motion)
+        except Exception as exc:
+            print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
+            self.reset_temporal_state()
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+                "temporal": temporal_state,
+            }
+
+        if label:
+            self._pending_dynamic_prediction = (label, confidence)
+            self._pending_dynamic_repeats = 1
+        return {
+            "label": label,
+            "confidence": confidence,
+            "landmarks_json": landmarks_json,
+            "temporal": temporal_state,
+        }
 
     def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
         metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
@@ -563,8 +663,7 @@ class GestureOnlineInfer:
         landmarks_json = self._build_overlay_payload(hands)
 
         if not hands:
-            self._window.clear()
-            self._finger_count_window.clear()
+            self.reset_temporal_state()
             return {
                 "label": "",
                 "confidence": 0.0,
@@ -583,8 +682,7 @@ class GestureOnlineInfer:
 
         hands = normalized_hands
         if not normalized:
-            self._window.clear()
-            self._finger_count_window.clear()
+            self.reset_temporal_state()
             return {
                 "label": "",
                 "confidence": 0.0,
@@ -637,6 +735,9 @@ class GestureOnlineInfer:
             else:
                 pad = np.zeros(raw_feature_dim - feat.shape[0], dtype=feat.dtype)
                 feat = np.concatenate([feat, pad], axis=0)
+
+        if self._uses_global_dynamic_motion():
+            return self._process_segmented_dynamic_frame(feat, landmarks_json)
 
         self._window.append(feat)
         temporal_state = self._dynamic_temporal_state()

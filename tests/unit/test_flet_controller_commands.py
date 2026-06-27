@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.flet_app.controller import (
+    AUTO_STATIC_GESTURE_CONFIRM_FRAMES,
     AppController,
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
@@ -805,6 +806,42 @@ def test_auto_dispatch_confirms_taxonomy_dynamic_label_faster():
     assert recorded == [("swipe_up", pytest.approx(0.9), True)]
 
 
+def test_confirmed_dynamic_event_is_acknowledged_without_full_reset():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    controller.execute_for_gesture = lambda *_args: True
+    controller._record_recognition_event = lambda *_args: None
+
+    class _Infer:
+        acknowledge_calls = 0
+
+        def acknowledge_dynamic_event(self):
+            self.acknowledge_calls += 1
+
+    controller._embedded_infer = _Infer()
+    output = {
+        "label": "swipe_left",
+        "confidence": 0.9,
+        "landmarks_json": "[]",
+        "router": {"route": "dynamic"},
+    }
+
+    for _ in range(DYNAMIC_GESTURE_CONFIRM_FRAMES):
+        controller._dispatch_infer_result(output)
+
+    assert controller._embedded_infer.acknowledge_calls == 1
+
+
+def test_auto_static_label_requires_deliberate_dwell():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+
+    assert (
+        controller._gesture_confirm_frames("gun")
+        == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
+    )
+
+
 def test_dispatch_resets_confirmation_when_label_changes():
     controller = _dispatch_controller()
     executed = []
@@ -972,6 +1009,33 @@ def test_live_evaluation_ignores_below_threshold_without_default_timeout(
     snapshot = controller.current_live_evaluation()
     assert snapshot["active"] is False
     assert snapshot["missed"] == 1
+
+
+def test_dynamic_live_evaluation_ignores_static_route(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        "swipe_up",
+        attempts=1,
+        timeout_seconds=0.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["next_ready_at"] = 0.0
+
+    controller._consume_live_evaluation_prediction(
+        "gun",
+        1.0,
+        route_metadata={"route": "static"},
+        now=10.0,
+    )
+
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is True
+    assert snapshot["total"] == 0
+    assert snapshot["lastResult"] == "ignored_wrong_route"
 
 
 def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():

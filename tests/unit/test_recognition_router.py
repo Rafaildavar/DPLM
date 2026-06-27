@@ -27,6 +27,7 @@ class _FakeInfer:
         self.two_hands = False
         self.classifier_requires_two_hands = False
         self.reset_calls = 0
+        self.acknowledge_calls = 0
 
     def process_frame_rgb(self, _frame_rgb):
         self.calls += 1
@@ -42,6 +43,9 @@ class _FakeInfer:
 
     def reset_temporal_state(self):
         self.reset_calls += 1
+
+    def acknowledge_dynamic_event(self):
+        self.acknowledge_calls += 1
 
 
 class _SharedFakeInfer(_FakeInfer):
@@ -127,6 +131,7 @@ def test_router_runs_one_shared_detection_for_both_models() -> None:
     assert dynamic.calls == 0
     assert out["performance"]["shared_detection"] is True
     assert out["router"]["shared_detection"] is True
+    assert out["router"]["dynamic_phase"] == ""
 
 
 def test_router_rejects_dynamic_model_quasi_static_label() -> None:
@@ -315,10 +320,12 @@ def test_router_forwards_lifecycle_calls() -> None:
 
     router.set_two_hands(True)
     router.reset_temporal_state()
+    router.acknowledge_dynamic_event()
     router.close()
 
     assert static.two_hands_values == [True]
     assert dynamic.two_hands_values == [True]
     assert dynamic.reset_calls == 1
+    assert dynamic.acknowledge_calls == 1
     assert static.closed is True
     assert dynamic.closed is True
