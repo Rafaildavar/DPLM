@@ -1944,3 +1944,103 @@ MLflow metrics:
   - `live_static_false_positive_rate <=10%` на negative;
   - rejection reasons должны быть объяснимыми:
     `negative_class`, `low_margin`, `far_from_prototype`.
+
+### H-042: Reject strategy нужно выбирать сравнением ML-методов, а не вручную
+
+Статус: `implemented`, offline benchmark готов
+
+Дата реализации: `2026-06-27`
+
+Проблема:
+- Есть несколько способов решить false trigger:
+  - negative classes;
+  - confidence threshold;
+  - current open-set policy;
+  - one-vs-rest verifier;
+  - one-class/outlier detectors;
+  - metric learning;
+  - nonlinear classifier.
+- Без единого benchmark нельзя честно сказать, какой метод лучше для текущего
+  персонального датасета.
+
+Что добавлено:
+- CLI benchmark:
+  `scripts/rejection_method_benchmark.py`.
+- Make target:
+  `make rejection-benchmark`.
+- Unit test:
+  `tests/unit/test_rejection_method_benchmark.py`.
+- Отчеты:
+  - `docs/experiments/rejection_method_benchmark_static.md`;
+  - `docs/experiments/rejection_method_benchmark_static.json`;
+  - `docs/experiments/rejection_method_benchmark_dynamic.md`;
+  - `docs/experiments/rejection_method_benchmark_dynamic.json`.
+
+Сравниваемые методы:
+- `negative_classes`;
+- `confidence_threshold`;
+- `open_set_policy`;
+- `one_vs_rest_logreg`;
+- `one_class_svm`;
+- `isolation_forest`;
+- `local_outlier_factor`;
+- `metric_nca_centroid`;
+- `mlp_negative_classes`.
+
+Static benchmark:
+- Dataset: `221` samples, `11` classes, positives:
+  `CTRLZ`, `Hend`, `UP`, `gun`, `sh3`, `three`;
+  negatives:
+  `no_gesture_static`, `partial_swipe`, `random_motion`,
+  `return_motion`, `wrong_axis_motion`.
+- Лучший метод: `one_vs_rest_logreg`.
+- Метрики:
+  - `overall_success=0.9774`;
+  - `positive_recall=0.9669`;
+  - `negative_false_positive_rate=0.0100`.
+- Текущий `open_set_policy`:
+  - `overall_success=0.9683`;
+  - `positive_recall=0.9587`;
+  - `negative_false_positive_rate=0.0200`.
+
+Dynamic benchmark:
+- Dataset: `170` samples, `8` classes, positives:
+  `swipe_down`, `swipe_left`, `swipe_up`;
+  negatives:
+  `no_gesture_static`, `partial_swipe`, `random_motion`,
+  `return_motion`, `wrong_axis_motion`.
+- Лучший метод: `open_set_policy`.
+- Метрики:
+  - `overall_success=1.0000`;
+  - `positive_recall=1.0000`;
+  - `negative_false_positive_rate=0.0000`.
+- `one_vs_rest_logreg` тоже силен:
+  - `overall_success=0.9941`;
+  - `positive_recall=0.9857`;
+  - `negative_false_positive_rate=0.0000`.
+
+Вывод:
+- Для static следующий кандидат на live integration:
+  `KNN candidate + one-vs-rest LogisticRegression verifier`.
+- Для dynamic текущий `open_set_policy` пока лучше, но это offline оценка;
+  live-тест все равно обязателен.
+- One-class методы (`one_class_svm`, `isolation_forest`, `LOF`) хорошо режут
+  false positives, но часто слишком агрессивно reject'ят реальные gestures.
+- `metric_nca_centroid` на текущих negative данных нестабилен, особенно для
+  dynamic: слишком много false positives.
+
+Проверка:
+- `python -m pytest --no-cov tests/unit/test_rejection_method_benchmark.py -q`
+  -> `1 passed`.
+- Static benchmark:
+  `python -m scripts.rejection_method_benchmark --scope static --feature-mode static_mean --target-dim 42`.
+- Dynamic benchmark:
+  `python -m scripts.rejection_method_benchmark --scope dynamic --feature-mode dynamic_stats --target-dim 44`.
+
+Следующий шаг:
+- Добавить runtime-профиль `static_verifier=one_vs_rest_logreg`.
+- Затем в live evaluation сравнить:
+  - current `open_set_policy`;
+  - `one_vs_rest_logreg`;
+  - target: `live_static_false_positive_rate <= 10%` без падения recall ниже
+    `80%` на настоящих static gestures.

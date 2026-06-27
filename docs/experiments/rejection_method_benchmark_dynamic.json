@@ -1,0 +1,274 @@
+{
+  "generated_at": 1782593440.1343622,
+  "dataset": {
+    "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
+    "scope": "dynamic",
+    "feature_mode": "dynamic_stats",
+    "target_dim": 44,
+    "sample_count": 170,
+    "class_count": 8,
+    "positive_labels": [
+      "swipe_down",
+      "swipe_left",
+      "swipe_up"
+    ],
+    "negative_labels": [
+      "no_gesture_static",
+      "partial_swipe",
+      "random_motion",
+      "return_motion",
+      "wrong_axis_motion"
+    ],
+    "class_counts": {
+      "no_gesture_static": 20,
+      "partial_swipe": 20,
+      "random_motion": 20,
+      "return_motion": 20,
+      "swipe_down": 20,
+      "swipe_left": 30,
+      "swipe_up": 20,
+      "wrong_axis_motion": 20
+    },
+    "folds": 3
+  },
+  "methods": [
+    {
+      "method": "negative_classes",
+      "status": "ok",
+      "overall_success": 0.9647,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 0.94,
+      "negative_false_positive_rate": 0.06,
+      "accepted_accuracy": 0.9211,
+      "coverage": 0.4471,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 70,
+      "positive_rejected": 0,
+      "negative_rejected": 94,
+      "negative_false_positive": 6,
+      "wrong_accept": 6,
+      "reject_reasons": {
+        "negative_class": 94
+      },
+      "false_positive_predictions": {
+        "swipe_down": 1,
+        "swipe_left": 1,
+        "swipe_up": 4
+      },
+      "error": ""
+    },
+    {
+      "method": "confidence_threshold",
+      "status": "ok",
+      "overall_success": 0.9882,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 0.98,
+      "negative_false_positive_rate": 0.02,
+      "accepted_accuracy": 0.9722,
+      "coverage": 0.4235,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 70,
+      "positive_rejected": 0,
+      "negative_rejected": 98,
+      "negative_false_positive": 2,
+      "wrong_accept": 2,
+      "reject_reasons": {
+        "low_confidence": 4,
+        "negative_class": 94
+      },
+      "false_positive_predictions": {
+        "swipe_down": 1,
+        "swipe_left": 1
+      },
+      "error": ""
+    },
+    {
+      "method": "open_set_policy",
+      "status": "ok",
+      "overall_success": 1.0,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.4118,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 70,
+      "positive_rejected": 0,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "far_from_prototype": 6,
+        "negative_class": 94
+      },
+      "false_positive_predictions": {},
+      "error": ""
+    },
+    {
+      "method": "one_vs_rest_logreg",
+      "status": "ok",
+      "overall_success": 0.9941,
+      "positive_recall": 0.9857,
+      "positive_reject_rate": 0.0143,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.4059,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 69,
+      "positive_rejected": 1,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "negative_class": 94,
+        "verifier_rejected": 7
+      },
+      "false_positive_predictions": {},
+      "error": ""
+    },
+    {
+      "method": "one_class_svm",
+      "status": "ok",
+      "overall_success": 0.6765,
+      "positive_recall": 0.2143,
+      "positive_reject_rate": 0.7857,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.0882,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 15,
+      "positive_rejected": 55,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "negative_class": 94,
+        "one_class_svm_outlier": 61
+      },
+      "false_positive_predictions": {},
+      "error": ""
+    },
+    {
+      "method": "isolation_forest",
+      "status": "ok",
+      "overall_success": 0.9235,
+      "positive_recall": 0.8143,
+      "positive_reject_rate": 0.1857,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.3353,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 57,
+      "positive_rejected": 13,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "isolation_forest_outlier": 19,
+        "negative_class": 94
+      },
+      "false_positive_predictions": {},
+      "error": ""
+    },
+    {
+      "method": "local_outlier_factor",
+      "status": "ok",
+      "overall_success": 0.9235,
+      "positive_recall": 0.8143,
+      "positive_reject_rate": 0.1857,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.3353,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 57,
+      "positive_rejected": 13,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "local_outlier_factor_outlier": 19,
+        "negative_class": 94
+      },
+      "false_positive_predictions": {},
+      "error": ""
+    },
+    {
+      "method": "metric_nca_centroid",
+      "status": "ok",
+      "overall_success": 0.4588,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 0.08,
+      "negative_false_positive_rate": 0.92,
+      "accepted_accuracy": 0.4321,
+      "coverage": 0.9529,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 70,
+      "positive_rejected": 0,
+      "negative_rejected": 8,
+      "negative_false_positive": 92,
+      "wrong_accept": 92,
+      "reject_reasons": {
+        "metric_distance_rejected": 8
+      },
+      "false_positive_predictions": {
+        "swipe_down": 16,
+        "swipe_left": 74,
+        "swipe_up": 2
+      },
+      "error": ""
+    },
+    {
+      "method": "mlp_negative_classes",
+      "status": "ok",
+      "overall_success": 0.8824,
+      "positive_recall": 0.7286,
+      "positive_reject_rate": 0.2714,
+      "negative_reject_rate": 0.99,
+      "negative_false_positive_rate": 0.01,
+      "accepted_accuracy": 0.9808,
+      "coverage": 0.3059,
+      "total": 170,
+      "positive_total": 70,
+      "negative_total": 100,
+      "positive_correct": 51,
+      "positive_rejected": 19,
+      "negative_rejected": 99,
+      "negative_false_positive": 1,
+      "wrong_accept": 1,
+      "reject_reasons": {
+        "low_confidence": 15,
+        "negative_class": 103
+      },
+      "false_positive_predictions": {
+        "swipe_up": 1
+      },
+      "error": ""
+    }
+  ],
+  "best_method": "open_set_policy",
+  "recommendation": "Use `open_set_policy` first: overall_success=1.0000, positive_recall=1.0000, negative_false_positive_rate=0.0000."
+}

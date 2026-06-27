@@ -18,6 +18,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-038: `7/10`, wrong direction `30%` | analyze correct vs wrong trajectory features |
 | Negative examples / rejection layer | Added | H-041: static/dynamic synthetic negatives + rejection metadata | run static/negative live validation |
+| Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | integrate best static verifier |
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
@@ -85,6 +86,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
+| Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
 | Live eval logs | `~/.dplm/logs/live_evaluation.jsonl` | attempt-level real-camera results | Stable |
 | Runtime logs | `~/.dplm/logs/runtime_performance.jsonl` | latency/FPS diagnostics | Stable |
 | MLflow backend | `mlflow.db` | training/live experiment history | Stable |
@@ -281,6 +283,13 @@ Every meaningful live test should be followed by:
 3. Write conclusion to `docs/experiments/ml_pipeline_log.md`.
 4. Update this file's Status Board if a component changed status.
 
+Rejection method benchmark:
+
+| Scope | Current best offline method | Evidence |
+|---|---|---|
+| static | `one_vs_rest_logreg` | `overall_success=0.9774`, negative FP `0.0100` |
+| dynamic | `open_set_policy` | `overall_success=1.0000`, negative FP `0.0000` |
+
 ## 10. AI / Multi-Agent Layer
 
 The core recognizer is deterministic ML/CV, not LLM-driven. AI agents are useful
@@ -308,6 +317,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Natural swipe | Validated | no final pose required |
 | Negative examples | Added | synthetic negatives generated automatically |
 | Static open-set rejection | Added | `gesture_rejection.json` + runtime reject policy |
+| Rejection benchmark | Added | static/dynamic reports compare 9 methods |
 | MLflow integration | Stable | training and live runs tracked |
 | Auto routing | Validated | fresh static hijack `0%` |
 | Vertical direction quality | In Progress | `swipe_up/down` recall `70%` |
