@@ -1676,3 +1676,65 @@ Live-протокол проверки:
 - Median субъективная задержка распознавания должна стать ниже: жест
   срабатывает после движения, а не после позы.
 - False positive rate на negative-сценариях не должен вырасти выше `10%`.
+
+### H-037: Live evaluation должна автоматически попадать в MLflow
+
+Статус: `implemented`, ожидает новых live прогонов пользователя
+
+Наблюдение:
+- `live_evaluation.jsonl` уже давал attempt-level логи, но для JMLC нужен
+  промышленный experiment tracker, где можно сравнивать live-runs между собой.
+- Важные ошибки auto-модели раньше могли теряться: если в dynamic-тесте router
+  выбирал static route (`gun`, `hend`, etc.), live evaluation игнорировала это
+  событие вместо того, чтобы считать его ошибкой.
+
+Что изменено:
+- После завершения live-теста Flet controller автоматически пишет MLflow run
+  в experiment `GestureFlow`.
+- Run name строится как `live-<expected>-<mode>-<dynamic_profile>`.
+- Tracking URI берется из `MLFLOW_TRACKING_URI`, fallback:
+  `sqlite:////Users/remi/Developer/GUAP/DPLM/mlflow.db`.
+- Каждый run получает artifact `live_evaluation_run.json` с session summary,
+  attempts и route counts.
+- Static route внутри expected dynamic теперь считается `wrong`, чтобы
+  метрика `static_hijack_rate` была честной.
+
+Метрики MLflow:
+- базовые: `live_accuracy`, `live_recall`, `live_error_rate`,
+  `live_miss_rate`, `live_completion_rate`;
+- счетчики: `live_total`, `live_correct`, `live_wrong`, `live_missed`;
+- latency: `live_latency_avg_s`, `live_latency_p50_s`,
+  `live_latency_p95_s`;
+- routing: `live_route_dynamic_count`, `live_route_static_count`,
+  `live_route_none_count`;
+- dynamic diagnostics: `live_dynamic_recall`,
+  `live_static_hijack_rate`, `live_wrong_dynamic_direction_rate`;
+- natural swipe segmentation: `live_end_reason_hand_lost_count`,
+  `live_end_reason_velocity_drop_count`, `live_end_reason_still_count`;
+- decision source: `live_decision_motion_first_count`,
+  `live_decision_motion_and_model_agree_count`,
+  `live_decision_negative_rejected_count`;
+- negative tests: `live_negative_false_positive_rate`,
+  `live_negative_rejected_count`.
+
+Как проверять:
+1. Запустить MLflow UI:
+
+```bash
+PYTHON=.venv/bin/python make mlflow-ui
+```
+
+2. В интерфейсе GestureFlow пройти live-test, например `swipe_left 10/10`.
+3. Обновить `http://127.0.0.1:5000`, открыть experiment `GestureFlow`.
+4. Найти run `live-swipe_left-auto-knn`.
+5. Смотреть:
+   - `live_accuracy` и `live_recall` — общее качество;
+   - `live_static_hijack_rate` — dynamic ушел в static;
+   - `live_wrong_dynamic_direction_rate` — перепутано направление;
+   - `live_end_reason_*` — завершился ли natural swipe без финальной позы;
+   - `live_evaluation_run.json` — сырые попытки и route metadata.
+
+Проверка:
+- `python -m py_compile app/flet_app/controller.py`
+- `python -m pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
+  -> `36 passed`.

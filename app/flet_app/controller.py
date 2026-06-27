@@ -906,6 +906,7 @@ class AppController:
         if bool(session.get("auto_execute_was_enabled")):
             self._auto_execute_on_gesture = True
         self._append_live_evaluation_jsonl(session, event_type=f"run_{reason}")
+        self._log_live_evaluation_mlflow(session, reason=reason)
         self._last_live_evaluation_snapshot = self._live_evaluation_snapshot_from_session(
             session,
             message=session["message"],
@@ -973,6 +974,7 @@ class AppController:
                         "dynamic_type": payload.get("dynamic_type"),
                         "dynamic_reject_reason": payload.get("dynamic_reject_reason"),
                         "dynamic_phase": payload.get("dynamic_phase"),
+                        "dynamic_end_reason": payload.get("dynamic_end_reason"),
                         "dynamic_segment_frames": payload.get(
                             "dynamic_segment_frames"
                         ),
@@ -1012,6 +1014,221 @@ class AppController:
                 fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
         except Exception as e:
             print(f"[w] live evaluation log write failed: {e}", flush=True)
+
+    def _live_evaluation_mlflow_tracking_uri(self) -> str:
+        tracking_uri = str(os.getenv("MLFLOW_TRACKING_URI") or "").strip()
+        if tracking_uri:
+            return tracking_uri
+        project_root = Path(__file__).resolve().parents[2]
+        return f"sqlite:///{project_root / 'mlflow.db'}"
+
+    def _live_evaluation_metric_suffix(self, value: Any) -> str:
+        text = str(value or "unknown").strip().lower()
+        chars = [ch if ch.isalnum() else "_" for ch in text]
+        suffix = "_".join(part for part in "".join(chars).split("_") if part)
+        return suffix or "unknown"
+
+    def _live_evaluation_mlflow_metrics(
+        self,
+        session: dict[str, Any],
+    ) -> dict[str, float]:
+        attempts = [
+            item
+            for item in session.get("attempts", [])
+            if isinstance(item, dict)
+        ]
+        target = max(1, int(session.get("target_attempts") or 1))
+        total = max(0, int(session.get("total") or len(attempts) or 0))
+        correct = max(0, int(session.get("correct") or 0))
+        wrong = max(0, int(session.get("wrong") or 0))
+        missed = max(0, int(session.get("missed") or 0))
+        expected = str(session.get("expected_label") or "")
+        try:
+            expected_type = self._gesture_type_for_label(expected)
+        except Exception:
+            expected_type = ""
+
+        metrics: dict[str, float] = {
+            "live_total": float(total),
+            "live_target_attempts": float(target),
+            "live_correct": float(correct),
+            "live_wrong": float(wrong),
+            "live_missed": float(missed),
+            "live_accuracy": float(correct / total) if total else 0.0,
+            "live_recall": float(correct / target),
+            "live_completion_rate": float(total / target),
+            "live_error_rate": float(wrong / total) if total else 0.0,
+            "live_miss_rate": float(missed / target),
+        }
+
+        latencies = [
+            float(item.get("elapsed_seconds"))
+            for item in attempts
+            if item.get("elapsed_seconds") is not None
+        ]
+        latencies = sorted(value for value in latencies if value >= 0.0)
+        if latencies:
+            p50_index = min(len(latencies) - 1, int(round((len(latencies) - 1) * 0.50)))
+            p95_index = min(len(latencies) - 1, int(round((len(latencies) - 1) * 0.95)))
+            metrics.update(
+                {
+                    "live_latency_avg_s": float(sum(latencies) / len(latencies)),
+                    "live_latency_p50_s": float(latencies[p50_index]),
+                    "live_latency_p95_s": float(latencies[p95_index]),
+                }
+            )
+
+        route_counts = self._live_evaluation_route_counts(attempts)
+        for route, count in route_counts.items():
+            metrics[f"live_route_{self._live_evaluation_metric_suffix(route)}_count"] = float(count)
+
+        decision_counts: dict[str, int] = {}
+        end_reason_counts: dict[str, int] = {}
+        static_hijack_count = 0
+        wrong_dynamic_direction_count = 0
+        negative_rejected_count = 0
+        for item in attempts:
+            route = str(item.get("route") or "none").strip() or "none"
+            decision = str(item.get("dynamic_decision_source") or "").strip()
+            if decision:
+                decision_counts[decision] = decision_counts.get(decision, 0) + 1
+            end_reason = str(item.get("dynamic_end_reason") or "").strip()
+            if end_reason:
+                end_reason_counts[end_reason] = end_reason_counts.get(end_reason, 0) + 1
+            if decision == "negative_rejected":
+                negative_rejected_count += 1
+            if expected_type == GESTURE_TYPE_DYNAMIC and route == "static":
+                static_hijack_count += 1
+            predicted = str(item.get("predicted") or "")
+            motion_label = str(item.get("dynamic_motion_label") or "")
+            if (
+                expected_type == GESTURE_TYPE_DYNAMIC
+                and route == "dynamic"
+                and str(item.get("result") or "") == "wrong"
+                and (
+                    predicted.startswith("swipe_")
+                    or motion_label.startswith("swipe_")
+                )
+            ):
+                wrong_dynamic_direction_count += 1
+
+        for source, count in decision_counts.items():
+            suffix = self._live_evaluation_metric_suffix(source)
+            metrics[f"live_decision_{suffix}_count"] = float(count)
+        for reason, count in end_reason_counts.items():
+            suffix = self._live_evaluation_metric_suffix(reason)
+            metrics[f"live_end_reason_{suffix}_count"] = float(count)
+
+        metrics["live_dynamic_recall"] = (
+            float(correct / target) if expected_type == GESTURE_TYPE_DYNAMIC else 0.0
+        )
+        metrics["live_static_hijack_count"] = float(static_hijack_count)
+        metrics["live_static_hijack_rate"] = (
+            float(static_hijack_count / total)
+            if expected_type == GESTURE_TYPE_DYNAMIC and total
+            else 0.0
+        )
+        metrics["live_wrong_dynamic_direction_count"] = float(
+            wrong_dynamic_direction_count
+        )
+        metrics["live_wrong_dynamic_direction_rate"] = (
+            float(wrong_dynamic_direction_count / total)
+            if expected_type == GESTURE_TYPE_DYNAMIC and total
+            else 0.0
+        )
+        metrics["live_negative_false_positive_count"] = (
+            float(wrong) if expected_type == GESTURE_TYPE_NEGATIVE else 0.0
+        )
+        metrics["live_negative_false_positive_rate"] = (
+            float(wrong / total)
+            if expected_type == GESTURE_TYPE_NEGATIVE and total
+            else 0.0
+        )
+        metrics["live_negative_rejected_count"] = float(negative_rejected_count)
+        return metrics
+
+    def _log_live_evaluation_mlflow(
+        self,
+        session: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        experiment = str(
+            os.getenv("GESTUREFLOW_MLFLOW_EXPERIMENT") or "GestureFlow"
+        ).strip()
+        if not experiment:
+            return
+        try:
+            import mlflow
+        except Exception as e:
+            print(f"[w] MLflow недоступен, live tracking пропущен: {e}", flush=True)
+            return
+
+        try:
+            tracking_uri = self._live_evaluation_mlflow_tracking_uri()
+            metrics = self._live_evaluation_mlflow_metrics(session)
+            expected = str(session.get("expected_label") or "unknown")
+            mode = str(session.get("recognition_model_mode") or self.recognition_model_mode)
+            profile = str(session.get("dynamic_model_profile") or self.dynamic_model_profile)
+            run_name = (
+                f"live-{self._live_evaluation_metric_suffix(expected)}-"
+                f"{self._live_evaluation_metric_suffix(mode)}-"
+                f"{self._live_evaluation_metric_suffix(profile)}"
+            )
+            params = {
+                "expected_label": expected,
+                "target_attempts": int(session.get("target_attempts") or 0),
+                "min_confidence": float(session.get("min_confidence") or 0.0),
+                "timeout_seconds": float(session.get("timeout_seconds") or 0.0),
+                "recognition_model_mode": mode,
+                "dynamic_model_profile": profile,
+                "finish_reason": str(reason or ""),
+            }
+            try:
+                params["expected_type"] = self._gesture_type_for_label(expected)
+            except Exception:
+                params["expected_type"] = ""
+            payload = {
+                "session": {
+                    "expected_label": expected,
+                    "target_attempts": session.get("target_attempts"),
+                    "total": session.get("total"),
+                    "correct": session.get("correct"),
+                    "wrong": session.get("wrong"),
+                    "missed": session.get("missed"),
+                    "min_confidence": session.get("min_confidence"),
+                    "timeout_seconds": session.get("timeout_seconds"),
+                    "recognition_model_mode": mode,
+                    "dynamic_model_profile": profile,
+                    "started_at": session.get("started_at"),
+                    "attempts": session.get("attempts", []),
+                    "route_counts": self._live_evaluation_route_counts(
+                        session.get("attempts", [])
+                    ),
+                },
+                "metrics": metrics,
+            }
+
+            mlflow.set_tracking_uri(tracking_uri)
+            mlflow.set_experiment(experiment)
+            with mlflow.start_run(run_name=run_name):
+                mlflow.set_tags(
+                    {
+                        "run_kind": "live_evaluation",
+                        "source": "gestureflow_flet",
+                        "finish_reason": str(reason or ""),
+                    }
+                )
+                mlflow.log_params(params)
+                mlflow.log_metrics(metrics)
+                mlflow.log_dict(payload, "live_evaluation_run.json")
+            print(
+                f"[✓] MLflow live run logged: expected={expected!r}, "
+                f"uri={tracking_uri}",
+                flush=True,
+            )
+        except Exception as e:
+            print(f"[w] MLflow live tracking failed: {e}", flush=True)
 
     def _live_evaluation_route_fields(
         self,
@@ -1208,10 +1425,13 @@ class AppController:
             expected_type = self._gesture_type_for_label(expected)
             route = str((route_metadata or {}).get("route") or "")
             if expected_type == GESTURE_TYPE_DYNAMIC and route != "dynamic":
-                session["last_result"] = "ignored_wrong_route"
-                self._emit_live_evaluation_changed(
+                self._record_live_evaluation_attempt(
                     session,
-                    message=f"{clean_label}: static-route игнорируется в dynamic-тесте",
+                    result="wrong",
+                    predicted_label=clean_label,
+                    confidence=conf,
+                    route_metadata=route_metadata,
+                    now=monotonic_now,
                 )
                 return
             result = "correct" if clean_label == expected else "wrong"

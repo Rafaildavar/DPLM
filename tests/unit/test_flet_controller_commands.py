@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import sys
 import threading
 
 import numpy as np
@@ -963,6 +964,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
             "dynamic_label": "swipe_down",
             "dynamic_confidence": 0.9,
             "dynamic_type": "dynamic",
+            "dynamic_end_reason": "hand_lost",
             "dynamic_motion_scale": 0.22,
         },
         now=10.0,
@@ -1004,6 +1006,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert rows[0]["static_reject_reason"] == "no_label"
     assert rows[0]["dynamic_label"] == "swipe_down"
     assert rows[0]["dynamic_type"] == "dynamic"
+    assert rows[0]["dynamic_end_reason"] == "hand_lost"
     assert rows[0]["dynamic_motion_scale"] == pytest.approx(0.22)
 
 
@@ -1066,7 +1069,7 @@ def test_negative_live_evaluation_counts_no_prediction_as_correct(monkeypatch, t
     assert snapshot["missed"] == 0
 
 
-def test_dynamic_live_evaluation_ignores_static_route(monkeypatch, tmp_path):
+def test_dynamic_live_evaluation_counts_static_route_as_wrong(monkeypatch, tmp_path):
     controller = _dispatch_controller()
     controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
     controller._ensure_embedded_recognition_for_live_controls = lambda: None
@@ -1088,9 +1091,120 @@ def test_dynamic_live_evaluation_ignores_static_route(monkeypatch, tmp_path):
     )
 
     snapshot = controller.current_live_evaluation()
-    assert snapshot["active"] is True
-    assert snapshot["total"] == 0
-    assert snapshot["lastResult"] == "ignored_wrong_route"
+    assert snapshot["active"] is False
+    assert snapshot["total"] == 1
+    assert snapshot["wrong"] == 1
+    assert snapshot["lastResult"] == "wrong"
+
+
+def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    controller._dynamic_model_profile = "knn"
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "sqlite:///test-live.db")
+
+    calls = {
+        "tracking_uri": "",
+        "experiment": "",
+        "run_name": "",
+        "params": {},
+        "metrics": {},
+        "tags": {},
+        "artifact_path": "",
+        "artifact_payload": {},
+    }
+
+    class _Run:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeMlflow:
+        @staticmethod
+        def set_tracking_uri(value):
+            calls["tracking_uri"] = value
+
+        @staticmethod
+        def set_experiment(value):
+            calls["experiment"] = value
+
+        @staticmethod
+        def start_run(run_name=""):
+            calls["run_name"] = run_name
+            return _Run()
+
+        @staticmethod
+        def set_tags(value):
+            calls["tags"] = dict(value)
+
+        @staticmethod
+        def log_params(value):
+            calls["params"] = dict(value)
+
+        @staticmethod
+        def log_metrics(value):
+            calls["metrics"] = dict(value)
+
+        @staticmethod
+        def log_dict(payload, artifact_file):
+            calls["artifact_payload"] = payload
+            calls["artifact_path"] = artifact_file
+
+    monkeypatch.setitem(sys.modules, "mlflow", FakeMlflow)
+
+    assert controller.start_live_evaluation(
+        "swipe_left",
+        attempts=2,
+        timeout_seconds=0.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["attempt_started_at"] = 10.0
+    controller._live_evaluation["next_ready_at"] = 10.0
+
+    controller._consume_live_evaluation_prediction(
+        "swipe_left",
+        0.9,
+        route_metadata={
+            "route": "dynamic",
+            "dynamic_decision_source": "motion_first",
+            "dynamic_end_reason": "hand_lost",
+            "dynamic_motion_label": "swipe_left",
+        },
+        now=10.0,
+    )
+    controller._consume_live_evaluation_prediction(
+        "swipe_down",
+        0.8,
+        route_metadata={
+            "route": "dynamic",
+            "dynamic_decision_source": "motion_first",
+            "dynamic_end_reason": "velocity_drop",
+            "dynamic_motion_label": "swipe_down",
+        },
+        now=12.0,
+    )
+
+    assert calls["tracking_uri"] == "sqlite:///test-live.db"
+    assert calls["experiment"] == "GestureFlow"
+    assert calls["run_name"] == "live-swipe_left-auto-knn"
+    assert calls["tags"]["run_kind"] == "live_evaluation"
+    assert calls["params"]["expected_label"] == "swipe_left"
+    assert calls["params"]["expected_type"] == "dynamic"
+    assert calls["metrics"]["live_accuracy"] == pytest.approx(0.5)
+    assert calls["metrics"]["live_recall"] == pytest.approx(0.5)
+    assert calls["metrics"]["live_dynamic_recall"] == pytest.approx(0.5)
+    assert calls["metrics"]["live_wrong_dynamic_direction_rate"] == pytest.approx(0.5)
+    assert calls["metrics"]["live_static_hijack_rate"] == pytest.approx(0.0)
+    assert calls["metrics"]["live_route_dynamic_count"] == pytest.approx(2.0)
+    assert calls["metrics"]["live_decision_motion_first_count"] == pytest.approx(2.0)
+    assert calls["metrics"]["live_end_reason_hand_lost_count"] == pytest.approx(1.0)
+    assert calls["metrics"]["live_end_reason_velocity_drop_count"] == pytest.approx(1.0)
+    assert calls["artifact_path"] == "live_evaluation_run.json"
+    assert calls["artifact_payload"]["session"]["route_counts"] == {"dynamic": 2}
 
 
 def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():

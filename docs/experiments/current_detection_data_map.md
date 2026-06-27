@@ -185,7 +185,8 @@ direction compatibility проверкой.
 | `docs/mlops_dashboard/index.html` | HTML dashboard | MLOps-метрики без терминала |
 | `docs/mlops_dashboard/summary.json` | Dataset/model/live/runtime snapshot | Версионируемый MLOps-снимок |
 | `docs/experiments/negative_sampling_manifest.json` | Generated negative summary | Контроль synthetic negative данных |
-| `mlflow.db` | MLflow tracking backend | Параметры, метрики и история запусков |
+| `mlflow.db` | MLflow tracking backend | Параметры, метрики и история training/live запусков |
+| MLflow `GestureFlow` live runs | `live_accuracy`, `live_recall`, `live_static_hijack_rate`, `live_wrong_dynamic_direction_rate`, `live_negative_false_positive_rate` | Сравнение реальных live-тестов без терминала |
 | `mlruns/` | MLflow artifacts | Артефакты моделей из MLflow runs |
 
 ## 9. Что уже проверено
@@ -198,7 +199,8 @@ direction compatibility проверкой.
 | Negative rejection unit tests | Auto generation, taxonomy scope, runtime rejection |
 | MLOps dashboard unit test | HTML + summary generation |
 | Shared MediaPipe detection | Rate `1.0` |
-| ML/runtime targeted unit tests | `71 passed` после H-036 |
+| Natural swipe targeted unit tests | `71 passed` после H-036 |
+| Live evaluation controller tests | `36 passed` после H-037 |
 | Real near/mid/far live validation | Еще не выполнена |
 
 ## 10. Что модель пока не знает
