@@ -185,7 +185,8 @@ direction compatibility проверкой.
 | `docs/mlops_dashboard/index.html` | HTML dashboard | MLOps-метрики без терминала |
 | `docs/mlops_dashboard/summary.json` | Dataset/model/live/runtime snapshot | Версионируемый MLOps-снимок |
 | `docs/experiments/negative_sampling_manifest.json` | Generated negative summary | Контроль synthetic negative данных |
-| `mlruns/` | MLflow runs | Параметры, метрики и артефакты обучения |
+| `mlflow.db` | MLflow tracking backend | Параметры, метрики и история запусков |
+| `mlruns/` | MLflow artifacts | Артефакты моделей из MLflow runs |
 
 ## 9. Что уже проверено
 

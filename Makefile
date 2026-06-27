@@ -1,6 +1,7 @@
 .PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples mlops-dashboard mlflow-ui
 
 PYTHON ?= python
+MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
 
 test-unit:
 	$(PYTHON) -m pytest tests/unit -q
@@ -37,4 +38,4 @@ mlops-dashboard:
 	$(PYTHON) -m scripts.mlops_dashboard
 
 mlflow-ui:
-	mlflow ui --backend-store-uri ./mlruns
+	$(PYTHON) -m mlflow ui --backend-store-uri $(MLFLOW_TRACKING_URI) --host 127.0.0.1 --port 5000

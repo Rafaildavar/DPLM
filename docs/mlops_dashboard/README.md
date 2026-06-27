@@ -32,12 +32,12 @@ The dashboard tracks:
 MLflow tracks training experiments separately:
 
 ```bash
-make mlflow-ui
+PYTHON=.venv/bin/python make mlflow-ui
 ```
 
 Then open `http://127.0.0.1:5000`.
 
-Training runs are logged to the local `GestureFlow` experiment in `./mlruns`
-with model params, sample/class counts, train accuracy and model artifacts.
-The HTML dashboard is the current system snapshot; MLflow is the experiment
-history.
+Training runs are logged to the local `GestureFlow` experiment with
+`sqlite:///mlflow.db` as the tracking backend. MLflow stores run parameters,
+sample/class counts, train accuracy and model artifacts. The HTML dashboard is
+the current system snapshot; MLflow is the experiment history.

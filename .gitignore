@@ -18,6 +18,7 @@ venv/
 .coverage
 htmlcov/
 mlruns/
+mlflow.db
 
 # Data
 data/**/*.npy

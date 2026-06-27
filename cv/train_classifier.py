@@ -220,8 +220,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--mlflow-tracking-uri",
-        default="file:./mlruns",
-        help="MLflow tracking URI, e.g. file:./mlruns",
+        default="sqlite:///mlflow.db",
+        help="MLflow tracking URI, e.g. sqlite:///mlflow.db",
     )
     p.add_argument(
         "--mlflow-run-name",
@@ -318,7 +318,9 @@ def _log_mlflow_run(
         return
 
     try:
-        tracking_uri = str(getattr(args, "mlflow_tracking_uri", "") or "file:./mlruns")
+        tracking_uri = str(
+            getattr(args, "mlflow_tracking_uri", "") or "sqlite:///mlflow.db"
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (

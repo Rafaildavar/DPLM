@@ -1583,7 +1583,7 @@ python -m scripts.mlops_dashboard
 
 ### H-035: MLflow tracking для промышленного MLOps-следа
 
-Статус: `implemented`, локальный backend `./mlruns`
+Статус: `implemented`, локальный backend `sqlite:///mlflow.db`
 
 Зачем:
 - HTML dashboard показывает состояние системы, но не является полноценным
@@ -1594,22 +1594,27 @@ python -m scripts.mlops_dashboard
 Что добавлено:
 - `cv/train_classifier.py` логирует MLflow run при каждом обучении.
 - Default experiment: `GestureFlow`.
-- Default tracking URI: `file:./mlruns`.
+- Default tracking URI: `sqlite:///mlflow.db`.
 - Логируются параметры: `model_type`, `feature_mode`, `neighbors`,
   `weights`, `include_labels`, `classes`.
 - Логируются метрики: `sample_count`, `class_count`, `feature_dim`,
   `train_accuracy`.
 - Логируются артефакты: model pickle, classes json, feature dim и feature mode.
 - Если MLflow не установлен, обучение не падает, а пишет warning.
+- После установки `mlflow==3.14.0` файловый backend `file:./mlruns` был
+  заменен на SQLite backend: MLflow 3 переводит filesystem tracking backend в
+  maintenance mode и требует либо env-флаг, либо database backend.
+- Smoke-run `dynamic-negative-smoke` успешно записан в experiment
+  `GestureFlow`: `170` samples, `8` classes, `train_accuracy=1.0000`.
 
 Команды:
 
 ```bash
 make negative-samples
 make mlops-dashboard
-make mlflow-ui
+PYTHON=.venv/bin/python make mlflow-ui
 ```
 
 Роль в JMLC:
 - `docs/mlops_dashboard/index.html` — витрина текущего качества и runtime.
-- `./mlruns` + MLflow UI — трекинг экспериментов и версий моделей.
+- `sqlite:///mlflow.db` + MLflow UI — трекинг экспериментов и версий моделей.

@@ -118,7 +118,7 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
 
     args = SimpleNamespace(
         mlflow_experiment="GestureFlow",
-        mlflow_tracking_uri="file:./mlruns",
+        mlflow_tracking_uri="sqlite:///mlflow.db",
         mlflow_run_name="dynamic-test",
         data_root="data/gestures",
         model_type="knn",
@@ -142,7 +142,7 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         feature_mode_out=artifacts[3],
     )
 
-    assert calls["tracking_uri"] == "file:./mlruns"
+    assert calls["tracking_uri"] == "sqlite:///mlflow.db"
     assert calls["experiment"] == "GestureFlow"
     assert calls["run_name"] == "dynamic-test"
     assert calls["params"]["include_labels"] == "swipe_up,no_gesture_static"
