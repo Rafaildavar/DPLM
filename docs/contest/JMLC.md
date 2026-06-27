@@ -1,5 +1,13 @@
 # GestureFlow / DPLM для Junior ML Contest
 
+Связанные конкурсные документы:
+
+- `docs/contest/ML_SYSTEM_DESIGN.md` - living-дизайн ML-системы, статусы
+  компонентов, MLOps-поток и актуальная дорожная карта.
+- `docs/experiments/ml_pipeline_log.md` - подробный журнал ML-гипотез,
+  проверок и результатов.
+- `docs/mlops_dashboard/index.html` - локальная витрина текущих метрик.
+
 ## Позиционирование
 
 GestureFlow подается на JMLC как полноценная ML Engineering система для
