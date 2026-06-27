@@ -209,3 +209,7 @@ direction compatibility проверкой.
 сами записи еще нужно собрать через интерфейс. `background_no_hand` требует
 отдельного synthetic/no-hand collector, потому что текущая запись сэмплов
 ожидает landmarks руки.
+
+В live-evaluation для labels типа `negative` отсутствие prediction по timeout
+или ручному skip считается `correct`: это позволяет измерять false positive
+rate как долю `wrong` на negative-runs.

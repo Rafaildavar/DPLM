@@ -38,6 +38,7 @@ from app.services.app_config import (
 from app.services.gesture_taxonomy import (
     DEFAULT_TAXONOMY_PATH,
     GESTURE_TYPE_DYNAMIC,
+    GESTURE_TYPE_NEGATIVE,
     labels_for_gesture_types,
     load_gesture_taxonomy,
     parse_gesture_type_scope,
@@ -879,9 +880,15 @@ class AppController:
                 return False
             if time.monotonic() < float(session.get("next_ready_at") or 0.0):
                 return False
+            expected = str(session.get("expected_label") or "")
+            result = (
+                "correct"
+                if self._gesture_type_for_label(expected) == GESTURE_TYPE_NEGATIVE
+                else "missed"
+            )
             self._record_live_evaluation_attempt(
                 session,
-                result="missed",
+                result=result,
                 predicted_label="",
                 confidence=0.0,
                 route_metadata={"route": "none"},
@@ -1230,9 +1237,15 @@ class AppController:
                 return
             if monotonic_now - started < timeout:
                 return
+            expected = str(session.get("expected_label") or "")
+            result = (
+                "correct"
+                if self._gesture_type_for_label(expected) == GESTURE_TYPE_NEGATIVE
+                else "missed"
+            )
             self._record_live_evaluation_attempt(
                 session,
-                result="missed",
+                result=result,
                 predicted_label="",
                 confidence=0.0,
                 route_metadata={"route": "none"},

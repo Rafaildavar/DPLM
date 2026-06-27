@@ -1468,12 +1468,17 @@ Live-протокол проверки:
   - в live logs пишутся `dynamic_negative_label`,
     `dynamic_negative_confidence`, `dynamic_negative_threshold`;
   - negative labels не становятся исполняемыми командами.
+- Live-evaluation для negative labels считает отсутствие предсказания по
+  timeout/manual missed как `correct`, чтобы можно было измерять false
+  positive rate без ручных пересчетов.
 
 Offline-проверка:
 - Taxonomy умеет фильтровать `dynamic,negative`.
 - UI-тест подтверждает, что negative recording идет с `include_global_motion`.
 - Runtime-тест подтверждает, что `no_gesture_static` с confidence `0.85`
   блокирует motion-first `swipe_left`.
+- Live-evaluation test подтверждает, что no-prediction для
+  `no_gesture_static` засчитывается как correct.
 - Целевой regression suite: `34 passed`.
 
 Как записывать negative examples:
@@ -1489,7 +1494,8 @@ Offline-проверка:
 
 Live-протокол проверки:
 - `swipe_left`, `swipe_up`, `swipe_down`: по `10` attempts.
-- `no_gesture_static`, `random_motion`, `partial_swipe`: по `10` attempts.
+- `no_gesture_static`, `random_motion`, `partial_swipe`: по `10` attempts,
+  timeout `1.0-1.5` секунды.
 - Для negative-run правильное поведение: `route=none`, команда не исполняется.
 - Отдельная метрика: false positive rate на negative classes.
 

@@ -1022,6 +1022,31 @@ def test_live_evaluation_ignores_below_threshold_without_default_timeout(
     assert snapshot["missed"] == 1
 
 
+def test_negative_live_evaluation_counts_no_prediction_as_correct(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    controller._gesture_type_for_label = (
+        lambda label: "negative" if label == "no_gesture_static" else "static"
+    )
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        "no_gesture_static",
+        attempts=1,
+        timeout_seconds=1.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["attempt_started_at"] = 30.0
+    controller._live_evaluation["next_ready_at"] = 30.0
+
+    controller._update_live_evaluation_timeout(now=31.2)
+
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is False
+    assert snapshot["correct"] == 1
+    assert snapshot["missed"] == 0
+
+
 def test_dynamic_live_evaluation_ignores_static_route(monkeypatch, tmp_path):
     controller = _dispatch_controller()
     controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
