@@ -595,43 +595,32 @@ class GestureOnlineInfer:
             self._dynamic_segmenter = segmenter
         return segmenter
 
-    def _process_segmented_dynamic_frame(
+    def _temporal_state_from_segment_update(
         self,
-        feat: np.ndarray,
-        landmarks_json: str,
+        update: Any,
         *,
         motion_scale: float,
-    ) -> Dict[str, Any]:
-        pending = getattr(self, "_pending_dynamic_prediction", None)
-        repeats = int(getattr(self, "_pending_dynamic_repeats", 0) or 0)
-        if pending is not None and repeats > 0:
-            self._pending_dynamic_repeats = repeats - 1
-            return {
-                "label": pending[0],
-                "confidence": pending[1],
-                "landmarks_json": landmarks_json,
-                "dynamic_decision": dict(
-                    getattr(self, "_last_dynamic_decision", {}) or {}
-                ),
-                "temporal": {
-                    "enabled": True,
-                    "phase": "completed",
-                    "frames": int(self._window.maxlen or 36),
-                    "required_frames": int(self._window.maxlen or 36),
-                    "motion_scale": float(
-                        getattr(self, "_pending_dynamic_motion_scale", 0.0)
-                    ),
-                },
-            }
-
-        update = self._segmenter().update(feat, motion_scale=motion_scale)
-        temporal_state = {
+    ) -> dict[str, Any]:
+        return {
             "enabled": True,
             "phase": update.phase,
             "frames": update.frames,
             "required_frames": int(self._window.maxlen or 36),
             "motion_scale": float(motion_scale),
+            "end_reason": str(getattr(update, "end_reason", "") or ""),
         }
+
+    def _classify_completed_dynamic_update(
+        self,
+        update: Any,
+        landmarks_json: str,
+        *,
+        motion_scale: float,
+    ) -> Dict[str, Any]:
+        temporal_state = self._temporal_state_from_segment_update(
+            update,
+            motion_scale=motion_scale,
+        )
         if update.completed_sequence is None:
             return {
                 "label": "",
@@ -681,6 +670,54 @@ class GestureOnlineInfer:
             ),
             "temporal": temporal_state,
         }
+
+    def _process_segmented_dynamic_frame(
+        self,
+        feat: np.ndarray,
+        landmarks_json: str,
+        *,
+        motion_scale: float,
+    ) -> Dict[str, Any]:
+        pending = getattr(self, "_pending_dynamic_prediction", None)
+        repeats = int(getattr(self, "_pending_dynamic_repeats", 0) or 0)
+        if pending is not None and repeats > 0:
+            self._pending_dynamic_repeats = repeats - 1
+            return {
+                "label": pending[0],
+                "confidence": pending[1],
+                "landmarks_json": landmarks_json,
+                "dynamic_decision": dict(
+                    getattr(self, "_last_dynamic_decision", {}) or {}
+                ),
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "frames": int(self._window.maxlen or 36),
+                    "required_frames": int(self._window.maxlen or 36),
+                    "motion_scale": float(
+                        getattr(self, "_pending_dynamic_motion_scale", 0.0)
+                    ),
+                    "end_reason": "pending_repeat",
+                },
+            }
+
+        update = self._segmenter().update(feat, motion_scale=motion_scale)
+        if update.completed_sequence is None:
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+                "temporal": self._temporal_state_from_segment_update(
+                    update,
+                    motion_scale=motion_scale,
+                ),
+            }
+
+        return self._classify_completed_dynamic_update(
+            update,
+            landmarks_json,
+            motion_scale=motion_scale,
+        )
 
     def _load_gesture_signatures(self, signatures_path: Path) -> dict[str, dict[str, Any]]:
         metadata = load_signature_metadata(signatures_path) if signatures_path.exists() else {}
@@ -841,6 +878,24 @@ class GestureOnlineInfer:
         landmarks_json = self._build_overlay_payload(hands)
 
         if not hands:
+            if self._uses_global_dynamic_motion():
+                update = self._segmenter().finish_due_to_hand_lost()
+                if update.completed_sequence is not None:
+                    return self._classify_completed_dynamic_update(
+                        update,
+                        landmarks_json,
+                        motion_scale=0.0,
+                    )
+                if update.phase == "cooldown":
+                    return {
+                        "label": "",
+                        "confidence": 0.0,
+                        "landmarks_json": landmarks_json,
+                        "temporal": self._temporal_state_from_segment_update(
+                            update,
+                            motion_scale=0.0,
+                        ),
+                    }
             self.reset_temporal_state()
             return {
                 "label": "",

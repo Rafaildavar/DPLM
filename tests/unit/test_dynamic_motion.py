@@ -74,6 +74,37 @@ def test_segmenter_emits_one_completed_swipe_after_motion_stops():
     assert motion[0] < -0.4
 
 
+def test_segmenter_emits_swipe_on_velocity_drop_without_final_pose_hold():
+    segmenter = DynamicMotionSegmenter(cooldown_frames=0)
+    points = [0.80, 0.78, 0.74, 0.68, 0.61, 0.54, 0.47, 0.40, 0.34, 0.31, 0.30]
+
+    completed = [
+        update
+        for x in points
+        if (update := segmenter.update(_frame(x, 0.5))).completed_sequence
+        is not None
+    ]
+
+    assert len(completed) == 1
+    assert completed[0].end_reason == "velocity_drop"
+    motion = trajectory_features(completed[0].completed_sequence, target_dim=44)
+    assert motion[0] < -0.4
+
+
+def test_segmenter_emits_swipe_when_hand_leaves_after_motion():
+    segmenter = DynamicMotionSegmenter(cooldown_frames=0)
+    points = [0.80, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46, 0.40, 0.34, 0.30]
+
+    updates = [segmenter.update(_frame(x, 0.5)) for x in points]
+    hand_lost = segmenter.finish_due_to_hand_lost()
+
+    assert all(update.completed_sequence is None for update in updates)
+    assert hand_lost.completed_sequence is not None
+    assert hand_lost.end_reason == "hand_lost"
+    motion = trajectory_features(hand_lost.completed_sequence, target_dim=44)
+    assert motion[0] < -0.4
+
+
 def test_segmenter_handles_different_gesture_speeds():
     for motion_frames in (8, 14, 28):
         segmenter = DynamicMotionSegmenter()

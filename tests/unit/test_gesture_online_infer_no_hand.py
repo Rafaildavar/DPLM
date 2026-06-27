@@ -95,6 +95,24 @@ class _MovingHorizontalHandDetector:
         ]
 
 
+class _MovingThenLostHorizontalHandDetector(_MovingHorizontalHandDetector):
+    def __init__(
+        self,
+        *,
+        start_x: float = 0.80,
+        step_x: float = -0.04,
+        visible_frames: int = 10,
+    ) -> None:
+        super().__init__(start_x=start_x, step_x=step_x)
+        self.visible_frames = visible_frames
+
+    def detect_for_video_rgb(self, frame_rgb):
+        if self.index >= self.visible_frames:
+            self.index += 1
+            return []
+        return super().detect_for_video_rgb(frame_rgb)
+
+
 class _DirectionConfusedClassifier:
     classes_ = np.asarray([0, 1, 2])
 
@@ -373,6 +391,31 @@ def test_motion_first_dynamic_prediction_works_without_estimator() -> None:
     assert out["confidence"] >= 0.80
     assert out["dynamic_decision"]["source"] == "motion_first"
     assert out["dynamic_decision"]["model_label"] == ""
+
+
+def test_dynamic_swipe_completes_when_hand_leaves_frame() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._detector = _MovingThenLostHorizontalHandDetector()
+    infer._clf = None
+    infer._classes = ["swipe_down", "swipe_left", "swipe_up"]
+    infer._feature_dim = 271
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=36)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+
+    out = {}
+    for _ in range(14):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+        if out.get("label"):
+            break
+
+    assert out["label"] == "swipe_left"
+    assert out["confidence"] >= 0.80
+    assert out["temporal"]["end_reason"] == "hand_lost"
+    assert out["dynamic_decision"]["source"] == "motion_first"
 
 
 def test_dynamic_negative_prediction_rejects_motion_first_swipe() -> None:

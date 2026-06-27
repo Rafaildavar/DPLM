@@ -809,16 +809,9 @@ def test_dynamic_dispatch_confirms_gesture_faster():
         {"label": "hand_left", "confidence": 0.9, "landmarks_json": "[]"}
     )
 
-    assert emitted == []
-    assert executed == []
-
-    controller._dispatch_infer_result(
-        {"label": "hand_left", "confidence": 0.8, "landmarks_json": "[]"}
-    )
-
     assert emitted == ["hand_left"]
-    assert executed == [("hand_left", pytest.approx(0.85))]
-    assert recorded == [("hand_left", pytest.approx(0.85), True)]
+    assert executed == [("hand_left", pytest.approx(0.9))]
+    assert recorded == [("hand_left", pytest.approx(0.9), True)]
 
 
 def test_auto_dispatch_confirms_taxonomy_dynamic_label_faster():

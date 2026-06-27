@@ -433,6 +433,7 @@ class GestureRecognitionRouter:
             ),
             "dynamic_threshold": self._dynamic_confidence_threshold,
             "dynamic_phase": str(dynamic_temporal.get("phase") or ""),
+            "dynamic_end_reason": str(dynamic_temporal.get("end_reason") or ""),
             "dynamic_segment_frames": int(dynamic_temporal.get("frames") or 0),
             "dynamic_motion_scale": float(
                 dynamic_temporal.get("motion_scale") or 0.0

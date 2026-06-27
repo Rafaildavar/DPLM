@@ -197,7 +197,7 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
 }
 DYNAMIC_RECOGNITION_WINDOW = 36
-DYNAMIC_GESTURE_CONFIRM_FRAMES = 2
+DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
 SAMPLE_RECORDING_READY_FRAMES = 6
 SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
@@ -1049,6 +1049,7 @@ class AppController:
                 route_metadata.get("dynamic_reject_reason") or ""
             ),
             "dynamic_phase": str(route_metadata.get("dynamic_phase") or ""),
+            "dynamic_end_reason": str(route_metadata.get("dynamic_end_reason") or ""),
             "dynamic_segment_frames": int(
                 route_metadata.get("dynamic_segment_frames") or 0
             ),

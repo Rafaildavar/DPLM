@@ -177,7 +177,7 @@ direction compatibility проверкой.
 |---|---|---|
 | `~/.dplm/logs/live_evaluation.jsonl` | expected, predicted, result, confidence, route | Accuracy и confusion |
 | `live_evaluation.jsonl` | static/dynamic labels и confidence | Разделение ошибки router/model |
-| `live_evaluation.jsonl` | `dynamic_phase`, `dynamic_segment_frames` | Проверка segmenter |
+| `live_evaluation.jsonl` | `dynamic_phase`, `dynamic_segment_frames`, `dynamic_end_reason` | Проверка segmenter |
 | `live_evaluation.jsonl` | `dynamic_motion_scale` | Accuracy по дистанции |
 | `live_evaluation.jsonl` | `dynamic_decision_source`, `dynamic_motion_label`, `dynamic_model_label` | Разделение ошибки motion-first и ML fallback |
 | `live_evaluation.jsonl` | `dynamic_negative_label`, `dynamic_negative_confidence` | Анализ false positives и rejection layer |
@@ -198,7 +198,7 @@ direction compatibility проверкой.
 | Negative rejection unit tests | Auto generation, taxonomy scope, runtime rejection |
 | MLOps dashboard unit test | HTML + summary generation |
 | Shared MediaPipe detection | Rate `1.0` |
-| ML/runtime targeted unit tests | `47 passed` после H-034/H-035 |
+| ML/runtime targeted unit tests | `71 passed` после H-036 |
 | Real near/mid/far live validation | Еще не выполнена |
 
 ## 10. Что модель пока не знает

@@ -1618,3 +1618,61 @@ PYTHON=.venv/bin/python make mlflow-ui
 Роль в JMLC:
 - `docs/mlops_dashboard/index.html` — витрина текущего качества и runtime.
 - `sqlite:///mlflow.db` + MLflow UI — трекинг экспериментов и версий моделей.
+
+### H-036: Natural swipe segmentation без финальной позы
+
+Статус: `implemented`, ожидает live validation
+
+Наблюдение пользователя:
+- Чтобы dynamic gesture распознался, приходилось оставлять руку в финальной
+  точке.
+- Это превращало UX в `swipe + pose`, хотя продуктовая идея требует
+  естественный swipe без удержания начальной и финальной позиции.
+
+Причина:
+- `DynamicMotionSegmenter` завершал segment только после нескольких почти
+  неподвижных кадров в конце движения.
+- Контроллер дополнительно требовал `2` подтверждающих кадра для dynamic
+  label. Если рука уходила из кадра сразу после свайпа, событие могло
+  потеряться.
+
+Что изменено:
+- Завершение segment теперь поддерживает причины:
+  - `velocity_drop`: скорость движения упала после достаточного swipe;
+  - `hand_lost`: рука ушла из кадра после достаточного active motion;
+  - `still`: обратная совместимость, если рука все же остановилась;
+  - `max_frames`: fallback по лимиту длительности.
+- `end_still_frames` снижен с `5` до `2`, но финальная пауза больше не
+  является обязательной.
+- Dynamic confirmation снижено до `1` кадра; static confirmation оставлено
+  dwell-based, чтобы статические жесты не стали случайными.
+- В live logs добавлено поле `dynamic_end_reason`.
+
+Проверка:
+- `tests/unit/test_dynamic_motion.py`:
+  - segment завершается по `velocity_drop` без финального hold;
+  - segment завершается по `hand_lost`, если рука ушла после swipe.
+- `tests/unit/test_gesture_online_infer_no_hand.py`:
+  - `GestureOnlineInfer` распознает `swipe_left`, когда рука исчезает после
+    движения.
+- `tests/unit/test_flet_controller_commands.py`:
+  - dynamic dispatch подтверждается одним кадром.
+- Целевой regression suite:
+  `tests/unit/test_dynamic_motion.py`,
+  `tests/unit/test_gesture_online_infer_no_hand.py`,
+  `tests/unit/test_flet_controller_commands.py`,
+  `tests/unit/test_recognition_router.py` -> `71 passed`.
+
+Live-протокол проверки:
+1. Включить `auto` mode.
+2. Для `swipe_up`, `swipe_down`, `swipe_left` сделать по `10` естественных
+   свайпов без удержания финальной точки.
+3. После каждого свайпа можно сразу увести руку из кадра.
+4. В логах ожидать `dynamic_end_reason=velocity_drop` или `hand_lost`, а не
+   только `still`.
+
+Критерий приемки:
+- Dynamic recall по каждому swipe `>=80%`.
+- Median субъективная задержка распознавания должна стать ниже: жест
+  срабатывает после движения, а не после позы.
+- False positive rate на negative-сценариях не должен вырасти выше `10%`.
