@@ -1825,3 +1825,39 @@ MLflow runs:
 - `swipe_left`: `10` попыток как baseline;
 - одинаковая дистанция от камеры, похожая стартовая зона;
 - без финальной позы, но без немедленного возврата руки через кадр.
+
+### H-040: MLflow должен хранить не только числа, но и читаемые live artifacts
+
+Статус: `implemented`, ждет следующего live-run
+
+Наблюдение:
+- MLflow auto-charts показывают отдельные метрики, но для демо и анализа
+  удобнее иметь готовый artifact bundle внутри каждого run.
+- System metrics в индустриальном смысле лучше выносить в Grafana/Prometheus,
+  а MLflow использовать как experiment tracker.
+
+Что добавлено:
+- Live runs включают `log_system_metrics=True` для MLflow per-run resource
+  metrics, если установлен `psutil`.
+- В live-run добавляются attempt-level time-series metrics:
+  `attempt_latency_s`, `attempt_axis_ratio`, `attempt_straightness`,
+  `attempt_motion_scale`, `attempt_wrong_direction`, `attempt_static_hijack`.
+- В aggregate metrics добавлены runtime показатели из
+  `runtime_performance.jsonl`:
+  `system_runtime_inference_ms_avg`,
+  `system_runtime_inference_ms_p95_max`,
+  `system_runtime_detection_ms_avg`,
+  `system_runtime_fps_capacity_avg`.
+- Каждый live-run сохраняет artifact bundle `live_evaluation/`:
+  - `index.html`;
+  - `charts/quality.svg`;
+  - `charts/outcomes.svg`;
+  - `charts/routes.svg`;
+  - `charts/end_reasons.svg`;
+  - `charts/runtime.svg`;
+  - `charts/attempt_timeline.svg`;
+  - `attempts.csv`, `metrics.csv`, `runtime_performance.json`.
+
+MLOps boundary:
+- MLflow: сравнение моделей, live-runs, метрики и артефакты экспериментов.
+- Grafana/Prometheus: следующий слой для always-on runtime/system monitoring.

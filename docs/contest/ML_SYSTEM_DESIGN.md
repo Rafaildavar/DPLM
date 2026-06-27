@@ -228,12 +228,22 @@ Acceptance targets for contest demo:
 
 ## 9. MLOps Design
 
-Two complementary observability layers are used:
+Three complementary observability layers are used or planned:
 
 | Layer | Role | Command |
 |---|---|---|
 | MLflow | experiment history for training and live tests | `PYTHON=.venv/bin/python make mlflow-ui` |
 | HTML dashboard | static snapshot for demo and quick review | `make mlops-dashboard` |
+| Grafana + Prometheus | planned always-on runtime/system monitoring | planned |
+
+Boundary:
+
+- MLflow answers: which model/live-run was better, with artifacts and metrics
+  tied to an experiment.
+- Grafana answers: how the running application behaves over time: FPS, camera
+  health, latency, CPU/RAM and false triggers.
+- HTML dashboard answers: what to show quickly in a local demo without running
+  a service.
 
 MLflow run types:
 
@@ -241,6 +251,15 @@ MLflow run types:
 |---|---|---|
 | Training | `<model>-<feature_mode>` | params, model artifacts, sample count, train accuracy |
 | Live evaluation | `live-<expected>-<mode>-<profile>` | live metrics, route counts, raw attempts artifact |
+
+Live MLflow runs also store an artifact bundle under `live_evaluation/`:
+
+- `index.html` - readable run report;
+- `charts/*.svg` - quality, route, end-reason, runtime and attempt timeline
+  charts;
+- `attempts.csv` - attempt-level data;
+- `metrics.csv` - flat metric export;
+- `runtime_performance.json` - runtime windows matched to the live run.
 
 Every meaningful live test should be followed by:
 

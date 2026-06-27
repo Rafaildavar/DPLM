@@ -53,5 +53,16 @@ its target attempt count or is stopped. Look for runs named
 - `live_end_reason_*` and `live_decision_*` counters.
 
 Each live run also stores `live_evaluation_run.json` with raw attempts and route
-metadata. The HTML dashboard is the current system snapshot; MLflow is the
-experiment history.
+metadata. New live runs also store an artifact bundle under
+`Artifacts / live_evaluation /`:
+
+- `index.html` with a readable run report;
+- `charts/*.svg` for quality, outcomes, routes, end reasons, runtime and
+  attempt timeline;
+- `attempts.csv` and `metrics.csv`;
+- `runtime_performance.json` when runtime windows match the live run.
+
+MLflow's built-in System metrics tab tracks per-run resource metrics when
+`psutil` is installed. For always-on system monitoring the planned production
+path is Prometheus + Grafana; MLflow remains the experiment tracker. The HTML
+dashboard is the current system snapshot; MLflow is the experiment history.

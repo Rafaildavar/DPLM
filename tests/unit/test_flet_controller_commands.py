@@ -3,6 +3,7 @@
 import json
 import sys
 import threading
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -1114,6 +1115,10 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
         "tags": {},
         "artifact_path": "",
         "artifact_payload": {},
+        "artifact_bundle_path": "",
+        "artifacts": [],
+        "metric_history": [],
+        "log_system_metrics": None,
     }
 
     class _Run:
@@ -1133,8 +1138,9 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
             calls["experiment"] = value
 
         @staticmethod
-        def start_run(run_name=""):
+        def start_run(run_name="", log_system_metrics=None):
             calls["run_name"] = run_name
+            calls["log_system_metrics"] = log_system_metrics
             return _Run()
 
         @staticmethod
@@ -1146,13 +1152,26 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
             calls["params"] = dict(value)
 
         @staticmethod
-        def log_metrics(value):
-            calls["metrics"] = dict(value)
+        def log_metrics(value, step=None):
+            if step is None:
+                calls["metrics"] = dict(value)
+            else:
+                calls["metric_history"].append((step, dict(value)))
 
         @staticmethod
         def log_dict(payload, artifact_file):
             calls["artifact_payload"] = payload
             calls["artifact_path"] = artifact_file
+
+        @staticmethod
+        def log_artifacts(local_dir, artifact_path=None):
+            root = Path(local_dir)
+            calls["artifact_bundle_path"] = artifact_path
+            calls["artifacts"] = sorted(
+                str(path.relative_to(root))
+                for path in root.rglob("*")
+                if path.is_file()
+            )
 
     monkeypatch.setitem(sys.modules, "mlflow", FakeMlflow)
 
@@ -1162,8 +1181,26 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
         timeout_seconds=0.0,
         min_confidence=0.6,
     )
+    controller._live_evaluation["started_at"] = 1.0
     controller._live_evaluation["attempt_started_at"] = 10.0
     controller._live_evaluation["next_ready_at"] = 10.0
+    (tmp_path / "runtime_performance.jsonl").write_text(
+        json.dumps(
+            {
+                "recorded_at": 2.0,
+                "recognition_model_mode": "auto",
+                "dynamic_model_profile": "knn",
+                "target_fps": 30,
+                "samples": 10,
+                "shared_detection_rate": 1.0,
+                "inference_ms_avg": 20.0,
+                "inference_ms_p95": 30.0,
+                "detection_ms_avg": 12.0,
+                "inference_fps_capacity": 50.0,
+            }
+        )
+        + "\n"
+    )
 
     controller._consume_live_evaluation_prediction(
         "swipe_left",
@@ -1191,7 +1228,9 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     assert calls["tracking_uri"] == "sqlite:///test-live.db"
     assert calls["experiment"] == "GestureFlow"
     assert calls["run_name"] == "live-swipe_left-auto-knn"
+    assert calls["log_system_metrics"] is True
     assert calls["tags"]["run_kind"] == "live_evaluation"
+    assert calls["tags"]["artifact_bundle"] == "live_evaluation/index.html"
     assert calls["params"]["expected_label"] == "swipe_left"
     assert calls["params"]["expected_type"] == "dynamic"
     assert calls["metrics"]["live_accuracy"] == pytest.approx(0.5)
@@ -1203,8 +1242,21 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     assert calls["metrics"]["live_decision_motion_first_count"] == pytest.approx(2.0)
     assert calls["metrics"]["live_end_reason_hand_lost_count"] == pytest.approx(1.0)
     assert calls["metrics"]["live_end_reason_velocity_drop_count"] == pytest.approx(1.0)
+    assert calls["metrics"]["system_runtime_inference_ms_avg"] == pytest.approx(20.0)
+    assert calls["metrics"]["system_runtime_fps_capacity_avg"] == pytest.approx(50.0)
+    assert len(calls["metric_history"]) == 2
+    assert calls["metric_history"][0][0] == 1
+    assert calls["metric_history"][0][1]["attempt_is_correct"] == pytest.approx(1.0)
+    assert calls["metric_history"][1][0] == 2
+    assert calls["metric_history"][1][1]["attempt_wrong_direction"] == pytest.approx(1.0)
     assert calls["artifact_path"] == "live_evaluation_run.json"
     assert calls["artifact_payload"]["session"]["route_counts"] == {"dynamic": 2}
+    assert calls["artifact_bundle_path"] == "live_evaluation"
+    assert "index.html" in calls["artifacts"]
+    assert "charts/quality.svg" in calls["artifacts"]
+    assert "charts/attempt_timeline.svg" in calls["artifacts"]
+    assert "metrics.csv" in calls["artifacts"]
+    assert "attempts.csv" in calls["artifacts"]
 
 
 def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():

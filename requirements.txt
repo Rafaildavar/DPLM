@@ -9,6 +9,7 @@ Pillow>=10.0
 # Machine Learning
 scikit-learn
 mlflow
+psutil
 
 # Voice Assistant
 pyttsx3

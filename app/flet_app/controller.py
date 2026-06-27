@@ -18,9 +18,12 @@ GUI-агностичный контроллер для Flet-версии DPLM.
 from __future__ import annotations
 
 import os
+import csv
+import html
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import json
@@ -902,6 +905,7 @@ class AppController:
         if session is None:
             return
         session["active"] = False
+        session["finished_at"] = time.time()
         session["message"] = self._live_evaluation_finish_message(session, reason)
         if bool(session.get("auto_execute_was_enabled")):
             self._auto_execute_on_gesture = True
@@ -1147,6 +1151,463 @@ class AppController:
         metrics["live_negative_rejected_count"] = float(negative_rejected_count)
         return metrics
 
+    def _live_evaluation_runtime_rows(
+        self,
+        session: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        started_at = float(session.get("started_at") or 0.0)
+        finished_at = float(session.get("finished_at") or time.time())
+        mode = str(session.get("recognition_model_mode") or "")
+        profile = str(session.get("dynamic_model_profile") or "")
+        path = self._configured_log_dir() / "runtime_performance.jsonl"
+        if not path.exists():
+            return []
+        rows: list[dict[str, Any]] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                recorded_at = float(row.get("recorded_at") or 0.0)
+                if started_at and recorded_at < started_at - 5.0:
+                    continue
+                if finished_at and recorded_at > finished_at + 5.0:
+                    continue
+                if mode and str(row.get("recognition_model_mode") or "") != mode:
+                    continue
+                if profile and str(row.get("dynamic_model_profile") or "") != profile:
+                    continue
+                rows.append(row)
+        except Exception as e:
+            print(f"[w] runtime rows read failed: {e}", flush=True)
+            return []
+        return rows[-24:]
+
+    def _live_evaluation_runtime_metrics(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, float]:
+        if not rows:
+            return {}
+
+        def _float(row: dict[str, Any], key: str) -> float | None:
+            try:
+                value = row.get(key)
+                return None if value is None else float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _weighted_mean(key: str) -> float:
+            weighted_sum = 0.0
+            weight_total = 0.0
+            fallback_values: list[float] = []
+            for row in rows:
+                value = _float(row, key)
+                if value is None:
+                    continue
+                fallback_values.append(value)
+                weight = max(1.0, float(row.get("samples") or 1.0))
+                weighted_sum += value * weight
+                weight_total += weight
+            if weight_total > 0.0:
+                return weighted_sum / weight_total
+            return sum(fallback_values) / len(fallback_values) if fallback_values else 0.0
+
+        samples_total = sum(max(0, int(row.get("samples") or 0)) for row in rows)
+        p95_values = [
+            value
+            for value in (_float(row, "inference_ms_p95") for row in rows)
+            if value is not None
+        ]
+        return {
+            "system_runtime_windows": float(len(rows)),
+            "system_runtime_samples_total": float(samples_total),
+            "system_runtime_inference_ms_avg": _weighted_mean("inference_ms_avg"),
+            "system_runtime_inference_ms_p95_max": max(p95_values) if p95_values else 0.0,
+            "system_runtime_detection_ms_avg": _weighted_mean("detection_ms_avg"),
+            "system_runtime_fps_capacity_avg": _weighted_mean("inference_fps_capacity"),
+            "system_runtime_shared_detection_rate_avg": _weighted_mean(
+                "shared_detection_rate"
+            ),
+        }
+
+    def _live_evaluation_attempt_metrics(
+        self,
+        attempt: dict[str, Any],
+        *,
+        expected_type: str,
+    ) -> dict[str, float]:
+        def _float(value: Any) -> float | None:
+            try:
+                return None if value is None else float(value)
+            except (TypeError, ValueError):
+                return None
+
+        result = str(attempt.get("result") or "")
+        route = str(attempt.get("route") or "none")
+        predicted = str(attempt.get("predicted") or "")
+        metrics = {
+            "attempt_is_correct": 1.0 if result == "correct" else 0.0,
+            "attempt_is_wrong": 1.0 if result == "wrong" else 0.0,
+            "attempt_is_missed": 1.0 if result == "missed" else 0.0,
+            "attempt_route_dynamic": 1.0 if route == "dynamic" else 0.0,
+            "attempt_route_static": 1.0 if route == "static" else 0.0,
+            "attempt_route_none": 1.0 if route in ("", "none") else 0.0,
+            "attempt_confidence": float(attempt.get("confidence") or 0.0),
+            "attempt_wrong_direction": (
+                1.0
+                if expected_type == GESTURE_TYPE_DYNAMIC
+                and route == "dynamic"
+                and result == "wrong"
+                and predicted.startswith("swipe_")
+                else 0.0
+            ),
+            "attempt_static_hijack": (
+                1.0
+                if expected_type == GESTURE_TYPE_DYNAMIC and route == "static"
+                else 0.0
+            ),
+        }
+        optional_fields = {
+            "attempt_latency_s": "elapsed_seconds",
+            "attempt_axis_ratio": "dynamic_axis_ratio",
+            "attempt_straightness": "dynamic_straightness",
+            "attempt_motion_scale": "dynamic_motion_scale",
+            "attempt_segment_frames": "dynamic_segment_frames",
+            "attempt_motion_confidence": "dynamic_motion_confidence",
+            "attempt_model_confidence": "dynamic_model_confidence",
+        }
+        for metric_name, field_name in optional_fields.items():
+            value = _float(attempt.get(field_name))
+            if value is not None:
+                metrics[metric_name] = value
+        return metrics
+
+    def _write_live_evaluation_artifact_bundle(
+        self,
+        artifact_dir: Path,
+        *,
+        payload: dict[str, Any],
+        metrics: dict[str, float],
+        runtime_rows: list[dict[str, Any]],
+    ) -> None:
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        charts_dir = artifact_dir / "charts"
+        charts_dir.mkdir(parents=True, exist_ok=True)
+        attempts = [
+            item
+            for item in (payload.get("session") or {}).get("attempts", [])
+            if isinstance(item, dict)
+        ]
+
+        (artifact_dir / "live_evaluation_run.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        (artifact_dir / "metrics.csv").write_text(
+            self._live_evaluation_metrics_csv(metrics),
+            encoding="utf-8",
+        )
+        (artifact_dir / "attempts.csv").write_text(
+            self._live_evaluation_attempts_csv(attempts),
+            encoding="utf-8",
+        )
+        if runtime_rows:
+            (artifact_dir / "runtime_performance.json").write_text(
+                json.dumps(runtime_rows, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+
+        (charts_dir / "quality.svg").write_text(
+            self._render_live_bar_svg(
+                "Live quality metrics",
+                [
+                    ("accuracy", metrics.get("live_accuracy", 0.0), "good"),
+                    ("recall", metrics.get("live_recall", 0.0), "good"),
+                    (
+                        "wrong direction",
+                        metrics.get("live_wrong_dynamic_direction_rate", 0.0),
+                        "bad",
+                    ),
+                    ("static hijack", metrics.get("live_static_hijack_rate", 0.0), "bad"),
+                    ("miss rate", metrics.get("live_miss_rate", 0.0), "bad"),
+                ],
+                max_value=1.0,
+                value_suffix="",
+            ),
+            encoding="utf-8",
+        )
+        (charts_dir / "outcomes.svg").write_text(
+            self._render_live_bar_svg(
+                "Attempt outcomes",
+                [
+                    ("correct", metrics.get("live_correct", 0.0), "good"),
+                    ("wrong", metrics.get("live_wrong", 0.0), "bad"),
+                    ("missed", metrics.get("live_missed", 0.0), "warn"),
+                ],
+            ),
+            encoding="utf-8",
+        )
+        route_items = [
+            (
+                key.replace("live_route_", "").replace("_count", ""),
+                value,
+                "good" if "dynamic" in key else "warn",
+            )
+            for key, value in sorted(metrics.items())
+            if key.startswith("live_route_") and key.endswith("_count")
+        ]
+        (charts_dir / "routes.svg").write_text(
+            self._render_live_bar_svg("Router decisions", route_items or [("none", 0.0, "warn")]),
+            encoding="utf-8",
+        )
+        end_reason_items = [
+            (
+                key.replace("live_end_reason_", "").replace("_count", ""),
+                value,
+                "good",
+            )
+            for key, value in sorted(metrics.items())
+            if key.startswith("live_end_reason_") and key.endswith("_count")
+        ]
+        (charts_dir / "end_reasons.svg").write_text(
+            self._render_live_bar_svg(
+                "Dynamic end reasons",
+                end_reason_items or [("none", 0.0, "warn")],
+            ),
+            encoding="utf-8",
+        )
+        (charts_dir / "attempt_timeline.svg").write_text(
+            self._render_live_attempt_timeline_svg(attempts),
+            encoding="utf-8",
+        )
+        runtime_items = [
+            (
+                "inference avg ms",
+                metrics.get("system_runtime_inference_ms_avg", 0.0),
+                "good",
+            ),
+            (
+                "inference p95 max ms",
+                metrics.get("system_runtime_inference_ms_p95_max", 0.0),
+                "warn",
+            ),
+            (
+                "detection avg ms",
+                metrics.get("system_runtime_detection_ms_avg", 0.0),
+                "good",
+            ),
+            (
+                "fps capacity avg",
+                metrics.get("system_runtime_fps_capacity_avg", 0.0),
+                "good",
+            ),
+        ]
+        (charts_dir / "runtime.svg").write_text(
+            self._render_live_bar_svg("Runtime system metrics", runtime_items),
+            encoding="utf-8",
+        )
+        (artifact_dir / "index.html").write_text(
+            self._render_live_evaluation_artifact_html(
+                payload=payload,
+                metrics=metrics,
+                runtime_rows=runtime_rows,
+            ),
+            encoding="utf-8",
+        )
+
+    def _live_evaluation_metrics_csv(self, metrics: dict[str, float]) -> str:
+        lines = ["metric,value"]
+        for key, value in sorted(metrics.items()):
+            lines.append(f"{key},{value}")
+        return "\n".join(lines) + "\n"
+
+    def _live_evaluation_attempts_csv(self, attempts: list[dict[str, Any]]) -> str:
+        if not attempts:
+            return "attempt,expected,predicted,result,route\n"
+        fieldnames = sorted(
+            {
+                key
+                for attempt in attempts
+                for key in attempt.keys()
+            }
+        )
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=fieldnames)
+            writer.writeheader()
+            for attempt in attempts:
+                writer.writerow(attempt)
+            fh.seek(0)
+            return fh.read()
+
+    def _render_live_bar_svg(
+        self,
+        title: str,
+        items: list[tuple[str, float, str]],
+        *,
+        max_value: float | None = None,
+        value_suffix: str = "",
+    ) -> str:
+        width = 920
+        row_height = 48
+        top = 74
+        height = max(180, top + row_height * max(1, len(items)) + 28)
+        max_item_value = max([abs(float(value)) for _label, value, _kind in items] + [1.0])
+        scale_max = float(max_value if max_value is not None else max_item_value)
+        scale_max = max(scale_max, 1e-9)
+        colors = {
+            "good": "#18c7b8",
+            "bad": "#ff5b5f",
+            "warn": "#f7b955",
+        }
+        parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+            '<rect width="100%" height="100%" rx="18" fill="#101720"/>',
+            f'<text x="28" y="42" fill="#f5f7fb" font-size="24" font-family="Inter, Arial" font-weight="700">{html.escape(title)}</text>',
+        ]
+        x0 = 220
+        bar_max = width - x0 - 110
+        for index, (label, value, kind) in enumerate(items):
+            y = top + index * row_height
+            bar_width = max(0.0, min(1.0, float(value) / scale_max)) * bar_max
+            color = colors.get(kind, "#77a8ff")
+            display_value = f"{float(value):.3g}{value_suffix}"
+            parts.extend(
+                [
+                    f'<text x="28" y="{y + 25}" fill="#aab7c4" font-size="17" font-family="Inter, Arial">{html.escape(str(label))}</text>',
+                    f'<rect x="{x0}" y="{y}" width="{bar_max}" height="28" rx="8" fill="#1c2733"/>',
+                    f'<rect x="{x0}" y="{y}" width="{bar_width:.1f}" height="28" rx="8" fill="{color}"/>',
+                    f'<text x="{x0 + bar_max + 18}" y="{y + 21}" fill="#f5f7fb" font-size="16" font-family="Inter, Arial" font-weight="700">{html.escape(display_value)}</text>',
+                ]
+            )
+        parts.append("</svg>")
+        return "\n".join(parts)
+
+    def _render_live_attempt_timeline_svg(self, attempts: list[dict[str, Any]]) -> str:
+        count = max(1, len(attempts))
+        width = max(920, 92 * count + 80)
+        height = 250
+        parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+            '<rect width="100%" height="100%" rx="18" fill="#101720"/>',
+            '<text x="28" y="42" fill="#f5f7fb" font-size="24" font-family="Inter, Arial" font-weight="700">Attempt timeline</text>',
+            f'<line x1="60" y1="110" x2="{width - 60}" y2="110" stroke="#2d3a46" stroke-width="4"/>',
+        ]
+        colors = {"correct": "#18c7b8", "wrong": "#ff5b5f", "missed": "#f7b955"}
+        for index, attempt in enumerate(attempts):
+            x = 60 + index * ((width - 120) / max(1, count - 1))
+            result = str(attempt.get("result") or "")
+            predicted = str(attempt.get("predicted") or "miss")
+            color = colors.get(result, "#8aa0b4")
+            parts.extend(
+                [
+                    f'<circle cx="{x:.1f}" cy="110" r="18" fill="{color}"/>',
+                    f'<text x="{x:.1f}" y="116" text-anchor="middle" fill="#101720" font-size="14" font-family="Inter, Arial" font-weight="800">{index + 1}</text>',
+                    f'<text x="{x:.1f}" y="158" text-anchor="middle" fill="#d7e1ea" font-size="13" font-family="Inter, Arial">{html.escape(predicted)}</text>',
+                    f'<text x="{x:.1f}" y="182" text-anchor="middle" fill="#8fa2b4" font-size="12" font-family="Inter, Arial">{html.escape(result)}</text>',
+                ]
+            )
+        parts.append("</svg>")
+        return "\n".join(parts)
+
+    def _render_live_evaluation_artifact_html(
+        self,
+        *,
+        payload: dict[str, Any],
+        metrics: dict[str, float],
+        runtime_rows: list[dict[str, Any]],
+    ) -> str:
+        session = payload.get("session") or {}
+        attempts = [
+            item
+            for item in session.get("attempts", [])
+            if isinstance(item, dict)
+        ]
+        expected = html.escape(str(session.get("expected_label") or "unknown"))
+        score = (
+            f"{int(session.get('correct') or 0)}/"
+            f"{int(session.get('total') or 0)}"
+        )
+
+        def metric_card(key: str, label: str) -> str:
+            value = metrics.get(key, 0.0)
+            return (
+                '<div class="card">'
+                f'<div class="muted">{html.escape(label)}</div>'
+                f'<div class="value">{value:.3g}</div>'
+                f'<div class="key">{html.escape(key)}</div>'
+                '</div>'
+            )
+
+        attempts_rows = []
+        for attempt in attempts:
+            attempts_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(attempt.get('attempt') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('result') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('predicted') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('route') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('dynamic_end_reason') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('dynamic_axis') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('dynamic_direction') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('dynamic_straightness') or ''))}</td>"
+                "</tr>"
+            )
+
+        runtime_note = (
+            f"{len(runtime_rows)} runtime windows captured"
+            if runtime_rows
+            else "No runtime windows matched this live run"
+        )
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GestureFlow live evaluation - {expected}</title>
+  <style>
+    body {{ margin: 0; padding: 32px; background: #0d1218; color: #f5f7fb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    h1 {{ margin: 0 0 8px; font-size: 34px; }}
+    h2 {{ margin: 32px 0 16px; font-size: 22px; }}
+    .muted {{ color: #94a6b8; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 24px 0; }}
+    .card {{ background: #131c25; border: 1px solid #263544; border-radius: 14px; padding: 18px; }}
+    .value {{ margin-top: 8px; font-size: 32px; font-weight: 800; color: #18c7b8; }}
+    .key {{ margin-top: 8px; font-size: 12px; color: #6f8294; }}
+    img {{ width: 100%; max-width: 980px; display: block; margin: 16px 0; }}
+    table {{ width: 100%; border-collapse: collapse; background: #131c25; border-radius: 14px; overflow: hidden; }}
+    th, td {{ padding: 10px 12px; border-bottom: 1px solid #263544; text-align: left; font-size: 14px; }}
+    th {{ color: #9fcaef; background: #182431; }}
+  </style>
+</head>
+<body>
+  <h1>Live evaluation: {expected}</h1>
+  <div class="muted">Score {html.escape(score)} · {html.escape(str(session.get("recognition_model_mode") or ""))} / {html.escape(str(session.get("dynamic_model_profile") or ""))} · {html.escape(runtime_note)}</div>
+  <div class="grid">
+    {metric_card("live_accuracy", "Accuracy")}
+    {metric_card("live_recall", "Recall")}
+    {metric_card("live_wrong_dynamic_direction_rate", "Wrong direction")}
+    {metric_card("live_static_hijack_rate", "Static hijack")}
+    {metric_card("live_latency_avg_s", "Avg latency, s")}
+    {metric_card("system_runtime_inference_ms_avg", "Runtime inference, ms")}
+  </div>
+  <h2>Charts</h2>
+  <img src="charts/quality.svg" alt="quality metrics">
+  <img src="charts/attempt_timeline.svg" alt="attempt timeline">
+  <img src="charts/routes.svg" alt="routes">
+  <img src="charts/end_reasons.svg" alt="end reasons">
+  <img src="charts/runtime.svg" alt="runtime metrics">
+  <h2>Attempts</h2>
+  <table>
+    <thead><tr><th>#</th><th>Result</th><th>Predicted</th><th>Route</th><th>End</th><th>Axis</th><th>Direction</th><th>Straightness</th></tr></thead>
+    <tbody>{''.join(attempts_rows)}</tbody>
+  </table>
+</body>
+</html>
+"""
+
     def _log_live_evaluation_mlflow(
         self,
         session: dict[str, Any],
@@ -1166,7 +1627,9 @@ class AppController:
 
         try:
             tracking_uri = self._live_evaluation_mlflow_tracking_uri()
+            runtime_rows = self._live_evaluation_runtime_rows(session)
             metrics = self._live_evaluation_mlflow_metrics(session)
+            metrics.update(self._live_evaluation_runtime_metrics(runtime_rows))
             expected = str(session.get("expected_label") or "unknown")
             mode = str(session.get("recognition_model_mode") or self.recognition_model_mode)
             profile = str(session.get("dynamic_model_profile") or self.dynamic_model_profile)
@@ -1201,27 +1664,59 @@ class AppController:
                     "recognition_model_mode": mode,
                     "dynamic_model_profile": profile,
                     "started_at": session.get("started_at"),
+                    "finished_at": session.get("finished_at"),
                     "attempts": session.get("attempts", []),
                     "route_counts": self._live_evaluation_route_counts(
                         session.get("attempts", [])
                     ),
                 },
                 "metrics": metrics,
+                "runtime_performance": runtime_rows,
             }
 
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment)
-            with mlflow.start_run(run_name=run_name):
+            with mlflow.start_run(run_name=run_name, log_system_metrics=True):
                 mlflow.set_tags(
                     {
                         "run_kind": "live_evaluation",
                         "source": "gestureflow_flet",
                         "finish_reason": str(reason or ""),
+                        "artifact_bundle": "live_evaluation/index.html",
                     }
                 )
                 mlflow.log_params(params)
+                try:
+                    expected_type = str(params.get("expected_type") or "")
+                    for attempt in session.get("attempts", []):
+                        if not isinstance(attempt, dict):
+                            continue
+                        step = int(attempt.get("attempt") or 0)
+                        if step <= 0:
+                            continue
+                        mlflow.log_metrics(
+                            self._live_evaluation_attempt_metrics(
+                                attempt,
+                                expected_type=expected_type,
+                            ),
+                            step=step,
+                        )
+                except Exception as e:
+                    print(f"[w] MLflow attempt metrics failed: {e}", flush=True)
                 mlflow.log_metrics(metrics)
                 mlflow.log_dict(payload, "live_evaluation_run.json")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    artifact_dir = Path(tmpdir)
+                    self._write_live_evaluation_artifact_bundle(
+                        artifact_dir,
+                        payload=payload,
+                        metrics=metrics,
+                        runtime_rows=runtime_rows,
+                    )
+                    mlflow.log_artifacts(
+                        str(artifact_dir),
+                        artifact_path="live_evaluation",
+                    )
             print(
                 f"[✓] MLflow live run logged: expected={expected!r}, "
                 f"uri={tracking_uri}",
