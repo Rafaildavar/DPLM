@@ -1,0 +1,220 @@
+{
+  "generated_at": "2026-06-27T13:10:46Z",
+  "dataset": {
+    "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
+    "total_classes": 18,
+    "total_samples": 191,
+    "type_counts": {
+      "dynamic": 70,
+      "static": 121
+    },
+    "classes": [
+      {
+        "label": "CTRLZ",
+        "type": "static",
+        "samples": 21
+      },
+      {
+        "label": "Hend",
+        "type": "static",
+        "samples": 20
+      },
+      {
+        "label": "Newest",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "Open",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "UP",
+        "type": "static",
+        "samples": 20
+      },
+      {
+        "label": "gun",
+        "type": "static",
+        "samples": 20
+      },
+      {
+        "label": "hello",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "palm",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "peace_sign",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "sh3",
+        "type": "static",
+        "samples": 20
+      },
+      {
+        "label": "swipe_down",
+        "type": "dynamic",
+        "samples": 20
+      },
+      {
+        "label": "swipe_left",
+        "type": "dynamic",
+        "samples": 30
+      },
+      {
+        "label": "swipe_right",
+        "type": "dynamic",
+        "samples": 0
+      },
+      {
+        "label": "swipe_up",
+        "type": "dynamic",
+        "samples": 20
+      },
+      {
+        "label": "test_gesture",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "three",
+        "type": "static",
+        "samples": 20
+      },
+      {
+        "label": "thumbs_up",
+        "type": "static",
+        "samples": 0
+      },
+      {
+        "label": "ываы",
+        "type": "static",
+        "samples": 0
+      }
+    ]
+  },
+  "models": [
+    {
+      "name": "classes.json",
+      "size_bytes": 60,
+      "sha256": "d1b381dd0c4d30a4",
+      "modified_at": 1781804129.6137533
+    },
+    {
+      "name": "dynamic_classes.json",
+      "size_bytes": 48,
+      "sha256": "9921aa51f5c7fa4c",
+      "modified_at": 1782553256.34385
+    },
+    {
+      "name": "dynamic_extra_trees.pkl",
+      "size_bytes": 5365737,
+      "sha256": "9637f8e783a7eb5b",
+      "modified_at": 1782408034.3446095
+    },
+    {
+      "name": "dynamic_feature_dim.txt",
+      "size_bytes": 3,
+      "sha256": "3635a91e3da857f7",
+      "modified_at": 1782553256.3439248
+    },
+    {
+      "name": "dynamic_feature_mode.txt",
+      "size_bytes": 13,
+      "sha256": "aae36efb497a8d46",
+      "modified_at": 1782553256.3440764
+    },
+    {
+      "name": "dynamic_knn.pkl",
+      "size_bytes": 77243,
+      "sha256": "5d5f182343b2323e",
+      "modified_at": 1782553256.3435886
+    },
+    {
+      "name": "dynamic_svm.pkl",
+      "size_bytes": 432029,
+      "sha256": "666633a9acfbe08f",
+      "modified_at": 1782408025.1495914
+    },
+    {
+      "name": "feature_dim.txt",
+      "size_bytes": 2,
+      "sha256": "73475cb40a568e8d",
+      "modified_at": 1781804129.615216
+    },
+    {
+      "name": "knn.pkl",
+      "size_bytes": 22123,
+      "sha256": "a0e5de114fb37c9e",
+      "modified_at": 1781804129.6110787
+    }
+  ],
+  "live_evaluation": {
+    "source": "/Users/remi/.dplm/logs/live_evaluation.jsonl",
+    "attempts": 103,
+    "correct": 45,
+    "wrong": 45,
+    "missed": 3,
+    "accuracy": 0.4368932038834951,
+    "route_counts": {
+      "dynamic": 34,
+      "static": 7,
+      "unknown": 62
+    },
+    "dynamic_decision_sources": {
+      "motion_and_model_agree": 19,
+      "unknown": 84
+    },
+    "negative_rejections": 0,
+    "labels": [
+      {
+        "expected": "swipe_down",
+        "attempts": 61,
+        "correct": 22,
+        "wrong": 27,
+        "missed": 2,
+        "accuracy": 0.36065573770491804
+      },
+      {
+        "expected": "swipe_left",
+        "attempts": 22,
+        "correct": 11,
+        "wrong": 10,
+        "missed": 1,
+        "accuracy": 0.5
+      },
+      {
+        "expected": "swipe_up",
+        "attempts": 20,
+        "correct": 12,
+        "wrong": 8,
+        "missed": 0,
+        "accuracy": 0.6
+      }
+    ]
+  },
+  "runtime": {
+    "source": "/Users/remi/.dplm/logs/runtime_performance.jsonl",
+    "samples": 66,
+    "latest": {
+      "recorded_at": 1782564880.965974,
+      "recognition_model_mode": "auto",
+      "dynamic_model_profile": "knn",
+      "target_fps": 30,
+      "samples": 93,
+      "shared_detection_rate": 1.0,
+      "inference_ms_avg": 28.527,
+      "inference_ms_p95": 52.938,
+      "detection_ms_avg": 27.242,
+      "inference_fps_capacity": 35.05
+    }
+  }
+}

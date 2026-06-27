@@ -1,6 +1,6 @@
 # Current Detection Data Map
 
-Актуально для ветки `contest_version` после H-031.
+Актуально для ветки `contest_version` после H-033.
 
 ## 1. Общая схема детектирования
 
@@ -13,8 +13,8 @@
 | 4b. Dynamic branch | Pose `42` + wrist `x/y` | Motion segmentation, trim, resample, position/scale normalization | Последовательность `36 x 44` | Предобработка |
 | 5. Dynamic motion-first | Completed trajectory | Ось, направление, прямолинейность, dominance | `swipe_*` label + confidence | Feature rule |
 | 6. Dynamic ML fallback | `36 x 44` | Delta, velocity statistics, path statistics, trajectory | Вектор `271` | Feature engineering |
-| 7. Classification | Static `42` или dynamic `271` | Static KNN; dynamic KNN/SVM/ExtraTrees как diagnostic/fallback | Label + probability | ML |
-| 8. Guards | Label, probability, trajectory | Confidence, taxonomy, direction, finger count | Accepted/rejected candidate | Детерминированные правила |
+| 7. Classification | Static `42` или dynamic `271` | Static KNN; dynamic KNN/SVM/ExtraTrees как diagnostic/fallback/rejection | Label + probability | ML |
+| 8. Guards | Label, probability, trajectory | Confidence, taxonomy, direction, finger count, negative rejection | Accepted/rejected candidate | Детерминированные правила |
 | 9. Router | Static и dynamic candidates | Dynamic имеет приоритет; static блокируется во время движения | `static`, `dynamic` или `none` | Routing agent |
 | 10. Confirmation | Последовательные outputs | Dynamic `2` кадра, static в auto `15` кадров | Подтвержденный gesture event | Temporal policy |
 
@@ -74,7 +74,7 @@ Dynamic branch теперь разделен на два слоя:
 | `axis_ratio` | Насколько главная ось сильнее поперечной |
 | `straightness` | Насколько траектория похожа на прямой свайп |
 
-2. ML fallback/diagnostics. `dynamic_stats` формирует `271` признаков:
+2. ML fallback/diagnostics/rejection. `dynamic_stats` формирует `271` признаков:
 
 | Блок | Размер | Смысл |
 |---|---:|---|
@@ -90,7 +90,9 @@ Dynamic branch теперь разделен на два слоя:
 Trajectory block умножается на `8.0`, чтобы направление не проигрывало
 сотням pose/velocity компонентов в евклидовом расстоянии KNN. После H-031 KNN
 не является главным решателем для простых `swipe_*`: direction classifier
-выбирает completed motion label, а ML-модель сохраняется как diagnostic/fallback.
+выбирает completed motion label, а ML-модель сохраняется как
+diagnostic/fallback. После H-032 negative labels дают ML-модели право
+отклонить событие, если оно похоже на `no_gesture`/`random_motion`.
 
 ## 5. Модели и классы
 
@@ -117,6 +119,12 @@ Dynamic-модель уже пересохранена текущим pipeline.
 | `swipe_down` | 20 | Dynamic | dynamic |
 | `swipe_left` | 30 | Dynamic | dynamic |
 | `swipe_up` | 20 | Dynamic | dynamic |
+| `no_gesture_static` | 0 | Dynamic rejection | negative |
+| `random_motion` | 0 | Dynamic rejection | negative |
+| `partial_swipe` | 0 | Dynamic rejection | negative |
+| `return_motion` | 0 | Dynamic rejection | negative |
+| `wrong_axis_motion` | 0 | Dynamic rejection | negative |
+| `background_no_hand` | 0 | Dynamic rejection | negative |
 | Остальные taxonomy labels | 0 | Нет | static/dynamic |
 
 Всего обучающих samples: `191`, из них dynamic: `70`.
@@ -152,6 +160,7 @@ Dynamic-модель уже пересохранена текущим pipeline.
 | Motion gate | Path `>=0.12`, displacement `>=0.06` после normalization | Нет |
 | Direction sign | Left/right по `dx`, up/down по `dy` | Нет |
 | Axis dominance | Главная ось минимум в `1.2` раза сильнее поперечной | Нет |
+| Negative rejection | Negative probability `>=0.72` отклоняет dynamic event | Нет |
 | Finger-count guard | Не применяется | Проверяет pose signature |
 | Confirmation | `2` outputs одного event | `15` кадров в auto |
 
@@ -168,7 +177,10 @@ direction compatibility проверкой.
 | `live_evaluation.jsonl` | `dynamic_phase`, `dynamic_segment_frames` | Проверка segmenter |
 | `live_evaluation.jsonl` | `dynamic_motion_scale` | Accuracy по дистанции |
 | `live_evaluation.jsonl` | `dynamic_decision_source`, `dynamic_motion_label`, `dynamic_model_label` | Разделение ошибки motion-first и ML fallback |
+| `live_evaluation.jsonl` | `dynamic_negative_label`, `dynamic_negative_confidence` | Анализ false positives и rejection layer |
 | `~/.dplm/logs/runtime_performance.jsonl` | inference avg/p95, detection avg, FPS capacity | Производительность |
+| `docs/mlops_dashboard/index.html` | HTML dashboard | MLOps-метрики без терминала |
+| `docs/mlops_dashboard/summary.json` | Dataset/model/live/runtime snapshot | Версионируемый MLOps-снимок |
 
 ## 9. Что уже проверено
 
@@ -177,8 +189,10 @@ direction compatibility проверкой.
 | 5-fold CV dynamic KNN | Accuracy `1.0`, macro F1 `1.0` |
 | Position/scale/speed augmentation | `210/210 correct` |
 | Motion-first dynamic unit tests | Direction, ambiguous axis, missing class |
+| Negative rejection unit tests | UI recording, taxonomy scope, runtime rejection |
+| MLOps dashboard unit test | HTML + summary generation |
 | Shared MediaPipe detection | Rate `1.0` |
-| ML/runtime targeted unit tests | `60 passed` после H-031 |
+| ML/runtime targeted unit tests | `34 passed` после H-033 |
 | Real near/mid/far live validation | Еще не выполнена |
 
 ## 10. Что модель пока не знает
@@ -190,3 +204,6 @@ direction compatibility проверкой.
 | Разные камеры и освещение | Возможен MediaPipe distribution shift | Session metadata и live runs |
 | Negative/no-gesture samples | Confidence KNN не является вероятностью отсутствия жеста | Motion gate и в будущем отдельный rejection model |
 | `swipe_right` samples | Класс нельзя распознавать | Записать минимум `20` samples |
+
+После H-032 negative/no-gesture samples поддержаны в pipeline, но сами записи
+еще нужно собрать через интерфейс.

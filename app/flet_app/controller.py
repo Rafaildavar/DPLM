@@ -986,6 +986,15 @@ class AppController:
                         "dynamic_model_confidence_for_motion": payload.get(
                             "dynamic_model_confidence_for_motion"
                         ),
+                        "dynamic_negative_label": payload.get(
+                            "dynamic_negative_label"
+                        ),
+                        "dynamic_negative_confidence": payload.get(
+                            "dynamic_negative_confidence"
+                        ),
+                        "dynamic_negative_threshold": payload.get(
+                            "dynamic_negative_threshold"
+                        ),
                         "dynamic_axis": payload.get("dynamic_axis"),
                         "dynamic_direction": payload.get("dynamic_direction"),
                         "dynamic_axis_ratio": payload.get("dynamic_axis_ratio"),
@@ -1056,6 +1065,15 @@ class AppController:
             ),
             "dynamic_model_confidence_for_motion": _float_or_none(
                 route_metadata.get("dynamic_model_confidence_for_motion")
+            ),
+            "dynamic_negative_label": str(
+                route_metadata.get("dynamic_negative_label") or ""
+            ),
+            "dynamic_negative_confidence": _float_or_none(
+                route_metadata.get("dynamic_negative_confidence")
+            ),
+            "dynamic_negative_threshold": _float_or_none(
+                route_metadata.get("dynamic_negative_threshold")
             ),
             "dynamic_axis": str(route_metadata.get("dynamic_axis") or ""),
             "dynamic_direction": str(route_metadata.get("dynamic_direction") or ""),

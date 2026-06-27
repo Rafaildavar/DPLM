@@ -35,6 +35,11 @@ from cv.gesture_pose_signature import (
     hands_non_thumb_count,
     load_signature_metadata,
 )
+from app.services.gesture_taxonomy import (
+    GESTURE_TYPE_NEGATIVE,
+    GestureTaxonomy,
+    load_gesture_taxonomy,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DYNAMIC_GATE_MIN_PATH_LENGTH = 0.12
@@ -43,6 +48,7 @@ DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.05
 DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
 DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
 DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.20
+DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
 
 
 class GestureOnlineInfer:
@@ -88,6 +94,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision: dict[str, Any] = {}
+        self._gesture_taxonomy: GestureTaxonomy | None = None
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -165,6 +172,10 @@ class GestureOnlineInfer:
             )
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
+        try:
+            self._gesture_taxonomy = load_gesture_taxonomy()
+        except Exception:
+            self._gesture_taxonomy = None
 
         if initialize_detector:
             try:
@@ -417,9 +428,12 @@ class GestureOnlineInfer:
             if label == model_label:
                 model_confidence = max(model_confidence, float(probability))
 
+        negative_label, negative_confidence = self._best_negative_prediction(ranked)
         compatible_label = ""
         compatible_confidence = 0.0
         for probability, label in sorted(ranked, reverse=True):
+            if self._is_negative_label(label):
+                continue
             if self._dynamic_label_matches_motion(label, motion):
                 compatible_label = label
                 compatible_confidence = float(probability)
@@ -434,12 +448,31 @@ class GestureOnlineInfer:
             source = "motion_first"
             if model_label == motion_decision.label or compatible_label == motion_decision.label:
                 source = "motion_and_model_agree"
+            if negative_confidence >= DYNAMIC_NEGATIVE_REJECT_THRESHOLD:
+                self._last_dynamic_decision = {
+                    "source": "negative_rejected",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    **motion_decision.as_dict(),
+                }
+                return "", 0.0
             self._last_dynamic_decision = {
                 "source": source,
                 "motion_label": motion_decision.label,
                 "motion_confidence": motion_confidence,
                 "model_label": model_label,
                 "model_confidence": model_confidence,
+                "negative_label": negative_label,
+                "negative_confidence": negative_confidence,
+                "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
                 "compatible_model_label": compatible_label,
                 "compatible_model_confidence": compatible_confidence,
                 "model_confidence_for_motion": float(model_for_motion),
@@ -454,11 +487,28 @@ class GestureOnlineInfer:
                 "motion_confidence": 0.0,
                 "model_label": model_label,
                 "model_confidence": model_confidence,
+                "negative_label": negative_label,
+                "negative_confidence": negative_confidence,
+                "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
                 "compatible_model_label": compatible_label,
                 "compatible_model_confidence": compatible_confidence,
                 **motion_decision.as_dict(),
             }
             return compatible_label, compatible_confidence
+
+        if negative_confidence >= DYNAMIC_NEGATIVE_REJECT_THRESHOLD:
+            self._last_dynamic_decision = {
+                "source": "negative_rejected",
+                "motion_label": "",
+                "motion_confidence": 0.0,
+                "model_label": model_label,
+                "model_confidence": model_confidence,
+                "negative_label": negative_label,
+                "negative_confidence": negative_confidence,
+                "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                **motion_decision.as_dict(),
+            }
+            return "", 0.0
 
         self._last_dynamic_decision = {
             "source": "rejected",
@@ -466,6 +516,9 @@ class GestureOnlineInfer:
             "motion_confidence": 0.0,
             "model_label": model_label,
             "model_confidence": model_confidence,
+            "negative_label": negative_label,
+            "negative_confidence": negative_confidence,
+            "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
             **motion_decision.as_dict(),
         }
         return "", 0.0
@@ -479,6 +532,38 @@ class GestureOnlineInfer:
             self._classes[class_index]
             if 0 <= class_index < len(self._classes)
             else str(raw_class)
+        )
+
+    def _best_negative_prediction(
+        self,
+        ranked: list[tuple[float, str]],
+    ) -> tuple[str, float]:
+        best_label = ""
+        best_probability = 0.0
+        for probability, label in ranked:
+            if probability > best_probability and self._is_negative_label(label):
+                best_label = label
+                best_probability = float(probability)
+        return best_label, best_probability
+
+    def _is_negative_label(self, label: str) -> bool:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return False
+        taxonomy = getattr(self, "_gesture_taxonomy", None)
+        if taxonomy is not None:
+            try:
+                return taxonomy.gesture_type_for_label(clean) == GESTURE_TYPE_NEGATIVE
+            except Exception:
+                pass
+        return (
+            clean.startswith("negative_")
+            or clean.startswith("no_gesture")
+            or clean.startswith("background_")
+            or clean.startswith("random_")
+            or clean.startswith("partial_")
+            or clean.startswith("return_")
+            or clean.startswith("wrong_axis_")
         )
 
     def reset_temporal_state(self) -> None:

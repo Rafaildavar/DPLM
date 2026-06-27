@@ -1430,3 +1430,108 @@ Live-протокол проверки:
 - Для каждого swipe-класса live accuracy `>=80%` на `10` attempts.
 - Static hijack в dynamic run: `0/10`.
 - Ошибки должны быть объяснимы через новые diagnostic fields.
+
+### H-032: Negative examples нужны для rejection layer
+
+Статус: `implemented`, требуется запись данных и live validation
+
+Наблюдение пользователя:
+- Dynamic-модель все еще может плохо работать в live.
+- Нужен способ отличать настоящий жест от случайного движения, частичного
+  свайпа, возврата руки и статичной руки.
+
+Гипотеза:
+- Качество live-распознавания сильнее вырастет от negative examples и
+  rejection layer, чем от немедленного перехода на LSTM/Transformer.
+- Для текущего маленького датасета deep sequence model может переобучиться, а
+  negative examples сразу уменьшают false positives.
+
+Что сделали:
+- В taxonomy добавлен тип `negative`.
+- Negative labels:
+  - `no_gesture_static`;
+  - `random_motion`;
+  - `partial_swipe`;
+  - `return_motion`;
+  - `wrong_axis_motion`;
+  - `background_no_hand`.
+- В developer UI на экране обучения добавлена секция `Negative examples`.
+- Negative samples записываются в dynamic-формате с global wrist motion:
+  `(36, 44)`.
+- Dynamic training scope изменен с `dynamic` на `dynamic,negative`, поэтому
+  dynamic-модель учит и жесты, и отрицательные примеры.
+- Runtime rejection:
+  - если estimator уверенно предсказывает negative label с confidence `>=0.72`,
+    dynamic event отклоняется;
+  - в live logs пишутся `dynamic_negative_label`,
+    `dynamic_negative_confidence`, `dynamic_negative_threshold`;
+  - negative labels не становятся исполняемыми командами.
+
+Offline-проверка:
+- Taxonomy умеет фильтровать `dynamic,negative`.
+- UI-тест подтверждает, что negative recording идет с `include_global_motion`.
+- Runtime-тест подтверждает, что `no_gesture_static` с confidence `0.85`
+  блокирует motion-first `swipe_left`.
+- Целевой regression suite: `34 passed`.
+
+Как записывать negative examples:
+1. Открыть `Обучение -> Разработчик -> Negative examples`.
+2. Для каждого сценария записать минимум `20` samples:
+   - `no_gesture_static`: рука стоит в кадре без жеста;
+   - `random_motion`: произвольное движение, не похожее на свайп;
+   - `partial_swipe`: начал движение и остановился;
+   - `return_motion`: возврат руки после свайпа;
+   - `wrong_axis_motion`: диагональное движение;
+   - `background_no_hand`: кадр без руки или с уходом руки из кадра.
+3. Нажать `Обучить dynamic модель`.
+4. Перезапустить live-recognition.
+
+Live-протокол проверки:
+- `swipe_left`, `swipe_up`, `swipe_down`: по `10` attempts.
+- `no_gesture_static`, `random_motion`, `partial_swipe`: по `10` attempts.
+- Для negative-run правильное поведение: `route=none`, команда не исполняется.
+- Отдельная метрика: false positive rate на negative classes.
+
+Критерий приемки:
+- Swipe recall `>=80%`.
+- Negative false positive rate `<=10%`.
+- Static hijack rate `0`.
+- В логах есть объяснение rejection через `dynamic_negative_label/confidence`.
+
+### H-033: Первый MLOps dashboard для JMLC
+
+Статус: `implemented`, локальный HTML dashboard
+
+Цель:
+- Уйти от просмотра метрик только через терминал.
+- Дать конкурсному жюри видимую MLOps-петлю: dataset, live metrics, runtime,
+  model versions.
+
+Что сделали:
+- Добавлен `scripts/mlops_dashboard.py`.
+- Dashboard генерируется в `docs/mlops_dashboard/index.html`.
+- Дополнительно пишется machine-readable snapshot:
+  `docs/mlops_dashboard/summary.json`.
+
+Что показывает dashboard:
+- live accuracy;
+- количество live attempts;
+- negative rejection count;
+- dataset classes/samples by taxonomy type;
+- route counts и dynamic decision sources;
+- latest runtime latency/FPS capacity;
+- model artifact size, modified time, SHA-256 fingerprint.
+
+Команда генерации:
+
+```bash
+python -m scripts.mlops_dashboard
+```
+
+Проверка:
+- Unit-test `tests/unit/test_mlops_dashboard.py`;
+- целевой regression suite: `34 passed`.
+
+Следующий MLOps-шаг:
+- Добавить versioned training runs: dataset hash, model hash, params,
+  offline metrics, live metrics, acceptance status.

@@ -49,6 +49,10 @@ _DEFAULT_DYNAMIC_FEATURE_DIM_OUT = "models/dynamic_feature_dim.txt"
 _DEFAULT_DYNAMIC_FEATURE_MODE_OUT = "models/dynamic_feature_mode.txt"
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 30
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
+_DEFAULT_NEGATIVE_RECORD_SAMPLES = 20
+_DEFAULT_NEGATIVE_RECORD_FRAMES = 36
+_DEFAULT_NEGATIVE_LABEL = "no_gesture_static"
+_DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
 _DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_stats"
 _DEFAULT_MODEL_TYPE = "knn"
 _DEFAULT_K_NEIGHBORS = 5
@@ -221,6 +225,47 @@ class TrainingView:
                 padding=ft.Padding.symmetric(horizontal=20, vertical=14),
             ),
             on_click=lambda e: self._on_train_start(e, mode="dynamic"),
+        )
+
+        # --- Поля «Негативные примеры» -----------------------------------
+        self._neg_rec_label = ft.Dropdown(
+            label="Negative-сценарий",
+            value=_DEFAULT_NEGATIVE_LABEL,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key="no_gesture_static", text="no_gesture_static"),
+                ft.DropdownOption(key="random_motion", text="random_motion"),
+                ft.DropdownOption(key="partial_swipe", text="partial_swipe"),
+                ft.DropdownOption(key="return_motion", text="return_motion"),
+                ft.DropdownOption(key="wrong_axis_motion", text="wrong_axis_motion"),
+                ft.DropdownOption(key="background_no_hand", text="background_no_hand"),
+            ],
+            editable=True,
+        )
+        self._neg_rec_samples = ft.TextField(
+            label="Сэмплов",
+            value=str(_DEFAULT_NEGATIVE_RECORD_SAMPLES),
+            width=120,
+            border_color=COLOR_SURFACE_HIGH,
+        )
+        self._neg_rec_frames = ft.TextField(
+            label="Длина (кадров)",
+            value=str(_DEFAULT_NEGATIVE_RECORD_FRAMES),
+            width=160,
+            border_color=COLOR_SURFACE_HIGH,
+        )
+        self._neg_rec_two_hands = ft.Switch(
+            label="Две руки", value=False, active_color=COLOR_ACCENT
+        )
+        self._neg_rec_start_btn = ft.FilledButton(
+            content=ft.Text("Записать negative", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.MOTION_PHOTOS_PAUSE,
+            style=ft.ButtonStyle(
+                bgcolor=COLOR_SURFACE_HIGH,
+                color=COLOR_ON_SURFACE,
+                padding=ft.Padding.symmetric(horizontal=20, vertical=14),
+            ),
+            on_click=lambda e: self._on_record_start(e, mode="negative"),
         )
 
         # --- Поля «Обучение» ---------------------------------------------
@@ -488,6 +533,7 @@ class TrainingView:
             self._tr_start_btn,
             self._dyn_rec_start_btn,
             self._dyn_tr_start_btn,
+            self._neg_rec_start_btn,
         ):
             control.disabled = running
         self._cancel_btn.disabled = not running
@@ -498,6 +544,7 @@ class TrainingView:
             self._tr_start_btn,
             self._dyn_rec_start_btn,
             self._dyn_tr_start_btn,
+            self._neg_rec_start_btn,
             self._cancel_btn,
         ):
             try:
@@ -654,6 +701,23 @@ class TrainingView:
                 ),
             )
             two_hands = bool(self._dyn_rec_two_hands.value)
+        elif mode == "negative":
+            label = (self._neg_rec_label.value or "").strip()
+            samples = max(
+                1,
+                self._parse_int(
+                    self._neg_rec_samples.value,
+                    _DEFAULT_NEGATIVE_RECORD_SAMPLES,
+                ),
+            )
+            frames = max(
+                1,
+                self._parse_int(
+                    self._neg_rec_frames.value,
+                    _DEFAULT_NEGATIVE_RECORD_FRAMES,
+                ),
+            )
+            two_hands = bool(self._neg_rec_two_hands.value)
         else:
             label = (self._rec_label.value or "").strip()
             samples = max(
@@ -684,7 +748,7 @@ class TrainingView:
             num_samples=samples,
             frames=frames,
             two_hands=two_hands,
-            include_global_motion=(mode == "dynamic"),
+            include_global_motion=(mode in {"dynamic", "negative"}),
             on_line=self._append_log,
             on_done=self._on_subprocess_done,
         )
@@ -724,7 +788,7 @@ class TrainingView:
             classes_out_path = _DEFAULT_DYNAMIC_CLASSES_OUT
             feature_dim_out_path = _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
             feature_mode_out_path = _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
-            training_scope = "dynamic"
+            training_scope = _DYNAMIC_TRAINING_SCOPE
             self._append_log(
                 f"[i] Обучение отдельной dynamic-модели: "
                 f"model={model_type}, feature_mode={feature_mode}, scope={training_scope}"
@@ -901,6 +965,28 @@ class TrainingView:
             radius=16,
         )
 
+    def _build_negative_card(self) -> ft.Control:
+        return surface_card(
+            ft.Column(
+                spacing=10,
+                controls=[
+                    self._section_title("4. Negative examples"),
+                    self._neg_rec_label,
+                    ft.Row(
+                        spacing=10,
+                        controls=[
+                            self._neg_rec_samples,
+                            self._neg_rec_frames,
+                            self._neg_rec_two_hands,
+                        ],
+                    ),
+                    self._neg_rec_start_btn,
+                ],
+            ),
+            padding=16,
+            radius=16,
+        )
+
     def _build_recording_preview_card(self) -> ft.Control:
         camera_stage = ft.Container(
             content=ft.Stack(
@@ -1001,7 +1087,11 @@ class TrainingView:
                     ),
                     ft.Container(
                         content=self._build_dynamic_card(),
-                        col={"xs": 12},
+                        col={"xs": 12, "md": 7},
+                    ),
+                    ft.Container(
+                        content=self._build_negative_card(),
+                        col={"xs": 12, "md": 5},
                     ),
                 ],
             ),

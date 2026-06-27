@@ -4,6 +4,7 @@ import pytest
 
 from app.services.gesture_taxonomy import (
     GESTURE_TYPE_DYNAMIC,
+    GESTURE_TYPE_NEGATIVE,
     GESTURE_TYPE_QUASI_STATIC,
     GESTURE_TYPE_STATIC,
     labels_for_gesture_types,
@@ -22,8 +23,12 @@ def test_taxonomy_filters_dynamic_labels_from_config(tmp_path):
                     "static": ["palm"],
                     "quasi_static": ["hold_left"],
                     "dynamic": ["swipe_up"],
+                    "negative": ["no_gesture_static"],
                 },
-                "patterns": {"dynamic": ["swipe_*"]},
+                "patterns": {
+                    "dynamic": ["swipe_*"],
+                    "negative": ["negative_*", "random_*"],
+                },
             }
         ),
         encoding="utf-8",
@@ -41,6 +46,11 @@ def test_taxonomy_filters_dynamic_labels_from_config(tmp_path):
         [GESTURE_TYPE_STATIC, GESTURE_TYPE_QUASI_STATIC],
         taxonomy_path=taxonomy_path,
     ) == ["palm", "hold_left", "unknown"]
+    assert labels_for_gesture_types(
+        ["swipe_up", "no_gesture_static", "random_motion"],
+        [GESTURE_TYPE_DYNAMIC, GESTURE_TYPE_NEGATIVE],
+        taxonomy_path=taxonomy_path,
+    ) == ["swipe_up", "no_gesture_static", "random_motion"]
 
 
 def test_taxonomy_rejects_unknown_scope():
@@ -53,3 +63,5 @@ def test_default_taxonomy_marks_swipes_dynamic():
 
     assert taxonomy.gesture_type_for_label("swipe_down") == GESTURE_TYPE_DYNAMIC
     assert taxonomy.gesture_type_for_label("SWIPE_RIGHT") == GESTURE_TYPE_DYNAMIC
+    assert taxonomy.gesture_type_for_label("no_gesture_static") == GESTURE_TYPE_NEGATIVE
+    assert taxonomy.gesture_type_for_label("random_motion") == GESTURE_TYPE_NEGATIVE

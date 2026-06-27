@@ -107,6 +107,16 @@ class _DirectionConfusedClassifier:
         return np.asarray([[0.1, 0.2, 0.7]])
 
 
+class _NegativeRejectingClassifier:
+    classes_ = np.asarray([0, 1, 2])
+
+    def predict(self, _features):
+        return np.asarray([2])
+
+    def predict_proba(self, _features):
+        return np.asarray([[0.05, 0.10, 0.85]])
+
+
 class _ShapeCheckingClassifier:
     def __init__(self, expected_dim: int = 42) -> None:
         self.expected_shape = (1, expected_dim)
@@ -363,6 +373,32 @@ def test_motion_first_dynamic_prediction_works_without_estimator() -> None:
     assert out["confidence"] >= 0.80
     assert out["dynamic_decision"]["source"] == "motion_first"
     assert out["dynamic_decision"]["model_label"] == ""
+
+
+def test_dynamic_negative_prediction_rejects_motion_first_swipe() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._detector = _MovingHorizontalHandDetector()
+    infer._clf = _NegativeRejectingClassifier()
+    infer._classes = ["swipe_down", "swipe_left", "no_gesture_static"]
+    infer._feature_dim = 271
+    infer._raw_feature_dim = 44
+    infer._feature_mode = "dynamic_stats"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=36)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+    infer._gesture_taxonomy = None
+
+    out = {}
+    for _ in range(60):
+        out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert out["dynamic_decision"]["source"] == "negative_rejected"
+    assert out["dynamic_decision"]["motion_label"] == "swipe_left"
+    assert out["dynamic_decision"]["negative_label"] == "no_gesture_static"
+    assert out["dynamic_decision"]["negative_confidence"] >= 0.72
 
 
 def test_reset_temporal_state_clears_dynamic_windows() -> None:

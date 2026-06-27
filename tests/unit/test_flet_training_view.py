@@ -8,9 +8,12 @@ from app.flet_app.views.training import (
     _DEFAULT_DYNAMIC_MODEL_OUT,
     _DEFAULT_DYNAMIC_RECORD_FRAMES,
     _DEFAULT_DYNAMIC_RECORD_SAMPLES,
+    _DEFAULT_NEGATIVE_RECORD_FRAMES,
+    _DEFAULT_NEGATIVE_RECORD_SAMPLES,
     _DEFAULT_K_NEIGHBORS,
     _DEFAULT_MODEL_OUT,
     _DEFAULT_RECORD_FRAMES,
+    _DYNAMIC_TRAINING_SCOPE,
     _dynamic_model_out_for_type,
 )
 
@@ -134,7 +137,25 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert training_call["classes_out_path"] == _DEFAULT_DYNAMIC_CLASSES_OUT
     assert training_call["feature_dim_out_path"] == _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
     assert training_call["feature_mode_out_path"] == _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
-    assert training_call["training_scope"] == "dynamic"
+    assert training_call["training_scope"] == _DYNAMIC_TRAINING_SCOPE
+
+
+def test_developer_negative_flow_records_dynamic_negative_examples():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+    view._neg_rec_label.value = "random_motion"
+    view._neg_rec_samples.value = ""
+    view._neg_rec_frames.value = ""
+    view._neg_rec_two_hands.value = False
+
+    view._on_record_start(None, mode="negative")
+
+    recording_call = controller.recording_calls[-1]
+    assert recording_call["label"] == "random_motion"
+    assert recording_call["num_samples"] == _DEFAULT_NEGATIVE_RECORD_SAMPLES
+    assert recording_call["frames"] == _DEFAULT_NEGATIVE_RECORD_FRAMES
+    assert recording_call["two_hands"] is False
+    assert recording_call["include_global_motion"] is True
 
 
 def test_dynamic_model_type_updates_default_output_path_without_overriding_custom_path():

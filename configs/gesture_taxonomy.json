@@ -26,11 +26,28 @@
       "swipe_left",
       "swipe_right",
       "swipe_up"
+    ],
+    "negative": [
+      "background_no_hand",
+      "no_gesture_static",
+      "partial_swipe",
+      "random_motion",
+      "return_motion",
+      "wrong_axis_motion"
     ]
   },
   "patterns": {
     "dynamic": [
       "swipe_*"
+    ],
+    "negative": [
+      "background_*",
+      "negative_*",
+      "no_gesture*",
+      "partial_*",
+      "random_*",
+      "return_*",
+      "wrong_axis_*"
     ]
   }
 }
