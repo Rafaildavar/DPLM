@@ -1453,8 +1453,10 @@ Live-протокол проверки:
   - `random_motion`;
   - `partial_swipe`;
   - `return_motion`;
-  - `wrong_axis_motion`;
-  - `background_no_hand`.
+  - `wrong_axis_motion`.
+- `background_no_hand` остается reserved-сценарием для следующего synthetic /
+  no-hand pipeline: текущая запись через интерфейс требует landmarks руки и
+  не сохраняет пустой кадр как sample.
 - В developer UI на экране обучения добавлена секция `Negative examples`.
 - Negative samples записываются в dynamic-формате с global wrist motion:
   `(36, 44)`.
@@ -1476,13 +1478,12 @@ Offline-проверка:
 
 Как записывать negative examples:
 1. Открыть `Обучение -> Разработчик -> Negative examples`.
-2. Для каждого сценария записать минимум `20` samples:
+2. Для каждого hand-based сценария записать минимум `20` samples:
    - `no_gesture_static`: рука стоит в кадре без жеста;
    - `random_motion`: произвольное движение, не похожее на свайп;
    - `partial_swipe`: начал движение и остановился;
    - `return_motion`: возврат руки после свайпа;
-   - `wrong_axis_motion`: диагональное движение;
-   - `background_no_hand`: кадр без руки или с уходом руки из кадра.
+   - `wrong_axis_motion`: диагональное движение.
 3. Нажать `Обучить dynamic модель`.
 4. Перезапустить live-recognition.
 

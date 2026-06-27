@@ -238,7 +238,6 @@ class TrainingView:
                 ft.DropdownOption(key="partial_swipe", text="partial_swipe"),
                 ft.DropdownOption(key="return_motion", text="return_motion"),
                 ft.DropdownOption(key="wrong_axis_motion", text="wrong_axis_motion"),
-                ft.DropdownOption(key="background_no_hand", text="background_no_hand"),
             ],
             editable=True,
         )

@@ -124,7 +124,7 @@ Dynamic-модель уже пересохранена текущим pipeline.
 | `partial_swipe` | 0 | Dynamic rejection | negative |
 | `return_motion` | 0 | Dynamic rejection | negative |
 | `wrong_axis_motion` | 0 | Dynamic rejection | negative |
-| `background_no_hand` | 0 | Dynamic rejection | negative |
+| `background_no_hand` | 0 | Reserved for synthetic/no-hand pipeline | negative |
 | Остальные taxonomy labels | 0 | Нет | static/dynamic |
 
 Всего обучающих samples: `191`, из них dynamic: `70`.
@@ -205,5 +205,7 @@ direction compatibility проверкой.
 | Negative/no-gesture samples | Confidence KNN не является вероятностью отсутствия жеста | Motion gate и в будущем отдельный rejection model |
 | `swipe_right` samples | Класс нельзя распознавать | Записать минимум `20` samples |
 
-После H-032 negative/no-gesture samples поддержаны в pipeline, но сами записи
-еще нужно собрать через интерфейс.
+После H-032 hand-based negative/no-gesture samples поддержаны в pipeline, но
+сами записи еще нужно собрать через интерфейс. `background_no_hand` требует
+отдельного synthetic/no-hand collector, потому что текущая запись сэмплов
+ожидает landmarks руки.
