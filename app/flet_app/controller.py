@@ -3648,6 +3648,106 @@ class AppController:
         Thread(target=reader, daemon=True).start()
         return True
 
+    def start_negative_generation(
+        self,
+        *,
+        samples_per_label: int = 20,
+        seed: int = 42,
+        on_line: Optional[Callable[[str], None]] = None,
+        on_done: Optional[Callable[[int], None]] = None,
+    ) -> bool:
+        """Generate reproducible synthetic negative samples as a subprocess."""
+        if self._training_proc is not None and self._training_proc.poll() is None:
+            return False
+        with self._sample_recording_lock:
+            if self._sample_recording is not None:
+                return False
+
+        project_root = Path(__file__).resolve().parents[2]
+        cmd = self._build_negative_generation_command(
+            samples_per_label=samples_per_label,
+            seed=seed,
+        )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                text=True,
+            )
+        except Exception as e:
+            if on_line:
+                on_line(f"[!] Не удалось запустить negative sampler: {e}")
+            return False
+
+        self._training_proc = proc
+        if on_line:
+            on_line(f"[i] PID={proc.pid}: {' '.join(cmd)}")
+
+        def reader() -> None:
+            try:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    if on_line:
+                        try:
+                            on_line(line.rstrip())
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            finally:
+                code = proc.wait()
+                if int(code) == 0:
+                    try:
+                        summary = self.sync_dataset_to_db()
+                        if on_line:
+                            on_line(
+                                f"[✓] БД жестов синхронизирована: "
+                                f"добавлено {summary['created']}, "
+                                f"обновлено {summary['updated']}, "
+                                f"классов: {summary['total']}, "
+                                f"сэмплов: {summary['samples']}"
+                            )
+                    except Exception as e:
+                        if on_line:
+                            on_line(f"[w] sync_dataset_to_db: {e}")
+                if on_done:
+                    try:
+                        on_done(int(code))
+                    except Exception:
+                        pass
+
+        Thread(target=reader, daemon=True).start()
+        return True
+
+    def _build_negative_generation_command(
+        self,
+        *,
+        samples_per_label: int = 20,
+        seed: int = 42,
+    ) -> list[str]:
+        project_root = Path(__file__).resolve().parents[2]
+        return [
+            sys.executable,
+            "-u",
+            "-m",
+            "scripts.generate_negative_samples",
+            "--data-root",
+            str(self._configured_data_dir()),
+            "--taxonomy",
+            str(self._configured_taxonomy_path()),
+            "--samples-per-label",
+            str(max(1, int(samples_per_label))),
+            "--target-frames",
+            str(DYNAMIC_RECOGNITION_WINDOW),
+            "--seed",
+            str(int(seed)),
+            "--manifest-out",
+            str(project_root / "docs" / "experiments" / "negative_sampling_manifest.json"),
+        ]
+
     def _build_training_command(
         self,
         *,

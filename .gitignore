@@ -17,10 +17,12 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+mlruns/
 
 # Data
 data/**/*.npy
 data/**/*.csv
+data/**/*.meta.json
 app/data/
 
 # Models (trained ML models)

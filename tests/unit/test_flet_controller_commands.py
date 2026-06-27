@@ -185,6 +185,32 @@ def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
     assert include_values == ["swipe_down", "swipe_left"]
 
 
+def test_build_negative_generation_command_uses_configured_paths(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_configured_taxonomy_path",
+        lambda: tmp_path / "gesture_taxonomy.json",
+    )
+
+    cmd = controller._build_negative_generation_command(
+        samples_per_label=12,
+        seed=99,
+    )
+
+    assert cmd[1:4] == ["-u", "-m", "scripts.generate_negative_samples"]
+    assert cmd[cmd.index("--data-root") + 1] == str(tmp_path / "gestures")
+    assert cmd[cmd.index("--taxonomy") + 1] == str(tmp_path / "gesture_taxonomy.json")
+    assert cmd[cmd.index("--samples-per-label") + 1] == "12"
+    assert cmd[cmd.index("--target-frames") + 1] == str(DYNAMIC_RECOGNITION_WINDOW)
+    assert cmd[cmd.index("--seed") + 1] == "99"
+    assert cmd[cmd.index("--manifest-out") + 1].endswith(
+        "docs/experiments/negative_sampling_manifest.json"
+    )
+
+
 def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
     controller._recognition_model_mode = "static"

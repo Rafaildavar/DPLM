@@ -1,4 +1,4 @@
-.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report
+.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 
@@ -29,3 +29,12 @@ compare-models:
 
 threshold-report:
 	$(PYTHON) -m scripts.threshold_report
+
+negative-samples:
+	$(PYTHON) -m scripts.generate_negative_samples
+
+mlops-dashboard:
+	$(PYTHON) -m scripts.mlops_dashboard
+
+mlflow-ui:
+	mlflow ui --backend-store-uri ./mlruns

@@ -2,10 +2,16 @@
 
 This folder contains the local HTML observability dashboard for the JMLC branch.
 
+Install project dependencies first:
+
+```bash
+pip install -r requirements.txt
+```
+
 Generate it after recording live-evaluation runs:
 
 ```bash
-python -m scripts.mlops_dashboard
+make mlops-dashboard
 ```
 
 Open:
@@ -23,5 +29,15 @@ The dashboard tracks:
 - runtime latency from `runtime_performance.jsonl`;
 - model artifact size, modified time and SHA-256 fingerprint.
 
-This is the first local MLOps layer. The next step is adding experiment runs
-with model parameters, dataset version and metrics snapshots for every training.
+MLflow tracks training experiments separately:
+
+```bash
+make mlflow-ui
+```
+
+Then open `http://127.0.0.1:5000`.
+
+Training runs are logged to the local `GestureFlow` experiment in `./mlruns`
+with model params, sample/class counts, train accuracy and model artifacts.
+The HTML dashboard is the current system snapshot; MLflow is the experiment
+history.

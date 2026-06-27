@@ -213,6 +213,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Сохранять имена классов в нижнем регистре (New -> new)",
     )
+    p.add_argument(
+        "--mlflow-experiment",
+        default="GestureFlow",
+        help="MLflow experiment name; empty disables MLflow logging",
+    )
+    p.add_argument(
+        "--mlflow-tracking-uri",
+        default="file:./mlruns",
+        help="MLflow tracking URI, e.g. file:./mlruns",
+    )
+    p.add_argument(
+        "--mlflow-run-name",
+        default="",
+        help="Optional MLflow run name",
+    )
     return p.parse_args()
 
 
@@ -242,6 +257,7 @@ def main() -> None:
         random_state=int(args.random_state),
     )
     clf.fit(X, y)
+    train_accuracy = float(clf.score(X, y))
 
     joblib.dump(clf, out_path)
     print(f"[✓] Модель сохранена: {out_path}")
@@ -265,6 +281,81 @@ def main() -> None:
     feature_dim_out.write_text(str(X.shape[1]))
     feature_mode_out.write_text(str(args.feature_mode))
     print(f"[✓] Метаданные сохранены: {classes_out}, {feature_dim_out}, {feature_mode_out}")
+    print(f"[i] Training accuracy: {train_accuracy:.4f}")
+
+    _log_mlflow_run(
+        args=args,
+        classes=classes,
+        sample_count=int(X.shape[0]),
+        feature_dim=int(X.shape[1]),
+        train_accuracy=train_accuracy,
+        out_path=out_path,
+        classes_out=classes_out,
+        feature_dim_out=feature_dim_out,
+        feature_mode_out=feature_mode_out,
+    )
+
+
+def _log_mlflow_run(
+    *,
+    args: argparse.Namespace,
+    classes: list[str],
+    sample_count: int,
+    feature_dim: int,
+    train_accuracy: float,
+    out_path: Path,
+    classes_out: Path,
+    feature_dim_out: Path,
+    feature_mode_out: Path,
+) -> None:
+    experiment = str(getattr(args, "mlflow_experiment", "") or "").strip()
+    if not experiment:
+        return
+    try:
+        import mlflow
+    except Exception as exc:
+        print(f"[w] MLflow недоступен, tracking пропущен: {exc}")
+        return
+
+    try:
+        tracking_uri = str(getattr(args, "mlflow_tracking_uri", "") or "file:./mlruns")
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(experiment)
+        run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
+            f"{args.model_type}-{args.feature_mode}"
+        )
+        with mlflow.start_run(run_name=run_name):
+            mlflow.log_params(
+                {
+                    "data_root": str(args.data_root),
+                    "model_type": str(args.model_type),
+                    "feature_mode": str(args.feature_mode),
+                    "neighbors": int(args.neighbors),
+                    "weights": str(args.weights),
+                    "expect_dim": (
+                        int(args.expect_dim)
+                        if args.expect_dim is not None
+                        else ""
+                    ),
+                    "lowercase_labels": bool(args.lowercase_labels),
+                    "include_labels": ",".join(args.include_label or []),
+                    "classes": ",".join(classes),
+                }
+            )
+            mlflow.log_metrics(
+                {
+                    "sample_count": float(sample_count),
+                    "class_count": float(len(classes)),
+                    "feature_dim": float(feature_dim),
+                    "train_accuracy": float(train_accuracy),
+                }
+            )
+            for artifact in (out_path, classes_out, feature_dim_out, feature_mode_out):
+                if artifact.exists():
+                    mlflow.log_artifact(str(artifact))
+        print(f"[✓] MLflow run logged: experiment={experiment!r}, uri={tracking_uri}")
+    except Exception as exc:
+        print(f"[w] MLflow logging failed: {exc}")
 
 
 if __name__ == "__main__":

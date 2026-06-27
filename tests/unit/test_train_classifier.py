@@ -1,9 +1,11 @@
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
-from cv.train_classifier import build_classifier, load_dataset
+from cv.train_classifier import _log_mlflow_run, build_classifier, load_dataset
 
 
 def _write_sample(root: Path, label: str, index: int, value: float = 0.0) -> None:
@@ -68,3 +70,86 @@ def test_build_classifier_supports_non_knn_models():
     clf = build_classifier("extra_trees", random_state=7)
 
     assert clf.__class__.__name__ == "ExtraTreesClassifier"
+
+
+def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
+    calls = {
+        "tracking_uri": "",
+        "experiment": "",
+        "run_name": "",
+        "params": {},
+        "metrics": {},
+        "artifacts": [],
+    }
+
+    class _Run:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _tb):
+            return False
+
+    class _FakeMlflow:
+        def set_tracking_uri(self, value):
+            calls["tracking_uri"] = value
+
+        def set_experiment(self, value):
+            calls["experiment"] = value
+
+        def start_run(self, run_name=None):
+            calls["run_name"] = run_name
+            return _Run()
+
+        def log_params(self, params):
+            calls["params"] = dict(params)
+
+        def log_metrics(self, metrics):
+            calls["metrics"] = dict(metrics)
+
+        def log_artifact(self, path):
+            calls["artifacts"].append(Path(path).name)
+
+    monkeypatch.setitem(sys.modules, "mlflow", _FakeMlflow())
+    artifacts = []
+    for name in ("model.pkl", "classes.json", "feature_dim.txt", "feature_mode.txt"):
+        path = tmp_path / name
+        path.write_text("x", encoding="utf-8")
+        artifacts.append(path)
+
+    args = SimpleNamespace(
+        mlflow_experiment="GestureFlow",
+        mlflow_tracking_uri="file:./mlruns",
+        mlflow_run_name="dynamic-test",
+        data_root="data/gestures",
+        model_type="knn",
+        feature_mode="dynamic_stats",
+        neighbors=5,
+        weights="distance",
+        expect_dim=None,
+        lowercase_labels=True,
+        include_label=["swipe_up", "no_gesture_static"],
+    )
+
+    _log_mlflow_run(
+        args=args,
+        classes=["no_gesture_static", "swipe_up"],
+        sample_count=40,
+        feature_dim=271,
+        train_accuracy=0.95,
+        out_path=artifacts[0],
+        classes_out=artifacts[1],
+        feature_dim_out=artifacts[2],
+        feature_mode_out=artifacts[3],
+    )
+
+    assert calls["tracking_uri"] == "file:./mlruns"
+    assert calls["experiment"] == "GestureFlow"
+    assert calls["run_name"] == "dynamic-test"
+    assert calls["params"]["include_labels"] == "swipe_up,no_gesture_static"
+    assert calls["metrics"]["train_accuracy"] == 0.95
+    assert calls["artifacts"] == [
+        "model.pkl",
+        "classes.json",
+        "feature_dim.txt",
+        "feature_mode.txt",
+    ]

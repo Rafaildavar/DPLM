@@ -1433,7 +1433,7 @@ Live-протокол проверки:
 
 ### H-032: Negative examples нужны для rejection layer
 
-Статус: `implemented`, требуется запись данных и live validation
+Статус: `implemented`, требуется генерация данных, обучение и live validation
 
 Наблюдение пользователя:
 - Dynamic-модель все еще может плохо работать в live.
@@ -1458,8 +1458,12 @@ Live-протокол проверки:
   no-hand pipeline: текущая запись через интерфейс требует landmarks руки и
   не сохраняет пустой кадр как sample.
 - В developer UI на экране обучения добавлена секция `Negative examples`.
-- Negative samples записываются в dynamic-формате с global wrist motion:
-  `(36, 44)`.
+- Пользователь больше не записывает negative examples руками: кнопка
+  генерирует synthetic negative samples из уже записанных dynamic samples.
+- Negative samples сохраняются в dynamic-формате с global wrist motion:
+  `(36, 44)` и префиксом `sample_auto_`.
+- Генератор пишет sidecar metadata `sample_auto_XXXX.meta.json` и manifest
+  `docs/experiments/negative_sampling_manifest.json`.
 - Dynamic training scope изменен с `dynamic` на `dynamic,negative`, поэтому
   dynamic-модель учит и жесты, и отрицательные примеры.
 - Runtime rejection:
@@ -1474,23 +1478,21 @@ Live-протокол проверки:
 
 Offline-проверка:
 - Taxonomy умеет фильтровать `dynamic,negative`.
-- UI-тест подтверждает, что negative recording идет с `include_global_motion`.
+- UI-тест подтверждает, что negative generation не вызывает ручную запись
+  через камеру.
 - Runtime-тест подтверждает, что `no_gesture_static` с confidence `0.85`
   блокирует motion-first `swipe_left`.
 - Live-evaluation test подтверждает, что no-prediction для
   `no_gesture_static` засчитывается как correct.
-- Целевой regression suite: `34 passed`.
+- Целевой regression suite: `47 passed` после H-034/H-035.
 
-Как записывать negative examples:
-1. Открыть `Обучение -> Разработчик -> Negative examples`.
-2. Для каждого hand-based сценария записать минимум `20` samples:
-   - `no_gesture_static`: рука стоит в кадре без жеста;
-   - `random_motion`: произвольное движение, не похожее на свайп;
-   - `partial_swipe`: начал движение и остановился;
-   - `return_motion`: возврат руки после свайпа;
-   - `wrong_axis_motion`: диагональное движение.
-3. Нажать `Обучить dynamic модель`.
-4. Перезапустить live-recognition.
+Как генерировать negative examples:
+1. Записать реальные dynamic gestures: `swipe_up`, `swipe_down`,
+   `swipe_left` и следующие классы.
+2. Открыть `Обучение -> Разработчик -> Negative examples`.
+3. Нажать `Сгенерировать negative`.
+4. Нажать `Обучить dynamic модель`.
+5. Перезапустить live-recognition.
 
 Live-протокол проверки:
 - `swipe_left`, `swipe_up`, `swipe_down`: по `10` attempts.
@@ -1537,8 +1539,77 @@ python -m scripts.mlops_dashboard
 
 Проверка:
 - Unit-test `tests/unit/test_mlops_dashboard.py`;
-- целевой regression suite: `34 passed`.
+- целевой regression suite: `47 passed` после H-034/H-035.
 
 Следующий MLOps-шаг:
 - Добавить versioned training runs: dataset hash, model hash, params,
   offline metrics, live metrics, acceptance status.
+
+### H-034: Automatic negative sampling вместо ручной записи negative
+
+Статус: `implemented`, ожидает live validation
+
+Проблема:
+- Negative examples должны быть данными, которые точно не являются жестами.
+- Если пользователь сам записывает negative, он начинает решать
+  ML-задачу руками и может случайно записать настоящий жест как negative.
+
+Решение:
+- Добавлен `scripts/generate_negative_samples.py`.
+- Генератор берет только taxonomy labels типа `dynamic`.
+- Для каждого negative label строятся контролируемые сценарии:
+  `static_hold`, `closed_random_walk`, `aborted_partial_motion`,
+  `out_and_back_return`, `ambiguous_diagonal`.
+- Существующие ручные файлы `sample_*.npy` не удаляются.
+- При повторном запуске чистятся только auto-файлы `sample_auto_*.npy`.
+- Локально сгенерировано `100` negative samples из `70` dynamic source
+  samples: по `20` на `no_gesture_static`, `random_motion`,
+  `partial_swipe`, `return_motion`, `wrong_axis_motion`.
+- `models/dynamic_knn.pkl` переобучена на scope `dynamic,negative`:
+  `170` samples, `8` classes, feature dim `271`, train accuracy `1.0000`.
+
+Проверка:
+- `tests/unit/test_generate_negative_samples.py` проверяет создание `.npy`,
+  metadata, manifest и сохранность ручных samples.
+- `tests/unit/test_flet_training_view.py` проверяет, что UI запускает
+  generation flow, а не camera recording.
+- Целевой regression suite: `47 passed`.
+
+Критерий приемки:
+- После генерации и переобучения dynamic model:
+  - swipe recall `>=80%`;
+  - negative false positive rate `<=10%`;
+  - static hijack rate `0`.
+
+### H-035: MLflow tracking для промышленного MLOps-следа
+
+Статус: `implemented`, локальный backend `./mlruns`
+
+Зачем:
+- HTML dashboard показывает состояние системы, но не является полноценным
+  experiment tracker.
+- Для JMLC нужно показать, что каждое обучение имеет параметры, метрики,
+  артефакты и историю запусков.
+
+Что добавлено:
+- `cv/train_classifier.py` логирует MLflow run при каждом обучении.
+- Default experiment: `GestureFlow`.
+- Default tracking URI: `file:./mlruns`.
+- Логируются параметры: `model_type`, `feature_mode`, `neighbors`,
+  `weights`, `include_labels`, `classes`.
+- Логируются метрики: `sample_count`, `class_count`, `feature_dim`,
+  `train_accuracy`.
+- Логируются артефакты: model pickle, classes json, feature dim и feature mode.
+- Если MLflow не установлен, обучение не падает, а пишет warning.
+
+Команды:
+
+```bash
+make negative-samples
+make mlops-dashboard
+make mlflow-ui
+```
+
+Роль в JMLC:
+- `docs/mlops_dashboard/index.html` — витрина текущего качества и runtime.
+- `./mlruns` + MLflow UI — трекинг экспериментов и версий моделей.

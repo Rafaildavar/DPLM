@@ -91,15 +91,17 @@ Trajectory block умножается на `8.0`, чтобы направлен�
 сотням pose/velocity компонентов в евклидовом расстоянии KNN. После H-031 KNN
 не является главным решателем для простых `swipe_*`: direction classifier
 выбирает completed motion label, а ML-модель сохраняется как
-diagnostic/fallback. После H-032 negative labels дают ML-модели право
+diagnostic/fallback. После H-032/H-034 negative labels дают ML-модели право
 отклонить событие, если оно похоже на `no_gesture`/`random_motion`.
+Negative samples генерируются автоматически из positive dynamic samples, а не
+записываются пользователем вручную.
 
 ## 5. Модели и классы
 
 | Модель | Feature dim | Алгоритм | Классы | Threshold router |
 |---|---:|---|---|---:|
 | `models/knn.pkl` | `42` | KNN, `k=5`, distance weights | `ctrlz`, `hend`, `up`, `gun`, `sh3`, `three` | `0.50` |
-| `models/dynamic_knn.pkl` | `271` | KNN, `k=5`, distance weights | `swipe_down`, `swipe_left`, `swipe_up` | `0.60` |
+| `models/dynamic_knn.pkl` | `271` | KNN, `k=5`, distance weights | `swipe_*` + 5 negative labels | `0.60` |
 | Motion-first dynamic | trajectory | Direction classifier | `swipe_*` из `dynamic_classes.json` | `>=0.60` |
 
 Static-модель сохранена sklearn `1.8.0`, а текущее окружение использует
@@ -119,15 +121,16 @@ Dynamic-модель уже пересохранена текущим pipeline.
 | `swipe_down` | 20 | Dynamic | dynamic |
 | `swipe_left` | 30 | Dynamic | dynamic |
 | `swipe_up` | 20 | Dynamic | dynamic |
-| `no_gesture_static` | 0 | Dynamic rejection | negative |
-| `random_motion` | 0 | Dynamic rejection | negative |
-| `partial_swipe` | 0 | Dynamic rejection | negative |
-| `return_motion` | 0 | Dynamic rejection | negative |
-| `wrong_axis_motion` | 0 | Dynamic rejection | negative |
-| `background_no_hand` | 0 | Reserved for synthetic/no-hand pipeline | negative |
+| `no_gesture_static` | 20 auto | Dynamic rejection | negative |
+| `random_motion` | 20 auto | Dynamic rejection | negative |
+| `partial_swipe` | 20 auto | Dynamic rejection | negative |
+| `return_motion` | 20 auto | Dynamic rejection | negative |
+| `wrong_axis_motion` | 20 auto | Dynamic rejection | negative |
+| `background_no_hand` | reserved | Reserved for no-hand pipeline | negative |
 | Остальные taxonomy labels | 0 | Нет | static/dynamic |
 
-Всего обучающих samples: `191`, из них dynamic: `70`.
+Всего обучающих samples: `291`, из них dynamic positive: `70`,
+negative auto: `100`.
 
 ### Position profile dynamic-классов
 
@@ -181,6 +184,8 @@ direction compatibility проверкой.
 | `~/.dplm/logs/runtime_performance.jsonl` | inference avg/p95, detection avg, FPS capacity | Производительность |
 | `docs/mlops_dashboard/index.html` | HTML dashboard | MLOps-метрики без терминала |
 | `docs/mlops_dashboard/summary.json` | Dataset/model/live/runtime snapshot | Версионируемый MLOps-снимок |
+| `docs/experiments/negative_sampling_manifest.json` | Generated negative summary | Контроль synthetic negative данных |
+| `mlruns/` | MLflow runs | Параметры, метрики и артефакты обучения |
 
 ## 9. Что уже проверено
 
@@ -189,10 +194,10 @@ direction compatibility проверкой.
 | 5-fold CV dynamic KNN | Accuracy `1.0`, macro F1 `1.0` |
 | Position/scale/speed augmentation | `210/210 correct` |
 | Motion-first dynamic unit tests | Direction, ambiguous axis, missing class |
-| Negative rejection unit tests | UI recording, taxonomy scope, runtime rejection |
+| Negative rejection unit tests | Auto generation, taxonomy scope, runtime rejection |
 | MLOps dashboard unit test | HTML + summary generation |
 | Shared MediaPipe detection | Rate `1.0` |
-| ML/runtime targeted unit tests | `34 passed` после H-033 |
+| ML/runtime targeted unit tests | `47 passed` после H-034/H-035 |
 | Real near/mid/far live validation | Еще не выполнена |
 
 ## 10. Что модель пока не знает
@@ -202,13 +207,13 @@ direction compatibility проверкой.
 | Реальный hand scale старых samples | Нельзя построить accuracy по старой дистанции | Sidecar для новых записей |
 | Несколько пользователей | Не измерена person generalization | Записать отдельные user/session groups |
 | Разные камеры и освещение | Возможен MediaPipe distribution shift | Session metadata и live runs |
-| Negative/no-gesture samples | Confidence KNN не является вероятностью отсутствия жеста | Motion gate и в будущем отдельный rejection model |
+| Negative/no-gesture samples | Confidence KNN не является вероятностью отсутствия жеста | Auto negative generation + rejection layer |
 | `swipe_right` samples | Класс нельзя распознавать | Записать минимум `20` samples |
 
-После H-032 hand-based negative/no-gesture samples поддержаны в pipeline, но
-сами записи еще нужно собрать через интерфейс. `background_no_hand` требует
-отдельного synthetic/no-hand collector, потому что текущая запись сэмплов
-ожидает landmarks руки.
+После H-034 hand-based negative/no-gesture samples строятся автоматически
+скриптом `scripts.generate_negative_samples`. Пользователь записывает только
+реальные dynamic gestures. `background_no_hand` остается reserved-классом:
+текущий pipeline использует hand landmarks, а не пустые кадры без руки.
 
 В live-evaluation для labels типа `negative` отсутствие prediction по timeout
 или ручному skip считается `correct`: это позволяет измерять false positive

@@ -1,11 +1,12 @@
 {
-  "generated_at": "2026-06-27T13:10:46Z",
+  "generated_at": "2026-06-27T13:33:07Z",
   "dataset": {
     "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
-    "total_classes": 18,
-    "total_samples": 191,
+    "total_classes": 23,
+    "total_samples": 291,
     "type_counts": {
       "dynamic": 70,
+      "negative": 100,
       "static": 121
     },
     "classes": [
@@ -45,14 +46,34 @@
         "samples": 0
       },
       {
+        "label": "no_gesture_static",
+        "type": "negative",
+        "samples": 20
+      },
+      {
         "label": "palm",
         "type": "static",
         "samples": 0
       },
       {
+        "label": "partial_swipe",
+        "type": "negative",
+        "samples": 20
+      },
+      {
         "label": "peace_sign",
         "type": "static",
         "samples": 0
+      },
+      {
+        "label": "random_motion",
+        "type": "negative",
+        "samples": 20
+      },
+      {
+        "label": "return_motion",
+        "type": "negative",
+        "samples": 20
       },
       {
         "label": "sh3",
@@ -95,6 +116,11 @@
         "samples": 0
       },
       {
+        "label": "wrong_axis_motion",
+        "type": "negative",
+        "samples": 20
+      },
+      {
         "label": "ываы",
         "type": "static",
         "samples": 0
@@ -110,9 +136,9 @@
     },
     {
       "name": "dynamic_classes.json",
-      "size_bytes": 48,
-      "sha256": "9921aa51f5c7fa4c",
-      "modified_at": 1782553256.34385
+      "size_bytes": 151,
+      "sha256": "40a04edb3e1a07d5",
+      "modified_at": 1782567180.3220277
     },
     {
       "name": "dynamic_extra_trees.pkl",
@@ -124,19 +150,19 @@
       "name": "dynamic_feature_dim.txt",
       "size_bytes": 3,
       "sha256": "3635a91e3da857f7",
-      "modified_at": 1782553256.3439248
+      "modified_at": 1782567180.333299
     },
     {
       "name": "dynamic_feature_mode.txt",
       "size_bytes": 13,
       "sha256": "aae36efb497a8d46",
-      "modified_at": 1782553256.3440764
+      "modified_at": 1782567180.3345282
     },
     {
       "name": "dynamic_knn.pkl",
-      "size_bytes": 77243,
-      "sha256": "5d5f182343b2323e",
-      "modified_at": 1782553256.3435886
+      "size_bytes": 186491,
+      "sha256": "26a843dfdf6da1f9",
+      "modified_at": 1782567180.309696
     },
     {
       "name": "dynamic_svm.pkl",

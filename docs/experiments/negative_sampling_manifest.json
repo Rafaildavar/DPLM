@@ -1,0 +1,918 @@
+{
+  "generated_at": 1782567268.610852,
+  "data_root": "data/gestures",
+  "target_frames": 36,
+  "samples_per_label": 20,
+  "seed": 42,
+  "source_samples": 70,
+  "generated_samples": 100,
+  "labels": {
+    "no_gesture_static": 20,
+    "partial_swipe": 20,
+    "random_motion": 20,
+    "return_motion": 20,
+    "wrong_axis_motion": 20
+  },
+  "samples": [
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0000.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0000.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0001.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0002.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0002.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0004.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0003.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0006.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0004.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0008.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0005.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0010.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0006.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0012.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0007.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0014.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0008.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0016.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0009.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0018.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0010.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0000.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0011.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0002.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0012.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0004.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0013.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0006.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0014.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0008.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0015.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0010.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0016.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0012.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0017.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0014.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0018.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0016.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "no_gesture_static",
+      "path": "data/gestures/no_gesture_static/sample_auto_0019.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0018.npy",
+      "scenario": "static_hold",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0000.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0000.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0001.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0002.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0002.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0004.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0003.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0006.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0004.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0008.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0005.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0010.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0006.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0012.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0007.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0014.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0008.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0016.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0009.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0018.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0010.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0020.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0011.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0022.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0012.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0024.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0013.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0026.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0014.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0028.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0015.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0000.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0016.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0002.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0017.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0004.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0018.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0006.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "random_motion",
+      "path": "data/gestures/random_motion/sample_auto_0019.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0008.npy",
+      "scenario": "closed_random_walk",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0000.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0020.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0001.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0022.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0002.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0024.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0003.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0026.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0004.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0028.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0005.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0000.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0006.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0002.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0007.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0004.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0008.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0006.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0009.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0008.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0010.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0010.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0011.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0012.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0012.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0014.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0013.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0016.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0014.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0018.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0015.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0000.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0016.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0002.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0017.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0004.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0018.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0006.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "partial_swipe",
+      "path": "data/gestures/partial_swipe/sample_auto_0019.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0008.npy",
+      "scenario": "aborted_partial_motion",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0000.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0010.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0001.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0012.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0002.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0014.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0003.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0016.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0004.npy",
+      "source_label": "swipe_up",
+      "source_path": "data/gestures/swipe_up/sample_0018.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0005.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0000.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0006.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0002.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0007.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0004.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0008.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0006.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0009.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0008.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0010.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0010.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0011.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0012.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0012.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0014.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0013.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0016.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0014.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0018.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0015.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0000.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0016.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0002.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0017.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0004.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0018.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0006.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "return_motion",
+      "path": "data/gestures/return_motion/sample_auto_0019.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0008.npy",
+      "scenario": "out_and_back_return",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0000.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0010.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0001.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0012.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0002.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0014.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0003.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0016.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0004.npy",
+      "source_label": "swipe_down",
+      "source_path": "data/gestures/swipe_down/sample_0018.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0005.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0000.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0006.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0002.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0007.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0004.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0008.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0006.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0009.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0008.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0010.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0010.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0011.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0012.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0012.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0014.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0013.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0016.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0014.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0018.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0015.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0020.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0016.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0022.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0017.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0024.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0018.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0026.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    },
+    {
+      "label": "wrong_axis_motion",
+      "path": "data/gestures/wrong_axis_motion/sample_auto_0019.npy",
+      "source_label": "swipe_left",
+      "source_path": "data/gestures/swipe_left/sample_0028.npy",
+      "scenario": "ambiguous_diagonal",
+      "frames": 36,
+      "raw_feature_dim": 44
+    }
+  ]
+}

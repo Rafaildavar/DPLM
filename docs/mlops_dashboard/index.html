@@ -50,13 +50,13 @@
 <body>
 <main>
   <h1>GestureFlow MLOps Dashboard</h1>
-  <div class="muted">Generated 2026-06-27T13:10:46Z</div>
+  <div class="muted">Generated 2026-06-27T13:33:07Z</div>
 
   <section class="grid">
     <div class="panel"><div class="muted">Live accuracy</div><div class="metric bad">43.7%</div><div class="muted">correct / all attempts</div></div>
     <div class="panel"><div class="muted">Live attempts</div><div class="metric">103</div><div class="muted">from live_evaluation.jsonl</div></div>
     <div class="panel"><div class="muted">Negative rejects</div><div class="metric">0</div><div class="muted">blocked by rejection layer</div></div>
-    <div class="panel"><div class="muted">Dataset samples</div><div class="metric">191</div><div class="muted">18 classes</div></div>
+    <div class="panel"><div class="muted">Dataset samples</div><div class="metric">291</div><div class="muted">23 classes</div></div>
   </section>
 
   <section class="panel">
@@ -89,6 +89,7 @@
   <section class="panel">
     <h2>Dataset</h2>
     <table><thead><tr><th>Gesture type</th><th>Count</th></tr></thead><tbody><tr><td>dynamic</td><td>70</td></tr>
+<tr><td>negative</td><td>100</td></tr>
 <tr><td>static</td><td>121</td></tr></tbody></table>
     <table><thead><tr><th>Label</th><th>Type</th><th>Samples</th></tr></thead><tbody><tr><td>CTRLZ</td><td>static</td><td>21</td></tr>
 <tr><td>Hend</td><td>static</td><td>20</td></tr>
@@ -97,8 +98,12 @@
 <tr><td>UP</td><td>static</td><td>20</td></tr>
 <tr><td>gun</td><td>static</td><td>20</td></tr>
 <tr><td>hello</td><td>static</td><td>0</td></tr>
+<tr><td>no_gesture_static</td><td>negative</td><td>20</td></tr>
 <tr><td>palm</td><td>static</td><td>0</td></tr>
+<tr><td>partial_swipe</td><td>negative</td><td>20</td></tr>
 <tr><td>peace_sign</td><td>static</td><td>0</td></tr>
+<tr><td>random_motion</td><td>negative</td><td>20</td></tr>
+<tr><td>return_motion</td><td>negative</td><td>20</td></tr>
 <tr><td>sh3</td><td>static</td><td>20</td></tr>
 <tr><td>swipe_down</td><td>dynamic</td><td>20</td></tr>
 <tr><td>swipe_left</td><td>dynamic</td><td>30</td></tr>
@@ -107,17 +112,18 @@
 <tr><td>test_gesture</td><td>static</td><td>0</td></tr>
 <tr><td>three</td><td>static</td><td>20</td></tr>
 <tr><td>thumbs_up</td><td>static</td><td>0</td></tr>
+<tr><td>wrong_axis_motion</td><td>negative</td><td>20</td></tr>
 <tr><td>ываы</td><td>static</td><td>0</td></tr></tbody></table>
   </section>
 
   <section class="panel">
     <h2>Model Artifacts</h2>
     <table><thead><tr><th>Name</th><th>Bytes</th><th>SHA256</th><th>Modified</th></tr></thead><tbody><tr><td>classes.json</td><td>60</td><td>d1b381dd0c4d30a4</td><td>2026-06-18 20:35:29</td></tr>
-<tr><td>dynamic_classes.json</td><td>48</td><td>9921aa51f5c7fa4c</td><td>2026-06-27 12:40:56</td></tr>
+<tr><td>dynamic_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-27 16:33:00</td></tr>
 <tr><td>dynamic_extra_trees.pkl</td><td>5365737</td><td>9637f8e783a7eb5b</td><td>2026-06-25 20:20:34</td></tr>
-<tr><td>dynamic_feature_dim.txt</td><td>3</td><td>3635a91e3da857f7</td><td>2026-06-27 12:40:56</td></tr>
-<tr><td>dynamic_feature_mode.txt</td><td>13</td><td>aae36efb497a8d46</td><td>2026-06-27 12:40:56</td></tr>
-<tr><td>dynamic_knn.pkl</td><td>77243</td><td>5d5f182343b2323e</td><td>2026-06-27 12:40:56</td></tr>
+<tr><td>dynamic_feature_dim.txt</td><td>3</td><td>3635a91e3da857f7</td><td>2026-06-27 16:33:00</td></tr>
+<tr><td>dynamic_feature_mode.txt</td><td>13</td><td>aae36efb497a8d46</td><td>2026-06-27 16:33:00</td></tr>
+<tr><td>dynamic_knn.pkl</td><td>186491</td><td>26a843dfdf6da1f9</td><td>2026-06-27 16:33:00</td></tr>
 <tr><td>dynamic_svm.pkl</td><td>432029</td><td>666633a9acfbe08f</td><td>2026-06-25 20:20:25</td></tr>
 <tr><td>feature_dim.txt</td><td>2</td><td>73475cb40a568e8d</td><td>2026-06-18 20:35:29</td></tr>
 <tr><td>knn.pkl</td><td>22123</td><td>a0e5de114fb37c9e</td><td>2026-06-18 20:35:29</td></tr></tbody></table>

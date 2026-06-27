@@ -8,8 +8,8 @@ from app.flet_app.views.training import (
     _DEFAULT_DYNAMIC_MODEL_OUT,
     _DEFAULT_DYNAMIC_RECORD_FRAMES,
     _DEFAULT_DYNAMIC_RECORD_SAMPLES,
-    _DEFAULT_NEGATIVE_RECORD_FRAMES,
-    _DEFAULT_NEGATIVE_RECORD_SAMPLES,
+    _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL,
+    _DEFAULT_NEGATIVE_SEED,
     _DEFAULT_K_NEIGHBORS,
     _DEFAULT_MODEL_OUT,
     _DEFAULT_RECORD_FRAMES,
@@ -27,6 +27,7 @@ class _DummyController:
     def __init__(self):
         self.recording_calls = []
         self.training_calls = []
+        self.negative_generation_calls = []
 
     def list_recorded_gestures(self):
         return []
@@ -37,6 +38,10 @@ class _DummyController:
 
     def start_training(self, **kwargs):
         self.training_calls.append(kwargs)
+        return True
+
+    def start_negative_generation(self, **kwargs):
+        self.negative_generation_calls.append(kwargs)
         return True
 
     def cancel_training(self):
@@ -140,22 +145,18 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert training_call["training_scope"] == _DYNAMIC_TRAINING_SCOPE
 
 
-def test_developer_negative_flow_records_dynamic_negative_examples():
+def test_developer_negative_flow_generates_samples_automatically():
     controller = _DummyController()
     view = TrainingView(_DummyPage(), controller)
-    view._neg_rec_label.value = "random_motion"
-    view._neg_rec_samples.value = ""
-    view._neg_rec_frames.value = ""
-    view._neg_rec_two_hands.value = False
+    view._neg_samples_per_label.value = ""
+    view._neg_seed.value = ""
 
-    view._on_record_start(None, mode="negative")
+    view._on_negative_generate(None)
 
-    recording_call = controller.recording_calls[-1]
-    assert recording_call["label"] == "random_motion"
-    assert recording_call["num_samples"] == _DEFAULT_NEGATIVE_RECORD_SAMPLES
-    assert recording_call["frames"] == _DEFAULT_NEGATIVE_RECORD_FRAMES
-    assert recording_call["two_hands"] is False
-    assert recording_call["include_global_motion"] is True
+    assert controller.recording_calls == []
+    generation_call = controller.negative_generation_calls[-1]
+    assert generation_call["samples_per_label"] == _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL
+    assert generation_call["seed"] == _DEFAULT_NEGATIVE_SEED
 
 
 def test_dynamic_model_type_updates_default_output_path_without_overriding_custom_path():
