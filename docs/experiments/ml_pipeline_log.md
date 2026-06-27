@@ -1112,6 +1112,67 @@ Offline-проверка:
 - Повторить baseline без переобучения между прогонами и сравнить новые run с
   зафиксированными результатами H-027.
 
+### H-028: Lag в auto может снижать качество temporal detection
+
+Статус: `implemented`, требуется camera benchmark и повторный live-test
+
+Наблюдение:
+- Видео в Flet заметно отстает во время `auto`.
+- Dynamic inference использует окно `36` кадров. Если pipeline вместо `30 FPS`
+  обрабатывает, например, `10 FPS`, окно описывает уже `3.6` секунды вместо
+  `1.2`. В него могут одновременно попасть сам свайп, остановка и возврат руки.
+- До оптимизации static и dynamic `GestureOnlineInfer` независимо запускали
+  MediaPipe на одном кадре.
+- `HomeView` и скрытый `TrainingView` были постоянно подписаны на camera event.
+  Каждый кадр мог дважды кодироваться в base64 и создавать несколько
+  `page.run_thread` задач без backpressure.
+
+Гипотезы:
+1. Два MediaPipe detector в `auto` уменьшают effective FPS и растягивают
+   temporal window.
+2. Обновление скрытой вкладки и неограниченная очередь Flet создают визуальный
+   lag даже при приемлемой скорости ML.
+3. Старые кадры в backend-буфере камеры увеличивают end-to-end latency.
+
+Что сделали:
+- Router запускает hand detection один раз и передает один набор
+  `DetectedHand` в static и dynamic классификаторы.
+- Secondary dynamic infer создается без собственного MediaPipe detector.
+- Preview ограничен `20 FPS`, но ML продолжает работать на configured target
+  FPS. JPEG, overlay и Flet event выполняются только для preview-кадров.
+- `HomeView` и `TrainingView` игнорируют кадры, пока скрыты.
+- Для каждой видимой вкладки разрешен максимум один pending UI frame; лишние
+  кадры отбрасываются вместо накопления задержки.
+- На главной обновляется только camera `Image`, а не вся Flet-страница.
+- Для OpenCV запрашивается camera buffer size `1`, если backend это
+  поддерживает.
+- Каждые `5` секунд приложение пишет
+  `~/.dplm/logs/runtime_performance.jsonl`:
+  - `shared_detection_rate`;
+  - `inference_ms_avg`;
+  - `inference_ms_p95`;
+  - `detection_ms_avg`;
+  - `inference_fps_capacity`.
+
+Проверка:
+- Unit-test подтверждает один detector call и два classifier calls на кадр.
+- Unit-test подтверждает coalescing: два camera events создают одну UI-задачу.
+- Unit-test подтверждает, что скрытая training-вкладка не ставит frame update.
+- Headless MediaPipe benchmark не принят как доказательство: в тестовом
+  окружении detector не создал GL context и вернул ранний empty result.
+- Фактическая latency должна измеряться в запущенном приложении с камерой.
+
+Критерий runtime-приемки:
+- `shared_detection_rate = 1.0` в режиме `auto`;
+- `inference_ms_p95 <= 33.3 ms` для target `30 FPS`, либо capacity не ниже
+  фактически выбранного FPS;
+- preview не накапливает заметную задержку относительно движения;
+- после оптимизации повторить H-027: по два run на каждый dynamic-класс.
+
+Следующий шаг:
+- Запустить приложение минимум на `15` секунд в `auto`, затем сравнить
+  `runtime_performance.jsonl` с live accuracy и route metrics.
+
 ## Текущий ML-пайплайн
 
 1. Запись:

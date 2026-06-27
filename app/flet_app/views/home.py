@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 
 import flet as ft
 
@@ -41,6 +42,9 @@ class HomeView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
         self._page = page
         self._controller = controller
+        self._visible = True
+        self._frame_update_lock = threading.Lock()
+        self._frame_update_pending = False
 
         self._camera_image = ft.Image(
             src=_PLACEHOLDER_DATA_URL,
@@ -274,6 +278,7 @@ class HomeView:
     def on_show(self) -> None:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
+        self._visible = True
         self._refresh_eval_labels()
         self._refresh_activity()
         self._apply_live_evaluation(self._controller.current_live_evaluation())
@@ -282,7 +287,7 @@ class HomeView:
         # При уходе с главной — НЕ останавливаем распознавание, потому что
         # «жест → команда ОС» должно работать в фоне (как в QML с subprocess).
         # Останавливать камеру/CV нужно только явной кнопкой «Стоп».
-        pass
+        self._visible = False
 
     def _recognition_label_options(self) -> list[str]:
         try:
@@ -414,19 +419,41 @@ class HomeView:
     # ---- Слушатели событий контроллера (приходят из фонового потока) ----
 
     def _on_frame(self) -> None:
+        if not self._visible:
+            return
+        with self._frame_update_lock:
+            if self._frame_update_pending:
+                return
+            self._frame_update_pending = True
         data = self._controller.latest_jpeg_bytes
         if not data:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
             return
         b64 = base64.b64encode(data).decode("ascii")
-        self._page.run_thread(self._apply_frame, f"data:image/jpeg;base64,{b64}")
+        try:
+            self._page.run_thread(
+                self._apply_frame,
+                f"data:image/jpeg;base64,{b64}",
+            )
+        except Exception:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
 
     def _apply_frame(self, data_url: str) -> None:
-        self._camera_image.src = data_url
-        self._camera_image.visible = True
         try:
-            self._page.update()
+            if self._visible:
+                self._camera_image.src = data_url
+                self._camera_image.visible = True
+                try:
+                    self._camera_image.update()
+                except Exception:
+                    self._page.update()
         except Exception:
             pass
+        finally:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
 
     def _on_gesture(self, label: str) -> None:
         self._page.run_thread(self._apply_gesture, label)

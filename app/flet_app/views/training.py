@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 
 import flet as ft
 
@@ -71,6 +72,9 @@ class TrainingView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
         self._page = page
         self._controller = controller
+        self._visible = False
+        self._frame_update_lock = threading.Lock()
+        self._frame_update_pending = False
 
         # --- Поля обычного режима ----------------------------------------
         self._user_rec_label = ft.TextField(
@@ -353,10 +357,11 @@ class TrainingView:
     # ---- Жизненный цикл --------------------------------------------------
 
     def on_show(self) -> None:
+        self._visible = True
         self._refresh_datasets()
 
     def on_hide(self) -> None:
-        pass
+        self._visible = False
 
     # ---- Хелперы ---------------------------------------------------------
 
@@ -501,22 +506,42 @@ class TrainingView:
                 pass
 
     def _on_frame(self) -> None:
+        if not self._visible:
+            return
+        with self._frame_update_lock:
+            if self._frame_update_pending:
+                return
+            self._frame_update_pending = True
         data = self._controller.latest_jpeg_bytes
         if not data:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
             return
         b64 = base64.b64encode(data).decode("ascii")
-        self._page.run_thread(self._apply_frame, f"data:image/jpeg;base64,{b64}")
+        try:
+            self._page.run_thread(
+                self._apply_frame,
+                f"data:image/jpeg;base64,{b64}",
+            )
+        except Exception:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
 
     def _apply_frame(self, data_url: str) -> None:
-        self._camera_image.src = data_url
-        self._camera_image.visible = True
         try:
+            if not self._visible:
+                return
+            self._camera_image.src = data_url
+            self._camera_image.visible = True
             self._camera_image.update()
         except Exception:
             try:
                 self._page.update()
             except Exception:
                 pass
+        finally:
+            with self._frame_update_lock:
+                self._frame_update_pending = False
 
     def _on_camera_active(self, active: bool) -> None:
         self._page.run_thread(self._apply_camera_active, active)

@@ -44,6 +44,25 @@ class _FakeInfer:
         self.reset_calls += 1
 
 
+class _SharedFakeInfer(_FakeInfer):
+    def __init__(self, outputs):
+        super().__init__(outputs)
+        self.detect_calls = 0
+        self.shared_process_calls = 0
+        self.detected_hands = None
+
+    def detect_hands(self, _frame_rgb):
+        self.detect_calls += 1
+        return ["shared-hand"]
+
+    def process_detected_hands(self, hands):
+        self.shared_process_calls += 1
+        self.detected_hands = hands
+        if self.outputs:
+            return self.outputs.pop(0)
+        return {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
+
+
 def _taxonomy() -> GestureTaxonomy:
     return GestureTaxonomy(
         source_path=__file__,
@@ -81,6 +100,33 @@ def test_router_prefers_confident_dynamic_label() -> None:
     assert out["router"]["dynamic_type"] == "dynamic"
     assert static.calls == 1
     assert dynamic.calls == 1
+
+
+def test_router_runs_one_shared_detection_for_both_models() -> None:
+    static = _SharedFakeInfer(
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[shared]"}]
+    )
+    dynamic = _SharedFakeInfer(
+        [{"label": "swipe_up", "confidence": 0.88, "landmarks_json": "[shared]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == "swipe_up"
+    assert static.detect_calls == 1
+    assert dynamic.detect_calls == 0
+    assert static.shared_process_calls == 1
+    assert dynamic.shared_process_calls == 1
+    assert static.detected_hands is dynamic.detected_hands
+    assert static.calls == 0
+    assert dynamic.calls == 0
+    assert out["performance"]["shared_detection"] is True
+    assert out["router"]["shared_detection"] is True
 
 
 def test_router_rejects_dynamic_model_quasi_static_label() -> None:

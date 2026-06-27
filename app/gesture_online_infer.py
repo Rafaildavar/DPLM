@@ -61,6 +61,7 @@ class GestureOnlineInfer:
         gesture_signatures_path: Optional[Path] = None,
         window: int = 30,
         two_hands: bool = False,
+        initialize_detector: bool = True,
     ) -> None:
         self._init_error = ""
         self._model_error = ""
@@ -153,15 +154,16 @@ class GestureOnlineInfer:
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
 
-        try:
-            task_path = str(resolve_hand_landmarker_task_path())
-            self._detector = HandLandmarkerVideo(
-                num_hands=2,
-                task_path=task_path,
-            )
-        except Exception as e:
-            self._init_error = str(e)
-            self._detector = None
+        if initialize_detector:
+            try:
+                task_path = str(resolve_hand_landmarker_task_path())
+                self._detector = HandLandmarkerVideo(
+                    num_hands=2,
+                    task_path=task_path,
+                )
+            except Exception as e:
+                self._init_error = str(e)
+                self._detector = None
 
     def _infer_raw_feature_dim(self) -> int:
         return max(
@@ -546,33 +548,40 @@ class GestureOnlineInfer:
 
         return sorted(hands, key=sort_key)
 
-    def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
-        """
-        Args:
-            frame_rgb: uint8 RGB, произвольный размер (как после cv2.flip + cvtColor).
-        Returns:
-            ``label``, ``confidence`` [0..1], ``landmarks_json`` (список рук
-            ``[[[x,y],...], ...]`` в 0..1).
-        """
-        empty: Dict[str, Any] = {
-            "label": "",
-            "confidence": 0.0,
-            "landmarks_json": "[]",
-        }
+    def detect_hands(self, frame_rgb: np.ndarray) -> List[DetectedHand]:
+        """Run MediaPipe once and return hands in stable classifier order."""
         if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
-            return empty
+            return []
+        return self._ordered_hands(self._detector.detect_for_video_rgb(frame_rgb))
 
-        hands = self._ordered_hands(self._detector.detect_for_video_rgb(frame_rgb))
+    def process_detected_hands(
+        self,
+        hands: List[DetectedHand],
+    ) -> Dict[str, Any]:
+        """Build model features from hands detected by this or a shared detector."""
+        hands = self._ordered_hands(list(hands or []))
         landmarks_json = self._build_overlay_payload(hands)
+
+        if not hands:
+            self._window.clear()
+            self._finger_count_window.clear()
+            return {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": landmarks_json,
+            }
 
         # Нормализуем точки рук для классификатора.
         normalized: List[np.ndarray] = []
-        for h in hands:
+        normalized_hands: List[DetectedHand] = []
+        for hand in hands:
             try:
-                normalized.append(normalize_landmarks(h.landmarks))
+                normalized.append(normalize_landmarks(hand.landmarks))
+                normalized_hands.append(hand)
             except Exception:
                 continue
 
+        hands = normalized_hands
         if not normalized:
             self._window.clear()
             self._finger_count_window.clear()
@@ -589,12 +598,24 @@ class GestureOnlineInfer:
             per_hand_dim = max(1, raw_feature_dim // 2)
             if len(normalized) >= 2:
                 hand_features = [
-                    self._hand_frame_feature(hands[0], normalized[0], target_dim=per_hand_dim),
-                    self._hand_frame_feature(hands[1], normalized[1], target_dim=per_hand_dim),
+                    self._hand_frame_feature(
+                        hands[0],
+                        normalized[0],
+                        target_dim=per_hand_dim,
+                    ),
+                    self._hand_frame_feature(
+                        hands[1],
+                        normalized[1],
+                        target_dim=per_hand_dim,
+                    ),
                 ]
             elif len(normalized) == 1:
                 hand_features = [
-                    self._hand_frame_feature(hands[0], normalized[0], target_dim=per_hand_dim),
+                    self._hand_frame_feature(
+                        hands[0],
+                        normalized[0],
+                        target_dim=per_hand_dim,
+                    ),
                     np.zeros(per_hand_dim, dtype=np.float32),
                 ]
             else:
@@ -674,3 +695,21 @@ class GestureOnlineInfer:
             "landmarks_json": landmarks_json,
             "temporal": temporal_state,
         }
+
+    def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
+        """
+        Args:
+            frame_rgb: uint8 RGB, произвольный размер (как после cv2.flip + cvtColor).
+        Returns:
+            ``label``, ``confidence`` [0..1], ``landmarks_json`` (список рук
+            ``[[[x,y],...], ...]`` в 0..1).
+        """
+        empty: Dict[str, Any] = {
+            "label": "",
+            "confidence": 0.0,
+            "landmarks_json": "[]",
+        }
+        if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
+            return empty
+
+        return self.process_detected_hands(self.detect_hands(frame_rgb))

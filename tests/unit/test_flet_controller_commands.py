@@ -50,6 +50,32 @@ def _dispatch_controller():
     return controller
 
 
+def test_runtime_performance_writes_aggregated_jsonl(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "auto"
+    controller._target_fps = 30
+    controller._runtime_inference_samples = []
+    controller._runtime_perf_last_flush = 0.0
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    controller._record_runtime_performance(
+        {
+            "total_inference_ms": 20.0,
+            "detection_ms": 12.0,
+            "shared_detection": True,
+        }
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "runtime_performance.jsonl").read_text().splitlines()
+    ]
+    assert rows[-1]["recognition_model_mode"] == "auto"
+    assert rows[-1]["shared_detection_rate"] == 1.0
+    assert rows[-1]["inference_ms_avg"] == 20.0
+    assert rows[-1]["inference_fps_capacity"] == 50.0
+
+
 def test_list_commands_includes_action_category_and_config():
     controller = AppController.__new__(AppController)
 

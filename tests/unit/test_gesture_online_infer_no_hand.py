@@ -182,6 +182,26 @@ def test_single_hand_classifier_gets_42_features_when_two_hands_are_detected() -
     assert out["landmarks_json"] != "[]"
 
 
+def test_classifier_can_process_hands_from_shared_detector() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    clf = _ShapeCheckingClassifier(42)
+    infer._detector = None
+    infer._clf = clf
+    infer._classes = ["new"]
+    infer._feature_dim = 42
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=30)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {}
+    hands = _OneHandDetector().detect_for_video_rgb(None)
+
+    out = infer.process_detected_hands(hands)
+
+    assert out["label"] == "new"
+    assert clf.seen_shape == (1, 42)
+    assert out["landmarks_json"] != "[]"
+
+
 def test_two_hand_classifier_gets_84_features_with_one_hand_padded() -> None:
     infer = object.__new__(GestureOnlineInfer)
     clf = _FeatureCaptureClassifier(84)

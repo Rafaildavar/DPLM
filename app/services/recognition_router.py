@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from app.services.gesture_taxonomy import (
@@ -136,9 +137,45 @@ class GestureRecognitionRouter:
             resetter()
 
     def process_frame_rgb(self, frame_rgb: Any) -> dict[str, Any]:
-        static_out = self._process(self._static_infer, frame_rgb)
-        dynamic_out = self._process(self._dynamic_infer, frame_rgb)
-        return self._choose(static_out, dynamic_out)
+        started = perf_counter()
+        shared_detection = self._supports_shared_detection()
+        detection_ms = 0.0
+
+        if shared_detection:
+            detection_started = perf_counter()
+            try:
+                hands = self._static_infer.detect_hands(frame_rgb)
+            except Exception as exc:
+                print(f"[w] shared hand detection failed: {exc}", flush=True)
+                hands = []
+            detection_ms = (perf_counter() - detection_started) * 1000.0
+            static_out = self._process_detected(self._static_infer, hands)
+            dynamic_out = self._process_detected(self._dynamic_infer, hands)
+        else:
+            static_out = self._process(self._static_infer, frame_rgb)
+            dynamic_out = self._process(self._dynamic_infer, frame_rgb)
+
+        out = self._choose(static_out, dynamic_out)
+        performance = {
+            "shared_detection": shared_detection,
+            "detection_ms": round(detection_ms, 3),
+            "total_inference_ms": round((perf_counter() - started) * 1000.0, 3),
+        }
+        out["performance"] = performance
+        router_payload = out.get("router")
+        if isinstance(router_payload, dict):
+            router_payload["shared_detection"] = shared_detection
+        return out
+
+    def _supports_shared_detection(self) -> bool:
+        return all(
+            callable(method)
+            for method in (
+                getattr(self._static_infer, "detect_hands", None),
+                getattr(self._static_infer, "process_detected_hands", None),
+                getattr(self._dynamic_infer, "process_detected_hands", None),
+            )
+        )
 
     def _process(self, infer: Any | None, frame_rgb: Any) -> dict[str, Any]:
         if infer is None:
@@ -147,6 +184,22 @@ class GestureRecognitionRouter:
             out = infer.process_frame_rgb(frame_rgb)
         except Exception as exc:
             print(f"[w] recognition route failed: {exc}", flush=True)
+            return self._empty()
+        if not isinstance(out, dict):
+            return self._empty()
+        return out
+
+    def _process_detected(
+        self,
+        infer: Any | None,
+        hands: Any,
+    ) -> dict[str, Any]:
+        if infer is None:
+            return self._empty()
+        try:
+            out = infer.process_detected_hands(hands)
+        except Exception as exc:
+            print(f"[w] shared recognition route failed: {exc}", flush=True)
             return self._empty()
         if not isinstance(out, dict):
             return self._empty()

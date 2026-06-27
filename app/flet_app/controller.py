@@ -205,6 +205,8 @@ LIVE_EVAL_DEFAULT_ATTEMPTS = 10
 LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 0.0
 LIVE_EVAL_DEFAULT_MIN_CONFIDENCE = 0.60
 LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
+CAMERA_PREVIEW_MAX_FPS = 20.0
+RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
 
 
 class AppController:
@@ -293,6 +295,8 @@ class AppController:
         self._frame_w = 0
         self._frame_h = 0
         self._target_fps = int(self._config.recognition.target_fps)
+        self._runtime_inference_samples: list[dict[str, Any]] = []
+        self._runtime_perf_last_flush = time.monotonic()
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
@@ -1403,6 +1407,7 @@ class AppController:
                     feature_mode_path=self._dynamic_feature_mode_path(),
                     window=DYNAMIC_RECOGNITION_WINDOW,
                     two_hands=self._two_hands_mode,
+                    initialize_detector=False,
                 )
                 infer = GestureRecognitionRouter(
                     static_infer=static_infer,
@@ -1522,7 +1527,12 @@ class AppController:
         import numpy as np
 
         frame_interval = 1.0 / float(self._target_fps)
+        preview_interval = 1.0 / max(
+            1.0,
+            min(float(self._target_fps), CAMERA_PREVIEW_MAX_FPS),
+        )
         next_t = time.monotonic()
+        next_preview_t = next_t
 
         while not self._camera_stop.is_set():
             cap = self._camera_cap
@@ -1571,30 +1581,32 @@ class AppController:
                 except Exception as e:
                     print(f"[!] embedded CV frame error: {e}")
 
-            self._draw_landmarks_on_frame(frame_bgr, landmarks_json)
-            self._draw_sample_recording_overlay_on_frame(frame_bgr)
+            preview_now = time.monotonic()
+            if preview_now >= next_preview_t:
+                self._draw_landmarks_on_frame(frame_bgr, landmarks_json)
+                self._draw_sample_recording_overlay_on_frame(frame_bgr)
 
-            # Кодирование в JPEG для Flet ``Image(src=bytes)``.
-            # 720p @ q=75 → 30-70 КБ на кадр, на M-серии тянет 30 fps без
-            # заметной нагрузки.
-            ok2, buf = cv2.imencode(
-                ".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
-            )
-            if not ok2:
-                continue
-            data = buf.tobytes()
-            with self._frame_lock:
-                self._latest_jpeg_bytes = data
-                self._frame_h, self._frame_w = frame_bgr.shape[:2]
-            self.camera_frame_updated.emit()
+                # Keep ML at target FPS, but cap JPEG/base64/Flet preview work.
+                ok2, buf = cv2.imencode(
+                    ".jpg",
+                    frame_bgr,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), 75],
+                )
+                if ok2:
+                    data = buf.tobytes()
+                    with self._frame_lock:
+                        self._latest_jpeg_bytes = data
+                        self._frame_h, self._frame_w = frame_bgr.shape[:2]
+                    self.camera_frame_updated.emit()
+                next_preview_t = preview_now + preview_interval
 
-            now = time.monotonic()
+            after_work = time.monotonic()
             next_t += frame_interval
-            sleep = next_t - now
+            sleep = next_t - after_work
             if sleep > 0:
                 time.sleep(sleep)
             else:
-                next_t = now  # отстаём — сбрасываем расписание
+                next_t = after_work  # отстаём — сбрасываем расписание
 
     def _hands_landmarks_json(self, hands: list[Any]) -> str:
         payload: list[list[list[float]]] = []
@@ -2022,6 +2034,9 @@ class AppController:
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
         self._update_live_evaluation_timeout()
+        performance = out.get("performance")
+        if isinstance(performance, dict):
+            self._record_runtime_performance(performance)
         label = (out.get("label") or "").strip()
         conf = float(out.get("confidence") or 0.0)
         route_metadata = out.get("router") if isinstance(out.get("router"), dict) else {}
@@ -2084,6 +2099,69 @@ class AppController:
                 )
                 print(f"[ctrl.gesture] {reason} — команда не запускается", flush=True)
             self._record_recognition_event(label, stable_conf, executed)
+
+    def _record_runtime_performance(self, performance: dict[str, Any]) -> None:
+        try:
+            total_ms = float(performance.get("total_inference_ms") or 0.0)
+            detection_ms = float(performance.get("detection_ms") or 0.0)
+        except (TypeError, ValueError):
+            return
+        if total_ms <= 0.0:
+            return
+
+        samples = getattr(self, "_runtime_inference_samples", None)
+        if not isinstance(samples, list):
+            samples = []
+            self._runtime_inference_samples = samples
+        samples.append(
+            {
+                "total_inference_ms": total_ms,
+                "detection_ms": max(0.0, detection_ms),
+                "shared_detection": bool(performance.get("shared_detection")),
+            }
+        )
+        if len(samples) > 300:
+            del samples[:-300]
+
+        now = time.monotonic()
+        last_flush = float(getattr(self, "_runtime_perf_last_flush", now))
+        if now - last_flush < RUNTIME_PERFORMANCE_FLUSH_SECONDS:
+            return
+        self._runtime_perf_last_flush = now
+
+        total_values = sorted(item["total_inference_ms"] for item in samples)
+        detection_values = sorted(item["detection_ms"] for item in samples)
+        p95_index = min(
+            len(total_values) - 1,
+            max(0, int(round((len(total_values) - 1) * 0.95))),
+        )
+        average_ms = sum(total_values) / len(total_values)
+        row = {
+            "recorded_at": time.time(),
+            "recognition_model_mode": self.recognition_model_mode,
+            "dynamic_model_profile": self.dynamic_model_profile,
+            "target_fps": int(getattr(self, "_target_fps", 0) or 0),
+            "samples": len(samples),
+            "shared_detection_rate": round(
+                sum(1 for item in samples if item["shared_detection"]) / len(samples),
+                4,
+            ),
+            "inference_ms_avg": round(average_ms, 3),
+            "inference_ms_p95": round(total_values[p95_index], 3),
+            "detection_ms_avg": round(
+                sum(detection_values) / len(detection_values),
+                3,
+            ),
+            "inference_fps_capacity": round(1000.0 / average_ms, 2),
+        }
+        try:
+            path = self._configured_log_dir() / "runtime_performance.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            print(f"[w] runtime performance log write failed: {exc}", flush=True)
+        samples.clear()
 
     # ----------------------------------------------------------------------
     # Встроенный пайплайн распознавания

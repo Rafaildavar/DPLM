@@ -27,4 +27,7 @@ def open_default_capture(
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
         cap.set(cv2.CAP_PROP_FPS, int(fps))
+        # Backends may ignore this, but when supported it prevents processing
+        # stale buffered frames after a slow inference iteration.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
