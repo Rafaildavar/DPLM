@@ -1738,3 +1738,46 @@ PYTHON=.venv/bin/python make mlflow-ui
 - `python -m py_compile app/flet_app/controller.py`
 - `python -m pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
   -> `36 passed`.
+
+### H-038: Natural swipe + MLflow показали устранение static hijack
+
+Статус: `validated`, нужны дополнительные данные для `swipe_up/down`
+
+Дата live-прогона: `2026-06-27 17:25-17:26`
+
+Наблюдение:
+- После natural swipe segmentation и MLflow live logging auto-модель стала
+  значительно лучше отделять dynamic gestures от static gestures.
+- Ранее `swipe_up` часто уходил в `gun`: `7/10` попыток были `route=static`.
+- В свежих run'ах все `30/30` попыток для `swipe_up`, `swipe_down`,
+  `swipe_left` прошли через `route=dynamic`.
+
+Результаты MLflow / `live_evaluation.jsonl`:
+
+| Expected | Score | Accuracy/Recall | Static hijack | Wrong direction | Avg latency | End reasons |
+|---|---:|---:|---:|---:|---:|---|
+| `swipe_up` | `7/10` | `70%` | `0%` | `30%` | `2.02s` | `velocity_drop=8`, `hand_lost=2` |
+| `swipe_down` | `7/10` | `70%` | `0%` | `30%` | `2.60s` | `velocity_drop=4`, `hand_lost=5`, `still=1` |
+| `swipe_left` | `10/10` | `100%` | `0%` | `0%` | `1.46s` | `velocity_drop=9`, `hand_lost=1` |
+
+MLflow runs:
+- `live-swipe_up-auto-knn`
+- `live-swipe_down-auto-knn`
+- `live-swipe_left-auto-knn`
+
+Вывод:
+- Критичная проблема `dynamic -> static` на свежем прогоне ушла:
+  `live_static_hijack_rate=0.0` для всех трех классов.
+- `swipe_left` достиг целевого качества и может считаться текущим baseline.
+- Оставшаяся ошибка для `swipe_up/down` — не routing, а directional confusion:
+  `swipe_up -> swipe_down` и `swipe_down -> swipe_up/swipe_left`.
+- Natural swipe работает: большинство событий завершается по
+  `velocity_drop` или `hand_lost`, то есть без обязательной финальной позы.
+
+Следующая гипотеза:
+- Для вертикальных жестов нужно усилить axis/direction gate и проверить
+  канон записи: `swipe_up/down` должны иметь больше вертикальной доминанты и
+  меньше диагонального/горизонтального хвоста.
+- Следующий эксперимент: повторить `swipe_up/down` по `20` попыток с
+  одинаковой стартовой зоной и затем сравнить `dynamic_axis_ratio`,
+  `dynamic_straightness`, `dynamic_motion_scale` между correct/wrong.
