@@ -14,6 +14,7 @@ from app.flet_app.views.training import (
     _DEFAULT_MODEL_OUT,
     _DEFAULT_RECORD_FRAMES,
     _DYNAMIC_TRAINING_SCOPE,
+    _STATIC_TRAINING_SCOPE,
     _dynamic_model_out_for_type,
 )
 
@@ -75,7 +76,9 @@ def test_user_training_tab_uses_project_defaults():
     assert training_call["data_root"] == _DEFAULT_DATA_ROOT
     assert training_call["out_path"] == _DEFAULT_MODEL_OUT
     assert training_call["neighbors"] == _DEFAULT_K_NEIGHBORS
+    assert training_call["expect_dim"] == 42
     assert training_call["model_type"] == "knn"
+    assert training_call["training_scope"] == _STATIC_TRAINING_SCOPE
 
 
 def test_developer_training_tab_keeps_advanced_settings():
@@ -106,7 +109,9 @@ def test_developer_training_tab_keeps_advanced_settings():
     assert training_call["data_root"] == "dev/data"
     assert training_call["out_path"] == "dev/model.pkl"
     assert training_call["neighbors"] == 9
+    assert training_call["expect_dim"] == 42
     assert training_call["model_type"] == "extra_trees"
+    assert training_call["training_scope"] == _STATIC_TRAINING_SCOPE
 
 
 def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
@@ -137,6 +142,7 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert training_call["data_root"] == _DEFAULT_DATA_ROOT
     assert training_call["out_path"] == _dynamic_model_out_for_type("svm")
     assert training_call["neighbors"] == _DEFAULT_K_NEIGHBORS
+    assert training_call["expect_dim"] is None
     assert training_call["model_type"] == "svm"
     assert training_call["feature_mode"] == _DEFAULT_DYNAMIC_FEATURE_MODE
     assert training_call["classes_out_path"] == _DEFAULT_DYNAMIC_CLASSES_OUT

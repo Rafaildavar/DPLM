@@ -199,6 +199,42 @@ def test_router_rejects_low_confidence_static_label() -> None:
     assert out["router"]["static_reject_reason"] == REASON_LOW_CONFIDENCE
 
 
+def test_router_exposes_static_rejection_policy_metadata() -> None:
+    static = _FakeInfer(
+        [
+            {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": "[static]",
+                "static_decision": {
+                    "source": "margin_rejected",
+                    "rejection_reason": "low_margin",
+                    "model_label": "palm",
+                    "model_confidence": 0.53,
+                    "top2_label": "gun",
+                    "top2_confidence": 0.47,
+                    "margin": 0.06,
+                    "min_margin": 0.10,
+                },
+            }
+        ]
+    )
+    dynamic = _FakeInfer([{"label": "", "confidence": 0.0, "landmarks_json": "[]"}])
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["router"]["static_reject_reason"] == "low_margin"
+    assert out["router"]["static_decision_source"] == "margin_rejected"
+    assert out["router"]["static_model_label"] == "palm"
+    assert out["router"]["static_margin"] == 0.06
+
+
 def test_router_rejects_static_dynamic_label_without_dynamic_confirmation() -> None:
     static = _FakeInfer(
         [{"label": "swipe_up", "confidence": 0.99, "landmarks_json": "[static]"}]

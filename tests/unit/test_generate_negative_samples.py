@@ -71,3 +71,38 @@ def test_generate_negative_samples_creates_auto_files_without_touching_manual_da
     manifest = json.loads(manifest_out.read_text(encoding="utf-8"))
     assert manifest["generated_samples"] == 4
     assert manifest["samples"][0]["source_label"] == "swipe_left"
+
+
+def test_generate_negative_samples_builds_static_hard_negatives(tmp_path):
+    data_root = tmp_path / "gestures"
+    taxonomy_path = tmp_path / "gesture_taxonomy.json"
+    _write_taxonomy(taxonomy_path)
+
+    source_dir = data_root / "gun"
+    source_dir.mkdir(parents=True)
+    source = np.full((30, 42), 0.5, dtype=np.float32)
+    source[:, 0::2] += np.linspace(-0.05, 0.05, 21, dtype=np.float32)
+    source[:, 1::2] += np.linspace(0.08, -0.08, 21, dtype=np.float32)
+    np.save(source_dir / "sample_0000.npy", source)
+
+    report = generate_negative_samples(
+        data_root=data_root,
+        taxonomy_path=taxonomy_path,
+        labels=["no_gesture_static"],
+        samples_per_label=4,
+        target_frames=36,
+        seed=11,
+        manifest_out=None,
+    )
+
+    assert report.source_samples == 1
+    assert report.generated_samples == 4
+    generated_path = data_root / "no_gesture_static" / "sample_auto_0000.npy"
+    generated = np.load(generated_path)
+    assert generated.shape == (36, 42)
+    metadata = json.loads(
+        generated_path.with_suffix(".meta.json").read_text(encoding="utf-8")
+    )
+    assert metadata["source_label"] == "gun"
+    assert metadata["source_scope"] == "static"
+    assert metadata["scenario"].startswith("static_")

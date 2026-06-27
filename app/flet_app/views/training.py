@@ -51,6 +51,7 @@ _DEFAULT_DYNAMIC_RECORD_SAMPLES = 30
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
 _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL = 20
 _DEFAULT_NEGATIVE_SEED = 42
+_STATIC_TRAINING_SCOPE = "static,quasi_static,negative"
 _DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
 _DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_stats"
 _DEFAULT_MODEL_TYPE = "knn"
@@ -755,12 +756,15 @@ class TrainingView:
             out_path = _DEFAULT_MODEL_OUT
             neighbors = _DEFAULT_K_NEIGHBORS
             feature_mode = "static_mean"
+            expect_dim = 42
             model_type = _DEFAULT_MODEL_TYPE
             classes_out_path = ""
             feature_dim_out_path = ""
             feature_mode_out_path = ""
-            training_scope = ""
-            self._append_log("[i] Обучение KNN со стандартными параметрами проекта")
+            training_scope = _STATIC_TRAINING_SCOPE
+            self._append_log(
+                "[i] Обучение KNN со стандартными static/negative параметрами проекта"
+            )
         elif mode == "dynamic":
             data_root = _DEFAULT_DATA_ROOT
             neighbors = max(
@@ -772,6 +776,7 @@ class TrainingView:
                 .strip()
                 or _DEFAULT_DYNAMIC_FEATURE_MODE
             )
+            expect_dim = None
             model_type = str(self._dyn_model_type.value or _DEFAULT_MODEL_TYPE).strip()
             out_path = (
                 self._dyn_model_out.value
@@ -793,11 +798,12 @@ class TrainingView:
                 self._parse_int(self._tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
             )
             feature_mode = "static_mean"
+            expect_dim = 42
             model_type = str(self._tr_model_type.value or _DEFAULT_MODEL_TYPE).strip()
             classes_out_path = ""
             feature_dim_out_path = ""
             feature_mode_out_path = ""
-            training_scope = ""
+            training_scope = _STATIC_TRAINING_SCOPE
 
         self._append_log(
             f"[i] Обучение: data={data_root}, out={out_path}, "
@@ -807,6 +813,7 @@ class TrainingView:
             data_root=data_root,
             out_path=out_path,
             neighbors=neighbors,
+            expect_dim=expect_dim,
             feature_mode=feature_mode,
             model_type=model_type,
             classes_out_path=classes_out_path,

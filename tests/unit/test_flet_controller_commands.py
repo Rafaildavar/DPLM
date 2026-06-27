@@ -187,6 +187,31 @@ def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
     assert include_values == ["swipe_down", "swipe_left"]
 
 
+def test_build_training_command_filters_static_scope_with_negative(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    monkeypatch.setattr(
+        controller,
+        "_active_training_labels_from_db",
+        lambda: ["palm", "swipe_down", "no_gesture_static", "hand_left"],
+    )
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: tmp_path / "classes.json")
+    monkeypatch.setattr(controller, "_configured_feature_dim_path", lambda: tmp_path / "feature_dim.txt")
+
+    cmd = controller._build_training_command(
+        data_root=str(tmp_path / "gestures"),
+        out_path=str(tmp_path / "knn.pkl"),
+        training_scope="static,quasi_static,negative",
+    )
+
+    include_values = [
+        cmd[index + 1]
+        for index, item in enumerate(cmd)
+        if item == "--include-label"
+    ]
+    assert include_values == ["palm", "no_gesture_static", "hand_left"]
+
+
 def test_build_negative_generation_command_uses_configured_paths(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
 
@@ -1068,6 +1093,44 @@ def test_negative_live_evaluation_counts_no_prediction_as_correct(monkeypatch, t
     assert snapshot["active"] is False
     assert snapshot["correct"] == 1
     assert snapshot["missed"] == 0
+
+
+def test_live_evaluation_static_rejection_metrics_for_negative_expected():
+    controller = _dispatch_controller()
+    controller._gesture_type_for_label = (
+        lambda label: "negative" if label == "no_gesture_static" else "static"
+    )
+    session = {
+        "expected_label": "no_gesture_static",
+        "target_attempts": 2,
+        "total": 2,
+        "correct": 1,
+        "wrong": 1,
+        "missed": 0,
+        "attempts": [
+            {
+                "attempt": 1,
+                "result": "wrong",
+                "route": "static",
+                "static_decision_source": "accepted",
+            },
+            {
+                "attempt": 2,
+                "result": "correct",
+                "route": "none",
+                "static_reject_reason": "negative_class",
+                "static_decision_source": "negative_rejected",
+            },
+        ],
+    }
+
+    metrics = controller._live_evaluation_mlflow_metrics(session)
+
+    assert metrics["live_static_accept_rate"] == pytest.approx(0.5)
+    assert metrics["live_static_reject_rate"] == pytest.approx(0.5)
+    assert metrics["live_static_false_positive_rate"] == pytest.approx(0.5)
+    assert metrics["live_static_rejection_reason_negative_class_count"] == pytest.approx(1.0)
+    assert metrics["live_static_decision_negative_rejected_count"] == pytest.approx(1.0)
 
 
 def test_dynamic_live_evaluation_counts_static_route_as_wrong(monkeypatch, tmp_path):

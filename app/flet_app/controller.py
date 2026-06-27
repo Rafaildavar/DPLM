@@ -973,6 +973,35 @@ class AppController:
                         "static_confidence": payload.get("static_confidence"),
                         "static_type": payload.get("static_type"),
                         "static_reject_reason": payload.get("static_reject_reason"),
+                        "static_decision_source": payload.get(
+                            "static_decision_source"
+                        ),
+                        "static_model_label": payload.get("static_model_label"),
+                        "static_model_confidence": payload.get(
+                            "static_model_confidence"
+                        ),
+                        "static_top2_label": payload.get("static_top2_label"),
+                        "static_top2_confidence": payload.get(
+                            "static_top2_confidence"
+                        ),
+                        "static_margin": payload.get("static_margin"),
+                        "static_min_margin": payload.get("static_min_margin"),
+                        "static_negative_label": payload.get("static_negative_label"),
+                        "static_negative_confidence": payload.get(
+                            "static_negative_confidence"
+                        ),
+                        "static_negative_threshold": payload.get(
+                            "static_negative_threshold"
+                        ),
+                        "static_prototype_distance": payload.get(
+                            "static_prototype_distance"
+                        ),
+                        "static_prototype_radius": payload.get(
+                            "static_prototype_radius"
+                        ),
+                        "static_prototype_threshold": payload.get(
+                            "static_prototype_threshold"
+                        ),
                         "dynamic_label": payload.get("dynamic_label"),
                         "dynamic_confidence": payload.get("dynamic_confidence"),
                         "dynamic_type": payload.get("dynamic_type"),
@@ -1088,7 +1117,12 @@ class AppController:
 
         decision_counts: dict[str, int] = {}
         end_reason_counts: dict[str, int] = {}
+        static_decision_counts: dict[str, int] = {}
+        static_reject_reason_counts: dict[str, int] = {}
         static_hijack_count = 0
+        static_accept_count = 0
+        static_reject_count = 0
+        static_false_positive_count = 0
         wrong_dynamic_direction_count = 0
         negative_rejected_count = 0
         for item in attempts:
@@ -1101,6 +1135,24 @@ class AppController:
                 end_reason_counts[end_reason] = end_reason_counts.get(end_reason, 0) + 1
             if decision == "negative_rejected":
                 negative_rejected_count += 1
+            static_decision = str(item.get("static_decision_source") or "").strip()
+            if static_decision:
+                static_decision_counts[static_decision] = (
+                    static_decision_counts.get(static_decision, 0) + 1
+                )
+            static_reject_reason = str(
+                item.get("static_reject_reason") or ""
+            ).strip()
+            if static_reject_reason:
+                static_reject_reason_counts[static_reject_reason] = (
+                    static_reject_reason_counts.get(static_reject_reason, 0) + 1
+                )
+            if route == "static":
+                static_accept_count += 1
+            if route == "none" or static_reject_reason:
+                static_reject_count += 1
+            if expected_type == GESTURE_TYPE_NEGATIVE and route == "static":
+                static_false_positive_count += 1
             if expected_type == GESTURE_TYPE_DYNAMIC and route == "static":
                 static_hijack_count += 1
             predicted = str(item.get("predicted") or "")
@@ -1122,6 +1174,12 @@ class AppController:
         for reason, count in end_reason_counts.items():
             suffix = self._live_evaluation_metric_suffix(reason)
             metrics[f"live_end_reason_{suffix}_count"] = float(count)
+        for source, count in static_decision_counts.items():
+            suffix = self._live_evaluation_metric_suffix(source)
+            metrics[f"live_static_decision_{suffix}_count"] = float(count)
+        for reason, count in static_reject_reason_counts.items():
+            suffix = self._live_evaluation_metric_suffix(reason)
+            metrics[f"live_static_rejection_reason_{suffix}_count"] = float(count)
 
         metrics["live_dynamic_recall"] = (
             float(correct / target) if expected_type == GESTURE_TYPE_DYNAMIC else 0.0
@@ -1130,6 +1188,22 @@ class AppController:
         metrics["live_static_hijack_rate"] = (
             float(static_hijack_count / total)
             if expected_type == GESTURE_TYPE_DYNAMIC and total
+            else 0.0
+        )
+        metrics["live_static_accept_count"] = float(static_accept_count)
+        metrics["live_static_accept_rate"] = (
+            float(static_accept_count / total) if total else 0.0
+        )
+        metrics["live_static_reject_count"] = float(static_reject_count)
+        metrics["live_static_reject_rate"] = (
+            float(static_reject_count / total) if total else 0.0
+        )
+        metrics["live_static_false_positive_count"] = float(
+            static_false_positive_count
+        )
+        metrics["live_static_false_positive_rate"] = (
+            float(static_false_positive_count / total)
+            if expected_type == GESTURE_TYPE_NEGATIVE and total
             else 0.0
         )
         metrics["live_wrong_dynamic_direction_count"] = float(
@@ -1273,6 +1347,10 @@ class AppController:
         }
         optional_fields = {
             "attempt_latency_s": "elapsed_seconds",
+            "attempt_static_margin": "static_margin",
+            "attempt_static_negative_confidence": "static_negative_confidence",
+            "attempt_static_prototype_distance": "static_prototype_distance",
+            "attempt_static_prototype_threshold": "static_prototype_threshold",
             "attempt_axis_ratio": "dynamic_axis_ratio",
             "attempt_straightness": "dynamic_straightness",
             "attempt_motion_scale": "dynamic_motion_scale",
@@ -1333,6 +1411,16 @@ class AppController:
                         "bad",
                     ),
                     ("static hijack", metrics.get("live_static_hijack_rate", 0.0), "bad"),
+                    (
+                        "static false positive",
+                        metrics.get("live_static_false_positive_rate", 0.0),
+                        "bad",
+                    ),
+                    (
+                        "static reject",
+                        metrics.get("live_static_reject_rate", 0.0),
+                        "warn",
+                    ),
                     ("miss rate", metrics.get("live_miss_rate", 0.0), "bad"),
                 ],
                 max_value=1.0,
@@ -1590,6 +1678,8 @@ class AppController:
     {metric_card("live_recall", "Recall")}
     {metric_card("live_wrong_dynamic_direction_rate", "Wrong direction")}
     {metric_card("live_static_hijack_rate", "Static hijack")}
+    {metric_card("live_static_false_positive_rate", "Static false positive")}
+    {metric_card("live_static_reject_rate", "Static reject")}
     {metric_card("live_latency_avg_s", "Avg latency, s")}
     {metric_card("system_runtime_inference_ms_avg", "Runtime inference, ms")}
   </div>
@@ -1751,6 +1841,41 @@ class AppController:
             "static_type": str(route_metadata.get("static_type") or ""),
             "static_reject_reason": str(
                 route_metadata.get("static_reject_reason") or ""
+            ),
+            "static_decision_source": str(
+                route_metadata.get("static_decision_source") or ""
+            ),
+            "static_model_label": str(
+                route_metadata.get("static_model_label") or ""
+            ),
+            "static_model_confidence": _float_or_none(
+                route_metadata.get("static_model_confidence")
+            ),
+            "static_top2_label": str(route_metadata.get("static_top2_label") or ""),
+            "static_top2_confidence": _float_or_none(
+                route_metadata.get("static_top2_confidence")
+            ),
+            "static_margin": _float_or_none(route_metadata.get("static_margin")),
+            "static_min_margin": _float_or_none(
+                route_metadata.get("static_min_margin")
+            ),
+            "static_negative_label": str(
+                route_metadata.get("static_negative_label") or ""
+            ),
+            "static_negative_confidence": _float_or_none(
+                route_metadata.get("static_negative_confidence")
+            ),
+            "static_negative_threshold": _float_or_none(
+                route_metadata.get("static_negative_threshold")
+            ),
+            "static_prototype_distance": _float_or_none(
+                route_metadata.get("static_prototype_distance")
+            ),
+            "static_prototype_radius": _float_or_none(
+                route_metadata.get("static_prototype_radius")
+            ),
+            "static_prototype_threshold": _float_or_none(
+                route_metadata.get("static_prototype_threshold")
             ),
             "dynamic_label": str(route_metadata.get("dynamic_label") or ""),
             "dynamic_confidence": _float_or_none(

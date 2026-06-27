@@ -67,6 +67,7 @@ class GestureOnlineInfer:
         feature_mode_path: Optional[Path] = None,
         feature_mode: Optional[str] = None,
         gesture_signatures_path: Optional[Path] = None,
+        gesture_rejection_path: Optional[Path] = None,
         window: int = 30,
         two_hands: bool = False,
         initialize_detector: bool = True,
@@ -89,11 +90,13 @@ class GestureOnlineInfer:
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
+        self._gesture_rejection: dict[str, Any] = {}
         self._dynamic_segmenter: DynamicMotionSegmenter | None = None
         self._pending_dynamic_prediction: tuple[str, float] | None = None
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision: dict[str, Any] = {}
+        self._last_static_decision: dict[str, Any] = {}
         self._gesture_taxonomy: GestureTaxonomy | None = None
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
@@ -102,6 +105,9 @@ class GestureOnlineInfer:
         feature_mode_path = feature_mode_path or (model_path.parent / "feature_mode.txt")
         gesture_signatures_path = gesture_signatures_path or (
             model_path.parent / "gesture_signatures.json"
+        )
+        gesture_rejection_path = gesture_rejection_path or (
+            model_path.parent / "gesture_rejection.json"
         )
 
         try:
@@ -172,6 +178,7 @@ class GestureOnlineInfer:
             )
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
+        self._gesture_rejection = self._load_gesture_rejection(gesture_rejection_path)
         try:
             self._gesture_taxonomy = load_gesture_taxonomy()
         except Exception:
@@ -546,6 +553,132 @@ class GestureOnlineInfer:
                 best_probability = float(probability)
         return best_label, best_probability
 
+    def _static_prediction(self, model_feat: np.ndarray) -> tuple[str, float]:
+        self._last_static_decision = {}
+        if self._clf is None:
+            return "", 0.0
+
+        model_label = ""
+        try:
+            predicted = self._clf.predict(model_feat)
+            if len(predicted) > 0:
+                model_label = self._label_from_estimator_class(predicted[0])
+        except Exception:
+            raise
+
+        ranked: list[tuple[float, str]] = []
+        try:
+            probabilities = np.asarray(
+                self._clf.predict_proba(model_feat)[0],
+                dtype=float,
+            )
+            estimator_classes = list(
+                getattr(self._clf, "classes_", range(len(probabilities)))
+            )
+            for column, probability in enumerate(probabilities):
+                raw_class = (
+                    estimator_classes[column]
+                    if column < len(estimator_classes)
+                    else column
+                )
+                ranked.append(
+                    (float(probability), self._label_from_estimator_class(raw_class))
+                )
+        except Exception:
+            ranked = []
+
+        ranked = sorted(ranked, key=lambda item: item[0], reverse=True)
+        if ranked:
+            confidence, label = ranked[0]
+        else:
+            label = model_label
+            confidence = 1.0 if model_label else 0.0
+
+        top2_label = ranked[1][1] if len(ranked) > 1 else ""
+        top2_confidence = float(ranked[1][0]) if len(ranked) > 1 else 0.0
+        margin = float(confidence - top2_confidence)
+        rejection = getattr(self, "_gesture_rejection", {}) or {}
+        thresholds = rejection.get("thresholds") if isinstance(rejection, dict) else {}
+        if not isinstance(thresholds, dict):
+            thresholds = {}
+        negative_threshold = float(thresholds.get("negative_confidence", 0.65))
+        min_margin = float(thresholds.get("min_top1_top2_margin", 0.0))
+        distance_multiplier = float(thresholds.get("distance_multiplier", 0.0))
+
+        negative_label, negative_confidence = self._best_negative_prediction(ranked)
+        decision: dict[str, Any] = {
+            "source": "accepted",
+            "rejection_reason": "",
+            "model_label": str(label or model_label or ""),
+            "model_confidence": float(confidence),
+            "top2_label": top2_label,
+            "top2_confidence": top2_confidence,
+            "margin": margin,
+            "min_margin": min_margin,
+            "negative_label": negative_label,
+            "negative_confidence": float(negative_confidence),
+            "negative_threshold": negative_threshold,
+        }
+
+        if self._is_negative_label(label) or negative_confidence >= negative_threshold:
+            decision["source"] = "negative_rejected"
+            decision["rejection_reason"] = "negative_class"
+            self._last_static_decision = decision
+            return "", 0.0
+
+        if len(ranked) > 1 and min_margin > 0.0 and margin < min_margin:
+            decision["source"] = "margin_rejected"
+            decision["rejection_reason"] = "low_margin"
+            self._last_static_decision = decision
+            return "", 0.0
+
+        prototype = self._static_prototype_distance(
+            label,
+            model_feat.reshape(-1),
+            distance_multiplier=distance_multiplier,
+        )
+        decision.update(prototype)
+        if prototype.get("prototype_rejected"):
+            decision["source"] = "prototype_rejected"
+            decision["rejection_reason"] = "far_from_prototype"
+            self._last_static_decision = decision
+            return "", 0.0
+
+        self._last_static_decision = decision
+        return str(label), float(confidence)
+
+    def _static_prototype_distance(
+        self,
+        label: str,
+        feature: np.ndarray,
+        *,
+        distance_multiplier: float,
+    ) -> dict[str, Any]:
+        rejection = getattr(self, "_gesture_rejection", {}) or {}
+        classes = rejection.get("classes") if isinstance(rejection, dict) else {}
+        if not isinstance(classes, dict) or not label:
+            return {}
+        raw = classes.get(label) or classes.get(str(label).lower())
+        if not isinstance(raw, dict):
+            return {}
+        centroid_raw = raw.get("centroid")
+        if not isinstance(centroid_raw, list):
+            return {}
+        centroid = np.asarray(centroid_raw, dtype=np.float32)
+        candidate = np.asarray(feature, dtype=np.float32).reshape(-1)
+        if centroid.shape != candidate.shape:
+            return {}
+        radius = float(raw.get("prototype_radius") or 0.0)
+        multiplier = float(distance_multiplier or 0.0)
+        threshold = radius * multiplier if radius > 0.0 and multiplier > 0.0 else 0.0
+        distance = float(np.linalg.norm(candidate - centroid))
+        return {
+            "prototype_distance": distance,
+            "prototype_radius": radius,
+            "prototype_threshold": threshold,
+            "prototype_rejected": bool(threshold > 0.0 and distance > threshold),
+        }
+
     def _is_negative_label(self, label: str) -> bool:
         clean = str(label or "").strip().lower()
         if not clean:
@@ -566,6 +699,20 @@ class GestureOnlineInfer:
             or clean.startswith("wrong_axis_")
         )
 
+    def _load_gesture_rejection(self, rejection_path: Path) -> dict[str, Any]:
+        if not rejection_path.exists():
+            return {}
+        try:
+            metadata = json.loads(rejection_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[w] gesture_rejection.json ignored: {exc}", flush=True)
+            return {}
+        if not isinstance(metadata, dict):
+            return {}
+        if not isinstance(metadata.get("classes"), dict):
+            return {}
+        return metadata
+
     def reset_temporal_state(self) -> None:
         self._window.clear()
         self._finger_count_window.clear()
@@ -576,6 +723,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision = {}
+        self._last_static_decision = {}
 
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
@@ -585,6 +733,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision = {}
+        self._last_static_decision = {}
 
     def _segmenter(self) -> DynamicMotionSegmenter:
         segmenter = getattr(self, "_dynamic_segmenter", None)
@@ -992,6 +1141,7 @@ class GestureOnlineInfer:
 
         label = ""
         confidence = 0.0
+        static_decision: dict[str, Any] = {}
 
         if (
             self._clf is not None
@@ -1011,14 +1161,10 @@ class GestureOnlineInfer:
                 if self._uses_global_dynamic_motion():
                     label, confidence = self._dynamic_prediction(model_feat, motion)
                 else:
-                    pred_idx = int(self._clf.predict(model_feat)[0])
-                    label = (
-                        self._classes[pred_idx]
-                        if 0 <= pred_idx < len(self._classes)
-                        else str(pred_idx)
+                    label, confidence = self._static_prediction(model_feat)
+                    static_decision = dict(
+                        getattr(self, "_last_static_decision", {}) or {}
                     )
-                    proba = self._clf.predict_proba(model_feat)[0]
-                    confidence = float(np.max(proba))
             except Exception as e:
                 print(f"[!] classifier prediction failed: {e}", flush=True)
                 self._window.clear()
@@ -1031,11 +1177,19 @@ class GestureOnlineInfer:
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
 
         if label and not self._pose_matches_prediction(label, current_finger_count):
+            static_decision = dict(
+                static_decision
+                or getattr(self, "_last_static_decision", {})
+                or {}
+            )
+            static_decision["source"] = "finger_count_rejected"
+            static_decision["rejection_reason"] = "finger_count_mismatch"
             self._window.clear()
             return {
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
+                "static_decision": static_decision,
             }
 
         return {
@@ -1043,6 +1197,7 @@ class GestureOnlineInfer:
             "confidence": confidence,
             "landmarks_json": landmarks_json,
             "temporal": temporal_state,
+            "static_decision": static_decision,
         }
 
     def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:

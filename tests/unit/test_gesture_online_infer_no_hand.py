@@ -135,6 +135,18 @@ class _NegativeRejectingClassifier:
         return np.asarray([[0.05, 0.10, 0.85]])
 
 
+class _StaticProbabilityClassifier:
+    def __init__(self, probabilities):
+        self._probabilities = np.asarray([probabilities], dtype=float)
+        self.classes_ = np.arange(self._probabilities.shape[1])
+
+    def predict(self, _features):
+        return np.asarray([int(np.argmax(self._probabilities[0]))])
+
+    def predict_proba(self, _features):
+        return self._probabilities
+
+
 class _ShapeCheckingClassifier:
     def __init__(self, expected_dim: int = 42) -> None:
         self.expected_shape = (1, expected_dim)
@@ -442,6 +454,85 @@ def test_dynamic_negative_prediction_rejects_motion_first_swipe() -> None:
     assert out["dynamic_decision"]["motion_label"] == "swipe_left"
     assert out["dynamic_decision"]["negative_label"] == "no_gesture_static"
     assert out["dynamic_decision"]["negative_confidence"] >= 0.72
+
+
+def test_static_prediction_rejects_negative_class_probability() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._clf = _StaticProbabilityClassifier([0.20, 0.80])
+    infer._classes = ["palm", "no_gesture_static"]
+    infer._gesture_taxonomy = None
+    infer._gesture_rejection = {
+        "thresholds": {
+            "negative_confidence": 0.65,
+            "min_top1_top2_margin": 0.10,
+            "distance_multiplier": 2.5,
+        },
+        "classes": {},
+    }
+
+    label, confidence = infer._static_prediction(
+        np.asarray([[0.0, 0.0]], dtype=np.float32)
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert infer._last_static_decision["source"] == "negative_rejected"
+    assert infer._last_static_decision["rejection_reason"] == "negative_class"
+    assert infer._last_static_decision["negative_label"] == "no_gesture_static"
+
+
+def test_static_prediction_rejects_low_top1_top2_margin() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._clf = _StaticProbabilityClassifier([0.53, 0.47])
+    infer._classes = ["palm", "gun"]
+    infer._gesture_taxonomy = None
+    infer._gesture_rejection = {
+        "thresholds": {
+            "negative_confidence": 0.65,
+            "min_top1_top2_margin": 0.10,
+            "distance_multiplier": 2.5,
+        },
+        "classes": {},
+    }
+
+    label, confidence = infer._static_prediction(
+        np.asarray([[0.0, 0.0]], dtype=np.float32)
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert infer._last_static_decision["source"] == "margin_rejected"
+    assert infer._last_static_decision["rejection_reason"] == "low_margin"
+
+
+def test_static_prediction_rejects_far_from_class_prototype() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._clf = _StaticProbabilityClassifier([0.99, 0.01])
+    infer._classes = ["palm", "gun"]
+    infer._gesture_taxonomy = None
+    infer._gesture_rejection = {
+        "thresholds": {
+            "negative_confidence": 0.65,
+            "min_top1_top2_margin": 0.10,
+            "distance_multiplier": 2.0,
+        },
+        "classes": {
+            "palm": {
+                "centroid": [0.0, 0.0],
+                "prototype_radius": 0.10,
+            }
+        },
+    }
+
+    label, confidence = infer._static_prediction(
+        np.asarray([[1.0, 1.0]], dtype=np.float32)
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert infer._last_static_decision["source"] == "prototype_rejected"
+    assert infer._last_static_decision["rejection_reason"] == "far_from_prototype"
+    assert infer._last_static_decision["prototype_distance"] > 0.20
 
 
 def test_reset_temporal_state_clears_dynamic_windows() -> None:

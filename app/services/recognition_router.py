@@ -415,6 +415,19 @@ class GestureRecognitionRouter:
         dynamic_decision = dynamic_out.get("dynamic_decision")
         if not isinstance(dynamic_decision, dict):
             dynamic_decision = {}
+        static_decision = static_out.get("static_decision")
+        if not isinstance(static_decision, dict):
+            static_decision = {}
+        static_runtime_reject_reason = str(
+            static_decision.get("rejection_reason") or ""
+        )
+
+        def _decision_float(decision: dict[str, Any], key: str) -> float:
+            try:
+                return float(decision.get(key) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
         return {
             "route": route,
             "selected_reason": selected_reason,
@@ -422,9 +435,45 @@ class GestureRecognitionRouter:
             "static_confidence": float(static_out.get("confidence") or 0.0),
             "static_type": static_assessment.gesture_type,
             "static_reject_reason": (
-                "" if static_assessment.accepted else static_assessment.reason
+                ""
+                if static_assessment.accepted
+                else static_runtime_reject_reason or static_assessment.reason
             ),
             "static_threshold": self._static_confidence_threshold,
+            "static_decision_source": str(static_decision.get("source") or ""),
+            "static_model_label": str(static_decision.get("model_label") or ""),
+            "static_model_confidence": _decision_float(
+                static_decision,
+                "model_confidence",
+            ),
+            "static_top2_label": str(static_decision.get("top2_label") or ""),
+            "static_top2_confidence": _decision_float(
+                static_decision,
+                "top2_confidence",
+            ),
+            "static_margin": _decision_float(static_decision, "margin"),
+            "static_min_margin": _decision_float(static_decision, "min_margin"),
+            "static_negative_label": str(static_decision.get("negative_label") or ""),
+            "static_negative_confidence": _decision_float(
+                static_decision,
+                "negative_confidence",
+            ),
+            "static_negative_threshold": _decision_float(
+                static_decision,
+                "negative_threshold",
+            ),
+            "static_prototype_distance": _decision_float(
+                static_decision,
+                "prototype_distance",
+            ),
+            "static_prototype_radius": _decision_float(
+                static_decision,
+                "prototype_radius",
+            ),
+            "static_prototype_threshold": _decision_float(
+                static_decision,
+                "prototype_threshold",
+            ),
             "dynamic_label": str(dynamic_out.get("label") or ""),
             "dynamic_confidence": float(dynamic_out.get("confidence") or 0.0),
             "dynamic_type": dynamic_assessment.gesture_type,

@@ -1,5 +1,6 @@
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -20,6 +21,10 @@ from cv.gesture_features import (
 )
 
 SUPPORTED_MODEL_TYPES = ("knn", "svm", "extra_trees", "rf", "logreg")
+DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD = 0.65
+DEFAULT_REJECT_MIN_MARGIN = 0.10
+DEFAULT_REJECT_DISTANCE_MULTIPLIER = 2.50
+DEFAULT_PROTOTYPE_RADIUS_FLOOR_SCALE = 0.015
 
 
 # --------------------------------------------------
@@ -174,6 +179,80 @@ def build_classifier(
     raise ValueError(f"unsupported model type: {model_type}")
 
 
+def is_negative_label(label: str) -> bool:
+    clean = str(label or "").strip().lower()
+    return (
+        clean.startswith("negative_")
+        or clean.startswith("background_")
+        or clean.startswith("no_gesture")
+        or clean.startswith("random_")
+        or clean.startswith("partial_")
+        or clean.startswith("return_")
+        or clean.startswith("wrong_axis_")
+    )
+
+
+def build_rejection_metadata(
+    X: np.ndarray,
+    y: np.ndarray,
+    classes: list[str],
+    *,
+    model_type: str,
+    feature_mode: str,
+    negative_confidence_threshold: float = DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD,
+    min_margin: float = DEFAULT_REJECT_MIN_MARGIN,
+    distance_multiplier: float = DEFAULT_REJECT_DISTANCE_MULTIPLIER,
+) -> dict:
+    feature_dim = int(X.shape[1]) if X.ndim == 2 else 0
+    radius_floor = float(DEFAULT_PROTOTYPE_RADIUS_FLOOR_SCALE * np.sqrt(max(1, feature_dim)))
+    class_metadata: dict[str, dict[str, object]] = {}
+    for class_index, label in enumerate(classes):
+        rows = X[y == class_index]
+        if rows.size == 0:
+            continue
+        centroid = rows.mean(axis=0)
+        distances = np.linalg.norm(rows - centroid, axis=1)
+        distance_mean = float(np.mean(distances)) if distances.size else 0.0
+        distance_std = float(np.std(distances)) if distances.size else 0.0
+        distance_p95 = float(np.percentile(distances, 95)) if distances.size else 0.0
+        distance_max = float(np.max(distances)) if distances.size else 0.0
+        radius = max(distance_p95, distance_mean + 2.0 * distance_std, radius_floor)
+        class_metadata[str(label)] = {
+            "sample_count": int(rows.shape[0]),
+            "centroid": [float(value) for value in centroid.astype(float).tolist()],
+            "distance_mean": distance_mean,
+            "distance_std": distance_std,
+            "distance_p95": distance_p95,
+            "distance_max": distance_max,
+            "prototype_radius": float(radius),
+        }
+
+    negative_labels = [str(label) for label in classes if is_negative_label(label)]
+    return {
+        "schema_version": 1,
+        "generated_by": "cv.train_classifier",
+        "generated_at": time.time(),
+        "model_type": str(model_type),
+        "feature_mode": str(feature_mode),
+        "feature_dim": feature_dim,
+        "negative_labels": negative_labels,
+        "thresholds": {
+            "negative_confidence": float(negative_confidence_threshold),
+            "min_top1_top2_margin": float(min_margin),
+            "distance_multiplier": float(distance_multiplier),
+            "prototype_radius_floor": radius_floor,
+        },
+        "classes": class_metadata,
+    }
+
+
+def default_rejection_metadata_path(out_path: Path) -> Path:
+    stem = out_path.stem
+    if stem.startswith("dynamic_"):
+        return out_path.with_name(f"{stem}_rejection.json")
+    return out_path.parent / "gesture_rejection.json"
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Обучение KNN классификатора жестов")
     p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
@@ -181,6 +260,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--classes-out", default=None, help="Путь для сохранения classes.json")
     p.add_argument("--feature-dim-out", default=None, help="Путь для сохранения feature_dim.txt")
     p.add_argument("--feature-mode-out", default=None, help="Путь для сохранения feature_mode.txt")
+    p.add_argument(
+        "--rejection-out",
+        default=None,
+        help="Путь для сохранения gesture_rejection.json",
+    )
     p.add_argument(
         "--feature-mode",
         choices=SUPPORTED_FEATURE_MODES,
@@ -228,6 +312,24 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional MLflow run name",
     )
+    p.add_argument(
+        "--reject-negative-confidence-threshold",
+        type=float,
+        default=DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD,
+        help="Reject when any negative class probability is at least this value.",
+    )
+    p.add_argument(
+        "--reject-min-margin",
+        type=float,
+        default=DEFAULT_REJECT_MIN_MARGIN,
+        help="Reject when top1-top2 probability margin is below this value.",
+    )
+    p.add_argument(
+        "--reject-distance-multiplier",
+        type=float,
+        default=DEFAULT_REJECT_DISTANCE_MULTIPLIER,
+        help="Reject when distance to predicted prototype exceeds radius*multiplier.",
+    )
     return p.parse_args()
 
 
@@ -274,13 +376,36 @@ def main() -> None:
         if args.feature_mode_out
         else (out_path.parent / "feature_mode.txt")
     )
+    rejection_out = (
+        Path(args.rejection_out)
+        if args.rejection_out
+        else default_rejection_metadata_path(out_path)
+    )
     classes_out.parent.mkdir(parents=True, exist_ok=True)
     feature_dim_out.parent.mkdir(parents=True, exist_ok=True)
     feature_mode_out.parent.mkdir(parents=True, exist_ok=True)
+    rejection_out.parent.mkdir(parents=True, exist_ok=True)
+    rejection_metadata = build_rejection_metadata(
+        X,
+        y,
+        classes,
+        model_type=str(args.model_type),
+        feature_mode=str(args.feature_mode),
+        negative_confidence_threshold=float(args.reject_negative_confidence_threshold),
+        min_margin=float(args.reject_min_margin),
+        distance_multiplier=float(args.reject_distance_multiplier),
+    )
     classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
     feature_dim_out.write_text(str(X.shape[1]))
     feature_mode_out.write_text(str(args.feature_mode))
-    print(f"[✓] Метаданные сохранены: {classes_out}, {feature_dim_out}, {feature_mode_out}")
+    rejection_out.write_text(
+        json.dumps(rejection_metadata, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(
+        "[✓] Метаданные сохранены: "
+        f"{classes_out}, {feature_dim_out}, {feature_mode_out}, {rejection_out}"
+    )
     print(f"[i] Training accuracy: {train_accuracy:.4f}")
 
     _log_mlflow_run(
@@ -293,6 +418,8 @@ def main() -> None:
         classes_out=classes_out,
         feature_dim_out=feature_dim_out,
         feature_mode_out=feature_mode_out,
+        rejection_out=rejection_out,
+        rejection_metadata=rejection_metadata,
     )
 
 
@@ -307,6 +434,8 @@ def _log_mlflow_run(
     classes_out: Path,
     feature_dim_out: Path,
     feature_mode_out: Path,
+    rejection_out: Path,
+    rejection_metadata: dict,
 ) -> None:
     experiment = str(getattr(args, "mlflow_experiment", "") or "").strip()
     if not experiment:
@@ -320,6 +449,23 @@ def _log_mlflow_run(
     try:
         tracking_uri = str(
             getattr(args, "mlflow_tracking_uri", "") or "sqlite:///mlflow.db"
+        )
+        reject_negative_confidence_threshold = float(
+            getattr(
+                args,
+                "reject_negative_confidence_threshold",
+                DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD,
+            )
+        )
+        reject_min_margin = float(
+            getattr(args, "reject_min_margin", DEFAULT_REJECT_MIN_MARGIN)
+        )
+        reject_distance_multiplier = float(
+            getattr(
+                args,
+                "reject_distance_multiplier",
+                DEFAULT_REJECT_DISTANCE_MULTIPLIER,
+            )
         )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
@@ -342,17 +488,30 @@ def _log_mlflow_run(
                     "lowercase_labels": bool(args.lowercase_labels),
                     "include_labels": ",".join(args.include_label or []),
                     "classes": ",".join(classes),
+                    "reject_negative_confidence_threshold": (
+                        reject_negative_confidence_threshold
+                    ),
+                    "reject_min_margin": reject_min_margin,
+                    "reject_distance_multiplier": reject_distance_multiplier,
                 }
             )
+            negative_labels = rejection_metadata.get("negative_labels") or []
             mlflow.log_metrics(
                 {
                     "sample_count": float(sample_count),
                     "class_count": float(len(classes)),
                     "feature_dim": float(feature_dim),
                     "train_accuracy": float(train_accuracy),
+                    "negative_class_count": float(len(negative_labels)),
                 }
             )
-            for artifact in (out_path, classes_out, feature_dim_out, feature_mode_out):
+            for artifact in (
+                out_path,
+                classes_out,
+                feature_dim_out,
+                feature_mode_out,
+                rejection_out,
+            ):
                 if artifact.exists():
                     mlflow.log_artifact(str(artifact))
         print(f"[✓] MLflow run logged: experiment={experiment!r}, uri={tracking_uri}")

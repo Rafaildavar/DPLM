@@ -17,7 +17,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | Auto routing static/dynamic | Validated | H-038: static hijack `0%` on 30 fresh dynamic attempts | add negative/no-gesture live run |
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-038: `7/10`, wrong direction `30%` | analyze correct vs wrong trajectory features |
-| Negative examples / rejection layer | Added | synthetic negative generation + ML fallback metadata | run live negative validation |
+| Negative examples / rejection layer | Added | H-041: static/dynamic synthetic negatives + rejection metadata | run static/negative live validation |
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
@@ -58,9 +58,10 @@ flowchart LR
     LM --> STATIC["Static feature window"]
     SEG --> DYNFEAT["Dynamic trajectory features"]
     STATIC --> SM["Static model"]
+    SM --> REJECT["Static rejection policy"]
     DYNFEAT --> DM["Dynamic model"]
     DYNFEAT --> MOTION["Motion-first direction detector"]
-    SM --> ROUTER["Recognition Router"]
+    REJECT --> ROUTER["Recognition Router"]
     DM --> ROUTER
     MOTION --> ROUTER
     ROUTER --> UI["Flet live UI"]
@@ -81,6 +82,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Recorded samples | `data/gestures/<label>/sample_*.npy` | raw landmark sequences | Stable |
 | Taxonomy | `configs/gesture_taxonomy.json` | static/dynamic/negative label scope | Stable |
 | Static model artifacts | `models/knn.pkl`, `classes.json` | static/quasi-static recognizer | Stable |
+| Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Live eval logs | `~/.dplm/logs/live_evaluation.jsonl` | attempt-level real-camera results | Stable |
@@ -100,6 +102,10 @@ Current properties:
 
 - uses MediaPipe hand landmarks;
 - confirms via dwell/anti-bounce logic;
+- trains only on `static,quasi_static,negative` taxonomy scope;
+- uses `expect_dim=42` so static inference is pose-based;
+- can reject unsafe predictions via negative class probability, top1/top2
+  margin and distance-to-prototype;
 - participates in auto routing only when dynamic route is not active.
 
 ### Dynamic
@@ -176,6 +182,8 @@ Training artifacts:
 
 | Artifact | Purpose |
 |---|---|
+| `models/knn.pkl` | current static/quasi-static baseline |
+| `models/gesture_rejection.json` | static open-set/rejection metadata |
 | `models/dynamic_knn.pkl` | current dynamic baseline |
 | `models/dynamic_svm.pkl` | candidate comparison |
 | `models/dynamic_extra_trees.pkl` | candidate comparison |
@@ -210,6 +218,9 @@ Live metrics:
 | `live_accuracy` | correct / emitted attempts |
 | `live_recall` | correct / target attempts |
 | `live_static_hijack_rate` | dynamic classified as static |
+| `live_static_accept_rate` | accepted static route share |
+| `live_static_reject_rate` | rejected/no-route static share |
+| `live_static_false_positive_rate` | static false trigger on negative scenario |
 | `live_wrong_dynamic_direction_rate` | swipe direction confusion |
 | `live_negative_false_positive_rate` | false trigger on negative scenario |
 | `live_latency_avg_s`, `p50`, `p95` | interaction delay |
@@ -223,6 +234,7 @@ Acceptance targets for contest demo:
 | static hijack on dynamic tests | `0%` |
 | `swipe_left` recall | `>=90%` |
 | `swipe_up/down` recall | `>=80%` |
+| static false positive rate on negative tests | `<=10%` |
 | negative false positive rate | `<=10%` |
 | p95 live latency | under interactive threshold, explain if higher |
 
@@ -249,7 +261,7 @@ MLflow run types:
 
 | Run kind | Name pattern | Logged content |
 |---|---|---|
-| Training | `<model>-<feature_mode>` | params, model artifacts, sample count, train accuracy |
+| Training | `<model>-<feature_mode>` | params, model artifacts, rejection metadata, sample count, train accuracy |
 | Live evaluation | `live-<expected>-<mode>-<profile>` | live metrics, route counts, raw attempts artifact |
 
 Live MLflow runs also store an artifact bundle under `live_evaluation/`:
@@ -295,6 +307,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Live evaluation mode | Stable | real attempts counted as correct/wrong/missed |
 | Natural swipe | Validated | no final pose required |
 | Negative examples | Added | synthetic negatives generated automatically |
+| Static open-set rejection | Added | `gesture_rejection.json` + runtime reject policy |
 | MLflow integration | Stable | training and live runs tracked |
 | Auto routing | Validated | fresh static hijack `0%` |
 | Vertical direction quality | In Progress | `swipe_up/down` recall `70%` |
@@ -306,7 +319,7 @@ summarize and annotate; execution stays behind deterministic policies.
 |---|---|---|
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
 | Vertical direction confusion | `swipe_up/down` unstable | analyze correct/wrong features, strengthen axis gate |
-| No negative live validation yet | false triggers may be hidden | run 10-20 no-gesture/background attempts |
+| No static/negative live validation yet | false triggers may be hidden | run 20 no-gesture/background attempts and check static rejection metrics |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
 
@@ -316,8 +329,9 @@ summarize and annotate; execution stays behind deterministic policies.
 
 | Task | Status | Owner |
 |---|---|---|
-| Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
+| Test real static gestures after rejection policy | Next | user + ML pipeline |
 | Run negative live evaluation and log to MLflow | Next | user + ML pipeline |
+| Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
 
 ### Next

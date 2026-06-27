@@ -1861,3 +1861,86 @@ MLflow runs:
 MLOps boundary:
 - MLflow: сравнение моделей, live-runs, метрики и артефакты экспериментов.
 - Grafana/Prometheus: следующий слой для always-on runtime/system monitoring.
+
+### H-041: Static negative dataset + open-set rejection должны снизить false triggers
+
+Статус: `implemented`, ждет live-теста static/negative
+
+Дата реализации: `2026-06-27`
+
+Проблема:
+- Static-модель всегда выбирает ближайший известный класс, поэтому при
+  "почти жестах" или случайной позе рукой она может выдавать `gun`, `hend`,
+  `three` и т.д.
+- Повышение одного confidence threshold решает проблему грубо: можно потерять
+  нормальные static-жесты, но все равно принимать уверенные ложные классы.
+
+Гипотеза:
+- Если добавить автоматические static hard negatives и rejection policy, модель
+  сможет не только классифицировать жест, но и отказываться от небезопасного
+  вывода.
+
+Что добавлено:
+- `scripts/generate_negative_samples.py` теперь генерирует static hard
+  negatives для `no_gesture_static` из уже записанных static/quasi-static
+  классов:
+  - `static_pose_jitter`;
+  - `static_closed_pose`;
+  - `static_pose_mixup`;
+  - `static_partial_pose`.
+- Пользователь negative не записывает вручную: source sample выбирается
+  seed-based из существующих real samples.
+- Static обучение в Flet теперь использует scope
+  `static,quasi_static,negative` и `expect_dim=42`, чтобы dynamic labels не
+  попадали в `models/knn.pkl`.
+- `cv.train_classifier` сохраняет `models/gesture_rejection.json`:
+  - negative labels;
+  - confidence threshold для negative class;
+  - top1/top2 margin threshold;
+  - centroid/prototype radius по каждому классу.
+- `GestureOnlineInfer` применяет static reject policy:
+  - `negative_class`;
+  - `low_margin`;
+  - `far_from_prototype`;
+  - плюс существующий `finger_count_mismatch`.
+- Router и live evaluation прокидывают static decision metadata в
+  `live_evaluation.jsonl` и MLflow.
+
+MLflow metrics:
+- `live_static_accept_rate`;
+- `live_static_reject_rate`;
+- `live_static_false_positive_rate`;
+- `live_static_rejection_reason_*_count`;
+- per-attempt:
+  `attempt_static_margin`, `attempt_static_negative_confidence`,
+  `attempt_static_prototype_distance`,
+  `attempt_static_prototype_threshold`.
+
+Локальный прогон:
+- Negative generation:
+  `100` auto samples, `191` source samples.
+- `no_gesture_static` source distribution:
+  `CTRLZ=4`, `Hend=2`, `UP=3`, `gun=1`, `sh3=3`, `three=7`.
+- Static training:
+  `221` samples, `11` classes, `feature_dim=42`,
+  `train_accuracy=1.0000`.
+- MLflow run:
+  `static-knn-negative-reject`.
+
+Проверка кода:
+- `python -m pytest --no-cov tests/unit/test_generate_negative_samples.py -q`
+  -> `2 passed`.
+- `python -m pytest --no-cov tests/unit/test_flet_training_view.py tests/unit/test_flet_controller_commands.py tests/unit/test_train_classifier.py -q`
+  -> `49 passed`.
+- Полный targeted набор:
+  `81 passed`.
+
+Следующий live-протокол:
+- Обычные static-жесты: `gun`, `three`, `hend`, `up` по `10` попыток.
+- "Почти жесты" и случайные позы: выбрать `no_gesture_static` и делать
+  случайные движения/неполные позы по `20` попыток.
+- Целевые метрики:
+  - static recall для настоящих жестов `>=80%`;
+  - `live_static_false_positive_rate <=10%` на negative;
+  - rejection reasons должны быть объяснимыми:
+    `negative_class`, `low_margin`, `far_from_prototype`.

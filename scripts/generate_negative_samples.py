@@ -1,4 +1,4 @@
-"""Generate synthetic dynamic negative samples from existing gesture data."""
+"""Generate synthetic negative samples from existing gesture data."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ import numpy as np
 from app.services.gesture_taxonomy import (
     GESTURE_TYPE_DYNAMIC,
     GESTURE_TYPE_NEGATIVE,
+    GESTURE_TYPE_QUASI_STATIC,
+    GESTURE_TYPE_STATIC,
     load_gesture_taxonomy,
 )
 from cv.dynamic_motion import resample_sequence
@@ -27,6 +29,8 @@ DEFAULT_NEGATIVE_LABELS = (
     "return_motion",
     "wrong_axis_motion",
 )
+STATIC_SOURCE_TYPES = {GESTURE_TYPE_STATIC, GESTURE_TYPE_QUASI_STATIC}
+SourceSample = tuple[str, Path, np.ndarray, str]
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,7 @@ class GeneratedNegativeSample:
     path: str
     source_label: str
     source_path: str
+    source_scope: str
     scenario: str
     frames: int
     raw_feature_dim: int
@@ -57,9 +62,9 @@ def load_dynamic_source_samples(
     data_root: Path,
     *,
     taxonomy_path: Path,
-) -> list[tuple[str, Path, np.ndarray]]:
+) -> list[SourceSample]:
     taxonomy = load_gesture_taxonomy(taxonomy_path)
-    samples: list[tuple[str, Path, np.ndarray]] = []
+    samples: list[SourceSample] = []
     if not data_root.exists():
         return samples
     for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
@@ -71,7 +76,30 @@ def load_dynamic_source_samples(
                 sequence = _as_dynamic_frame_matrix(np.load(path))
             except Exception:
                 continue
-            samples.append((label, path, sequence))
+            samples.append((label, path, sequence, GESTURE_TYPE_DYNAMIC))
+    return samples
+
+
+def load_static_source_samples(
+    data_root: Path,
+    *,
+    taxonomy_path: Path,
+) -> list[SourceSample]:
+    taxonomy = load_gesture_taxonomy(taxonomy_path)
+    samples: list[SourceSample] = []
+    if not data_root.exists():
+        return samples
+    for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
+        label = label_dir.name
+        gesture_type = taxonomy.gesture_type_for_label(label)
+        if gesture_type not in STATIC_SOURCE_TYPES:
+            continue
+        for path in sorted(label_dir.glob("sample_*.npy")):
+            try:
+                sequence = _as_static_frame_matrix(np.load(path))
+            except Exception:
+                continue
+            samples.append((label, path, sequence, gesture_type))
     return samples
 
 
@@ -97,12 +125,17 @@ def generate_negative_samples(
     if not negative_labels:
         raise RuntimeError("no negative labels selected")
 
-    source_samples = load_dynamic_source_samples(
+    dynamic_source_samples = load_dynamic_source_samples(
         data_root,
         taxonomy_path=taxonomy_path,
     )
+    static_source_samples = load_static_source_samples(
+        data_root,
+        taxonomy_path=taxonomy_path,
+    )
+    source_samples = dynamic_source_samples + static_source_samples
     if not source_samples:
-        raise RuntimeError("no dynamic source samples found for negative generation")
+        raise RuntimeError("no source samples found for negative generation")
 
     rng = np.random.default_rng(int(seed))
     target = max(2, int(target_frames))
@@ -119,25 +152,48 @@ def generate_negative_samples(
                 old_path.with_suffix(".meta.json").unlink(missing_ok=True)
 
         for index in range(per_label):
-            source_label, source_path, source_sequence = source_samples[
-                (index + len(generated)) % len(source_samples)
-            ]
             scenario = _scenario_for_label(label)
-            sequence = _negative_sequence(
-                source_sequence,
-                scenario=scenario,
-                target_frames=target,
-                rng=rng,
+            source_pool = _source_pool_for_scenario(
+                scenario,
+                dynamic_source_samples=dynamic_source_samples,
+                static_source_samples=static_source_samples,
             )
+            source_index = int(rng.integers(0, len(source_pool)))
+            source_label, source_path, source_sequence, source_scope = source_pool[
+                source_index
+            ]
+            generation_scenario = scenario
+            if scenario == "static_hold" and source_scope in STATIC_SOURCE_TYPES:
+                generation_scenario = _static_scenario_for_index(index)
+                alternate = _alternate_static_source(
+                    source_pool,
+                    source_label=source_label,
+                    index=source_index + index,
+                )
+                sequence = _static_negative_sequence(
+                    source_sequence,
+                    scenario=generation_scenario,
+                    target_frames=target,
+                    rng=rng,
+                    alternate=alternate,
+                )
+            else:
+                sequence = _negative_sequence(
+                    source_sequence,
+                    scenario=scenario,
+                    target_frames=target,
+                    rng=rng,
+                )
             out_path = out_dir / f"sample_auto_{index:04d}.npy"
             np.save(out_path, sequence.astype(np.float32, copy=False))
             metadata = {
                 "schema_version": 1,
                 "generated_by": "scripts.generate_negative_samples",
                 "label": label,
-                "scenario": scenario,
+                "scenario": generation_scenario,
                 "source_label": source_label,
                 "source_path": _portable_path(source_path),
+                "source_scope": source_scope,
                 "frames": int(sequence.shape[0]),
                 "raw_feature_dim": int(sequence.shape[1]),
                 "seed": int(seed),
@@ -153,7 +209,8 @@ def generate_negative_samples(
                     path=str(out_path),
                     source_label=source_label,
                     source_path=str(source_path),
-                    scenario=scenario,
+                    source_scope=source_scope,
+                    scenario=generation_scenario,
                     frames=int(sequence.shape[0]),
                     raw_feature_dim=int(sequence.shape[1]),
                 )
@@ -189,6 +246,11 @@ def _as_dynamic_frame_matrix(raw: np.ndarray) -> np.ndarray:
     return np.concatenate([pose[:, :42], wrist], axis=1).astype(np.float32, copy=False)
 
 
+def _as_static_frame_matrix(raw: np.ndarray) -> np.ndarray:
+    seq = sequence_to_matrix(raw)
+    return _pad_columns(seq, 42).astype(np.float32, copy=False)
+
+
 def _pad_columns(sequence: np.ndarray, width: int) -> np.ndarray:
     if sequence.shape[1] >= width:
         return sequence[:, :width]
@@ -209,6 +271,117 @@ def _scenario_for_label(label: str) -> str:
     if clean.startswith("wrong_axis"):
         return "ambiguous_diagonal"
     return "closed_random_walk"
+
+
+def _source_pool_for_scenario(
+    scenario: str,
+    *,
+    dynamic_source_samples: list[SourceSample],
+    static_source_samples: list[SourceSample],
+) -> list[SourceSample]:
+    if scenario == "static_hold" and static_source_samples:
+        return static_source_samples
+    if dynamic_source_samples:
+        return dynamic_source_samples
+    return static_source_samples
+
+
+def _static_scenario_for_index(index: int) -> str:
+    scenarios = (
+        "static_pose_jitter",
+        "static_closed_pose",
+        "static_pose_mixup",
+        "static_partial_pose",
+    )
+    return scenarios[int(index) % len(scenarios)]
+
+
+def _alternate_static_source(
+    source_pool: list[SourceSample],
+    *,
+    source_label: str,
+    index: int,
+) -> np.ndarray | None:
+    static_sources = [
+        sequence
+        for label, _path, sequence, scope in source_pool
+        if scope in STATIC_SOURCE_TYPES and label != source_label
+    ]
+    if not static_sources:
+        return None
+    return static_sources[int(index) % len(static_sources)]
+
+
+def _static_negative_sequence(
+    source: np.ndarray,
+    *,
+    scenario: str,
+    target_frames: int,
+    rng: np.random.Generator,
+    alternate: np.ndarray | None = None,
+) -> np.ndarray:
+    base = resample_sequence(_as_static_frame_matrix(source), target_frames=target_frames)
+    if scenario == "static_pose_mixup" and alternate is not None:
+        other = resample_sequence(
+            _as_static_frame_matrix(alternate),
+            target_frames=target_frames,
+        )
+        alpha = float(rng.uniform(0.35, 0.65))
+        base = base * alpha + other * (1.0 - alpha)
+
+    if scenario == "static_closed_pose":
+        frames = np.stack([_fold_static_frame(frame, rng=rng) for frame in base], axis=0)
+    elif scenario == "static_partial_pose":
+        frames = np.stack([_partial_static_frame(frame, rng=rng) for frame in base], axis=0)
+    else:
+        frames = base.astype(np.float32, copy=True)
+
+    drift = rng.normal(0.0, 0.004, size=(target_frames, 1)).astype(np.float32)
+    jitter = rng.normal(0.0, 0.006, size=frames.shape).astype(np.float32)
+    frames = frames + jitter + drift
+    return np.clip(frames, 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _fold_static_frame(frame: np.ndarray, *, rng: np.random.Generator) -> np.ndarray:
+    points = np.asarray(frame[:42], dtype=np.float32).reshape(21, 2).copy()
+    palm = points[[0, 5, 9, 13, 17]].mean(axis=0)
+    finger_indices = np.asarray(
+        [6, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 20],
+        dtype=np.int64,
+    )
+    strength = float(rng.uniform(0.35, 0.70))
+    points[finger_indices] = (
+        points[finger_indices] * (1.0 - strength)
+        + palm[None, :] * strength
+    )
+    points[finger_indices] += rng.normal(
+        0.0,
+        0.015,
+        size=(len(finger_indices), 2),
+    ).astype(np.float32)
+    return np.clip(points.reshape(-1), 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _partial_static_frame(frame: np.ndarray, *, rng: np.random.Generator) -> np.ndarray:
+    points = np.asarray(frame[:42], dtype=np.float32).reshape(21, 2).copy()
+    palm = points[[0, 5, 9, 13, 17]].mean(axis=0)
+    fingers = (
+        [6, 7, 8],
+        [10, 11, 12],
+        [14, 15, 16],
+        [18, 19, 20],
+    )
+    keep_index = int(rng.integers(0, len(fingers)))
+    for index, finger in enumerate(fingers):
+        if index == keep_index:
+            continue
+        strength = float(rng.uniform(0.45, 0.85))
+        finger_idx = np.asarray(finger, dtype=np.int64)
+        points[finger_idx] = (
+            points[finger_idx] * (1.0 - strength)
+            + palm[None, :] * strength
+        )
+    return np.clip(points.reshape(-1), 0.0, 1.0).astype(np.float32, copy=False)
 
 
 def _negative_sequence(
@@ -395,7 +568,7 @@ def main() -> None:
     print(
         "[✓] Generated "
         f"{report.generated_samples} negative samples from "
-        f"{report.source_samples} dynamic source samples"
+        f"{report.source_samples} source samples"
     )
     for label, count in sorted(report.labels.items()):
         print(f"  - {label}: {count}")

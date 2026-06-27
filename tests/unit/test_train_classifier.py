@@ -5,7 +5,12 @@ from types import SimpleNamespace
 import numpy as np
 
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
-from cv.train_classifier import _log_mlflow_run, build_classifier, load_dataset
+from cv.train_classifier import (
+    _log_mlflow_run,
+    build_classifier,
+    default_rejection_metadata_path,
+    load_dataset,
+)
 
 
 def _write_sample(root: Path, label: str, index: int, value: float = 0.0) -> None:
@@ -72,6 +77,17 @@ def test_build_classifier_supports_non_knn_models():
     assert clf.__class__.__name__ == "ExtraTreesClassifier"
 
 
+def test_default_rejection_metadata_path_keeps_dynamic_metadata_separate():
+    assert (
+        default_rejection_metadata_path(Path("models/knn.pkl"))
+        == Path("models/gesture_rejection.json")
+    )
+    assert (
+        default_rejection_metadata_path(Path("models/dynamic_knn.pkl"))
+        == Path("models/dynamic_knn_rejection.json")
+    )
+
+
 def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
     calls = {
         "tracking_uri": "",
@@ -111,7 +127,13 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
 
     monkeypatch.setitem(sys.modules, "mlflow", _FakeMlflow())
     artifacts = []
-    for name in ("model.pkl", "classes.json", "feature_dim.txt", "feature_mode.txt"):
+    for name in (
+        "model.pkl",
+        "classes.json",
+        "feature_dim.txt",
+        "feature_mode.txt",
+        "gesture_rejection.json",
+    ):
         path = tmp_path / name
         path.write_text("x", encoding="utf-8")
         artifacts.append(path)
@@ -140,6 +162,8 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         classes_out=artifacts[1],
         feature_dim_out=artifacts[2],
         feature_mode_out=artifacts[3],
+        rejection_out=artifacts[4],
+        rejection_metadata={"negative_labels": ["no_gesture_static"]},
     )
 
     assert calls["tracking_uri"] == "sqlite:///mlflow.db"
@@ -152,4 +176,5 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         "classes.json",
         "feature_dim.txt",
         "feature_mode.txt",
+        "gesture_rejection.json",
     ]
