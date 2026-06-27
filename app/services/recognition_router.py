@@ -412,6 +412,9 @@ class GestureRecognitionRouter:
         dynamic_temporal = dynamic_out.get("temporal")
         if not isinstance(dynamic_temporal, dict):
             dynamic_temporal = {}
+        dynamic_decision = dynamic_out.get("dynamic_decision")
+        if not isinstance(dynamic_decision, dict):
+            dynamic_decision = {}
         return {
             "route": route,
             "selected_reason": selected_reason,
@@ -433,6 +436,24 @@ class GestureRecognitionRouter:
             "dynamic_segment_frames": int(dynamic_temporal.get("frames") or 0),
             "dynamic_motion_scale": float(
                 dynamic_temporal.get("motion_scale") or 0.0
+            ),
+            "dynamic_decision_source": str(dynamic_decision.get("source") or ""),
+            "dynamic_motion_label": str(dynamic_decision.get("motion_label") or ""),
+            "dynamic_motion_confidence": float(
+                dynamic_decision.get("motion_confidence") or 0.0
+            ),
+            "dynamic_model_label": str(dynamic_decision.get("model_label") or ""),
+            "dynamic_model_confidence": float(
+                dynamic_decision.get("model_confidence") or 0.0
+            ),
+            "dynamic_model_confidence_for_motion": float(
+                dynamic_decision.get("model_confidence_for_motion") or 0.0
+            ),
+            "dynamic_axis": str(dynamic_decision.get("axis") or ""),
+            "dynamic_direction": str(dynamic_decision.get("direction") or ""),
+            "dynamic_axis_ratio": float(dynamic_decision.get("axis_ratio") or 0.0),
+            "dynamic_straightness": float(
+                dynamic_decision.get("straightness") or 0.0
             ),
         }
 

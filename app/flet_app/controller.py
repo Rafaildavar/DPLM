@@ -972,6 +972,24 @@ class AppController:
                         "dynamic_motion_scale": payload.get(
                             "dynamic_motion_scale"
                         ),
+                        "dynamic_decision_source": payload.get(
+                            "dynamic_decision_source"
+                        ),
+                        "dynamic_motion_label": payload.get("dynamic_motion_label"),
+                        "dynamic_motion_confidence": payload.get(
+                            "dynamic_motion_confidence"
+                        ),
+                        "dynamic_model_label": payload.get("dynamic_model_label"),
+                        "dynamic_model_confidence": payload.get(
+                            "dynamic_model_confidence"
+                        ),
+                        "dynamic_model_confidence_for_motion": payload.get(
+                            "dynamic_model_confidence_for_motion"
+                        ),
+                        "dynamic_axis": payload.get("dynamic_axis"),
+                        "dynamic_direction": payload.get("dynamic_direction"),
+                        "dynamic_axis_ratio": payload.get("dynamic_axis_ratio"),
+                        "dynamic_straightness": payload.get("dynamic_straightness"),
                     }
                 )
             with path.open("a", encoding="utf-8") as fh:
@@ -1020,6 +1038,32 @@ class AppController:
             ),
             "dynamic_motion_scale": _float_or_none(
                 route_metadata.get("dynamic_motion_scale")
+            ),
+            "dynamic_decision_source": str(
+                route_metadata.get("dynamic_decision_source") or ""
+            ),
+            "dynamic_motion_label": str(
+                route_metadata.get("dynamic_motion_label") or ""
+            ),
+            "dynamic_motion_confidence": _float_or_none(
+                route_metadata.get("dynamic_motion_confidence")
+            ),
+            "dynamic_model_label": str(
+                route_metadata.get("dynamic_model_label") or ""
+            ),
+            "dynamic_model_confidence": _float_or_none(
+                route_metadata.get("dynamic_model_confidence")
+            ),
+            "dynamic_model_confidence_for_motion": _float_or_none(
+                route_metadata.get("dynamic_model_confidence_for_motion")
+            ),
+            "dynamic_axis": str(route_metadata.get("dynamic_axis") or ""),
+            "dynamic_direction": str(route_metadata.get("dynamic_direction") or ""),
+            "dynamic_axis_ratio": _float_or_none(
+                route_metadata.get("dynamic_axis_ratio")
+            ),
+            "dynamic_straightness": _float_or_none(
+                route_metadata.get("dynamic_straightness")
             ),
         }
 

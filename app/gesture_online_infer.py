@@ -22,6 +22,7 @@ from cv.gesture_features import (
     infer_raw_dim_from_feature_size,
     trajectory_features,
 )
+from cv.dynamic_direction import classify_swipe_direction
 from cv.dynamic_motion import DynamicMotionSegmenter
 from cv.hand_landmarker import (
     DetectedHand,
@@ -86,6 +87,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_prediction: tuple[str, float] | None = None
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
+        self._last_dynamic_decision: dict[str, Any] = {}
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -378,14 +380,31 @@ class GestureOnlineInfer:
         model_feat: np.ndarray,
         motion: dict[str, float],
     ) -> tuple[str, float]:
-        # Keep the estimator's native prediction call in the inference path.
-        # Some estimators populate diagnostics there, while probabilities are
-        # used below for motion-constrained reranking.
-        self._clf.predict(model_feat)
-        probabilities = np.asarray(self._clf.predict_proba(model_feat)[0], dtype=float)
-        estimator_classes = list(
-            getattr(self._clf, "classes_", range(len(probabilities)))
-        )
+        self._last_dynamic_decision = {}
+        motion_decision = classify_swipe_direction(motion, self._classes)
+        model_label = ""
+        model_confidence = 0.0
+        probabilities = np.asarray([], dtype=float)
+        estimator_classes: list[Any] = []
+        if self._clf is not None:
+            try:
+                predicted = self._clf.predict(model_feat)
+                if len(predicted) > 0:
+                    model_label = self._label_from_estimator_class(predicted[0])
+            except Exception:
+                model_label = ""
+            try:
+                probabilities = np.asarray(
+                    self._clf.predict_proba(model_feat)[0],
+                    dtype=float,
+                )
+                estimator_classes = list(
+                    getattr(self._clf, "classes_", range(len(probabilities)))
+                )
+            except Exception:
+                probabilities = np.asarray([], dtype=float)
+                estimator_classes = []
+
         ranked: list[tuple[float, str]] = []
         for column, probability in enumerate(probabilities):
             raw_class = (
@@ -393,22 +412,74 @@ class GestureOnlineInfer:
                 if column < len(estimator_classes)
                 else column
             )
-            try:
-                class_index = int(raw_class)
-            except (TypeError, ValueError):
-                label = str(raw_class)
-            else:
-                label = (
-                    self._classes[class_index]
-                    if 0 <= class_index < len(self._classes)
-                    else str(raw_class)
-                )
+            label = self._label_from_estimator_class(raw_class)
             ranked.append((float(probability), label))
+            if label == model_label:
+                model_confidence = max(model_confidence, float(probability))
 
+        compatible_label = ""
+        compatible_confidence = 0.0
         for probability, label in sorted(ranked, reverse=True):
             if self._dynamic_label_matches_motion(label, motion):
-                return label, probability
+                compatible_label = label
+                compatible_confidence = float(probability)
+                break
+
+        if motion_decision.accepted:
+            motion_confidence = float(motion_decision.confidence)
+            model_for_motion = max(
+                (probability for probability, label in ranked if label == motion_decision.label),
+                default=0.0,
+            )
+            source = "motion_first"
+            if model_label == motion_decision.label or compatible_label == motion_decision.label:
+                source = "motion_and_model_agree"
+            self._last_dynamic_decision = {
+                "source": source,
+                "motion_label": motion_decision.label,
+                "motion_confidence": motion_confidence,
+                "model_label": model_label,
+                "model_confidence": model_confidence,
+                "compatible_model_label": compatible_label,
+                "compatible_model_confidence": compatible_confidence,
+                "model_confidence_for_motion": float(model_for_motion),
+                **motion_decision.as_dict(),
+            }
+            return motion_decision.label, max(motion_confidence, float(model_for_motion))
+
+        if compatible_label:
+            self._last_dynamic_decision = {
+                "source": "model_fallback",
+                "motion_label": "",
+                "motion_confidence": 0.0,
+                "model_label": model_label,
+                "model_confidence": model_confidence,
+                "compatible_model_label": compatible_label,
+                "compatible_model_confidence": compatible_confidence,
+                **motion_decision.as_dict(),
+            }
+            return compatible_label, compatible_confidence
+
+        self._last_dynamic_decision = {
+            "source": "rejected",
+            "motion_label": "",
+            "motion_confidence": 0.0,
+            "model_label": model_label,
+            "model_confidence": model_confidence,
+            **motion_decision.as_dict(),
+        }
         return "", 0.0
+
+    def _label_from_estimator_class(self, raw_class: Any) -> str:
+        try:
+            class_index = int(raw_class)
+        except (TypeError, ValueError):
+            return str(raw_class)
+        return (
+            self._classes[class_index]
+            if 0 <= class_index < len(self._classes)
+            else str(raw_class)
+        )
 
     def reset_temporal_state(self) -> None:
         self._window.clear()
@@ -419,6 +490,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
+        self._last_dynamic_decision = {}
 
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
@@ -427,6 +499,7 @@ class GestureOnlineInfer:
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
         self._pending_dynamic_motion_scale = 0.0
+        self._last_dynamic_decision = {}
 
     def _segmenter(self) -> DynamicMotionSegmenter:
         segmenter = getattr(self, "_dynamic_segmenter", None)
@@ -452,6 +525,9 @@ class GestureOnlineInfer:
                 "label": pending[0],
                 "confidence": pending[1],
                 "landmarks_json": landmarks_json,
+                "dynamic_decision": dict(
+                    getattr(self, "_last_dynamic_decision", {}) or {}
+                ),
                 "temporal": {
                     "enabled": True,
                     "phase": "completed",
@@ -482,7 +558,7 @@ class GestureOnlineInfer:
         self._window.clear()
         self._window.extend(update.completed_sequence)
         motion_ok, motion = self._dynamic_motion_gate()
-        if not motion_ok or self._clf is None or not self._classes:
+        if not motion_ok or not self._classes:
             return {
                 "label": "",
                 "confidence": 0.0,
@@ -491,7 +567,11 @@ class GestureOnlineInfer:
             }
 
         try:
-            model_feat = self._build_model_feature().reshape(1, -1)
+            model_feat = (
+                self._build_model_feature().reshape(1, -1)
+                if self._clf is not None
+                else np.empty((1, 0), dtype=np.float32)
+            )
             label, confidence = self._dynamic_prediction(model_feat, motion)
         except Exception as exc:
             print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
@@ -511,6 +591,9 @@ class GestureOnlineInfer:
             "label": label,
             "confidence": confidence,
             "landmarks_json": landmarks_json,
+            "dynamic_decision": dict(
+                getattr(self, "_last_dynamic_decision", {}) or {}
+            ),
             "temporal": temporal_state,
         }
 

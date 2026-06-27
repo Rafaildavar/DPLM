@@ -1368,3 +1368,65 @@ Live-протокол проверки:
 6. После стабильного baseline проверить handedness experiment из H-021.
 7. Если стабильно, добавить `swipe_right` и записать `10-20` sample.
 8. Перезаписать `hand_left` в новом dynamic-формате `(36, 44)`.
+
+### H-031: Dynamic pipeline нужно разделить на motion-first detector и ML fallback
+
+Статус: `implemented`, требуется live validation
+
+Наблюдение пользователя:
+- KNN плохо показал себя при формировании/распознавании dynamic gestures.
+- В `auto` режиме статический класс вроде `gun` и pose-heavy KNN могут
+  конкурировать с реальным свайпом.
+
+Разбор причин:
+- Для `swipe_*` основной сигнал — направление завершенной траектории wrist.
+- KNN использует евклидово расстояние по `271` признаку. Даже после weighting
+  часть расстояния остается связанной с позой руки, скоростью и шумом записи.
+- Поэтому KNN хорош как baseline/diagnostic model, но не должен быть главным
+  решателем для простых directional gestures.
+
+Гипотеза:
+- Если сначала выделять motion event, затем классифицировать направление
+  траектории, а KNN использовать как fallback/диагностику, то live accuracy
+  свайпов станет устойчивее к позе кисти, стартовой позиции и дистанции.
+
+Что сделали:
+- Добавлен `cv/dynamic_direction.py`.
+- Dynamic branch теперь делится на этапы:
+  1. MediaPipe landmarks;
+  2. dynamic motion segmentation;
+  3. canonical trajectory normalization;
+  4. motion-first direction classifier для `swipe_left/right/up/down`;
+  5. KNN/SVM/ExtraTrees probability как diagnostic/fallback.
+- В router/live-evaluation добавлены поля:
+  `dynamic_decision_source`, `dynamic_motion_label`,
+  `dynamic_motion_confidence`, `dynamic_model_label`,
+  `dynamic_model_confidence`, `dynamic_axis`, `dynamic_direction`,
+  `dynamic_axis_ratio`, `dynamic_straightness`.
+
+Offline-проверка:
+- Unit-test проверяет, что горизонтальный completed motion выбирает
+  `swipe_left`, даже если pose-heavy classifier выше оценивает `swipe_up`.
+- Unit-test подтверждает, что `swipe_*` может быть принят motion-first
+  классификатором даже без доступного estimator-файла.
+- Unit-test отклоняет диагональный ambiguous motion, чтобы не принимать
+  случайное движение как свайп.
+- Целевой regression suite после H-031: `60 passed`.
+
+Live-протокол проверки:
+1. Перезапустить приложение.
+2. В `auto` режиме прогнать `swipe_left`, `swipe_up`, `swipe_down` по `10`
+   attempts.
+3. Для каждой ошибки смотреть в `live_evaluation.jsonl`:
+   - `dynamic_decision_source=motion_first` или `motion_and_model_agree`;
+   - `dynamic_motion_label`;
+   - `dynamic_model_label`.
+4. Если `motion_label` верный, а `model_label` неверный — KNN действительно
+   не должен решать этот класс.
+5. Если `motion_label` неверный — проблема в записи/сегментации/траектории, а
+   не в ML-классификаторе.
+
+Критерий приемки:
+- Для каждого swipe-класса live accuracy `>=80%` на `10` attempts.
+- Static hijack в dynamic run: `0/10`.
+- Ошибки должны быть объяснимы через новые diagnostic fields.
