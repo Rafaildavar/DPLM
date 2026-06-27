@@ -1781,3 +1781,47 @@ MLflow runs:
 - Следующий эксперимент: повторить `swipe_up/down` по `20` попыток с
   одинаковой стартовой зоной и затем сравнить `dynamic_axis_ratio`,
   `dynamic_straightness`, `dynamic_motion_scale` между correct/wrong.
+
+### H-039: Ошибки `swipe_up/down` связаны с качеством траектории, а не confidence
+
+Статус: `analysis_ready`, ждет повторного live-теста по `20` попыток
+
+Источник:
+- `~/.dplm/logs/live_evaluation.jsonl`;
+- MLflow runs `live-swipe_up-auto-knn`, `live-swipe_down-auto-knn`,
+  `live-swipe_left-auto-knn`;
+- подробный отчет:
+  `docs/experiments/live_direction_error_analysis.md`.
+
+Наблюдение:
+- `swipe_up`: `7/10`, все `route=dynamic`, все ошибки были
+  `predicted=swipe_down`.
+- `swipe_down`: `7/10`, все `route=dynamic`, ошибки:
+  `swipe_up=2`, `swipe_left=1`.
+- `swipe_left`: `10/10`, используется как baseline regression check.
+
+Выводы:
+- Static hijack больше не является текущей проблемой:
+  `live_static_hijack_rate=0.0`.
+- KNN confidence не подходит как защитный порог: wrong attempts часто имеют
+  `dynamic_model_confidence=1.0`.
+- Ошибки вертикальных жестов коррелируют с trajectory quality:
+  - у wrong `swipe_down` ниже `dynamic_axis_ratio` и
+    `dynamic_straightness`;
+  - один `swipe_down` стал `dynamic_axis=horizontal` и ушел в `swipe_left`;
+  - wrong `swipe_up` часто связан с `hand_lost` или низкой straightness.
+
+Гипотеза перед следующим прогоном:
+- Если пользователь делает вертикальные свайпы одним прямым движением без
+  возврата руки через кадр, recall для `swipe_up/down` должен подняться выше
+  `80%`, а wrong direction rate должен упасть ниже `20%`.
+- Если качество останется около `70%`, следующий кодовый шаг - усилить
+  direction gate: vertical dominance, straightness threshold и анализ
+  first-half/second-half direction.
+
+Протокол следующей проверки:
+- `swipe_up`: `20` попыток;
+- `swipe_down`: `20` попыток;
+- `swipe_left`: `10` попыток как baseline;
+- одинаковая дистанция от камеры, похожая стартовая зона;
+- без финальной позы, но без немедленного возврата руки через кадр.
