@@ -2256,3 +2256,37 @@ MLflow:
   -> `3 passed`.
 - `.venv/bin/python -m scripts.external_negative_dataset_experiments`
   -> baseline logged, external variants skipped as missing.
+
+### H-046: Полный HaGRID слишком большой, нужен targeted external sampling
+
+Статус: `accepted`
+
+Дата: `2026-06-28`
+
+Проблема:
+- HaGRID полезен как источник внешних static negatives, но полный датасет и
+  даже resized/light archive слишком тяжелые для быстрой конкурсной итерации.
+- Скачивание десятков или сотен гигабайт ради reject-layer ухудшает скорость
+  разработки и не дает гарантии live-качества на персональных жестах.
+
+Решение:
+- Не использовать full/light HaGRID как обязательный шаг.
+- Для текущего этапа брать только маленький targeted subset:
+  - `no_gesture` если доступен отдельным архивом;
+  - либо `100-300` изображений из 1-2 нерелевантных классов после конвертации
+    в landmarks;
+  - не хранить raw images/videos в git.
+- Для dynamic negatives приоритетнее IPN Hand subset, потому что его классы
+  ближе к real-time continuous gesture recognition.
+
+Что это значит для ML:
+- Основной personalized positive dataset остается пользовательским.
+- Внешний датасет используется как calibration/OOD evidence для reject-layer.
+- Качество внешних данных оценивается только через:
+  - offline rejection benchmark;
+  - MLflow runs;
+  - live false-positive tests.
+
+Критерий успеха:
+- Внешний subset принимается только если снижает
+  `live_negative_false_positive_rate` и не ломает static/dynamic recall.

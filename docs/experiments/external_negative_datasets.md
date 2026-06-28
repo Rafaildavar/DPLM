@@ -23,12 +23,21 @@ blindly mixing domains.
 | Dataset | Planned role | Why not direct positive training |
 |---|---|---|
 | IPN Hand | dynamic non-target motion, partial/ambiguous motion | classes and recording protocol do not equal the user's custom commands |
-| HaGRID | static non-target hand poses, near-miss static gestures | many gestures are not GestureFlow commands, and some overlap semantically |
+| HaGRID tiny/no_gesture subset | static non-target hand poses, natural no-gesture hands | full/light HaGRID is too large for this project stage |
 
 References:
 
 - IPN Hand: `https://github.com/GibranBenitez/IPN-hand`
 - HaGRID: `https://github.com/hukenovs/hagrid`
+
+Important storage decision:
+
+- do not download full HaGRID or the 512px lightweight archive for the contest
+  iteration;
+- prefer only the small `no_gesture` archive when available;
+- if near-miss static classes are needed, take a strict sample budget
+  such as `100-300` converted landmark samples total, not full class archives;
+- keep external data as a small calibration set, not as the main dataset.
 
 ## Prepared Data Format
 
@@ -71,6 +80,14 @@ Default variants:
 | `ipn_external` | baseline + IPN dynamic negative samples |
 | `hagrid_external` | baseline + HaGRID static negative samples |
 | `combined_external` | baseline + IPN + HaGRID |
+
+For the current two-week contest timeline, the practical variant priority is:
+
+1. `baseline_internal`;
+2. `hagrid_external` using only `no_gesture` / tiny sampled static negatives;
+3. `ipn_external` using a limited set of dynamic non-gesture or wrong-motion
+   clips;
+4. `combined_external` only if the first two actually improve live metrics.
 
 ## Command
 
@@ -161,3 +178,10 @@ Conclusion:
 
 The pipeline is ready for external negative datasets, but the actual quality
 claim must wait for real converted IPN/HaGRID samples and live validation.
+
+Updated storage conclusion:
+
+Full HaGRID is intentionally excluded from the immediate workflow because even
+the resized archive is too heavy for rapid iteration. This is not a weakness of
+the ML pipeline: the selected experiment uses targeted external negative
+sampling, then validates impact through MLflow and live metrics.
