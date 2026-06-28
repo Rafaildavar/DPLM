@@ -24,11 +24,14 @@ mlflow.db
 data/**/*.npy
 data/**/*.csv
 data/**/*.meta.json
+data/external/
+data/experiments/
 app/data/
 
 # Models (trained ML models)
 models/*.pkl
 models/*.joblib
+models/experiments/
 models/user_gestures/
 
 # Database

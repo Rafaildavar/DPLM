@@ -18,6 +18,9 @@
   моделей на одинаковом validation protocol.
 - `threshold_report.json` / `threshold_report.md` - выбор confidence threshold:
   coverage, accepted accuracy, rejected predictions.
+- `external_negative_dataset_experiments.json` /
+  `external_negative_dataset_experiments.md` - отдельные эксперименты с
+  публичными датасетами как negative / out-of-distribution evidence.
 - `latency_report.json` / `latency_report.md` - задержки ML и live-pipeline.
 - `live_eval.json` / `live_eval.md` - проверка в рабочем приложении: ложные
   срабатывания, успешные команды, ошибки.
@@ -53,5 +56,6 @@ python -m scripts.jmlc_dataset_profile
 python -m scripts.dynamic_data_analysis
 python -m scripts.compare_models
 python -m scripts.threshold_report
+python -m scripts.external_negative_dataset_experiments
 python -m scripts.benchmark_latency --mode ml
 ```

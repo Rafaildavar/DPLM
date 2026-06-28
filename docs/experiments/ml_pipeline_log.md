@@ -2170,3 +2170,89 @@ Live protocol:
   - system metrics;
   - `live_evaluation/index.html`;
   - SVG charts для quality/static rejection/verifier signals/routes/runtime.
+
+### H-045: Публичные датасеты стоит использовать как negative evidence, а не как замену персонального датасета
+
+Статус: `implemented`, ожидает реальные внешние файлы
+
+Дата реализации: `2026-06-28`
+
+Гипотеза:
+- IPN Hand и HaGRID могут улучшить reject-layer: система должна чаще молчать
+  на чужих/почти жестах и не принимать их за пользовательские команды.
+- При этом они не должны заменять основной датасет GestureFlow, потому что
+  задача проекта персонализированная: камера, дистанция, рука, скорость и
+  смысл команд отличаются от публичных датасетов.
+
+Что добавлено:
+- Конфиг внешних источников:
+  `configs/external_negative_datasets.json`.
+- Отдельный сценарий экспериментов:
+  `scripts/external_negative_dataset_experiments.py`.
+- Make target:
+  `make external-negative-experiments`.
+- Документ протокола:
+  `docs/experiments/external_negative_datasets.md`.
+- Генерируемые отчеты:
+  - `docs/experiments/external_negative_dataset_experiments.json`;
+  - `docs/experiments/external_negative_dataset_experiments.md`.
+- Отдельные model roots для live A/B:
+  `models/experiments/external_negative/<variant>/`.
+
+Проверяемые варианты:
+- `baseline_internal`;
+- `ipn_external`;
+- `hagrid_external`;
+- `combined_external`.
+
+Как устроена обработка:
+- Внешние samples кладутся в формате GestureFlow:
+  `data/external/<source>/<original_label>/sample_*.npy`.
+- Скрипт не добавляет оригинальные labels как новые команды.
+- Все внешние классы мапятся в negative-классы:
+  - `negative_external_ipn_dynamic`;
+  - `negative_external_hagrid_static`.
+- Для каждого варианта строится временный датасет:
+  `data/experiments/external_negative/<variant>/gestures/`.
+- Для live создаются отдельные артефакты:
+  `knn.pkl`, `classes.json`, `feature_dim.txt`,
+  `static_rejection_verifiers.pkl`, `dynamic_knn.pkl`,
+  `dynamic_classes.json`.
+
+MLflow:
+- Offline benchmark runs:
+  `external-negative-<variant>-static`,
+  `external-negative-<variant>-dynamic`.
+- Live artifact training runs:
+  `external-negative-artifacts-<variant>-static`,
+  `external-negative-artifacts-<variant>-dynamic:knn`.
+- Логируются:
+  - `external_sample_count`;
+  - best offline method;
+  - `best_overall_success`;
+  - `best_positive_recall`;
+  - `best_negative_reject_rate`;
+  - `best_negative_false_positive_rate`;
+  - model artifacts.
+
+Локальный результат:
+- `baseline_internal/static`: best `one_vs_rest_logreg`,
+  `overall_success=0.9774`, `negative_false_positive_rate=0.0100`.
+- `baseline_internal/dynamic`: best `open_set_policy`,
+  `overall_success=1.0000`, `negative_false_positive_rate=0.0000`.
+- `ipn_external`, `hagrid_external`, `combined_external`:
+  `skipped`, потому что локально еще нет конвертированных файлов
+  `data/external/...`.
+
+Вывод:
+- Pipeline для внешних датасетов готов.
+- Качество внешних данных пока не заявляем: сначала нужно положить реальные
+  IPN/HaGRID samples, затем повторить offline benchmark и live evaluation.
+
+Проверка:
+- `.venv/bin/python -m py_compile scripts/external_negative_dataset_experiments.py`
+  -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_external_negative_dataset_experiments.py -q`
+  -> `3 passed`.
+- `.venv/bin/python -m scripts.external_negative_dataset_experiments`
+  -> baseline logged, external variants skipped as missing.

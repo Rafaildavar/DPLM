@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "description": "External public-dataset sources used only as negative/rejection evidence. Put converted GestureFlow .npy samples under data/external/<source>/<label>/sample_*.npy.",
+  "sources": {
+    "ipn_hand": {
+      "root": "data/external/ipn_hand",
+      "domain": "dynamic",
+      "target_label": "negative_external_ipn_dynamic",
+      "include_unmapped": true,
+      "exclude_labels": [
+        "swipe_down",
+        "swipe_left",
+        "swipe_right",
+        "swipe_up"
+      ],
+      "max_samples_per_label": 80,
+      "reference_url": "https://github.com/GibranBenitez/IPN-hand"
+    },
+    "hagrid": {
+      "root": "data/external/hagrid",
+      "domain": "static",
+      "target_label": "negative_external_hagrid_static",
+      "include_unmapped": true,
+      "exclude_labels": [
+        "gun",
+        "palm",
+        "three",
+        "thumbs_up"
+      ],
+      "max_samples_per_label": 80,
+      "reference_url": "https://github.com/hukenovs/hagrid"
+    }
+  },
+  "variants": [
+    {
+      "name": "baseline_internal",
+      "sources": []
+    },
+    {
+      "name": "ipn_external",
+      "sources": [
+        "ipn_hand"
+      ]
+    },
+    {
+      "name": "hagrid_external",
+      "sources": [
+        "hagrid"
+      ]
+    },
+    {
+      "name": "combined_external",
+      "sources": [
+        "ipn_hand",
+        "hagrid"
+      ]
+    }
+  ]
+}

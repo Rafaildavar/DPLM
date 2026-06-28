@@ -277,6 +277,7 @@ MLflow run types:
 | Training | `<model>-<feature_mode>` | params, model artifacts, rejection metadata, sample count, train accuracy |
 | Static verifier training | `static-rejection-verifiers` | trained second-stage reject methods and method readiness |
 | Live evaluation | `live-<expected>-<mode>-<profile>-<static_rejection_method>` | live metrics, route counts, raw attempts artifact |
+| External negative datasets | `external-negative-<variant>-<scope>` | public-dataset negative benchmark, artifacts, best reject method |
 
 Live MLflow runs also store an artifact bundle under `live_evaluation/`:
 
@@ -333,6 +334,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Live evaluation mode | Stable | real attempts counted as correct/wrong/missed |
 | Natural swipe | Validated | no final pose required |
 | Negative examples | Added | synthetic negatives generated automatically |
+| External negative datasets | Added | IPN/HaGRID experiment harness ready; data files pending |
 | Static open-set rejection | Added | `gesture_rejection.json` + runtime reject policy |
 | Rejection benchmark | Added | static/dynamic reports compare 9 methods |
 | MLflow integration | Stable | training and live runs tracked |
@@ -347,6 +349,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
 | Vertical direction confusion | `swipe_up/down` unstable | analyze correct/wrong features, strengthen axis gate |
 | No static/negative live validation yet | false triggers may be hidden | run 20 no-gesture/background attempts and check static rejection metrics |
+| Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
 
@@ -358,6 +361,7 @@ summarize and annotate; execution stays behind deterministic policies.
 |---|---|---|
 | Test real static gestures after rejection policy | Next | user + ML pipeline |
 | Run negative live evaluation and log to MLflow | Next | user + ML pipeline |
+| Convert a small IPN/HaGRID subset to GestureFlow NPY | Next | data pipeline |
 | Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
 
@@ -396,3 +400,4 @@ Change log:
 | Date | Change | Evidence |
 |---|---|---|
 | `2026-06-27` | Created ML system design doc | H-038, MLflow live runs |
+| `2026-06-28` | Added external negative dataset experiment layer | H-045, MLflow external runs |

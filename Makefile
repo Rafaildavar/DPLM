@@ -1,4 +1,4 @@
-.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark mlops-dashboard mlflow-ui
+.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
@@ -39,6 +39,9 @@ static-rejection-verifiers:
 
 rejection-benchmark:
 	$(PYTHON) -m scripts.rejection_method_benchmark
+
+external-negative-experiments:
+	$(PYTHON) -m scripts.external_negative_dataset_experiments
 
 mlops-dashboard:
 	$(PYTHON) -m scripts.mlops_dashboard
