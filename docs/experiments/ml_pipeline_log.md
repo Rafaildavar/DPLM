@@ -2290,3 +2290,62 @@ MLflow:
 Критерий успеха:
 - Внешний subset принимается только если снижает
   `live_negative_false_positive_rate` и не ломает static/dynamic recall.
+
+### H-047: IPN Hand можно использовать как главный внешний датасет для динамики
+
+Статус: `research accepted`
+
+Дата: `2026-06-28`
+
+Источник:
+- `https://github.com/GibranBenitez/IPN-hand`
+- `https://gibranbenitez.github.io/IPN_Hand/`
+- `https://arxiv.org/abs/2005.02134`
+
+Почему это важно:
+- IPN Hand решает real-time continuous hand gesture recognition, то есть
+  ближе всего к нашей проблеме динамических жестов.
+- Датасет содержит RGB-видео `640x480`, `30 fps`, разную дистанцию до камеры,
+  13 жестов и non-gesture.
+- В нем есть классы, похожие на наши swipe:
+  `Throw up`, `Throw down`, `Throw left`, `Throw right`.
+- Есть non-gesture и другие динамические действия, которые полезны как
+  negative/OOD evidence.
+
+Что берем:
+- Идею two-stage online recognition:
+  detector `gesture/no-gesture` -> classifier `class`.
+- Идею probability queues:
+  raw / median / moving average / EWMA.
+- Идею накопления class evidence во время active segment.
+- Идею sequence-level evaluation через Levenshtein distance.
+- Данные:
+  - `D0X Non-gesture` -> `negative_external_ipn_dynamic`;
+  - unrelated dynamic classes -> dynamic negatives;
+  - throw left/up/down/right -> validation/pretraining only, не production
+    positives без live-проверки.
+
+Что не берем сейчас:
+- Heavy RGB 3D-CNN/ResNeXt pipeline.
+- Optical flow как отдельную тяжелую модальность.
+- Полную замену наших personalized swipe samples внешними IPN labels.
+
+План:
+- Добавить IPN converter:
+  raw frames/video + annotations -> MediaPipe landmarks `(frames, 44)`.
+- Обучить/сравнить:
+  - current dynamic KNN;
+  - dynamic KNN + IPN negatives;
+  - binary dynamic intent detector;
+  - small MLP/ExtraTrees rejector при достаточном числе samples.
+- Добавить live metrics:
+  - `live_dynamic_intent_precision`;
+  - `live_dynamic_intent_recall`;
+  - `live_false_dynamic_activation_rate`;
+  - `live_sequence_edit_distance`;
+  - `live_sequence_accuracy`;
+  - `live_dynamic_start_latency_frames`;
+  - `live_dynamic_end_latency_frames`.
+
+Полный анализ:
+- `docs/experiments/ipn_hand_research_analysis.md`.

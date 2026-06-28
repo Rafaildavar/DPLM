@@ -335,6 +335,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Natural swipe | Validated | no final pose required |
 | Negative examples | Added | synthetic negatives generated automatically |
 | External negative datasets | Added | IPN/HaGRID experiment harness ready; data files pending |
+| IPN Hand dynamic research | Added | two-stage detector/classifier ideas accepted for dynamic roadmap |
 | Static open-set rejection | Added | `gesture_rejection.json` + runtime reject policy |
 | Rejection benchmark | Added | static/dynamic reports compare 9 methods |
 | MLflow integration | Stable | training and live runs tracked |
@@ -362,6 +363,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Test real static gestures after rejection policy | Next | user + ML pipeline |
 | Run negative live evaluation and log to MLflow | Next | user + ML pipeline |
 | Convert a small IPN/HaGRID subset to GestureFlow NPY | Next | data pipeline |
+| Add IPN converter and dynamic intent detector experiment | Next | ML pipeline |
 | Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
 
@@ -401,3 +403,4 @@ Change log:
 |---|---|---|
 | `2026-06-27` | Created ML system design doc | H-038, MLflow live runs |
 | `2026-06-28` | Added external negative dataset experiment layer | H-045, MLflow external runs |
+| `2026-06-28` | Added IPN Hand research analysis | H-047 |
