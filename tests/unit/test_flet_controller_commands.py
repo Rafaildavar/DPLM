@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -21,6 +22,7 @@ from app.flet_app.controller import (
     _Event,
 )
 from app.models.database import Base, Command, Gesture, GestureHistory, GestureSample
+from app.services.app_config import AppConfig, ConfigStore
 
 
 def _dispatch_controller():
@@ -287,6 +289,54 @@ def test_embedded_dynamic_model_path_uses_selected_profile(monkeypatch, tmp_path
         "dynamic_feature_dim.txt",
         "dynamic_feature_mode.txt",
     ]
+
+
+def test_apply_model_variant_updates_config_and_resets_infer(monkeypatch, tmp_path):
+    for key in (
+        "DPLM_MODELS_DIR",
+        "DPLM_MODEL_PATH",
+        "DPLM_CLASSES_PATH",
+        "DPLM_FEATURE_DIM_PATH",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    controller = _dispatch_controller()
+    store = ConfigStore(tmp_path / "config.json")
+    config = AppConfig()
+    store.save(config)
+    controller._config_store = store
+    controller._config_file = config
+    controller._config = config
+    controller._apply_runtime_config = lambda: None
+    controller._reset_db_bridge = lambda: None
+    controller._embedded_active = False
+    controller.model_variant_changed = _Event()
+    emitted = []
+    closed = []
+
+    class FakeInfer:
+        def close(self):
+            closed.append(True)
+
+    controller._embedded_infer = FakeInfer()
+    controller.model_variant_changed.connect(emitted.append)
+    monkeypatch.setenv("DPLM_MODELS_DIR", "models/old")
+
+    ok, errors, _warnings = controller.apply_model_variant("ipn_external")
+
+    assert ok is True
+    assert errors == []
+    saved = store.load(include_env=False)
+    expected_dir = "models/experiments/external_negative/ipn_external"
+    assert saved.paths.models_dir == expected_dir
+    assert saved.paths.model_path == f"{expected_dir}/knn.pkl"
+    assert saved.paths.classes_path == f"{expected_dir}/classes.json"
+    assert saved.paths.feature_dim_path == f"{expected_dir}/feature_dim.txt"
+    assert controller._embedded_infer is None
+    assert closed == [True]
+    assert emitted == ["ipn_external"]
+    assert controller.model_variant == "ipn_external"
+    assert "DPLM_MODELS_DIR" not in os.environ
 
 
 def test_set_recognition_model_mode_accepts_auto_and_falls_back_to_auto():

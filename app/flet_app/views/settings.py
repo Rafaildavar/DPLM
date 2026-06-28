@@ -65,6 +65,26 @@ class SettingsView:
             "feature_dim_path", paths.get("feature_dim_path")
         )
         self._log_dir = self._field("log_dir", paths.get("log_dir"))
+        self._model_variant_dd = ft.Dropdown(
+            label="Набор моделей",
+            value=controller.model_variant,
+            border_color=COLOR_SURFACE_HIGH,
+            editable=False,
+            options=self._model_variant_options(),
+        )
+        self._apply_model_variant_btn = ft.FilledButton(
+            content=ft.Text("Применить набор", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.SWAP_HORIZ,
+            style=ft.ButtonStyle(
+                bgcolor=COLOR_ACCENT,
+                color=ft.Colors.WHITE,
+                padding=ft.Padding.symmetric(horizontal=20, vertical=12),
+            ),
+            on_click=self._on_apply_model_variant,
+        )
+        self._model_variant_status = ft.Text(
+            "", size=13, color=COLOR_SUCCESS, visible=False
+        )
 
         self._camera_index = self._field("Camera index", recognition.get("camera_index"))
         self._target_fps = self._field("FPS", recognition.get("target_fps"))
@@ -259,6 +279,8 @@ class SettingsView:
         self._classes_path.value = str(paths.get("classes_path") or "")
         self._feature_dim_path.value = str(paths.get("feature_dim_path") or "")
         self._log_dir.value = str(paths.get("log_dir") or "")
+        self._model_variant_dd.options = self._model_variant_options()
+        self._model_variant_dd.value = self._controller.model_variant
 
         self._camera_index.value = str(recognition.get("camera_index") or 0)
         self._target_fps.value = str(recognition.get("target_fps") or 30)
@@ -420,6 +442,36 @@ class SettingsView:
         self._tech_status.visible = True
         self._refresh_status(update=True)
 
+    def _model_variant_options(self) -> list[ft.DropdownOption]:
+        try:
+            variants = self._controller.list_model_variants()
+        except Exception:
+            variants = []
+        return [
+            ft.DropdownOption(
+                key=str(item.get("key") or ""),
+                text=str(item.get("label") or item.get("key") or ""),
+            )
+            for item in variants
+            if str(item.get("key") or "").strip()
+        ]
+
+    def _on_apply_model_variant(self, _e) -> None:
+        ok, errors, warnings = self._controller.apply_model_variant(
+            str(self._model_variant_dd.value or "production")
+        )
+        if ok:
+            self._model_variant_status.value = "Набор моделей применен"
+            if warnings:
+                self._model_variant_status.value += " · " + " · ".join(warnings)
+            self._model_variant_status.color = COLOR_SUCCESS
+            self._refresh_config_fields()
+        else:
+            self._model_variant_status.value = "Не применено: " + "; ".join(errors)
+            self._model_variant_status.color = COLOR_DANGER
+        self._model_variant_status.visible = True
+        self._refresh_status(update=True)
+
     def _on_toggle_recognition(self, _e) -> None:
         self._controller.toggle_recognition()
         self._refresh_status(update=True)
@@ -579,6 +631,14 @@ class SettingsView:
                 spacing=14,
                 controls=[
                     self._section_title(ft.Icons.FOLDER_OPEN, "Пути"),
+                    self._responsive(self._model_variant_dd),
+                    ft.Row(
+                        controls=[self._apply_model_variant_btn],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    self._model_variant_status,
+                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     self._responsive(self._data_dir, self._models_dir),
                     self._responsive(self._model_path, self._classes_path),
                     self._responsive(self._feature_dim_path, self._log_dir),

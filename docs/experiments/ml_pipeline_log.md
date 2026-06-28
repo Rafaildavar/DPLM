@@ -2586,3 +2586,49 @@ PYTHON=.venv/bin/python make external-negative-experiments
 - Затем добавить IPN-style continuous-session metrics:
   `sequence_edit_distance`, `sequence_accuracy`,
   `live_false_dynamic_activation_rate`, `dynamic_start/end_latency_frames`.
+
+### H-052: Live model variants должны переключаться из UI, а не через env
+
+Статус: `implemented`
+
+Дата: `2026-06-29`
+
+Проблема:
+- Для live-тестов нужно часто сравнивать:
+  - `production`;
+  - `baseline_internal`;
+  - `ipn_external`;
+  - `combined_external`.
+- Запускать приложение каждый раз через `DPLM_MODELS_DIR=...` неудобно и
+  повышает риск ошибиться при сборе метрик.
+
+Изменение:
+- Добавлен controller API:
+  - `list_model_variants()`;
+  - `apply_model_variant(variant)`;
+  - `model_variant`;
+  - событие `model_variant_changed`.
+- На главной странице в `Quick Settings` добавлен dropdown `Variant`.
+- В `Settings -> Пути` добавлен dropdown `Набор моделей` и кнопка применения.
+- При смене variant сохраняются:
+  - `models_dir`;
+  - `model_path`;
+  - `classes_path`;
+  - `feature_dim_path`.
+- Текущий embedded infer сбрасывается, чтобы следующий live inference загрузил
+  выбранные model artifacts.
+- Path env overrides `DPLM_MODELS_DIR`, `DPLM_MODEL_PATH`,
+  `DPLM_CLASSES_PATH`, `DPLM_FEATURE_DIM_PATH` очищаются в текущем процессе,
+  чтобы UI-переключатель не конфликтовал с прошлым терминальным запуском.
+
+Live variants:
+- `production` -> `models`;
+- `baseline_internal` -> `models/experiments/external_negative/baseline_internal`;
+- `ipn_external` -> `models/experiments/external_negative/ipn_external`;
+- `combined_external` -> `models/experiments/external_negative/combined_external`.
+
+Проверки:
+- `.venv/bin/python -m py_compile app/flet_app/controller.py app/flet_app/views/home.py app/flet_app/views/settings.py`
+  -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
+  -> `41 passed`.

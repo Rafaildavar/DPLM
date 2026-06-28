@@ -209,6 +209,14 @@ class HomeView:
             ],
             on_select=self._on_model_mode_changed,
         )
+        self._model_variant_dd = ft.Dropdown(
+            label="Variant",
+            value=controller.model_variant,
+            width=190,
+            dense=True,
+            options=self._model_variant_options(),
+            on_select=self._on_model_variant_changed,
+        )
         self._dynamic_profile_dd = ft.Dropdown(
             label="Dynamic",
             value=controller.dynamic_model_profile,
@@ -289,6 +297,7 @@ class HomeView:
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
         controller.recognition_model_mode_changed.connect(self._on_model_mode)
         controller.dynamic_model_profile_changed.connect(self._on_dynamic_profile)
+        controller.model_variant_changed.connect(self._on_model_variant)
         controller.static_rejection_method_changed.connect(self._on_static_rejection_method)
         controller.live_evaluation_changed.connect(self._on_live_evaluation)
 
@@ -298,6 +307,7 @@ class HomeView:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
         self._visible = True
+        self._apply_model_variant(self._controller.model_variant)
         self._refresh_eval_labels()
         self._refresh_activity()
         self._apply_live_evaluation(self._controller.current_live_evaluation())
@@ -323,6 +333,20 @@ class HomeView:
                 out.append(clean)
                 seen.add(key)
         return out
+
+    def _model_variant_options(self) -> list[ft.DropdownOption]:
+        try:
+            variants = self._controller.list_model_variants()
+        except Exception:
+            variants = []
+        return [
+            ft.DropdownOption(
+                key=str(item.get("key") or ""),
+                text=str(item.get("label") or item.get("key") or ""),
+            )
+            for item in variants
+            if str(item.get("key") or "").strip()
+        ]
 
     def _refresh_eval_labels(self) -> None:
         labels = self._recognition_label_options()
@@ -387,6 +411,25 @@ class HomeView:
         self._controller.set_recognition_model_mode(
             str(self._model_mode_dd.value or "auto")
         )
+        self._refresh_eval_labels()
+
+    def _on_model_variant_changed(self, _e) -> None:
+        ok, errors, warnings = self._controller.apply_model_variant(
+            str(self._model_variant_dd.value or "production")
+        )
+        if not ok:
+            self._status_text.value = "Variant error: " + "; ".join(errors)
+            try:
+                self._status_text.update()
+            except Exception:
+                pass
+            return
+        if warnings:
+            self._status_text.value = "Variant warning: " + " · ".join(warnings)
+            try:
+                self._status_text.update()
+            except Exception:
+                pass
         self._refresh_eval_labels()
 
     def _on_dynamic_profile_changed(self, _e) -> None:
@@ -733,6 +776,18 @@ class HomeView:
         except Exception:
             pass
 
+    def _on_model_variant(self, value: str) -> None:
+        self._page.run_thread(self._apply_model_variant, value)
+
+    def _apply_model_variant(self, value: str) -> None:
+        self._model_variant_dd.options = self._model_variant_options()
+        if self._model_variant_dd.value != value:
+            self._model_variant_dd.value = value
+        try:
+            self._model_variant_dd.update()
+        except Exception:
+            pass
+
     def _on_static_rejection_method(self, value: str) -> None:
         self._page.run_thread(self._apply_static_rejection_method, value)
 
@@ -799,6 +854,7 @@ class HomeView:
         self._eval_timeout.disabled = active
         self._eval_threshold.disabled = active
         self._model_mode_dd.disabled = active
+        self._model_variant_dd.disabled = active
         self._dynamic_profile_dd.disabled = active
         self._static_rejection_dd.disabled = active
         self._eval_start_btn.disabled = active
@@ -824,6 +880,7 @@ class HomeView:
             self._eval_timeout,
             self._eval_threshold,
             self._model_mode_dd,
+            self._model_variant_dd,
             self._dynamic_profile_dd,
             self._static_rejection_dd,
             self._eval_start_btn,
@@ -1103,6 +1160,7 @@ class HomeView:
                         wrap=True,
                         controls=[
                             self._model_mode_dd,
+                            self._model_variant_dd,
                             self._dynamic_profile_dd,
                             self._static_rejection_dd,
                         ],

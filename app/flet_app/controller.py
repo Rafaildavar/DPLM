@@ -199,6 +199,19 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
 }
+MODEL_VARIANT_PRODUCTION = "production"
+MODEL_VARIANT_DIRS = {
+    MODEL_VARIANT_PRODUCTION: "models",
+    "baseline_internal": "models/experiments/external_negative/baseline_internal",
+    "ipn_external": "models/experiments/external_negative/ipn_external",
+    "combined_external": "models/experiments/external_negative/combined_external",
+}
+MODEL_VARIANT_LABELS = {
+    MODEL_VARIANT_PRODUCTION: "production",
+    "baseline_internal": "baseline_internal",
+    "ipn_external": "ipn_external",
+    "combined_external": "combined_external",
+}
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
 STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
@@ -256,6 +269,7 @@ class AppController:
         recognition_model_mode_changed(str)
         dynamic_model_profile_changed(str)
         static_rejection_method_changed(str)
+        model_variant_changed(str)
         sample_recording_changed(dict)
         live_evaluation_changed(dict)
     """
@@ -311,6 +325,7 @@ class AppController:
         self.recognition_model_mode_changed = _Event()
         self.dynamic_model_profile_changed = _Event()
         self.static_rejection_method_changed = _Event()
+        self.model_variant_changed = _Event()
         self.sample_recording_changed = _Event()
         self.live_evaluation_changed = _Event()
 
@@ -474,6 +489,63 @@ class AppController:
         self._config = self._config_store.load(include_env=True)
         return self._config.to_dict()
 
+    @property
+    def model_variant(self) -> str:
+        self._config_file = self._config_store.load(include_env=False)
+        return self._model_variant_for_dir(self._config_file.paths.models_dir)
+
+    def list_model_variants(self) -> list[dict[str, Any]]:
+        current = self.model_variant
+        variants: list[dict[str, Any]] = []
+        for key, rel_dir in MODEL_VARIANT_DIRS.items():
+            models_dir = resolve_config_path(rel_dir)
+            variants.append(
+                {
+                    "key": key,
+                    "label": MODEL_VARIANT_LABELS.get(key, key),
+                    "models_dir": str(models_dir),
+                    "exists": models_dir.exists(),
+                    "selected": key == current,
+                    "static_model_exists": (models_dir / "knn.pkl").exists(),
+                    "dynamic_model_exists": (models_dir / "dynamic_knn.pkl").exists(),
+                }
+            )
+        return variants
+
+    def apply_model_variant(self, variant: str) -> tuple[bool, list[str], list[str]]:
+        target = str(variant or "").strip()
+        if target not in MODEL_VARIANT_DIRS:
+            target = MODEL_VARIANT_PRODUCTION
+        for env_key in (
+            "DPLM_MODELS_DIR",
+            "DPLM_MODEL_PATH",
+            "DPLM_CLASSES_PATH",
+            "DPLM_FEATURE_DIM_PATH",
+        ):
+            os.environ.pop(env_key, None)
+        models_dir = MODEL_VARIANT_DIRS[target]
+        raw = self.get_app_config()
+        paths = dict(raw.get("paths") or {})
+        paths.update(
+            {
+                "models_dir": models_dir,
+                "model_path": f"{models_dir}/knn.pkl",
+                "classes_path": f"{models_dir}/classes.json",
+                "feature_dim_path": f"{models_dir}/feature_dim.txt",
+            }
+        )
+        raw["paths"] = paths
+        ok, errors, warnings = self.save_app_config(raw)
+        if not ok:
+            return ok, errors, warnings
+
+        self._reset_embedded_infer_after_model_change()
+        event = getattr(self, "model_variant_changed", None)
+        if event is not None:
+            event.emit(target)
+        self._set_status(f"Model variant: {target}")
+        return ok, errors, warnings
+
     def get_config_env_overrides(self) -> dict[str, str]:
         return self._config_store.env_overrides()
 
@@ -614,6 +686,43 @@ class AppController:
 
     def _configured_taxonomy_path(self) -> Path:
         return DEFAULT_TAXONOMY_PATH
+
+    def _model_variant_for_dir(self, models_dir: str | Path) -> str:
+        try:
+            current = resolve_config_path(models_dir).resolve()
+        except Exception:
+            current = resolve_config_path(models_dir)
+        for key, rel_dir in MODEL_VARIANT_DIRS.items():
+            try:
+                candidate = resolve_config_path(rel_dir).resolve()
+            except Exception:
+                candidate = resolve_config_path(rel_dir)
+            if current == candidate:
+                return key
+        return "custom"
+
+    def _reset_embedded_infer_after_model_change(self) -> None:
+        try:
+            self._reset_gesture_confirmation()
+        except Exception:
+            pass
+        self._set_confidence(0.0)
+        if getattr(self, "_last_label", ""):
+            self._last_label = ""
+            try:
+                self.gesture_detected.emit("")
+            except Exception:
+                pass
+
+        infer = getattr(self, "_embedded_infer", None)
+        self._embedded_infer = None
+        if infer is not None:
+            try:
+                infer.close()
+            except Exception:
+                pass
+        if getattr(self, "_embedded_active", False):
+            self._set_status(self._live_recognition_status())
 
     def _dynamic_model_path(self) -> Path:
         filename = DYNAMIC_MODEL_FILENAMES.get(
