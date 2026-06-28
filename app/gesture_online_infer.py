@@ -49,6 +49,27 @@ DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
 DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
 DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.20
 DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
+STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
+STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
+STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
+STATIC_REJECTION_ONE_VS_REST_LOGREG = "one_vs_rest_logreg"
+STATIC_REJECTION_ONE_CLASS_SVM = "one_class_svm"
+STATIC_REJECTION_ISOLATION_FOREST = "isolation_forest"
+STATIC_REJECTION_LOCAL_OUTLIER_FACTOR = "local_outlier_factor"
+STATIC_REJECTION_METRIC_NCA_CENTROID = "metric_nca_centroid"
+STATIC_REJECTION_MLP_NEGATIVE_CLASSES = "mlp_negative_classes"
+DEFAULT_STATIC_REJECTION_METHOD = STATIC_REJECTION_OPEN_SET_POLICY
+STATIC_REJECTION_METHODS = (
+    STATIC_REJECTION_NEGATIVE_CLASSES,
+    STATIC_REJECTION_CONFIDENCE_THRESHOLD,
+    STATIC_REJECTION_OPEN_SET_POLICY,
+    STATIC_REJECTION_ONE_VS_REST_LOGREG,
+    STATIC_REJECTION_ONE_CLASS_SVM,
+    STATIC_REJECTION_ISOLATION_FOREST,
+    STATIC_REJECTION_LOCAL_OUTLIER_FACTOR,
+    STATIC_REJECTION_METRIC_NCA_CENTROID,
+    STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
+)
 
 
 class GestureOnlineInfer:
@@ -68,6 +89,8 @@ class GestureOnlineInfer:
         feature_mode: Optional[str] = None,
         gesture_signatures_path: Optional[Path] = None,
         gesture_rejection_path: Optional[Path] = None,
+        static_rejection_verifier_path: Optional[Path] = None,
+        static_rejection_method: str = DEFAULT_STATIC_REJECTION_METHOD,
         window: int = 30,
         two_hands: bool = False,
         initialize_detector: bool = True,
@@ -91,6 +114,10 @@ class GestureOnlineInfer:
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
         self._gesture_rejection: dict[str, Any] = {}
+        self._static_rejection_method = self._normalize_static_rejection_method(
+            static_rejection_method
+        )
+        self._static_rejection_verifiers: dict[str, Any] = {}
         self._dynamic_segmenter: DynamicMotionSegmenter | None = None
         self._pending_dynamic_prediction: tuple[str, float] | None = None
         self._pending_dynamic_repeats = 0
@@ -108,6 +135,9 @@ class GestureOnlineInfer:
         )
         gesture_rejection_path = gesture_rejection_path or (
             model_path.parent / "gesture_rejection.json"
+        )
+        static_rejection_verifier_path = static_rejection_verifier_path or (
+            model_path.parent / "static_rejection_verifiers.pkl"
         )
 
         try:
@@ -179,6 +209,12 @@ class GestureOnlineInfer:
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
         self._gesture_rejection = self._load_gesture_rejection(gesture_rejection_path)
+        if self._uses_global_dynamic_motion():
+            self._static_rejection_verifiers = {}
+        else:
+            self._static_rejection_verifiers = self._load_static_rejection_verifiers(
+                static_rejection_verifier_path
+            )
         try:
             self._gesture_taxonomy = load_gesture_taxonomy()
         except Exception:
@@ -194,6 +230,23 @@ class GestureOnlineInfer:
             except Exception as e:
                 self._init_error = str(e)
                 self._detector = None
+
+    def _normalize_static_rejection_method(self, method: str) -> str:
+        clean = str(method or "").strip().lower()
+        return clean if clean in STATIC_REJECTION_METHODS else DEFAULT_STATIC_REJECTION_METHOD
+
+    @property
+    def static_rejection_method(self) -> str:
+        return self._static_rejection_method
+
+    def set_static_rejection_method(self, method: str) -> None:
+        target = self._normalize_static_rejection_method(method)
+        if target == self._static_rejection_method:
+            return
+        self._static_rejection_method = target
+        self._last_static_decision = {}
+        self._window.clear()
+        self._finger_count_window.clear()
 
     def _infer_raw_feature_dim(self) -> int:
         return max(
@@ -606,9 +659,13 @@ class GestureOnlineInfer:
         distance_multiplier = float(thresholds.get("distance_multiplier", 0.0))
 
         negative_label, negative_confidence = self._best_negative_prediction(ranked)
+        method = self._normalize_static_rejection_method(
+            getattr(self, "_static_rejection_method", DEFAULT_STATIC_REJECTION_METHOD)
+        )
         decision: dict[str, Any] = {
             "source": "accepted",
             "rejection_reason": "",
+            "rejection_method": method,
             "model_label": str(label or model_label or ""),
             "model_confidence": float(confidence),
             "top2_label": top2_label,
@@ -620,17 +677,74 @@ class GestureOnlineInfer:
             "negative_threshold": negative_threshold,
         }
 
-        if self._is_negative_label(label) or negative_confidence >= negative_threshold:
-            decision["source"] = "negative_rejected"
-            decision["rejection_reason"] = "negative_class"
+        if method == STATIC_REJECTION_NEGATIVE_CLASSES:
+            if self._is_negative_label(label):
+                return self._reject_static_prediction(
+                    decision,
+                    source="negative_rejected",
+                    reason="negative_class",
+                )
             self._last_static_decision = decision
-            return "", 0.0
+            return str(label), float(confidence)
+
+        if method == STATIC_REJECTION_CONFIDENCE_THRESHOLD:
+            positive_threshold = float(
+                thresholds.get(
+                    "positive_confidence",
+                    thresholds.get("negative_confidence", 0.65),
+                )
+            )
+            decision["positive_threshold"] = positive_threshold
+            if self._is_negative_label(label):
+                return self._reject_static_prediction(
+                    decision,
+                    source="negative_rejected",
+                    reason="negative_class",
+                )
+            if confidence < positive_threshold:
+                return self._reject_static_prediction(
+                    decision,
+                    source="confidence_rejected",
+                    reason="low_confidence",
+                )
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        if method in {
+            STATIC_REJECTION_ONE_VS_REST_LOGREG,
+            STATIC_REJECTION_ONE_CLASS_SVM,
+            STATIC_REJECTION_ISOLATION_FOREST,
+            STATIC_REJECTION_LOCAL_OUTLIER_FACTOR,
+            STATIC_REJECTION_METRIC_NCA_CENTROID,
+            STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
+        }:
+            if self._is_negative_label(label):
+                return self._reject_static_prediction(
+                    decision,
+                    source="negative_rejected",
+                    reason="negative_class",
+                )
+            return self._apply_static_verifier_method(
+                method,
+                str(label),
+                float(confidence),
+                model_feat.reshape(-1),
+                decision,
+            )
+
+        if self._is_negative_label(label) or negative_confidence >= negative_threshold:
+            return self._reject_static_prediction(
+                decision,
+                source="negative_rejected",
+                reason="negative_class",
+            )
 
         if len(ranked) > 1 and min_margin > 0.0 and margin < min_margin:
-            decision["source"] = "margin_rejected"
-            decision["rejection_reason"] = "low_margin"
-            self._last_static_decision = decision
-            return "", 0.0
+            return self._reject_static_prediction(
+                decision,
+                source="margin_rejected",
+                reason="low_margin",
+            )
 
         prototype = self._static_prototype_distance(
             label,
@@ -639,13 +753,207 @@ class GestureOnlineInfer:
         )
         decision.update(prototype)
         if prototype.get("prototype_rejected"):
-            decision["source"] = "prototype_rejected"
-            decision["rejection_reason"] = "far_from_prototype"
-            self._last_static_decision = decision
-            return "", 0.0
+            return self._reject_static_prediction(
+                decision,
+                source="prototype_rejected",
+                reason="far_from_prototype",
+            )
 
         self._last_static_decision = decision
         return str(label), float(confidence)
+
+    def _reject_static_prediction(
+        self,
+        decision: dict[str, Any],
+        *,
+        source: str,
+        reason: str,
+    ) -> tuple[str, float]:
+        decision["source"] = str(source)
+        decision["rejection_reason"] = str(reason)
+        self._last_static_decision = decision
+        return "", 0.0
+
+    def _static_verifier_payload(self, method: str) -> dict[str, Any]:
+        payload = getattr(self, "_static_rejection_verifiers", {}) or {}
+        methods = payload.get("methods") if isinstance(payload, dict) else {}
+        if not isinstance(methods, dict):
+            return {}
+        raw = methods.get(method)
+        return raw if isinstance(raw, dict) else {}
+
+    def _predict_positive_probability(self, model: Any, feature: np.ndarray) -> float:
+        if not hasattr(model, "predict_proba"):
+            prediction = model.predict(feature.reshape(1, -1))
+            return 1.0 if int(prediction[0]) == 1 else 0.0
+        probabilities = np.asarray(model.predict_proba(feature.reshape(1, -1))[0], dtype=float)
+        classes = list(getattr(model, "classes_", range(len(probabilities))))
+        positive_index = 1 if len(probabilities) > 1 else 0
+        for index, raw_class in enumerate(classes):
+            try:
+                if int(raw_class) == 1:
+                    positive_index = index
+                    break
+            except (TypeError, ValueError):
+                if str(raw_class).lower() in {"1", "true", "positive"}:
+                    positive_index = index
+                    break
+        return float(probabilities[positive_index])
+
+    def _apply_static_verifier_method(
+        self,
+        method: str,
+        label: str,
+        confidence: float,
+        feature: np.ndarray,
+        decision: dict[str, Any],
+    ) -> tuple[str, float]:
+        payload = self._static_verifier_payload(method)
+        decision["verifier_method"] = method
+        if not payload:
+            decision["source"] = "verifier_missing_accepted"
+            decision["rejection_reason"] = ""
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        if method == STATIC_REJECTION_ONE_VS_REST_LOGREG:
+            verifiers = payload.get("verifiers")
+            verifier = verifiers.get(label) if isinstance(verifiers, dict) else None
+            if verifier is None:
+                decision["source"] = "verifier_missing_accepted"
+                self._last_static_decision = decision
+                return str(label), float(confidence)
+            probability = self._predict_positive_probability(verifier, feature)
+            threshold = float(payload.get("threshold", 0.50))
+            decision.update(
+                {
+                    "verifier_probability": probability,
+                    "verifier_threshold": threshold,
+                    "verifier_label": label,
+                }
+            )
+            if probability < threshold:
+                return self._reject_static_prediction(
+                    decision,
+                    source="verifier_rejected",
+                    reason="one_vs_rest_low_probability",
+                )
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        if method in {
+            STATIC_REJECTION_ONE_CLASS_SVM,
+            STATIC_REJECTION_ISOLATION_FOREST,
+            STATIC_REJECTION_LOCAL_OUTLIER_FACTOR,
+        }:
+            models = payload.get("models")
+            verifier = models.get(label) if isinstance(models, dict) else None
+            if verifier is None:
+                decision["source"] = "verifier_missing_accepted"
+                self._last_static_decision = decision
+                return str(label), float(confidence)
+            prediction = int(verifier.predict(feature.reshape(1, -1))[0])
+            score = 0.0
+            scorer = getattr(verifier, "decision_function", None)
+            if callable(scorer):
+                try:
+                    score = float(np.asarray(scorer(feature.reshape(1, -1))).reshape(-1)[0])
+                except Exception:
+                    score = 0.0
+            decision.update(
+                {
+                    "verifier_label": label,
+                    "verifier_prediction": prediction,
+                    "verifier_score": score,
+                }
+            )
+            if prediction != 1:
+                return self._reject_static_prediction(
+                    decision,
+                    source="outlier_rejected",
+                    reason=f"{method}_outlier",
+                )
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        if method == STATIC_REJECTION_METRIC_NCA_CENTROID:
+            transformer = payload.get("transformer")
+            prototypes = payload.get("prototypes")
+            prototype = prototypes.get(label) if isinstance(prototypes, dict) else None
+            if transformer is None or not isinstance(prototype, dict):
+                decision["source"] = "verifier_missing_accepted"
+                self._last_static_decision = decision
+                return str(label), float(confidence)
+            embedded = np.asarray(
+                transformer.transform(feature.reshape(1, -1))[0],
+                dtype=np.float32,
+            )
+            centroid = np.asarray(prototype.get("centroid", []), dtype=np.float32)
+            threshold = float(prototype.get("threshold", 0.0))
+            distance = float(np.linalg.norm(embedded - centroid)) if centroid.size else 0.0
+            decision.update(
+                {
+                    "verifier_label": label,
+                    "verifier_distance": distance,
+                    "verifier_threshold": threshold,
+                }
+            )
+            if threshold > 0.0 and distance > threshold:
+                return self._reject_static_prediction(
+                    decision,
+                    source="metric_distance_rejected",
+                    reason="metric_centroid_distance",
+                )
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        if method == STATIC_REJECTION_MLP_NEGATIVE_CLASSES:
+            model = payload.get("model")
+            if model is None:
+                decision["source"] = "verifier_missing_accepted"
+                self._last_static_decision = decision
+                return str(label), float(confidence)
+            ranked = self._ranked_labels_from_model(model, feature)
+            verifier_confidence, verifier_label = ranked[0] if ranked else (0.0, "")
+            negative_label, negative_confidence = self._best_negative_prediction(ranked)
+            threshold = float(payload.get("negative_threshold", 0.65))
+            decision.update(
+                {
+                    "verifier_label": verifier_label,
+                    "verifier_confidence": float(verifier_confidence),
+                    "verifier_negative_label": negative_label,
+                    "verifier_negative_confidence": float(negative_confidence),
+                    "verifier_threshold": threshold,
+                }
+            )
+            if self._is_negative_label(verifier_label) or negative_confidence >= threshold:
+                return self._reject_static_prediction(
+                    decision,
+                    source="mlp_negative_rejected",
+                    reason="mlp_negative_class",
+                )
+            self._last_static_decision = decision
+            return str(label), float(confidence)
+
+        self._last_static_decision = decision
+        return str(label), float(confidence)
+
+    def _ranked_labels_from_model(
+        self,
+        model: Any,
+        feature: np.ndarray,
+    ) -> list[tuple[float, str]]:
+        if not hasattr(model, "predict_proba"):
+            prediction = model.predict(feature.reshape(1, -1))
+            label = self._label_from_estimator_class(prediction[0]) if len(prediction) else ""
+            return [(1.0, label)] if label else []
+        probabilities = np.asarray(model.predict_proba(feature.reshape(1, -1))[0], dtype=float)
+        classes = list(getattr(model, "classes_", range(len(probabilities))))
+        ranked: list[tuple[float, str]] = []
+        for column, probability in enumerate(probabilities):
+            raw_class = classes[column] if column < len(classes) else column
+            ranked.append((float(probability), self._label_from_estimator_class(raw_class)))
+        return sorted(ranked, key=lambda item: item[0], reverse=True)
 
     def _static_prototype_distance(
         self,
@@ -712,6 +1020,32 @@ class GestureOnlineInfer:
         if not isinstance(metadata.get("classes"), dict):
             return {}
         return metadata
+
+    def _load_static_rejection_verifiers(self, verifier_path: Path) -> dict[str, Any]:
+        if not verifier_path.exists():
+            return {}
+        try:
+            import warnings
+
+            import joblib
+
+            try:
+                from sklearn.exceptions import InconsistentVersionWarning
+            except ImportError:
+                InconsistentVersionWarning = UserWarning  # type: ignore[misc,assignment]
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", InconsistentVersionWarning)
+                payload = joblib.load(str(verifier_path))
+        except Exception as exc:
+            print(f"[w] static_rejection_verifiers.pkl ignored: {exc}", flush=True)
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        methods = payload.get("methods")
+        if not isinstance(methods, dict):
+            return {}
+        return payload
 
     def reset_temporal_state(self) -> None:
         self._window.clear()

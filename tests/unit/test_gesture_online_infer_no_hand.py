@@ -147,6 +147,17 @@ class _StaticProbabilityClassifier:
         return self._probabilities
 
 
+class _BinaryVerifier:
+    classes_ = np.asarray([0, 1])
+
+    def __init__(self, positive_probability: float) -> None:
+        self._positive_probability = float(positive_probability)
+
+    def predict_proba(self, _features):
+        p = self._positive_probability
+        return np.asarray([[1.0 - p, p]], dtype=float)
+
+
 class _ShapeCheckingClassifier:
     def __init__(self, expected_dim: int = 42) -> None:
         self.expected_shape = (1, expected_dim)
@@ -533,6 +544,45 @@ def test_static_prediction_rejects_far_from_class_prototype() -> None:
     assert infer._last_static_decision["source"] == "prototype_rejected"
     assert infer._last_static_decision["rejection_reason"] == "far_from_prototype"
     assert infer._last_static_decision["prototype_distance"] > 0.20
+
+
+def test_static_prediction_rejects_with_one_vs_rest_verifier() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    infer._clf = _StaticProbabilityClassifier([0.92, 0.08])
+    infer._classes = ["palm", "gun"]
+    infer._gesture_taxonomy = None
+    infer._static_rejection_method = "one_vs_rest_logreg"
+    infer._static_rejection_verifiers = {
+        "methods": {
+            "one_vs_rest_logreg": {
+                "status": "ok",
+                "threshold": 0.50,
+                "verifiers": {"palm": _BinaryVerifier(0.24)},
+            }
+        }
+    }
+    infer._gesture_rejection = {
+        "thresholds": {
+            "negative_confidence": 0.65,
+            "min_top1_top2_margin": 0.10,
+            "distance_multiplier": 2.5,
+        },
+        "classes": {},
+    }
+
+    label, confidence = infer._static_prediction(
+        np.asarray([[0.0, 0.0]], dtype=np.float32)
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert infer._last_static_decision["rejection_method"] == "one_vs_rest_logreg"
+    assert infer._last_static_decision["source"] == "verifier_rejected"
+    assert (
+        infer._last_static_decision["rejection_reason"]
+        == "one_vs_rest_low_probability"
+    )
+    assert infer._last_static_decision["verifier_probability"] == 0.24
 
 
 def test_reset_temporal_state_clears_dynamic_windows() -> None:

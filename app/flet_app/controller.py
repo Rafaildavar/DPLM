@@ -199,6 +199,26 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
 }
+STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
+STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
+STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
+STATIC_REJECTION_ONE_VS_REST_LOGREG = "one_vs_rest_logreg"
+STATIC_REJECTION_ONE_CLASS_SVM = "one_class_svm"
+STATIC_REJECTION_ISOLATION_FOREST = "isolation_forest"
+STATIC_REJECTION_LOCAL_OUTLIER_FACTOR = "local_outlier_factor"
+STATIC_REJECTION_METRIC_NCA_CENTROID = "metric_nca_centroid"
+STATIC_REJECTION_MLP_NEGATIVE_CLASSES = "mlp_negative_classes"
+STATIC_REJECTION_METHODS = (
+    STATIC_REJECTION_OPEN_SET_POLICY,
+    STATIC_REJECTION_ONE_VS_REST_LOGREG,
+    STATIC_REJECTION_NEGATIVE_CLASSES,
+    STATIC_REJECTION_CONFIDENCE_THRESHOLD,
+    STATIC_REJECTION_ONE_CLASS_SVM,
+    STATIC_REJECTION_ISOLATION_FOREST,
+    STATIC_REJECTION_LOCAL_OUTLIER_FACTOR,
+    STATIC_REJECTION_METRIC_NCA_CENTROID,
+    STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
+)
 DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
 SAMPLE_RECORDING_READY_FRAMES = 6
@@ -235,6 +255,7 @@ class AppController:
         two_hands_changed(bool)
         recognition_model_mode_changed(str)
         dynamic_model_profile_changed(str)
+        static_rejection_method_changed(str)
         sample_recording_changed(dict)
         live_evaluation_changed(dict)
     """
@@ -256,6 +277,7 @@ class AppController:
         self._embedded_active: bool = False
         self._recognition_model_mode: str = RECOGNITION_MODEL_AUTO
         self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_KNN
+        self._static_rejection_method: str = STATIC_REJECTION_OPEN_SET_POLICY
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
@@ -288,6 +310,7 @@ class AppController:
         self.two_hands_changed = _Event()
         self.recognition_model_mode_changed = _Event()
         self.dynamic_model_profile_changed = _Event()
+        self.static_rejection_method_changed = _Event()
         self.sample_recording_changed = _Event()
         self.live_evaluation_changed = _Event()
 
@@ -380,6 +403,18 @@ class AppController:
             profile
             if profile in DYNAMIC_MODEL_PROFILES
             else DYNAMIC_MODEL_PROFILE_KNN
+        )
+
+    @property
+    def static_rejection_method(self) -> str:
+        method = str(
+            getattr(self, "_static_rejection_method", STATIC_REJECTION_OPEN_SET_POLICY)
+            or STATIC_REJECTION_OPEN_SET_POLICY
+        ).strip()
+        return (
+            method
+            if method in STATIC_REJECTION_METHODS
+            else STATIC_REJECTION_OPEN_SET_POLICY
         )
 
     @property
@@ -574,6 +609,9 @@ class AppController:
     def _configured_feature_mode_path(self) -> Path:
         return self._configured_models_dir() / "feature_mode.txt"
 
+    def _static_rejection_verifier_path(self) -> Path:
+        return self._configured_models_dir() / "static_rejection_verifiers.pkl"
+
     def _configured_taxonomy_path(self) -> Path:
         return DEFAULT_TAXONOMY_PATH
 
@@ -715,6 +753,7 @@ class AppController:
                 "progress": 0.0,
                 "recognitionModelMode": self.recognition_model_mode,
                 "dynamicModelProfile": self.dynamic_model_profile,
+                "staticRejectionMethod": self.static_rejection_method,
                 "minConfidence": LIVE_EVAL_DEFAULT_MIN_CONFIDENCE,
                 "timeoutSeconds": LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS,
                 "lastPrediction": "",
@@ -748,6 +787,9 @@ class AppController:
             ),
             "dynamicModelProfile": str(
                 session.get("dynamic_model_profile") or self.dynamic_model_profile
+            ),
+            "staticRejectionMethod": str(
+                session.get("static_rejection_method") or self.static_rejection_method
             ),
             "minConfidence": float(session.get("min_confidence") or 0.0),
             "timeoutSeconds": float(session.get("timeout_seconds") or 0.0),
@@ -840,6 +882,7 @@ class AppController:
             "min_confidence": threshold,
             "recognition_model_mode": self.recognition_model_mode,
             "dynamic_model_profile": self.dynamic_model_profile,
+            "static_rejection_method": self.static_rejection_method,
             "cooldown_seconds": LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS,
             "attempt_started_at": now,
             "next_ready_at": now,
@@ -953,6 +996,7 @@ class AppController:
                 "timeout_seconds": payload.get("timeout_seconds"),
                 "recognition_model_mode": payload.get("recognition_model_mode"),
                 "dynamic_model_profile": payload.get("dynamic_model_profile"),
+                "static_rejection_method": payload.get("static_rejection_method"),
                 "attempts": payload.get("attempts", []),
                 "route_counts": self._live_evaluation_route_counts(
                     payload.get("attempts", [])
@@ -975,6 +1019,9 @@ class AppController:
                         "static_reject_reason": payload.get("static_reject_reason"),
                         "static_decision_source": payload.get(
                             "static_decision_source"
+                        ),
+                        "static_rejection_method": payload.get(
+                            "static_rejection_method"
                         ),
                         "static_model_label": payload.get("static_model_label"),
                         "static_model_confidence": payload.get(
@@ -1001,6 +1048,21 @@ class AppController:
                         ),
                         "static_prototype_threshold": payload.get(
                             "static_prototype_threshold"
+                        ),
+                        "static_verifier_method": payload.get("static_verifier_method"),
+                        "static_verifier_label": payload.get("static_verifier_label"),
+                        "static_verifier_probability": payload.get(
+                            "static_verifier_probability"
+                        ),
+                        "static_verifier_confidence": payload.get(
+                            "static_verifier_confidence"
+                        ),
+                        "static_verifier_score": payload.get("static_verifier_score"),
+                        "static_verifier_distance": payload.get(
+                            "static_verifier_distance"
+                        ),
+                        "static_verifier_threshold": payload.get(
+                            "static_verifier_threshold"
                         ),
                         "dynamic_label": payload.get("dynamic_label"),
                         "dynamic_confidence": payload.get("dynamic_confidence"),
@@ -1119,6 +1181,7 @@ class AppController:
         end_reason_counts: dict[str, int] = {}
         static_decision_counts: dict[str, int] = {}
         static_reject_reason_counts: dict[str, int] = {}
+        static_rejection_method_counts: dict[str, int] = {}
         static_hijack_count = 0
         static_accept_count = 0
         static_reject_count = 0
@@ -1146,6 +1209,11 @@ class AppController:
             if static_reject_reason:
                 static_reject_reason_counts[static_reject_reason] = (
                     static_reject_reason_counts.get(static_reject_reason, 0) + 1
+                )
+            static_method = str(item.get("static_rejection_method") or "").strip()
+            if static_method:
+                static_rejection_method_counts[static_method] = (
+                    static_rejection_method_counts.get(static_method, 0) + 1
                 )
             if route == "static":
                 static_accept_count += 1
@@ -1180,6 +1248,9 @@ class AppController:
         for reason, count in static_reject_reason_counts.items():
             suffix = self._live_evaluation_metric_suffix(reason)
             metrics[f"live_static_rejection_reason_{suffix}_count"] = float(count)
+        for method, count in static_rejection_method_counts.items():
+            suffix = self._live_evaluation_metric_suffix(method)
+            metrics[f"live_static_rejection_method_{suffix}_count"] = float(count)
 
         metrics["live_dynamic_recall"] = (
             float(correct / target) if expected_type == GESTURE_TYPE_DYNAMIC else 0.0
@@ -1351,6 +1422,11 @@ class AppController:
             "attempt_static_negative_confidence": "static_negative_confidence",
             "attempt_static_prototype_distance": "static_prototype_distance",
             "attempt_static_prototype_threshold": "static_prototype_threshold",
+            "attempt_static_verifier_probability": "static_verifier_probability",
+            "attempt_static_verifier_confidence": "static_verifier_confidence",
+            "attempt_static_verifier_score": "static_verifier_score",
+            "attempt_static_verifier_distance": "static_verifier_distance",
+            "attempt_static_verifier_threshold": "static_verifier_threshold",
             "attempt_axis_ratio": "dynamic_axis_ratio",
             "attempt_straightness": "dynamic_straightness",
             "attempt_motion_scale": "dynamic_motion_scale",
@@ -1723,10 +1799,14 @@ class AppController:
             expected = str(session.get("expected_label") or "unknown")
             mode = str(session.get("recognition_model_mode") or self.recognition_model_mode)
             profile = str(session.get("dynamic_model_profile") or self.dynamic_model_profile)
+            static_rejection_method = str(
+                session.get("static_rejection_method") or self.static_rejection_method
+            )
             run_name = (
                 f"live-{self._live_evaluation_metric_suffix(expected)}-"
                 f"{self._live_evaluation_metric_suffix(mode)}-"
-                f"{self._live_evaluation_metric_suffix(profile)}"
+                f"{self._live_evaluation_metric_suffix(profile)}-"
+                f"{self._live_evaluation_metric_suffix(static_rejection_method)}"
             )
             params = {
                 "expected_label": expected,
@@ -1735,6 +1815,7 @@ class AppController:
                 "timeout_seconds": float(session.get("timeout_seconds") or 0.0),
                 "recognition_model_mode": mode,
                 "dynamic_model_profile": profile,
+                "static_rejection_method": static_rejection_method,
                 "finish_reason": str(reason or ""),
             }
             try:
@@ -1753,6 +1834,7 @@ class AppController:
                     "timeout_seconds": session.get("timeout_seconds"),
                     "recognition_model_mode": mode,
                     "dynamic_model_profile": profile,
+                    "static_rejection_method": static_rejection_method,
                     "started_at": session.get("started_at"),
                     "finished_at": session.get("finished_at"),
                     "attempts": session.get("attempts", []),
@@ -1845,6 +1927,9 @@ class AppController:
             "static_decision_source": str(
                 route_metadata.get("static_decision_source") or ""
             ),
+            "static_rejection_method": str(
+                route_metadata.get("static_rejection_method") or ""
+            ),
             "static_model_label": str(
                 route_metadata.get("static_model_label") or ""
             ),
@@ -1876,6 +1961,27 @@ class AppController:
             ),
             "static_prototype_threshold": _float_or_none(
                 route_metadata.get("static_prototype_threshold")
+            ),
+            "static_verifier_method": str(
+                route_metadata.get("static_verifier_method") or ""
+            ),
+            "static_verifier_label": str(
+                route_metadata.get("static_verifier_label") or ""
+            ),
+            "static_verifier_probability": _float_or_none(
+                route_metadata.get("static_verifier_probability")
+            ),
+            "static_verifier_confidence": _float_or_none(
+                route_metadata.get("static_verifier_confidence")
+            ),
+            "static_verifier_score": _float_or_none(
+                route_metadata.get("static_verifier_score")
+            ),
+            "static_verifier_distance": _float_or_none(
+                route_metadata.get("static_verifier_distance")
+            ),
+            "static_verifier_threshold": _float_or_none(
+                route_metadata.get("static_verifier_threshold")
             ),
             "dynamic_label": str(route_metadata.get("dynamic_label") or ""),
             "dynamic_confidence": _float_or_none(
@@ -1994,6 +2100,7 @@ class AppController:
                 "timeout_seconds": session.get("timeout_seconds"),
                 "recognition_model_mode": session.get("recognition_model_mode"),
                 "dynamic_model_profile": session.get("dynamic_model_profile"),
+                "static_rejection_method": session.get("static_rejection_method"),
             }
         )
         self._append_live_evaluation_jsonl(attempt_payload, event_type="attempt")
@@ -2310,9 +2417,11 @@ class AppController:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
             model_suffix = f" (dynamic:{self.dynamic_model_profile})"
         elif self.recognition_model_mode == RECOGNITION_MODEL_AUTO:
-            model_suffix = f" (auto:{self.dynamic_model_profile})"
+            model_suffix = (
+                f" (auto:{self.dynamic_model_profile}, reject:{self.static_rejection_method})"
+            )
         else:
-            model_suffix = ""
+            model_suffix = f" (reject:{self.static_rejection_method})"
         if self._gesture_mode and self._pointer_mode:
             return f"Жесты и указатель включены{model_suffix}"
         if self._pointer_mode:
@@ -2338,6 +2447,8 @@ class AppController:
                     classes_path=self._configured_classes_path(),
                     feature_dim_path=self._configured_feature_dim_path(),
                     feature_mode_path=self._configured_feature_mode_path(),
+                    static_rejection_verifier_path=self._static_rejection_verifier_path(),
+                    static_rejection_method=self.static_rejection_method,
                     window=30,
                     two_hands=self._two_hands_mode,
                 )
@@ -2364,6 +2475,8 @@ class AppController:
                     classes_path=classes_path,
                     feature_dim_path=feature_dim_path,
                     feature_mode_path=feature_mode_path,
+                    static_rejection_verifier_path=self._static_rejection_verifier_path(),
+                    static_rejection_method=self.static_rejection_method,
                     window=self._embedded_recognition_window(),
                     two_hands=self._two_hands_mode,
                 )
@@ -3360,6 +3473,34 @@ class AppController:
                 pass
 
         event = getattr(self, "dynamic_model_profile_changed", None)
+        if event is not None:
+            event.emit(target)
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
+
+    def set_static_rejection_method(self, method: str) -> None:
+        target = str(method or "").strip().lower()
+        if target not in STATIC_REJECTION_METHODS:
+            target = STATIC_REJECTION_OPEN_SET_POLICY
+        if target == self.static_rejection_method:
+            return
+
+        self._static_rejection_method = target
+        self._reset_gesture_confirmation()
+        self._set_confidence(0.0)
+        if self._last_label:
+            self._last_label = ""
+            self.gesture_detected.emit("")
+
+        infer = self._embedded_infer
+        self._embedded_infer = None
+        if infer is not None:
+            try:
+                infer.close()
+            except Exception:
+                pass
+
+        event = getattr(self, "static_rejection_method_changed", None)
         if event is not None:
             event.emit(target)
         if self._embedded_active:

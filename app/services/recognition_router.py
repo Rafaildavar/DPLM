@@ -125,6 +125,15 @@ class GestureRecognitionRouter:
             if callable(setter):
                 setter(bool(enabled))
 
+    @property
+    def static_rejection_method(self) -> str:
+        return str(getattr(self._static_infer, "static_rejection_method", "") or "")
+
+    def set_static_rejection_method(self, method: str) -> None:
+        setter = getattr(self._static_infer, "set_static_rejection_method", None)
+        if callable(setter):
+            setter(method)
+
     def close(self) -> None:
         for infer in (self._static_infer, self._dynamic_infer):
             closer = getattr(infer, "close", None)
@@ -441,6 +450,9 @@ class GestureRecognitionRouter:
             ),
             "static_threshold": self._static_confidence_threshold,
             "static_decision_source": str(static_decision.get("source") or ""),
+            "static_rejection_method": str(
+                static_decision.get("rejection_method") or ""
+            ),
             "static_model_label": str(static_decision.get("model_label") or ""),
             "static_model_confidence": _decision_float(
                 static_decision,
@@ -473,6 +485,32 @@ class GestureRecognitionRouter:
             "static_prototype_threshold": _decision_float(
                 static_decision,
                 "prototype_threshold",
+            ),
+            "static_verifier_method": str(
+                static_decision.get("verifier_method") or ""
+            ),
+            "static_verifier_label": str(
+                static_decision.get("verifier_label") or ""
+            ),
+            "static_verifier_probability": _decision_float(
+                static_decision,
+                "verifier_probability",
+            ),
+            "static_verifier_confidence": _decision_float(
+                static_decision,
+                "verifier_confidence",
+            ),
+            "static_verifier_score": _decision_float(
+                static_decision,
+                "verifier_score",
+            ),
+            "static_verifier_distance": _decision_float(
+                static_decision,
+                "verifier_distance",
+            ),
+            "static_verifier_threshold": _decision_float(
+                static_decision,
+                "verifier_threshold",
             ),
             "dynamic_label": str(dynamic_out.get("label") or ""),
             "dynamic_confidence": float(dynamic_out.get("confidence") or 0.0),

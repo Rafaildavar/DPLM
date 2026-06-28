@@ -94,6 +94,15 @@ def live_evaluation_summary(log_dir: Path) -> dict[str, Any]:
     source_counts = Counter(
         str(row.get("dynamic_decision_source") or "unknown") for row in attempts
     )
+    static_method_counts = Counter(
+        str(row.get("static_rejection_method") or "unknown") for row in attempts
+    )
+    static_reject_reason_counts = Counter(
+        str(row.get("static_reject_reason") or "none") for row in attempts
+    )
+    static_decision_counts = Counter(
+        str(row.get("static_decision_source") or "unknown") for row in attempts
+    )
     negative_rejections = sum(
         1 for row in attempts if row.get("dynamic_decision_source") == "negative_rejected"
     )
@@ -126,6 +135,9 @@ def live_evaluation_summary(log_dir: Path) -> dict[str, Any]:
         "accuracy": correct / total if total else 0.0,
         "route_counts": dict(sorted(route_counts.items())),
         "dynamic_decision_sources": dict(sorted(source_counts.items())),
+        "static_rejection_methods": dict(sorted(static_method_counts.items())),
+        "static_rejection_reasons": dict(sorted(static_reject_reason_counts.items())),
+        "static_decision_sources": dict(sorted(static_decision_counts.items())),
         "negative_rejections": negative_rejections,
         "labels": labels,
     }
@@ -245,9 +257,12 @@ def render_html(report: dict[str, Any]) -> str:
 
   <section class="panel">
     <h2>Routes And Decisions</h2>
-    {counter_table("Route", live["route_counts"])}
-    {counter_table("Dynamic decision source", live["dynamic_decision_sources"])}
-  </section>
+	    {counter_table("Route", live["route_counts"])}
+	    {counter_table("Dynamic decision source", live["dynamic_decision_sources"])}
+	    {counter_table("Static rejection method", live["static_rejection_methods"])}
+	    {counter_table("Static decision source", live["static_decision_sources"])}
+	    {counter_table("Static rejection reason", live["static_rejection_reasons"])}
+	  </section>
 
   <section class="panel">
     <h2>Dataset</h2>

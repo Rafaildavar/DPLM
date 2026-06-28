@@ -1,6 +1,6 @@
 # GestureFlow ML System Design
 
-Last updated: `2026-06-27`
+Last updated: `2026-06-28`
 
 Purpose: единый living-документ по ML-системе GestureFlow для JMLC. Здесь
 фиксируется не только текущая архитектура, но и путь разработки: что уже
@@ -18,7 +18,8 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-038: `7/10`, wrong direction `30%` | analyze correct vs wrong trajectory features |
 | Negative examples / rejection layer | Added | H-041: static/dynamic synthetic negatives + rejection metadata | run static/negative live validation |
-| Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | integrate best static verifier |
+| Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
+| Live rejection A/B testing | Added | H-043: Flet + MLflow track `static_rejection_method` | run 20-attempt live matrix |
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
@@ -84,6 +85,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Taxonomy | `configs/gesture_taxonomy.json` | static/dynamic/negative label scope | Stable |
 | Static model artifacts | `models/knn.pkl`, `classes.json` | static/quasi-static recognizer | Stable |
 | Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
+| Static rejection verifiers | `models/static_rejection_verifiers.pkl` | one-vs-rest, one-class, isolation, LOF, metric, MLP verifiers | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
@@ -108,6 +110,10 @@ Current properties:
 - uses `expect_dim=42` so static inference is pose-based;
 - can reject unsafe predictions via negative class probability, top1/top2
   margin and distance-to-prototype;
+- can switch live rejection strategy in Flet:
+  `open_set_policy`, `one_vs_rest_logreg`, `negative_classes`,
+  `confidence_threshold`, `one_class_svm`, `isolation_forest`,
+  `local_outlier_factor`, `metric_nca_centroid`, `mlp_negative_classes`;
 - participates in auto routing only when dynamic route is not active.
 
 ### Dynamic
@@ -223,6 +229,10 @@ Live metrics:
 | `live_static_accept_rate` | accepted static route share |
 | `live_static_reject_rate` | rejected/no-route static share |
 | `live_static_false_positive_rate` | static false trigger on negative scenario |
+| `live_static_rejection_method_*_count` | which static reject strategy was tested |
+| `attempt_static_verifier_probability` | one-vs-rest verifier confidence per attempt |
+| `attempt_static_verifier_distance` | metric verifier distance per attempt |
+| `attempt_static_verifier_threshold` | live verifier rejection threshold |
 | `live_wrong_dynamic_direction_rate` | swipe direction confusion |
 | `live_negative_false_positive_rate` | false trigger on negative scenario |
 | `live_latency_avg_s`, `p50`, `p95` | interaction delay |
@@ -264,7 +274,8 @@ MLflow run types:
 | Run kind | Name pattern | Logged content |
 |---|---|---|
 | Training | `<model>-<feature_mode>` | params, model artifacts, rejection metadata, sample count, train accuracy |
-| Live evaluation | `live-<expected>-<mode>-<profile>` | live metrics, route counts, raw attempts artifact |
+| Static verifier training | `static-rejection-verifiers` | trained second-stage reject methods and method readiness |
+| Live evaluation | `live-<expected>-<mode>-<profile>-<static_rejection_method>` | live metrics, route counts, raw attempts artifact |
 
 Live MLflow runs also store an artifact bundle under `live_evaluation/`:
 
@@ -279,7 +290,8 @@ Every meaningful live test should be followed by:
 
 1. Check MLflow run exists.
 2. Compare `live_accuracy`, `live_static_hijack_rate`,
-   `live_wrong_dynamic_direction_rate`.
+   `live_wrong_dynamic_direction_rate`, `live_static_false_positive_rate`,
+   `live_static_rejection_method_*`.
 3. Write conclusion to `docs/experiments/ml_pipeline_log.md`.
 4. Update this file's Status Board if a component changed status.
 

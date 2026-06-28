@@ -17,7 +17,7 @@ import threading
 
 import flet as ft
 
-from app.flet_app.controller import AppController
+from app.flet_app.controller import AppController, STATIC_REJECTION_METHODS
 from app.flet_app.theme import (
     COLOR_ACCENT,
     COLOR_DANGER,
@@ -216,6 +216,18 @@ class HomeView:
             ],
             on_select=self._on_dynamic_profile_changed,
         )
+        self._static_rejection_dd = ft.Dropdown(
+            label="Reject",
+            value=controller.static_rejection_method,
+            width=220,
+            dense=True,
+            visible=controller.recognition_model_mode in {"auto", "static"},
+            options=[
+                ft.DropdownOption(key=method, text=method)
+                for method in STATIC_REJECTION_METHODS
+            ],
+            on_select=self._on_static_rejection_method_changed,
+        )
         self._two_hands_switch = ft.Switch(
             value=controller.two_hands_mode,
             label="Режим двух рук",
@@ -271,6 +283,7 @@ class HomeView:
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
         controller.recognition_model_mode_changed.connect(self._on_model_mode)
         controller.dynamic_model_profile_changed.connect(self._on_dynamic_profile)
+        controller.static_rejection_method_changed.connect(self._on_static_rejection_method)
         controller.live_evaluation_changed.connect(self._on_live_evaluation)
 
     # ---- Жизненный цикл (вызывается shell при показе/скрытии) ------------
@@ -373,6 +386,11 @@ class HomeView:
     def _on_dynamic_profile_changed(self, _e) -> None:
         self._controller.set_dynamic_model_profile(
             str(self._dynamic_profile_dd.value or "knn")
+        )
+
+    def _on_static_rejection_method_changed(self, _e) -> None:
+        self._controller.set_static_rejection_method(
+            str(self._static_rejection_dd.value or "open_set_policy")
         )
 
     def _parse_int_field(self, field: ft.TextField, default: int) -> int:
@@ -628,12 +646,17 @@ class HomeView:
         if self._model_mode_dd.value != value:
             self._model_mode_dd.value = value
         self._dynamic_profile_dd.visible = value in {"auto", "dynamic"}
+        self._static_rejection_dd.visible = value in {"auto", "static"}
         try:
             self._model_mode_dd.update()
         except Exception:
             pass
         try:
             self._dynamic_profile_dd.update()
+        except Exception:
+            pass
+        try:
+            self._static_rejection_dd.update()
         except Exception:
             pass
         self._refresh_eval_labels()
@@ -649,6 +672,20 @@ class HomeView:
         )
         try:
             self._dynamic_profile_dd.update()
+        except Exception:
+            pass
+
+    def _on_static_rejection_method(self, value: str) -> None:
+        self._page.run_thread(self._apply_static_rejection_method, value)
+
+    def _apply_static_rejection_method(self, value: str) -> None:
+        if self._static_rejection_dd.value != value:
+            self._static_rejection_dd.value = value
+        self._static_rejection_dd.visible = (
+            self._controller.recognition_model_mode in {"auto", "static"}
+        )
+        try:
+            self._static_rejection_dd.update()
         except Exception:
             pass
 
@@ -705,6 +742,7 @@ class HomeView:
         self._eval_threshold.disabled = active
         self._model_mode_dd.disabled = active
         self._dynamic_profile_dd.disabled = active
+        self._static_rejection_dd.disabled = active
         self._eval_start_btn.disabled = active
         self._eval_stop_btn.disabled = not active
         self._eval_miss_btn.disabled = not active
@@ -729,6 +767,7 @@ class HomeView:
             self._eval_threshold,
             self._model_mode_dd,
             self._dynamic_profile_dd,
+            self._static_rejection_dd,
             self._eval_start_btn,
             self._eval_stop_btn,
             self._auto_exec_switch,
@@ -851,6 +890,7 @@ class HomeView:
                             self._eval_attempts,
                             self._eval_timeout,
                             self._eval_threshold,
+                            self._static_rejection_dd,
                             self._eval_start_btn,
                             self._eval_stop_btn,
                         ],

@@ -1113,6 +1113,7 @@ def test_live_evaluation_static_rejection_metrics_for_negative_expected():
                 "result": "wrong",
                 "route": "static",
                 "static_decision_source": "accepted",
+                "static_rejection_method": "one_vs_rest_logreg",
             },
             {
                 "attempt": 2,
@@ -1120,6 +1121,7 @@ def test_live_evaluation_static_rejection_metrics_for_negative_expected():
                 "route": "none",
                 "static_reject_reason": "negative_class",
                 "static_decision_source": "negative_rejected",
+                "static_rejection_method": "one_vs_rest_logreg",
             },
         ],
     }
@@ -1131,6 +1133,10 @@ def test_live_evaluation_static_rejection_metrics_for_negative_expected():
     assert metrics["live_static_false_positive_rate"] == pytest.approx(0.5)
     assert metrics["live_static_rejection_reason_negative_class_count"] == pytest.approx(1.0)
     assert metrics["live_static_decision_negative_rejected_count"] == pytest.approx(1.0)
+    assert (
+        metrics["live_static_rejection_method_one_vs_rest_logreg_count"]
+        == pytest.approx(2.0)
+    )
 
 
 def test_dynamic_live_evaluation_counts_static_route_as_wrong(monkeypatch, tmp_path):
@@ -1290,12 +1296,13 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
 
     assert calls["tracking_uri"] == "sqlite:///test-live.db"
     assert calls["experiment"] == "GestureFlow"
-    assert calls["run_name"] == "live-swipe_left-auto-knn"
+    assert calls["run_name"] == "live-swipe_left-auto-knn-open_set_policy"
     assert calls["log_system_metrics"] is True
     assert calls["tags"]["run_kind"] == "live_evaluation"
     assert calls["tags"]["artifact_bundle"] == "live_evaluation/index.html"
     assert calls["params"]["expected_label"] == "swipe_left"
     assert calls["params"]["expected_type"] == "dynamic"
+    assert calls["params"]["static_rejection_method"] == "open_set_policy"
     assert calls["metrics"]["live_accuracy"] == pytest.approx(0.5)
     assert calls["metrics"]["live_recall"] == pytest.approx(0.5)
     assert calls["metrics"]["live_dynamic_recall"] == pytest.approx(0.5)
@@ -1350,4 +1357,4 @@ def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():
     assert controller.gesture_mode is True
     assert mode_events == [False, True]
     assert starts == [True]
-    assert statuses[-1] == "Распознавание жестов включено"
+    assert statuses[-1] == "Распознавание жестов включено (reject:open_set_policy)"

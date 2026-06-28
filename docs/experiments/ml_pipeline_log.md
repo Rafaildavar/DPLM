@@ -2044,3 +2044,91 @@ Dynamic benchmark:
   - `one_vs_rest_logreg`;
   - target: `live_static_false_positive_rate <= 10%` без падения recall ниже
     `80%` на настоящих static gestures.
+
+### H-043: Rejection method нужно проверять live, а не только offline
+
+Статус: `implemented`, готово к ручному live A/B тесту
+
+Дата реализации: `2026-06-28`
+
+Проблема:
+- Offline benchmark полезен для отбора кандидатов, но конкурсно и продуктово
+  важнее real-camera behavior.
+- Один и тот же static жест может выглядеть иначе в live из-за дистанции,
+  скорости, угла руки, освещения и естественных “почти жестов”.
+- Поэтому выбор reject strategy должен подтверждаться live метриками:
+  false positive rate, recall, reject reason, latency.
+
+Что добавлено:
+- Runtime-переключатель static rejection method в Flet Live Evaluation.
+- Поддержанные live methods:
+  - `open_set_policy`;
+  - `one_vs_rest_logreg`;
+  - `negative_classes`;
+  - `confidence_threshold`;
+  - `one_class_svm`;
+  - `isolation_forest`;
+  - `local_outlier_factor`;
+  - `metric_nca_centroid`;
+  - `mlp_negative_classes`.
+- Обучаемый verifier layer:
+  `scripts/train_static_rejection_verifiers.py`.
+- Make target:
+  `make static-rejection-verifiers`.
+- Runtime artifact:
+  `models/static_rejection_verifiers.pkl`.
+- Live logs now include:
+  - `static_rejection_method`;
+  - `static_verifier_probability`;
+  - `static_verifier_confidence`;
+  - `static_verifier_score`;
+  - `static_verifier_distance`;
+  - `static_verifier_threshold`.
+- MLflow live run name now includes reject method:
+  `live-<expected>-<mode>-<dynamic_profile>-<static_rejection_method>`.
+- MLflow params include:
+  `static_rejection_method`.
+- MLflow metrics include:
+  `live_static_rejection_method_<method>_count`.
+- HTML dashboard now shows:
+  static rejection method, decision source and rejection reason counters.
+
+Локальный прогон:
+- `make static-rejection-verifiers`
+  -> `models/static_rejection_verifiers.pkl`.
+- Ready methods: `6/6`:
+  `one_vs_rest_logreg`, `one_class_svm`, `isolation_forest`,
+  `local_outlier_factor`, `metric_nca_centroid`, `mlp_negative_classes`.
+- MLflow training run:
+  `static-rejection-verifiers`.
+
+Проверка:
+- `python -m py_compile app/gesture_online_infer.py app/services/recognition_router.py app/flet_app/controller.py app/flet_app/views/home.py scripts/train_static_rejection_verifiers.py`
+  -> passed.
+- `python -m pytest --no-cov tests/unit/test_gesture_online_infer_no_hand.py tests/unit/test_flet_controller_commands.py tests/unit/test_static_rejection_verifier_training.py -q`
+  -> `59 passed`.
+
+Live protocol:
+- Для настоящих static жестов:
+  `gun`, `three`, `hend`, `up` по `20` попыток на метод.
+- Для negative/live false trigger теста:
+  выбрать `no_gesture_static`, `partial_swipe`, `wrong_axis_motion`
+  и делать “почти жесты”/случайные движения по `20` попыток.
+- Для каждого сценария прогнать минимум:
+  - `open_set_policy`;
+  - `one_vs_rest_logreg`;
+  - при времени: `confidence_threshold`.
+- Сравнивать:
+  - `live_accuracy`;
+  - `live_static_false_positive_rate`;
+  - `live_negative_false_positive_rate`;
+  - `live_static_reject_rate`;
+  - `live_static_rejection_reason_*`;
+  - per-attempt verifier score/probability/distance.
+
+Критерий выбора:
+- Лучший метод не тот, у которого выше offline score, а тот, который в live:
+  - держит static recall не ниже `80%`;
+  - снижает false positives на negative до `<=10%`;
+  - имеет объяснимые rejection reasons;
+  - не ухудшает latency/UX.

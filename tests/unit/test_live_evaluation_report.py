@@ -156,6 +156,6 @@ def test_live_evaluation_report_includes_latest_completed_run(tmp_path):
     assert "Latest Completed Run By Label" in markdown
     assert (
         "| `swipe_down` | `dynamic:knn` | 2 | 1 | 0 | 1 | 0.500 | "
-        "1.000 | 0.900 | dynamic:1, none:1 |  |"
+        "1.000 | 0.900 | unknown:2 | dynamic:1, none:1 |  |"
     ) in markdown
     assert "Recent Runs" in markdown
