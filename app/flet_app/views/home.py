@@ -37,6 +37,7 @@ _PLACEHOLDER_DATA_URL = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4"
     "2mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 )
+LIVE_PREDICTION_HOLD_SECONDS = 1.8
 
 
 class HomeView:
@@ -48,6 +49,8 @@ class HomeView:
         self._visible = True
         self._frame_update_lock = threading.Lock()
         self._frame_update_pending = False
+        self._gesture_clear_lock = threading.Lock()
+        self._gesture_clear_token = 0
 
         self._camera_image = ft.Image(
             src=_PLACEHOLDER_DATA_URL,
@@ -480,11 +483,51 @@ class HomeView:
         self._page.run_thread(self._apply_gesture, label)
 
     def _apply_gesture(self, label: str) -> None:
-        self._gesture_text.value = label or "—"
+        clean = str(label or "").strip()
+        if clean:
+            with self._gesture_clear_lock:
+                self._gesture_clear_token += 1
+            self._gesture_text.value = clean
+            self._safe_update_gesture_text()
+            return
+        if self._is_running():
+            self._schedule_gesture_clear()
+        else:
+            self._clear_gesture_now()
+
+    def _safe_update_gesture_text(self) -> None:
         try:
             self._gesture_text.update()
         except Exception:
             pass
+
+    def _schedule_gesture_clear(self) -> None:
+        with self._gesture_clear_lock:
+            self._gesture_clear_token += 1
+            token = self._gesture_clear_token
+
+        def clear_later() -> None:
+            try:
+                self._page.run_thread(self._clear_gesture_if_current, token)
+            except Exception:
+                pass
+
+        timer = threading.Timer(LIVE_PREDICTION_HOLD_SECONDS, clear_later)
+        timer.daemon = True
+        timer.start()
+
+    def _clear_gesture_if_current(self, token: int) -> None:
+        with self._gesture_clear_lock:
+            if token != self._gesture_clear_token:
+                return
+        self._gesture_text.value = "—"
+        self._safe_update_gesture_text()
+
+    def _clear_gesture_now(self) -> None:
+        with self._gesture_clear_lock:
+            self._gesture_clear_token += 1
+        self._gesture_text.value = "—"
+        self._safe_update_gesture_text()
 
     def _on_command(self, name: str) -> None:
         self._page.run_thread(self._apply_command, name)
@@ -580,8 +623,13 @@ class HomeView:
         except Exception:
             pass
 
-    def _on_recognizing(self, _v: bool) -> None:
-        self._page.run_thread(self._apply_button_state)
+    def _on_recognizing(self, value: bool) -> None:
+        self._page.run_thread(self._apply_recognizing_state, value)
+
+    def _apply_recognizing_state(self, active: bool) -> None:
+        self._apply_button_state()
+        if not active:
+            self._clear_gesture_now()
 
     def _on_camera_active(self, active: bool) -> None:
         self._page.run_thread(self._apply_camera_active, active)
@@ -624,6 +672,8 @@ class HomeView:
                 self._gesture_switch.update()
             except Exception:
                 pass
+        if not value:
+            self._clear_gesture_now()
 
     def _on_pointer_mode(self, value: bool) -> None:
         self._page.run_thread(self._apply_pointer_mode, value)

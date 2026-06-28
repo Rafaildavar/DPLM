@@ -45,6 +45,7 @@ def _dispatch_controller():
     controller.landmarks_changed = _Event()
     controller.gesture_detected = _Event()
     controller.gesture_mode_changed = _Event()
+    controller.pointer_mode_changed = _Event()
     controller.status_changed = _Event()
     controller.dynamic_model_profile_changed = _Event()
     controller.recognition_model_mode_changed = _Event()
@@ -1329,7 +1330,7 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     assert "attempts.csv" in calls["artifacts"]
 
 
-def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():
+def test_set_gesture_mode_clears_current_label_without_starting_cv():
     controller = _dispatch_controller()
     emitted = []
     mode_events = []
@@ -1356,5 +1357,24 @@ def test_set_gesture_mode_clears_current_label_and_starts_cv_when_enabled():
 
     assert controller.gesture_mode is True
     assert mode_events == [False, True]
-    assert starts == [True]
+    assert starts == []
     assert statuses[-1] == "Распознавание жестов включено (reject:open_set_policy)"
+
+
+def test_set_pointer_mode_does_not_start_cv_while_idle():
+    controller = _dispatch_controller()
+    mode_events = []
+    starts = []
+    statuses = []
+    controller._embedded_active = False
+    controller._is_recognizing = False
+    controller.pointer_mode_changed.connect(mode_events.append)
+    controller._ensure_embedded_recognition_for_live_controls = lambda: starts.append(True)
+    controller._set_status = statuses.append
+
+    controller.set_pointer_mode(True)
+
+    assert controller.pointer_mode is True
+    assert mode_events == [True]
+    assert starts == []
+    assert statuses == []

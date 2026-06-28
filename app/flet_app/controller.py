@@ -3598,9 +3598,7 @@ class AppController:
             return
         self._show_landmark_overlay = target
         self.landmark_overlay_changed.emit(target)
-        if target:
-            self._ensure_embedded_recognition_for_live_controls()
-        elif self._embedded_active:
+        if self._embedded_active:
             self._set_status(self._live_recognition_status())
 
     def set_gesture_mode(self, enabled: bool) -> None:
@@ -3615,8 +3613,6 @@ class AppController:
                 self._last_label = ""
                 self.gesture_detected.emit("")
         self.gesture_mode_changed.emit(target)
-        if target:
-            self._ensure_embedded_recognition_for_live_controls()
         if self._embedded_active:
             self._set_status(self._live_recognition_status())
 
@@ -3628,10 +3624,7 @@ class AppController:
         if not target:
             self._reset_pointer_control()
         self.pointer_mode_changed.emit(target)
-        if target:
-            self._ensure_embedded_recognition_for_live_controls()
-            self._set_status(self._live_recognition_status())
-        elif self._embedded_active:
+        if self._embedded_active:
             self._set_status(self._live_recognition_status())
         elif self._status.startswith("Указатель:"):
             self._set_status("Idle")
