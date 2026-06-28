@@ -21,6 +21,7 @@ mlruns/
 mlflow.db
 
 # Data
+data/raw/
 data/**/*.npy
 data/**/*.csv
 data/**/*.meta.json

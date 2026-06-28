@@ -12,6 +12,7 @@ GestureFlow commands.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -34,6 +35,12 @@ DEFAULT_OUT_ROOT = PROJECT_ROOT / "data" / "external" / "ipn_hand"
 DEFAULT_JSON_OUT = PROJECT_ROOT / "docs" / "experiments" / "ipn_conversion_report.json"
 DEFAULT_MD_OUT = PROJECT_ROOT / "docs" / "experiments" / "ipn_conversion_report.md"
 DEFAULT_MLFLOW_URI = "sqlite:///mlflow.db"
+ANNOTATION_CANDIDATE_NAMES = (
+    "Annot_List.txt",
+    "ipnall.json",
+    "Annot_TrainList.txt",
+    "Annot_TestList.txt",
+)
 
 LandmarkExtractor = Callable[[Sequence[Path]], tuple[np.ndarray, int, int]]
 
@@ -111,6 +118,19 @@ def _slug(value: str) -> str:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def discover_ipn_annotation(ipn_root: Path = DEFAULT_IPN_ROOT) -> Path:
+    """Find the most useful IPN annotation file in a downloaded bundle."""
+    ipn_root = _resolve_path(ipn_root)
+    preferred = ipn_root / "annotations" / "ipnall.json"
+    if preferred.exists():
+        return preferred
+    for name in ANNOTATION_CANDIDATE_NAMES:
+        matches = sorted(ipn_root.glob(f"**/{name}"))
+        if matches:
+            return matches[0]
+    return preferred
 
 
 def load_ipn_mapping(path: Path = DEFAULT_MAPPING_PATH) -> dict[str, MappingEntry]:
@@ -205,6 +225,10 @@ def _load_text_segments(
     *,
     mapping: dict[str, MappingEntry],
 ) -> list[IpnSegment]:
+    csv_segments = _load_csv_like_segments(annotation_path, mapping=mapping)
+    if csv_segments:
+        return csv_segments
+
     segments: list[IpnSegment] = []
     for raw_line in annotation_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -219,6 +243,38 @@ def _load_text_segments(
             start = int(parts[2])
             end = int(parts[3])
         except ValueError:
+            continue
+        segments.append(_segment(video_id, label, start, end, mapping))
+    return segments
+
+
+def _load_csv_like_segments(
+    annotation_path: Path,
+    *,
+    mapping: dict[str, MappingEntry],
+) -> list[IpnSegment]:
+    """Read official IPN annotation text exported as CSV.
+
+    The downloadable annotation file uses a ``.txt`` extension but has columns:
+    ``video,label,id,t_start,t_end,frames``.
+    """
+    try:
+        with annotation_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+    except Exception:
+        return []
+    segments: list[IpnSegment] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        video_id = _video_id_from_key(str(row.get("video") or row.get("Video") or ""))
+        label = str(row.get("label") or row.get("Label") or "").strip()
+        if not video_id or not label:
+            continue
+        try:
+            start = int(row.get("t_start") or row.get("start_frame") or row.get("start"))
+            end = int(row.get("t_end") or row.get("end_frame") or row.get("end"))
+        except (TypeError, ValueError):
             continue
         segments.append(_segment(video_id, label, start, end, mapping))
     return segments
@@ -345,7 +401,7 @@ def convert_ipn_hand(
 ) -> IpnConversionReport:
     ipn_root = _resolve_path(ipn_root)
     frames_root = _resolve_path(frames_root or ipn_root / "frames")
-    annotation_path = _resolve_path(annotation_path or ipn_root / "annotations" / "ipnall.json")
+    annotation_path = _resolve_path(annotation_path) if annotation_path else discover_ipn_annotation(ipn_root)
     mapping_path = _resolve_path(mapping_path)
     out_root = _resolve_path(out_root)
     warnings: list[str] = []
@@ -674,8 +730,10 @@ def build_markdown_report(report: IpnConversionReport) -> str:
             "",
             "## Next Step",
             "",
-            "If status is `missing_input`, place IPN frames and annotations at the",
-            "reported paths or pass `--frames-root` and `--annotation` explicitly.",
+            "If status is `missing_input`, place IPN frames under",
+            "`data/raw/ipn_hand/frames` and annotations as `Annot_List.txt`",
+            "inside `data/raw/ipn_hand`, or pass `--frames-root` and",
+            "`--annotation` explicitly.",
             "Then rerun:",
             "",
             "```bash",

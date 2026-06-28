@@ -2445,3 +2445,74 @@ Mapping:
 - `.venv/bin/python -m py_compile scripts/convert_ipn_hand.py` -> passed.
 - `.venv/bin/python -m pytest --no-cov tests/unit/test_convert_ipn_hand.py -q`
   -> `4 passed`.
+
+### H-050: Official IPN annotations можно конвертировать в external dynamic negatives
+
+Статус: `validated`
+
+Дата: `2026-06-28`
+
+Проблема:
+- В скачанной папке IPN Hand лежит несколько annotation/list файлов, и не все
+  подходят для извлечения сегментов жестов.
+- Первый default `annotations/ipnall.json` не совпал с реальным локальным
+  download layout.
+
+Правильный файл:
+- `Annot_List.txt` - основной файл для текущей конвертации.
+- Он содержит `video,label,id,t_start,t_end,frames`, то есть video id, IPN
+  class label и границы сегмента по кадрам.
+- `Annot_TrainList.txt` и `Annot_TestList.txt` можно использовать позже для
+  train/test split.
+- `Video_TrainList.txt`, `Video_TestList.txt`, `classIdx.txt`, `metadata.*`
+  не дают сами по себе границы сегментов и не подходят как основной источник
+  dynamic samples.
+
+Что изменено:
+- `scripts/convert_ipn_hand.py` теперь читает official CSV-like `.txt`
+  annotations.
+- Добавлен auto-discovery для `Annot_List.txt`, поэтому `make ipn-convert`
+  работает с текущей структурой download bundle.
+- `data/raw/` добавлен в `.gitignore`, чтобы raw archives/frames не попадали
+  в репозиторий.
+
+Результат конвертации:
+- Input:
+  - `data/raw/ipn_hand/frames01.tar`;
+  - `data/raw/ipn_hand/drive-download-20260628T185129Z-3-001/Annot_List.txt`.
+- Output:
+  - `data/external/ipn_hand/negative_external_ipn_dynamic`.
+- `segments_found`: `5649`.
+- `segments_included`: `4848`.
+- `converted_samples`: `200`.
+- `skipped_samples`: `28`.
+- `detection_rate`: `0.7994`.
+- `mlflow_conversion_report`: `met`.
+- `production_model_unchanged`: `met`.
+
+Распределение converted samples:
+- `negative_external_ipn_dynamic`: `200`.
+- IPN labels:
+  - `B0A`: `54`;
+  - `B0B`: `53`;
+  - `D0X`: `19`;
+  - `G01`: `10`;
+  - `G02`: `11`;
+  - `G07`: `11`;
+  - `G08`: `11`;
+  - `G09`: `10`;
+  - `G10`: `10`;
+  - `G11`: `11`.
+
+Интерпретация:
+- Это не positive gestures для наших команд.
+- Это внешние dynamic/OOD negatives: pointing/click/double-click/open/zoom и
+  non-gesture segments.
+- Следующий эксперимент должен проверить, снижает ли добавление IPN negatives
+  ложные срабатывания dynamic модели на случайные движения руки, не ломая
+  live accuracy пользовательских swipe/custom gestures.
+
+Проверки:
+- `.venv/bin/python -m py_compile scripts/convert_ipn_hand.py` -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_convert_ipn_hand.py -q`
+  -> `5 passed`.

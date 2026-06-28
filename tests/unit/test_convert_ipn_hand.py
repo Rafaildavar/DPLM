@@ -5,6 +5,7 @@ import numpy as np
 
 from scripts.convert_ipn_hand import (
     convert_ipn_hand,
+    discover_ipn_annotation,
     frame_paths_for_segment,
     load_ipn_mapping,
     load_ipn_segments,
@@ -64,6 +65,19 @@ def _write_annotation(path: Path) -> None:
     )
 
 
+def _write_official_text_annotation(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "video,label,id,t_start,t_end,frames",
+                "VideoA,D0X,1,10,20,11",
+                "VideoA,G03,6,30,40,11",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_load_ipn_mapping_and_segments(tmp_path):
     mapping_path = tmp_path / "mapping.json"
     annotation_path = tmp_path / "ipnall.json"
@@ -79,6 +93,33 @@ def test_load_ipn_mapping_and_segments(tmp_path):
     assert segments[0].include is True
     assert segments[1].target_label == "reference_ipn_throw_up"
     assert segments[1].include is False
+
+
+def test_load_ipn_segments_reads_official_csv_like_txt(tmp_path):
+    mapping_path = tmp_path / "mapping.json"
+    annotation_path = tmp_path / "Annot_List.txt"
+    _write_mapping(mapping_path)
+    _write_official_text_annotation(annotation_path)
+
+    mapping = load_ipn_mapping(mapping_path)
+    segments = load_ipn_segments(annotation_path, mapping=mapping)
+
+    assert len(segments) == 2
+    assert segments[0].video_id == "VideoA"
+    assert segments[0].original_label == "D0X"
+    assert segments[0].start_frame == 10
+    assert segments[0].end_frame == 20
+    assert segments[1].original_label == "G03"
+    assert segments[1].role == "validation_reference"
+
+
+def test_discover_ipn_annotation_prefers_official_list(tmp_path):
+    bundle = tmp_path / "drive-download"
+    bundle.mkdir()
+    annotation_path = bundle / "Annot_List.txt"
+    _write_official_text_annotation(annotation_path)
+
+    assert discover_ipn_annotation(tmp_path) == annotation_path
 
 
 def test_frame_paths_for_segment_uses_ipn_filename_pattern(tmp_path):
