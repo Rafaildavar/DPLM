@@ -24,7 +24,10 @@ from app.flet_app.theme import (
     COLOR_MUTED,
     COLOR_ON_SURFACE,
     COLOR_SUCCESS,
+    COLOR_SURFACE,
     COLOR_SURFACE_HIGH,
+    COLOR_WARNING,
+    surface_card,
 )
 
 
@@ -56,7 +59,7 @@ class HomeView:
 
         self._gesture_text = ft.Text(
             "—",
-            size=32,
+            size=24,
             weight=ft.FontWeight.BOLD,
             color=COLOR_ON_SURFACE,
         )
@@ -68,7 +71,7 @@ class HomeView:
         )
         self._command_text = ft.Text(
             "—",
-            size=18,
+            size=16,
             weight=ft.FontWeight.W_500,
             color=COLOR_ON_SURFACE,
         )
@@ -151,7 +154,7 @@ class HomeView:
             visible=False,
             width=540,
             padding=ft.Padding(14, 12, 14, 12),
-            bgcolor="#151526",
+            bgcolor="#111417",
             border_radius=12,
             content=ft.Column(
                 spacing=10,
@@ -230,7 +233,7 @@ class HomeView:
         )
         self._two_hands_switch = ft.Switch(
             value=controller.two_hands_mode,
-            label="Режим двух рук",
+            label="2 руки",
             active_color=COLOR_ACCENT,
             on_change=lambda e: controller.set_two_hands_mode(
                 bool(self._two_hands_switch.value)
@@ -238,7 +241,7 @@ class HomeView:
         )
         self._auto_exec_switch = ft.Switch(
             value=controller.auto_execute,
-            label="Авто-команды",
+            label="Авто",
             active_color=COLOR_ACCENT,
             on_change=lambda e: controller.set_auto_execute(
                 bool(self._auto_exec_switch.value)
@@ -252,7 +255,7 @@ class HomeView:
         )
         self._landmarks_switch = ft.Switch(
             value=controller.show_landmark_overlay,
-            label="Точки руки",
+            label="Точки",
             active_color=COLOR_ACCENT,
             on_change=self._on_landmarks_toggle,
         )
@@ -523,31 +526,36 @@ class HomeView:
             detail = f"{detail} · {command}"
         elif not executed:
             detail = f"{detail} · без команды"
-        return ft.Row(
-            controls=[
-                ft.Icon(
-                    ft.Icons.CHECK_CIRCLE if executed else ft.Icons.INFO_OUTLINE,
-                    color=COLOR_SUCCESS if executed else COLOR_MUTED,
-                    size=16,
-                ),
-                ft.Column(
-                    spacing=0,
-                    expand=True,
-                    controls=[
-                        ft.Text(
-                            label,
-                            size=12,
-                            color=COLOR_ON_SURFACE,
-                            weight=ft.FontWeight.W_600,
-                            no_wrap=True,
-                        ),
-                        ft.Text(detail, size=11, color=COLOR_MUTED, no_wrap=True),
-                    ],
-                ),
-                ft.Text(detected_at, size=11, color=COLOR_MUTED),
-            ],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        return ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE if executed else ft.Icons.INFO_OUTLINE,
+                        color=COLOR_SUCCESS if executed else COLOR_MUTED,
+                        size=16,
+                    ),
+                    ft.Column(
+                        spacing=0,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                label,
+                                size=12,
+                                color=COLOR_ON_SURFACE,
+                                weight=ft.FontWeight.W_600,
+                                no_wrap=True,
+                            ),
+                            ft.Text(detail, size=11, color=COLOR_MUTED, no_wrap=True),
+                        ],
+                    ),
+                    ft.Text(detected_at, size=11, color=COLOR_MUTED),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
         )
 
     def _on_confidence(self, value: float) -> None:
@@ -779,39 +787,152 @@ class HomeView:
 
     # ---- Сборка дерева ---------------------------------------------------
 
-    def build(self) -> ft.Control:
-        toolbar_controls = ft.Row(
-            spacing=18,
-            wrap=True,
+    def _panel_title(
+        self,
+        icon: str,
+        title: str,
+        *,
+        color: str = COLOR_ACCENT,
+        trailing: ft.Control | None = None,
+    ) -> ft.Row:
+        controls: list[ft.Control] = [
+            ft.Container(
+                width=30,
+                height=30,
+                border_radius=8,
+                bgcolor="#1A1E22",
+                alignment=ft.Alignment.CENTER,
+                content=ft.Icon(icon, size=17, color=color),
+            ),
+            ft.Text(
+                title,
+                size=14,
+                weight=ft.FontWeight.W_600,
+                color=COLOR_ON_SURFACE,
+                expand=True,
+            ),
+        ]
+        if trailing is not None:
+            controls.append(trailing)
+        return ft.Row(
+            spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                self._toggle_btn,
-                self._model_mode_dd,
-                self._dynamic_profile_dd,
-                self._gesture_switch,
-                self._pointer_switch,
-                self._landmarks_switch,
-                self._auto_exec_switch,
-            ],
+            controls=controls,
         )
-        toolbar = ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+
+    def _status_chip(self, icon: str, label: str, color: str) -> ft.Container:
+        return ft.Container(
+            border_radius=8,
+            bgcolor="#171A1D",
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+            content=ft.Row(
+                spacing=7,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(icon, size=14, color=color),
+                    ft.Text(label, size=12, color=COLOR_ON_SURFACE, no_wrap=True),
+                ],
+            ),
+        )
+
+    def _compact_switches(self, controls: list[ft.Switch]) -> ft.Column:
+        left = controls[::2]
+        right = controls[1::2]
+        return ft.Column(
+            spacing=4,
             controls=[
-                ft.Container(content=toolbar_controls, expand=True),
-                ft.Container(
-                    content=self._status_text,
-                    alignment=ft.Alignment.CENTER_RIGHT,
-                    width=420,
+                ft.Row(
+                    spacing=6,
+                    wrap=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=left,
+                ),
+                ft.Row(
+                    spacing=6,
+                    wrap=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=right,
                 ),
             ],
         )
 
-        camera_card = ft.Container(
+    def build(self) -> ft.Control:
+        title_group = ft.Row(
+            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(
+                    width=36,
+                    height=36,
+                    border_radius=8,
+                    bgcolor="#1A1E22",
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Icon(ft.Icons.VIDEO_CAMERA_FRONT, color=COLOR_ACCENT, size=20),
+                ),
+                ft.Column(
+                    spacing=1,
+                    expand=True,
+                    controls=[
+                        ft.Text(
+                            "Live Monitor",
+                            size=19,
+                            weight=ft.FontWeight.BOLD,
+                            color=COLOR_ON_SURFACE,
+                        ),
+                        ft.Text(
+                            "камера, распознавание, команды",
+                            size=12,
+                            color=COLOR_MUTED,
+                        ),
+                    ],
+                ),
+            ],
+        )
+        monitor_chips = ft.Row(
+            spacing=8,
+            wrap=True,
+            controls=[
+                self._status_chip(ft.Icons.PAN_TOOL_ALT, "жесты", COLOR_ACCENT),
+                self._status_chip(ft.Icons.TOUCH_APP, "курсор", COLOR_WARNING),
+                self._status_chip(ft.Icons.ROCKET_LAUNCH, "команды", COLOR_SUCCESS),
+            ],
+        )
+        header = surface_card(
+            ft.ResponsiveRow(
+                spacing=10,
+                run_spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(content=title_group, col={"xs": 12, "md": 4}),
+                    ft.Container(content=monitor_chips, col={"xs": 12, "md": 4}),
+                    ft.Container(
+                        content=ft.Row(
+                            spacing=12,
+                            alignment=ft.MainAxisAlignment.END,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                self._toggle_btn,
+                                ft.Container(
+                                    content=self._status_text,
+                                    alignment=ft.Alignment.CENTER_RIGHT,
+                                    width=210,
+                                ),
+                            ],
+                        ),
+                        col={"xs": 12, "md": 4},
+                    ),
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+
+        camera_stage = ft.Container(
             content=ft.Stack(
                 expand=True,
                 controls=[
-                    ft.Container(expand=True, bgcolor="#080812"),
+                    ft.Container(expand=True, bgcolor="#07090B"),
                     ft.Container(
                         content=self._camera_image,
                         expand=True,
@@ -822,92 +943,194 @@ class HomeView:
                         left=18,
                         top=18,
                     ),
-                ],
-            ),
-            bgcolor="#0d0d18",
-            border_radius=16,
-            padding=8,
-            height=420,
-            alignment=ft.Alignment.CENTER,
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        )
-
-        result_panel = ft.Container(
-            height=126,
-            padding=ft.Padding(22, 8, 22, 10),
-            content=ft.Row(
-                spacing=42,
-                vertical_alignment=ft.CrossAxisAlignment.START,
-                controls=[
-                    ft.Column(
-                        expand=True,
-                        spacing=8,
-                        controls=[
-                            ft.Text("Жест", size=13, color=COLOR_MUTED),
-                            self._gesture_text,
-                            ft.Row(
-                                controls=[
-                                    ft.Text("Уверенность", color=COLOR_MUTED, size=12),
-                                    self._confidence_text,
-                                ],
-                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            ),
-                            self._confidence_bar,
-                        ],
-                    ),
                     ft.Container(
-                        width=420,
-                        content=ft.Column(
+                        left=16,
+                        bottom=16,
+                        bgcolor="#101316",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+                        content=ft.Row(
                             spacing=8,
+                            tight=True,
                             controls=[
-                                ft.Text("Команда", size=13, color=COLOR_MUTED),
-                                self._command_text,
+                                ft.Icon(ft.Icons.CENTER_FOCUS_STRONG, size=14, color=COLOR_MUTED),
+                                ft.Text("preview", size=12, color=COLOR_MUTED),
                             ],
                         ),
                     ),
                 ],
             ),
+            bgcolor="#0B0D10",
+            border_radius=8,
+            padding=8,
+            height=340,
+            alignment=ft.Alignment.CENTER,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
-        eval_panel = ft.Container(
-            padding=ft.Padding(18, 14, 18, 14),
-            bgcolor="#202033",
-            border_radius=12,
-            content=ft.Column(
+        camera_card = surface_card(
+            ft.Column(
                 spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
+                    self._panel_title(ft.Icons.VIDEO_CAMERA_FRONT, "Камера"),
+                    camera_stage,
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+        camera_card.width = float("inf")
+
+        live_panel = surface_card(
+            ft.Column(
+                spacing=5,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.RADAR,
+                        "Live Recognition",
+                        trailing=self._confidence_text,
+                    ),
+                    self._gesture_text,
+                    self._confidence_bar,
+                    ft.Container(
+                        bgcolor="#171A1D",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=5),
+                        content=ft.Row(
+                            spacing=9,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Icon(ft.Icons.TERMINAL, size=15, color=COLOR_SUCCESS),
+                                ft.Column(
+                                    spacing=2,
+                                    expand=True,
+                                    controls=[
+                                        ft.Text("Команда", size=11, color=COLOR_MUTED),
+                                        self._command_text,
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ),
+                ],
+            ),
+            padding=8,
+            radius=8,
+        )
+        live_panel.width = float("inf")
+
+        command_panel = surface_card(
+            ft.Column(
+                spacing=9,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.FORMAT_LIST_BULLETED,
+                        "Recent Actions",
+                        color=COLOR_SUCCESS,
+                    ),
+                    ft.Container(content=self._activity_list, height=96),
+                ],
+            ),
+            padding=12,
+            radius=8,
+        )
+        command_panel.width = float("inf")
+
+        quick_panel = surface_card(
+            ft.Column(
+                spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.TUNE,
+                        "Quick Settings",
+                        color=COLOR_WARNING,
+                    ),
+                    ft.Row(
+                        spacing=10,
+                        wrap=True,
+                        controls=[
+                            self._model_mode_dd,
+                            self._dynamic_profile_dd,
+                            self._static_rejection_dd,
+                        ],
+                    ),
+                    self._compact_switches(
+                        [
+                            self._gesture_switch,
+                            self._landmarks_switch,
+                            self._auto_exec_switch,
+                            self._pointer_switch,
+                            self._two_hands_switch,
+                        ],
+                    ),
+                ],
+            ),
+            padding=10,
+            radius=8,
+        )
+        quick_panel.width = float("inf")
+
+        eval_panel = surface_card(
+            ft.Column(
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.FACT_CHECK,
+                        "Live Evaluation",
+                        color=COLOR_ACCENT,
+                    ),
                     ft.Row(
                         spacing=12,
                         wrap=True,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         controls=[
-                            ft.Text(
-                                "Live evaluation",
-                                size=14,
-                                weight=ft.FontWeight.W_600,
-                                color=COLOR_ON_SURFACE,
-                            ),
                             self._eval_expected,
                             self._eval_attempts,
                             self._eval_timeout,
                             self._eval_threshold,
-                            self._static_rejection_dd,
                             self._eval_start_btn,
                             self._eval_stop_btn,
                         ],
                     ),
                 ],
             ),
+            padding=14,
+            radius=8,
+        )
+        eval_panel.width = float("inf")
+
+        main_row = ft.ResponsiveRow(
+            spacing=14,
+            run_spacing=14,
+            controls=[
+                ft.Container(content=camera_card, col={"xs": 12, "lg": 8}),
+                ft.Container(
+                    content=ft.Column(
+                        spacing=14,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                        controls=[
+                            live_panel,
+                            quick_panel,
+                            command_panel,
+                        ],
+                    ),
+                    col={"xs": 12, "lg": 4},
+                ),
+            ],
         )
 
         return ft.Column(
-            spacing=18,
+            spacing=14,
             expand=True,
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[
-                toolbar,
-                camera_card,
-                result_panel,
+                header,
+                main_row,
                 eval_panel,
             ],
         )
