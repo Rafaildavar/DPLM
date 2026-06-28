@@ -2132,3 +2132,41 @@ Live protocol:
   - снижает false positives на negative до `<=10%`;
   - имеет объяснимые rejection reasons;
   - не ухудшает latency/UX.
+
+### H-044: MLflow live runs должны иметь графики именно для reject-layer
+
+Статус: `implemented`
+
+Дата реализации: `2026-06-28`
+
+Проблема:
+- `live_accuracy` и route counts показывают итог, но не объясняют, почему
+  static жест был принят или отклонен.
+- Для JMLC нужно показать не только метрики, но и MLOps-подход:
+  traceable live runs, artifacts, explainability for rejection decisions.
+
+Что добавлено:
+- Протокол тестирования:
+  `docs/experiments/live_rejection_test_protocol.md`.
+- В MLflow artifact bundle каждого live run добавлены графики:
+  - `live_evaluation/charts/static_rejection.svg`;
+  - `live_evaluation/charts/static_verifier_signals.svg`.
+- В `live_evaluation/index.html` добавлены эти графики и attempt columns:
+  - `Static method`;
+  - `Static reject`;
+  - `Verifier signal`.
+
+Как использовать:
+- Запустить MLflow:
+  `PYTHON=.venv/bin/python make mlflow-ui`.
+- Запустить приложение:
+  `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -m app.flet_app.main`.
+- Провести live tests по протоколу и сравнить runs:
+  `open_set_policy` vs `one_vs_rest_logreg`.
+
+Критерий проверки:
+- В каждом live-run должны быть:
+  - model metrics;
+  - system metrics;
+  - `live_evaluation/index.html`;
+  - SVG charts для quality/static rejection/verifier signals/routes/runtime.

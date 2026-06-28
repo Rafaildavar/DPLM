@@ -19,7 +19,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | `swipe_up/down` dynamic recognition | In Progress | H-038: `7/10`, wrong direction `30%` | analyze correct vs wrong trajectory features |
 | Negative examples / rejection layer | Added | H-041: static/dynamic synthetic negatives + rejection metadata | run static/negative live validation |
 | Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
-| Live rejection A/B testing | Added | H-043: Flet + MLflow track `static_rejection_method` | run 20-attempt live matrix |
+| Live rejection A/B testing | Added | H-043/H-044: Flet + MLflow track `static_rejection_method`, charts added | run 20-attempt live matrix |
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
@@ -89,6 +89,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
+| Live rejection protocol | `docs/experiments/live_rejection_test_protocol.md` | step-by-step live A/B test plan | Added |
 | Live eval logs | `~/.dplm/logs/live_evaluation.jsonl` | attempt-level real-camera results | Stable |
 | Runtime logs | `~/.dplm/logs/runtime_performance.jsonl` | latency/FPS diagnostics | Stable |
 | MLflow backend | `mlflow.db` | training/live experiment history | Stable |
@@ -282,6 +283,10 @@ Live MLflow runs also store an artifact bundle under `live_evaluation/`:
 - `index.html` - readable run report;
 - `charts/*.svg` - quality, route, end-reason, runtime and attempt timeline
   charts;
+- `charts/static_rejection.svg` - selected reject method, decision source and
+  rejection reasons;
+- `charts/static_verifier_signals.svg` - verifier probability/confidence/distance
+  signals;
 - `attempts.csv` - attempt-level data;
 - `metrics.csv` - flat metric export;
 - `runtime_performance.json` - runtime windows matched to the live run.

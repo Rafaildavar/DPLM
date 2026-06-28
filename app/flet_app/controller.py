@@ -1528,6 +1528,55 @@ class AppController:
             self._render_live_bar_svg("Router decisions", route_items or [("none", 0.0, "warn")]),
             encoding="utf-8",
         )
+        static_rejection_items = [
+            (
+                "method:"
+                + key.replace("live_static_rejection_method_", "").replace("_count", ""),
+                value,
+                "good",
+            )
+            for key, value in sorted(metrics.items())
+            if key.startswith("live_static_rejection_method_") and key.endswith("_count")
+        ]
+        static_rejection_items.extend(
+            [
+                (
+                    "decision:"
+                    + key.replace("live_static_decision_", "").replace("_count", ""),
+                    value,
+                    "warn" if "rejected" in key else "good",
+                )
+                for key, value in sorted(metrics.items())
+                if key.startswith("live_static_decision_") and key.endswith("_count")
+            ]
+        )
+        static_rejection_items.extend(
+            [
+                (
+                    "reason:"
+                    + key.replace("live_static_rejection_reason_", "").replace("_count", ""),
+                    value,
+                    "bad" if "negative" in key or "low" in key else "warn",
+                )
+                for key, value in sorted(metrics.items())
+                if key.startswith("live_static_rejection_reason_") and key.endswith("_count")
+            ]
+        )
+        (charts_dir / "static_rejection.svg").write_text(
+            self._render_live_bar_svg(
+                "Static rejection methods and reasons",
+                static_rejection_items or [("none", 0.0, "warn")],
+            ),
+            encoding="utf-8",
+        )
+        verifier_items = self._live_static_verifier_signal_items(attempts)
+        (charts_dir / "static_verifier_signals.svg").write_text(
+            self._render_live_bar_svg(
+                "Static verifier signals",
+                verifier_items or [("none", 0.0, "warn")],
+            ),
+            encoding="utf-8",
+        )
         end_reason_items = [
             (
                 key.replace("live_end_reason_", "").replace("_count", ""),
@@ -1582,6 +1631,38 @@ class AppController:
             ),
             encoding="utf-8",
         )
+
+    def _live_static_verifier_signal_items(
+        self,
+        attempts: list[dict[str, Any]],
+    ) -> list[tuple[str, float, str]]:
+        def _values(field: str) -> list[float]:
+            values: list[float] = []
+            for attempt in attempts:
+                try:
+                    value = attempt.get(field)
+                    if value is not None:
+                        values.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+            return values
+
+        items: list[tuple[str, float, str]] = []
+        for label, field, kind in (
+            ("avg margin", "static_margin", "good"),
+            ("avg negative prob", "static_negative_confidence", "bad"),
+            ("avg prototype dist", "static_prototype_distance", "warn"),
+            ("avg prototype threshold", "static_prototype_threshold", "good"),
+            ("avg verifier prob", "static_verifier_probability", "good"),
+            ("avg verifier confidence", "static_verifier_confidence", "good"),
+            ("avg verifier score", "static_verifier_score", "good"),
+            ("avg verifier dist", "static_verifier_distance", "warn"),
+            ("avg verifier threshold", "static_verifier_threshold", "good"),
+        ):
+            values = _values(field)
+            if values:
+                items.append((label, float(sum(values) / len(values)), kind))
+        return items
 
     def _live_evaluation_metrics_csv(self, metrics: dict[str, float]) -> str:
         lines = ["metric,value"]
@@ -1714,6 +1795,9 @@ class AppController:
                 f"<td>{html.escape(str(attempt.get('result') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('predicted') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('route') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('static_rejection_method') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('static_reject_reason') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('static_verifier_probability') or attempt.get('static_verifier_confidence') or attempt.get('static_verifier_distance') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('dynamic_end_reason') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('dynamic_axis') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('dynamic_direction') or ''))}</td>"
@@ -1759,17 +1843,19 @@ class AppController:
     {metric_card("live_latency_avg_s", "Avg latency, s")}
     {metric_card("system_runtime_inference_ms_avg", "Runtime inference, ms")}
   </div>
-  <h2>Charts</h2>
-  <img src="charts/quality.svg" alt="quality metrics">
-  <img src="charts/attempt_timeline.svg" alt="attempt timeline">
-  <img src="charts/routes.svg" alt="routes">
-  <img src="charts/end_reasons.svg" alt="end reasons">
-  <img src="charts/runtime.svg" alt="runtime metrics">
-  <h2>Attempts</h2>
-  <table>
-    <thead><tr><th>#</th><th>Result</th><th>Predicted</th><th>Route</th><th>End</th><th>Axis</th><th>Direction</th><th>Straightness</th></tr></thead>
-    <tbody>{''.join(attempts_rows)}</tbody>
-  </table>
+	  <h2>Charts</h2>
+	  <img src="charts/quality.svg" alt="quality metrics">
+	  <img src="charts/attempt_timeline.svg" alt="attempt timeline">
+	  <img src="charts/routes.svg" alt="routes">
+	  <img src="charts/static_rejection.svg" alt="static rejection">
+	  <img src="charts/static_verifier_signals.svg" alt="static verifier signals">
+	  <img src="charts/end_reasons.svg" alt="end reasons">
+	  <img src="charts/runtime.svg" alt="runtime metrics">
+	  <h2>Attempts</h2>
+	  <table>
+	    <thead><tr><th>#</th><th>Result</th><th>Predicted</th><th>Route</th><th>Static method</th><th>Static reject</th><th>Verifier signal</th><th>End</th><th>Axis</th><th>Direction</th><th>Straightness</th></tr></thead>
+	    <tbody>{''.join(attempts_rows)}</tbody>
+	  </table>
 </body>
 </html>
 """
