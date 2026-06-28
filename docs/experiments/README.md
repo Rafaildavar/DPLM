@@ -21,6 +21,8 @@
 - `external_negative_dataset_experiments.json` /
   `external_negative_dataset_experiments.md` - отдельные эксперименты с
   публичными датасетами как negative / out-of-distribution evidence.
+- `ipn_conversion_report.json` / `ipn_conversion_report.md` - конвертация IPN
+  Hand в формат GestureFlow landmarks `(frames, 44)`.
 - `latency_report.json` / `latency_report.md` - задержки ML и live-pipeline.
 - `live_eval.json` / `live_eval.md` - проверка в рабочем приложении: ложные
   срабатывания, успешные команды, ошибки.
@@ -57,5 +59,6 @@ python -m scripts.dynamic_data_analysis
 python -m scripts.compare_models
 python -m scripts.threshold_report
 python -m scripts.external_negative_dataset_experiments
+python -m scripts.convert_ipn_hand
 python -m scripts.benchmark_latency --mode ml
 ```

@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "description": "Mapping from IPN Hand labels to GestureFlow external dynamic labels. Production positives remain user-recorded; IPN is used as negative/reference evidence.",
+  "default": {
+    "include": false,
+    "target_label": "negative_external_ipn_dynamic",
+    "role": "unknown_dynamic",
+    "notes": "Unknown IPN labels are skipped unless explicitly included."
+  },
+  "labels": {
+    "D0X": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "non_gesture",
+      "notes": "IPN non-gesture intervals become dynamic negative evidence."
+    },
+    "B0A": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "pointing_hold",
+      "notes": "Pointing with one finger is not a GestureFlow dynamic command."
+    },
+    "B0B": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "pointing_hold",
+      "notes": "Pointing with two fingers is not a GestureFlow dynamic command."
+    },
+    "G01": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "click_motion",
+      "notes": "Click with one finger is unrelated dynamic evidence."
+    },
+    "G02": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "click_motion",
+      "notes": "Click with two fingers is unrelated dynamic evidence."
+    },
+    "G03": {
+      "include": false,
+      "target_label": "reference_ipn_throw_up",
+      "role": "validation_reference",
+      "notes": "Throw up is close to swipe_up; keep out of negative training by default."
+    },
+    "G04": {
+      "include": false,
+      "target_label": "reference_ipn_throw_down",
+      "role": "validation_reference",
+      "notes": "Throw down is close to swipe_down; keep out of negative training by default."
+    },
+    "G05": {
+      "include": false,
+      "target_label": "reference_ipn_throw_left",
+      "role": "validation_reference",
+      "notes": "Throw left is close to swipe_left; keep out of negative training by default."
+    },
+    "G06": {
+      "include": false,
+      "target_label": "reference_ipn_throw_right",
+      "role": "validation_reference",
+      "notes": "Throw right is close to swipe_right; keep out of negative training by default."
+    },
+    "G07": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "open_twice",
+      "notes": "Open twice is a dynamic hand action but not a current user command."
+    },
+    "G08": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "double_click_motion",
+      "notes": "Double click with one finger is unrelated dynamic evidence."
+    },
+    "G09": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "double_click_motion",
+      "notes": "Double click with two fingers is unrelated dynamic evidence."
+    },
+    "G10": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "zoom_motion",
+      "notes": "Zoom in is a dynamic action but not a current user command."
+    },
+    "G11": {
+      "include": true,
+      "target_label": "negative_external_ipn_dynamic",
+      "role": "zoom_motion",
+      "notes": "Zoom out is a dynamic action but not a current user command."
+    }
+  }
+}

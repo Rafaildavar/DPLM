@@ -205,6 +205,19 @@ Better approach:
    - save `(frames, 44)` arrays;
    - write metadata with original IPN label and frame interval.
 
+   Implemented entrypoint:
+
+   ```bash
+   PYTHON=.venv/bin/python make ipn-convert
+   ```
+
+   Default expected local layout:
+
+   ```text
+   data/raw/ipn_hand/frames/<video_id>/<video_id>_000001.jpg
+   data/raw/ipn_hand/annotations/ipnall.json
+   ```
+
 2. Add external dynamic negative variant:
    - `baseline_internal`;
    - `ipn_external`;

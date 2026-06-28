@@ -2395,3 +2395,53 @@ ML-часть:
 
 Документ:
 - `docs/experiments/custom_dynamic_gesture_strategy.md`.
+
+### H-049: Первый шаг IPN pipeline - конвертер и mapping config
+
+Статус: `implemented`
+
+Дата: `2026-06-28`
+
+Цель:
+- Подготовить воспроизводимый способ превратить IPN Hand в формат
+  GestureFlow `(frames, 44)`.
+- Не менять production-модель.
+- Сразу логировать результат в MLflow и документы.
+
+Что добавлено:
+- Mapping config:
+  `configs/ipn_hand_mapping.json`.
+- Converter:
+  `scripts/convert_ipn_hand.py`.
+- Make target:
+  `make ipn-convert`.
+- Unit tests:
+  `tests/unit/test_convert_ipn_hand.py`.
+- Reports:
+  - `docs/experiments/ipn_conversion_report.json`;
+  - `docs/experiments/ipn_conversion_report.md`.
+
+Mapping:
+- `D0X`, pointing/click/open/zoom classes -> `negative_external_ipn_dynamic`.
+- `G03-G06 Throw up/down/left/right` -> reference labels, skipped by default,
+  чтобы не заменить пользовательские positive swipes внешними данными.
+
+Сверка с планом:
+- IPN converter: `done`.
+- Mapping config: `done`.
+- MLflow conversion report: `done`.
+- Production model unchanged: `done`.
+- Real conversion of samples: `blocked`, потому что локально еще нет:
+  - `data/raw/ipn_hand/frames`;
+  - `data/raw/ipn_hand/annotations/ipnall.json`.
+
+Локальный результат:
+- `PYTHON=.venv/bin/python make ipn-convert`
+  -> status `missing_input`.
+- Отчет корректно показывает ожидаемые пути и warning-и.
+- MLflow run `ipn-conversion` создан.
+
+Проверки:
+- `.venv/bin/python -m py_compile scripts/convert_ipn_hand.py` -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_convert_ipn_hand.py -q`
+  -> `4 passed`.
