@@ -26,7 +26,9 @@ from app.flet_app.theme import (
     COLOR_MUTED,
     COLOR_ON_SURFACE,
     COLOR_SUCCESS,
+    COLOR_SURFACE,
     COLOR_SURFACE_HIGH,
+    COLOR_WARNING,
     surface_card,
 )
 
@@ -34,7 +36,7 @@ from app.flet_app.theme import (
 _MAX_LOG_LINES = 400
 _DEFAULT_DATA_ROOT = "data/gestures"
 _DEFAULT_MODEL_OUT = "models/knn.pkl"
-_DEFAULT_RECORD_SAMPLES = 20
+_DEFAULT_RECORD_SAMPLES = 8
 _DEFAULT_RECORD_FRAMES = 30
 _DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_knn.pkl"
 _DYNAMIC_MODEL_OUT_BY_TYPE = {
@@ -47,7 +49,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
 _DEFAULT_DYNAMIC_CLASSES_OUT = "models/dynamic_classes.json"
 _DEFAULT_DYNAMIC_FEATURE_DIM_OUT = "models/dynamic_feature_dim.txt"
 _DEFAULT_DYNAMIC_FEATURE_MODE_OUT = "models/dynamic_feature_mode.txt"
-_DEFAULT_DYNAMIC_RECORD_SAMPLES = 30
+_DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
 _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL = 20
 _DEFAULT_NEGATIVE_SEED = 42
@@ -87,7 +89,7 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._user_rec_samples = ft.TextField(
-            label="Сэмплов",
+            label="Реальных дублей",
             value=str(_DEFAULT_RECORD_SAMPLES),
             width=140,
             border_color=COLOR_SURFACE_HIGH,
@@ -123,7 +125,7 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._rec_samples = ft.TextField(
-            label="Сэмплов",
+            label="Реальных дублей",
             value=str(_DEFAULT_RECORD_SAMPLES),
             width=120,
             border_color=COLOR_SURFACE_HIGH,
@@ -155,7 +157,7 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._dyn_rec_samples = ft.TextField(
-            label="Сэмплов",
+            label="Реальных дублей",
             value=str(_DEFAULT_DYNAMIC_RECORD_SAMPLES),
             width=120,
             border_color=COLOR_SURFACE_HIGH,
@@ -208,7 +210,6 @@ class TrainingView:
             label="Файл dynamic-модели",
             value=_DEFAULT_DYNAMIC_MODEL_OUT,
             border_color=COLOR_SURFACE_HIGH,
-            expand=True,
         )
         self._dyn_tr_neighbors = ft.TextField(
             label="K",
@@ -256,13 +257,11 @@ class TrainingView:
             label="Папка датасета",
             value=_DEFAULT_DATA_ROOT,
             border_color=COLOR_SURFACE_HIGH,
-            expand=True,
         )
         self._tr_out_path = ft.TextField(
             label="Выходной файл модели",
             value=_DEFAULT_MODEL_OUT,
             border_color=COLOR_SURFACE_HIGH,
-            expand=True,
         )
         self._tr_neighbors = ft.TextField(
             label="K (соседи)",
@@ -319,10 +318,35 @@ class TrainingView:
             border_radius=10,
             padding=10,
             height=260,
+            width=float("inf"),
         )
 
         # --- Список записанных классов ------------------------------------
         self._datasets_column = ft.Column(spacing=8)
+        self._dataset_classes_value = ft.Text(
+            "0",
+            size=18,
+            weight=ft.FontWeight.BOLD,
+            color=COLOR_ON_SURFACE,
+        )
+        self._dataset_samples_value = ft.Text(
+            "0",
+            size=18,
+            weight=ft.FontWeight.BOLD,
+            color=COLOR_ON_SURFACE,
+        )
+        self._dataset_real_aug_value = ft.Text(
+            "0 / 0",
+            size=18,
+            weight=ft.FontWeight.BOLD,
+            color=COLOR_ON_SURFACE,
+        )
+        self._dataset_balance_value = ft.Text(
+            "empty",
+            size=18,
+            weight=ft.FontWeight.BOLD,
+            color=COLOR_MUTED,
+        )
         self._pending_delete_label = ""
         self._last_recording_state: dict = {"active": False}
 
@@ -396,6 +420,10 @@ class TrainingView:
     def _refresh_datasets(self) -> None:
         rows = self._controller.list_recorded_gestures()
         self._datasets_column.controls.clear()
+        total_samples = 0
+        total_real_samples = 0
+        total_augmented_samples = 0
+        class_counts: list[int] = []
         if not rows:
             self._datasets_column.controls.append(
                 ft.Text(
@@ -408,6 +436,12 @@ class TrainingView:
             for row in rows:
                 label = str(row["label"])
                 samples = int(row["samples"])
+                real_samples = int(row.get("realSamples") or samples)
+                augmented_samples = int(row.get("augmentedSamples") or 0)
+                total_samples += samples
+                total_real_samples += real_samples
+                total_augmented_samples += augmented_samples
+                class_counts.append(samples)
                 pending_delete = self._pending_delete_label == label
                 actions: list[ft.Control]
                 if pending_delete:
@@ -437,7 +471,7 @@ class TrainingView:
                     ]
                 self._datasets_column.controls.append(
                     ft.Container(
-                        bgcolor="#262636",
+                        bgcolor="#1A1E22",
                         border_radius=8,
                         padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                         content=ft.Row(
@@ -453,7 +487,12 @@ class TrainingView:
                                     expand=True,
                                 ),
                                 ft.Text(
-                                    f"{samples} сэмплов",
+                                    (
+                                        f"{samples} обучающих "
+                                        f"({real_samples} real + {augmented_samples} aug)"
+                                        if augmented_samples
+                                        else f"{samples} сэмплов"
+                                    ),
                                     size=12,
                                     color=COLOR_MUTED,
                                 ),
@@ -462,8 +501,25 @@ class TrainingView:
                         ),
                     )
                 )
+        if class_counts:
+            spread = max(class_counts) - min(class_counts)
+            tolerance = max(3, int(max(class_counts) * 0.25))
+            balance_label = "healthy" if spread <= tolerance else "uneven"
+            balance_color = COLOR_SUCCESS if spread <= tolerance else COLOR_WARNING
+        else:
+            balance_label = "empty"
+            balance_color = COLOR_MUTED
+        self._dataset_classes_value.value = str(len(rows))
+        self._dataset_samples_value.value = str(total_samples)
+        self._dataset_real_aug_value.value = f"{total_real_samples} / {total_augmented_samples}"
+        self._dataset_balance_value.value = balance_label
+        self._dataset_balance_value.color = balance_color
         try:
             self._datasets_column.update()
+            self._dataset_classes_value.update()
+            self._dataset_samples_value.update()
+            self._dataset_real_aug_value.update()
+            self._dataset_balance_value.update()
         except Exception:
             pass
 
@@ -701,7 +757,7 @@ class TrainingView:
             return
 
         self._append_log(
-            f"[i] Запись «{label}»: {samples} сэмплов, {frames} кадров"
+            f"[i] Запись «{label}»: {samples} реальных дублей, {frames} кадров"
             + (" (две руки)" if two_hands else "")
         )
         self._append_log(
@@ -848,15 +904,236 @@ class TrainingView:
             color=COLOR_ON_SURFACE,
         )
 
+    def _panel_title(
+        self,
+        icon: str,
+        title: str,
+        *,
+        color: str = COLOR_ACCENT,
+        trailing: ft.Control | None = None,
+    ) -> ft.Row:
+        controls: list[ft.Control] = [
+            ft.Container(
+                width=30,
+                height=30,
+                border_radius=8,
+                bgcolor="#1A1E22",
+                alignment=ft.Alignment.CENTER,
+                content=ft.Icon(icon, size=17, color=color),
+            ),
+            ft.Text(
+                title,
+                size=14,
+                weight=ft.FontWeight.W_600,
+                color=COLOR_ON_SURFACE,
+                expand=True,
+            ),
+        ]
+        if trailing is not None:
+            controls.append(trailing)
+        return ft.Row(
+            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=controls,
+        )
+
+    def _status_chip(self, icon: str, label: str, color: str) -> ft.Container:
+        return ft.Container(
+            border_radius=8,
+            bgcolor="#1A1E22",
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+            content=ft.Row(
+                spacing=7,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(icon, size=14, color=color),
+                    ft.Text(label, size=12, color=COLOR_ON_SURFACE, no_wrap=True),
+                ],
+            ),
+        )
+
+    def _metric_tile(
+        self,
+        icon: str,
+        label: str,
+        value: ft.Text,
+        *,
+        color: str = COLOR_ACCENT,
+    ) -> ft.Container:
+        return ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            padding=12,
+            content=ft.Column(
+                spacing=8,
+                controls=[
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(icon, size=16, color=color),
+                            ft.Text(label, size=12, color=COLOR_MUTED),
+                        ],
+                    ),
+                    value,
+                ],
+            ),
+        )
+
+    def _workflow_step(
+        self,
+        label: str,
+        *,
+        active: bool = False,
+        done: bool = False,
+    ) -> ft.Container:
+        color = COLOR_SUCCESS if done else COLOR_ACCENT if active else COLOR_MUTED
+        return ft.Container(
+            bgcolor="#171A1D" if not active else "#1D3034",
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            content=ft.Row(
+                spacing=7,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE if done else ft.Icons.RADIO_BUTTON_UNCHECKED,
+                        size=14,
+                        color=color,
+                    ),
+                    ft.Text(label, size=12, color=COLOR_ON_SURFACE if active else COLOR_MUTED),
+                ],
+            ),
+        )
+
+    def _build_dataset_manager_card(self) -> ft.Control:
+        metrics = ft.ResponsiveRow(
+            spacing=10,
+            run_spacing=10,
+            controls=[
+                ft.Container(
+                    content=self._metric_tile(
+                        ft.Icons.FOLDER,
+                        "Классы",
+                        self._dataset_classes_value,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        ft.Icons.DATA_ARRAY,
+                        "Сэмплы",
+                        self._dataset_samples_value,
+                        color=COLOR_SUCCESS,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        ft.Icons.AUTO_FIX_HIGH,
+                        "real / aug",
+                        self._dataset_real_aug_value,
+                        color=COLOR_WARNING,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        ft.Icons.BALANCE,
+                        "Баланс",
+                        self._dataset_balance_value,
+                        color=COLOR_ACCENT,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+            ],
+        )
+        card = surface_card(
+            ft.Column(
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.DATASET,
+                        "Менеджер датасета",
+                        trailing=ft.IconButton(
+                            icon=ft.Icons.REFRESH,
+                            tooltip="Обновить",
+                            icon_color=COLOR_MUTED,
+                            on_click=lambda _e: self._refresh_datasets(),
+                        ),
+                    ),
+                    metrics,
+                    self._datasets_column,
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+        card.width = float("inf")
+        return card
+
+    def _build_workflow_card(self) -> ft.Control:
+        card = surface_card(
+            ft.Column(
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.ACCOUNT_TREE,
+                        "Пайплайн обучения",
+                        color=COLOR_SUCCESS,
+                    ),
+                    ft.Row(
+                        spacing=8,
+                        wrap=True,
+                        controls=[
+                            self._workflow_step("Запись", active=True),
+                            self._workflow_step("Аугментация"),
+                            self._workflow_step("Обучение"),
+                            self._workflow_step("Проверка"),
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=8,
+                        wrap=True,
+                        controls=[
+                            self._status_chip(
+                                ft.Icons.AUTO_FIX_HIGH,
+                                "auto-augment",
+                                COLOR_SUCCESS,
+                            ),
+                            self._status_chip(
+                                ft.Icons.SECURITY,
+                                "negative-защита",
+                                COLOR_WARNING,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+        card.width = float("inf")
+        return card
+
     def _build_user_record_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("1. Запись примеров"),
+                    self._panel_title(
+                        ft.Icons.FIBER_MANUAL_RECORD,
+                        "1. Запись",
+                        color=COLOR_DANGER,
+                    ),
                     self._user_rec_label,
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
                             self._user_rec_samples,
                             self._user_rec_two_hands,
@@ -865,32 +1142,41 @@ class TrainingView:
                     self._user_rec_start_btn,
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_user_train_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("2. Обучение модели"),
+                    self._panel_title(
+                        ft.Icons.MODEL_TRAINING,
+                        "2. Обучение",
+                        color=COLOR_ACCENT,
+                    ),
                     self._user_tr_start_btn,
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_developer_record_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("1. Запись примеров"),
+                    self._panel_title(
+                        ft.Icons.FIBER_MANUAL_RECORD,
+                        "1. Запись",
+                        color=COLOR_DANGER,
+                    ),
                     self._rec_label,
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
                             self._rec_samples,
                             self._rec_frames,
@@ -900,41 +1186,51 @@ class TrainingView:
                     self._rec_start_btn,
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_developer_train_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("2. Обучение модели"),
+                    self._panel_title(
+                        ft.Icons.MODEL_TRAINING,
+                        "2. Обучение",
+                        color=COLOR_ACCENT,
+                    ),
                     self._tr_data_root,
                     self._tr_out_path,
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
-                            ft.Container(content=self._tr_model_type, expand=True),
+                            ft.Container(content=self._tr_model_type, width=230),
                             self._tr_neighbors,
                         ],
                     ),
                     self._tr_start_btn,
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_dynamic_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("3. Динамическая модель"),
+                    self._panel_title(
+                        ft.Icons.TIMELINE,
+                        "3. Динамика",
+                        color=COLOR_SUCCESS,
+                    ),
                     self._dyn_rec_label,
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
                             self._dyn_rec_samples,
                             self._dyn_rec_frames,
@@ -943,6 +1239,7 @@ class TrainingView:
                     ),
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         controls=[
                             self._dyn_rec_start_btn,
@@ -952,26 +1249,32 @@ class TrainingView:
                     self._dyn_model_out,
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
-                            ft.Container(content=self._dyn_feature_mode, expand=True),
-                            ft.Container(content=self._dyn_model_type, expand=True),
+                            ft.Container(content=self._dyn_feature_mode, width=190),
+                            ft.Container(content=self._dyn_model_type, width=150),
                             self._dyn_tr_neighbors,
                         ],
                     ),
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_negative_card(self) -> ft.Control:
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    self._section_title("4. Negative examples"),
+                    self._panel_title(
+                        ft.Icons.FILTER_ALT,
+                        "4. Negative",
+                        color=COLOR_MUTED,
+                    ),
                     ft.Row(
                         spacing=10,
+                        wrap=True,
                         controls=[
                             self._neg_samples_per_label,
                             self._neg_seed,
@@ -980,8 +1283,8 @@ class TrainingView:
                     self._neg_generate_btn,
                 ],
             ),
-            padding=16,
-            radius=16,
+            padding=14,
+            radius=8,
         )
 
     def _build_recording_preview_card(self) -> ft.Control:
@@ -991,12 +1294,23 @@ class TrainingView:
                 controls=[
                     ft.Container(
                         expand=True,
-                        bgcolor="#080812",
+                        bgcolor="#07090B",
                         alignment=ft.Alignment.CENTER,
-                        content=ft.Text(
-                            "Камера появится после старта записи",
-                            size=12,
-                            color=COLOR_MUTED,
+                        content=ft.Column(
+                            spacing=8,
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Icon(
+                                    ft.Icons.VIDEO_CAMERA_FRONT,
+                                    color=COLOR_SURFACE_HIGH,
+                                    size=42,
+                                ),
+                                ft.Text(
+                                    "Камера появится после старта записи",
+                                    size=12,
+                                    color=COLOR_MUTED,
+                                ),
+                            ],
                         ),
                     ),
                     ft.Container(
@@ -1011,10 +1325,10 @@ class TrainingView:
                     ),
                 ],
             ),
-            bgcolor="#0d0d18",
-            border_radius=14,
+            bgcolor="#0B0D10",
+            border_radius=8,
             padding=8,
-            height=300,
+            height=360,
             alignment=ft.Alignment.CENTER,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
@@ -1028,175 +1342,244 @@ class TrainingView:
         )
         return surface_card(
             ft.Column(
-                spacing=10,
+                spacing=12,
                 controls=[
-                    ft.Row(
-                        spacing=10,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.VIDEO_CAMERA_FRONT,
-                                size=20,
-                                color=COLOR_ACCENT,
-                            ),
-                            self._recording_title,
-                        ],
+                    self._panel_title(
+                        ft.Icons.VIDEO_CAMERA_FRONT,
+                        "Камера и запись",
                     ),
+                    self._recording_title,
                     camera_stage,
                     self._recording_detail,
                     progress_row,
                 ],
             ),
             padding=14,
-            radius=16,
+            radius=8,
         )
 
     def _build_training_body(self) -> ft.Control:
+        def border_all(color: str) -> ft.Border:
+            side = ft.BorderSide(1, color)
+            return ft.Border(top=side, right=side, bottom=side, left=side)
+
         user_body = ft.Container(
-            content=ft.ResponsiveRow(
-                spacing=14,
-                run_spacing=14,
+            content=ft.Column(
+                spacing=10,
                 controls=[
-                    ft.Container(
-                        content=self._build_user_record_card(),
-                        col={"xs": 12, "md": 7},
-                    ),
-                    ft.Container(
-                        content=self._build_user_train_card(),
-                        col={"xs": 12, "md": 5},
-                    ),
+                    self._build_user_record_card(),
+                    self._build_user_train_card(),
                 ],
             ),
             visible=True,
         )
         developer_body = ft.Container(
-            content=ft.ResponsiveRow(
-                spacing=14,
-                run_spacing=14,
+            content=ft.Column(
+                spacing=10,
                 controls=[
-                    ft.Container(
-                        content=self._build_developer_record_card(),
-                        col={"xs": 12, "md": 6},
-                    ),
-                    ft.Container(
-                        content=self._build_developer_train_card(),
-                        col={"xs": 12, "md": 6},
-                    ),
-                    ft.Container(
-                        content=self._build_dynamic_card(),
-                        col={"xs": 12, "md": 7},
-                    ),
-                    ft.Container(
-                        content=self._build_negative_card(),
-                        col={"xs": 12, "md": 5},
-                    ),
+                    self._build_developer_record_card(),
+                    self._build_developer_train_card(),
+                    self._build_dynamic_card(),
+                    self._build_negative_card(),
                 ],
             ),
             visible=False,
         )
 
-        def on_tab_change(e) -> None:
-            try:
-                index = int(e.data or 0)
-            except (TypeError, ValueError):
-                index = 0
-            user_body.visible = index == 0
-            developer_body.visible = index == 1
+        segment_refs: dict[str, tuple[ft.Container, ft.Icon, ft.Text]] = {}
+
+        def apply_mode(mode: str) -> None:
+            user_body.visible = mode == "user"
+            developer_body.visible = mode == "developer"
+            for key, (container, icon, text) in segment_refs.items():
+                active = key == mode
+                container.bgcolor = "#223238" if active else "#171A1D"
+                container.border = border_all(COLOR_ACCENT if active else COLOR_SURFACE_HIGH)
+                icon.color = COLOR_ACCENT if active else COLOR_MUTED
+                text.color = COLOR_ON_SURFACE if active else COLOR_MUTED
             try:
                 user_body.update()
                 developer_body.update()
+                for container, icon, text in segment_refs.values():
+                    container.update()
+                    icon.update()
+                    text.update()
             except Exception:
                 pass
 
-        return ft.Column(
-            spacing=12,
-            controls=[
-                ft.Tabs(
-                    length=2,
-                    selected_index=0,
-                    on_change=on_tab_change,
-                    content=ft.TabBar(
-                        tabs=[
-                            ft.Tab(label="Пользователь", icon=ft.Icons.PERSON),
-                            ft.Tab(label="Разработчик", icon=ft.Icons.CODE),
-                        ],
-                        scrollable=False,
-                        divider_color=COLOR_SURFACE_HIGH,
-                        indicator_color=COLOR_ACCENT,
-                        label_color=COLOR_ACCENT,
-                        unselected_label_color=COLOR_MUTED,
-                    ),
+        def make_mode_segment(
+            key: str,
+            label: str,
+            icon_name: str,
+            *,
+            selected: bool = False,
+        ) -> ft.Container:
+            icon = ft.Icon(
+                icon_name,
+                size=16,
+                color=COLOR_ACCENT if selected else COLOR_MUTED,
+            )
+            text = ft.Text(
+                label,
+                size=12,
+                weight=ft.FontWeight.W_600,
+                color=COLOR_ON_SURFACE if selected else COLOR_MUTED,
+                no_wrap=True,
+            )
+            container = ft.Container(
+                expand=True,
+                bgcolor="#223238" if selected else "#171A1D",
+                border=border_all(COLOR_ACCENT if selected else COLOR_SURFACE_HIGH),
+                border_radius=8,
+                padding=ft.Padding.symmetric(horizontal=12, vertical=9),
+                ink=False,
+                on_click=lambda _e, value=key: apply_mode(value),
+                content=ft.Row(
+                    spacing=8,
+                    tight=True,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[icon, text],
                 ),
+            )
+            segment_refs[key] = (container, icon, text)
+            return container
+
+        mode_picker = ft.Container(
+            bgcolor="#111417",
+            border=border_all(COLOR_SURFACE_HIGH),
+            border_radius=8,
+            padding=4,
+            content=ft.Row(
+                spacing=6,
+                controls=[
+                    make_mode_segment(
+                        "user",
+                        "Пользователь",
+                        ft.Icons.PERSON,
+                        selected=True,
+                    ),
+                    make_mode_segment(
+                        "developer",
+                        "Разработчик",
+                        ft.Icons.CODE,
+                    ),
+                ],
+            ),
+        )
+
+        return ft.Column(
+            spacing=10,
+            controls=[
+                mode_picker,
                 user_body,
                 developer_body,
             ],
         )
 
     def build(self) -> ft.Control:
-        header = ft.Row(
+        workflow_strip = ft.Row(
+            spacing=8,
+            wrap=True,
             controls=[
-                ft.Icon(ft.Icons.MODEL_TRAINING, color=COLOR_ACCENT, size=28),
-                ft.Text(
-                    "Обучение",
-                    size=20,
-                    weight=ft.FontWeight.BOLD,
-                    color=COLOR_ON_SURFACE,
-                ),
-                ft.Text(
-                    "запись примеров + обучение KNN",
-                    size=12,
-                    color=COLOR_MUTED,
-                ),
-                ft.Container(expand=True),
-                self._cancel_btn,
+                self._status_chip(ft.Icons.FIBER_MANUAL_RECORD, "запись", COLOR_DANGER),
+                self._status_chip(ft.Icons.DATASET, "датасет", COLOR_WARNING),
+                self._status_chip(ft.Icons.MODEL_TRAINING, "модель", COLOR_ACCENT),
             ],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+        title_group = ft.Row(
             spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(
+                    width=36,
+                    height=36,
+                    border_radius=8,
+                    bgcolor="#1A1E22",
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Icon(ft.Icons.MODEL_TRAINING, color=COLOR_ACCENT, size=21),
+                ),
+                ft.Column(
+                    spacing=1,
+                    expand=True,
+                    controls=[
+                        ft.Text(
+                            "Студия обучения",
+                            size=19,
+                            weight=ft.FontWeight.BOLD,
+                            color=COLOR_ON_SURFACE,
+                        ),
+                        ft.Text(
+                            "запись, датасет, обучение, проверка",
+                            size=12,
+                            color=COLOR_MUTED,
+                        ),
+                    ],
+                ),
+            ],
+        )
+        header = ft.ResponsiveRow(
+            spacing=10,
+            run_spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(content=title_group, col={"xs": 12, "md": 5}),
+                ft.Container(content=workflow_strip, col={"xs": 12, "md": 5}),
+                ft.Container(
+                    content=self._cancel_btn,
+                    alignment=ft.Alignment.CENTER_RIGHT,
+                    col={"xs": 12, "md": 2},
+                ),
+            ],
         )
 
-        datasets_card = surface_card(
-            ft.Column(
-                spacing=8,
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(
-                                "Накопленные классы",
-                                size=14,
-                                weight=ft.FontWeight.W_600,
-                                color=COLOR_ON_SURFACE,
-                            ),
-                            ft.Container(expand=True),
-                            ft.IconButton(
-                                icon=ft.Icons.REFRESH,
-                                tooltip="Обновить",
-                                on_click=lambda _e: self._refresh_datasets(),
-                            ),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    self._datasets_column,
-                ],
-            ),
-            padding=16,
-            radius=16,
-        )
+        datasets_card = self._build_dataset_manager_card()
 
         log_card = surface_card(
             ft.Column(
-                spacing=6,
+                spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
-                    ft.Text(
-                        "Журнал процесса",
-                        size=14,
-                        weight=ft.FontWeight.W_600,
-                        color=COLOR_ON_SURFACE,
+                    self._panel_title(
+                        ft.Icons.TERMINAL,
+                        "Журнал",
+                        color=COLOR_MUTED,
                     ),
                     self._log_scroll,
                 ],
             ),
             padding=14,
-            radius=16,
+            radius=8,
+        )
+        log_card.width = float("inf")
+
+        main_row = ft.ResponsiveRow(
+            spacing=14,
+            run_spacing=14,
+            controls=[
+                ft.Container(
+                    content=self._build_recording_preview_card(),
+                    col={"xs": 12, "lg": 7},
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        spacing=14,
+                        controls=[
+                            self._build_training_body(),
+                            self._build_workflow_card(),
+                        ],
+                    ),
+                    col={"xs": 12, "lg": 5},
+                ),
+            ],
+        )
+        lower_row = ft.ResponsiveRow(
+            spacing=14,
+            run_spacing=14,
+            controls=[
+                ft.Container(content=datasets_card, col={"xs": 12, "lg": 5}),
+                ft.Container(content=log_card, col={"xs": 12, "lg": 7}),
+            ],
         )
 
         return ft.Column(
@@ -1204,10 +1587,8 @@ class TrainingView:
             scroll=ft.ScrollMode.AUTO,
             expand=True,
             controls=[
-                surface_card(header, padding=16, radius=16),
-                self._build_recording_preview_card(),
-                self._build_training_body(),
-                datasets_card,
-                log_card,
+                surface_card(header, padding=14, radius=8),
+                main_row,
+                lower_row,
             ],
         )

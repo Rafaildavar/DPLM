@@ -51,6 +51,10 @@ class NavItem:
 def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
     # --- Хедер с глобальным статусом ---------------------------------------
 
+    def border_all(color: str) -> ft.Border:
+        side = ft.BorderSide(1, color)
+        return ft.Border(top=side, right=side, bottom=side, left=side)
+
     status_dot = ft.Container(
         width=12,
         height=12,
@@ -59,23 +63,20 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
     )
     status_text = ft.Text(controller.status, size=13, color=COLOR_ON_SURFACE)
     title_text = ft.Text(
-        "DPLM — ассистент жестов",
+        "GestureFlow — ассистент жестов",
         size=20,
         weight=ft.FontWeight.BOLD,
-        color=ft.Colors.WHITE,
+        color=COLOR_ON_SURFACE,
     )
 
     header = ft.Container(
-        gradient=ft.LinearGradient(
-            begin=ft.Alignment.CENTER_LEFT,
-            end=ft.Alignment.CENTER_RIGHT,
-            colors=[COLOR_ACCENT, "#0277bd"],
-        ),
-        border_radius=16,
-        padding=16,
+        bgcolor=COLOR_SURFACE,
+        border=border_all(COLOR_SURFACE_HIGH),
+        border_radius=12,
+        padding=14,
         content=ft.Row(
             controls=[
-                ft.Icon(ft.Icons.SMART_TOY, color=ft.Colors.WHITE, size=32),
+                ft.Icon(ft.Icons.SMART_TOY, color=COLOR_ACCENT, size=30),
                 ft.Column(
                     spacing=2,
                     controls=[

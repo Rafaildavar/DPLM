@@ -1,29 +1,30 @@
 """
 Цветовая палитра и общие стили для Flet-версии DPLM.
 
-Повторяет визуальную айдентику исходного QML-интерфейса
-(тёмная Material 3 тема с акцентом cyan + градиенты #1a1a2e → #16213e).
+Тёмная desktop-палитра: графитовые поверхности, тёплый текст,
+приглушённый cyan-акцент и семантические состояния.
 """
 from __future__ import annotations
 
 import flet as ft
 
 
-# Базовая палитра — отражает QML Material.Cyan на тёмном фоне.
-COLOR_BG_TOP = "#1a1a2e"
-COLOR_BG_BOTTOM = "#16213e"
-COLOR_SURFACE = "#2a2a3e"
-COLOR_SURFACE_HIGH = "#363650"
-COLOR_ACCENT = "#00bcd4"   # Material Cyan 500
-COLOR_ACCENT_DEEP = "#0097a7"
-COLOR_ON_SURFACE = "#ECEFF1"
-COLOR_MUTED = "#90A4AE"
-COLOR_DANGER = "#f44336"
-COLOR_SUCCESS = "#4CAF50"
+# Graphite classic palette. Keep the interface dark, but not blue-heavy.
+COLOR_BG_TOP = "#111315"
+COLOR_BG_BOTTOM = "#17191D"
+COLOR_SURFACE = "#202328"
+COLOR_SURFACE_HIGH = "#2B2F36"
+COLOR_ACCENT = "#52C7D8"
+COLOR_ACCENT_DEEP = "#2D8D9C"
+COLOR_ON_SURFACE = "#F0EEE7"
+COLOR_MUTED = "#A5A8A1"
+COLOR_DANGER = "#E65A4F"
+COLOR_SUCCESS = "#67B36B"
+COLOR_WARNING = "#D8A84E"
 
 
 def build_theme() -> ft.Theme:
-    """Тёмная Material 3 тема с акцентом cyan."""
+    """Тёмная Material 3 тема с приглушённым cyan-акцентом."""
     return ft.Theme(
         color_scheme_seed=ft.Colors.CYAN,
         use_material3=True,
@@ -32,7 +33,7 @@ def build_theme() -> ft.Theme:
 
 
 def app_background() -> ft.LinearGradient:
-    """Градиентный фон главного контейнера (как в QML MainWindow)."""
+    """Сдержанный фон главного контейнера."""
     return ft.LinearGradient(
         begin=ft.Alignment.TOP_CENTER,
         end=ft.Alignment.BOTTOM_CENTER,
@@ -40,11 +41,17 @@ def app_background() -> ft.LinearGradient:
     )
 
 
-def surface_card(content: ft.Control, *, padding: int = 16, radius: int = 16) -> ft.Container:
-    """Карточка-поверхность с округлёнными углами (стиль `#2a2a3e` + radius)."""
+def _border_all(color: str, width: float = 1) -> ft.Border:
+    side = ft.BorderSide(width, color)
+    return ft.Border(top=side, right=side, bottom=side, left=side)
+
+
+def surface_card(content: ft.Control, *, padding: int = 16, radius: int = 8) -> ft.Container:
+    """Карточка-поверхность с классическим graphite border."""
     return ft.Container(
         content=content,
         padding=padding,
         bgcolor=COLOR_SURFACE,
         border_radius=radius,
+        border=_border_all(COLOR_SURFACE_HIGH),
     )
