@@ -2349,3 +2349,49 @@ MLflow:
 
 Полный анализ:
 - `docs/experiments/ipn_hand_research_analysis.md`.
+
+### H-048: Dynamic pipeline должен поддерживать произвольные пользовательские жесты, а не только swipes
+
+Статус: `accepted architecture direction`
+
+Дата: `2026-06-28`
+
+Проблема:
+- Текущие `swipe_left`, `swipe_up`, `swipe_down` удобны для ранней проверки,
+  но финальная система не должна быть набором hardcoded направлений.
+- Пользователь должен уметь записать любой динамический жест:
+  круг, зигзаг, комбинированное движение, изменение формы руки во время
+  движения и т.д.
+
+Вывод:
+- Direction rules (`dx < 0`, `dy > 0`) остаются только вспомогательным
+  primitive scorer для известных directional gestures.
+- Универсальное распознавание должно строиться на последовательности
+  landmarks и пользовательском обучении.
+
+Архитектура:
+- `MediaPipe landmarks`;
+- generic dynamic intent detector;
+- sequence normalization;
+- user-trained dynamic classifier;
+- dynamic open-set reject layer;
+- router / command execution.
+
+ML-часть:
+- Для малых данных:
+  KNN/prototype distance/DTW-like distance/SVM/ExtraTrees.
+- При росте данных:
+  MLP, TCN, GRU/LSTM, later tiny Transformer.
+- IPN Hand используется как external dynamic negative / validation, но не
+  заменяет пользовательские positive samples.
+
+Метрики:
+- `live_false_dynamic_activation_rate`;
+- `live_unknown_dynamic_reject_rate`;
+- `live_dynamic_open_set_false_positive_rate`;
+- `live_sample_efficiency`;
+- `live_sequence_accuracy`;
+- `live_confusion_static_vs_dynamic`.
+
+Документ:
+- `docs/experiments/custom_dynamic_gesture_strategy.md`.
