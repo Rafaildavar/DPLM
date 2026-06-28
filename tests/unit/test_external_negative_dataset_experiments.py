@@ -5,6 +5,7 @@ import numpy as np
 from scripts.external_negative_dataset_experiments import (
     SourceSpec,
     VariantSpec,
+    _labels_for_scope,
     load_specs,
     materialize_variant_dataset,
 )
@@ -98,3 +99,42 @@ def test_materialize_variant_skips_when_required_external_is_missing(tmp_path):
     assert summary.status == "skipped"
     assert summary.external_samples == 0
     assert summary.sources[0].status == "missing"
+
+
+def test_labels_for_scope_filters_external_negative_by_domain(tmp_path):
+    data_root = tmp_path / "gestures"
+    for label in ("gun", "swipe_up", "negative_external_ipn_dynamic"):
+        label_dir = data_root / label
+        label_dir.mkdir(parents=True)
+        np.save(label_dir / "sample_0000.npy", np.ones((5, 44), dtype=np.float32))
+    taxonomy_path = tmp_path / "taxonomy.json"
+    taxonomy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "default_type": "static",
+                "types": {
+                    "static": ["gun"],
+                    "dynamic": ["swipe_up"],
+                    "negative": [],
+                },
+                "patterns": {"negative": ["negative_*"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    domains = {"negative_external_ipn_dynamic": "dynamic"}
+
+    assert _labels_for_scope(
+        data_root,
+        taxonomy_path,
+        "static",
+        external_label_domains=domains,
+    ) == ["gun"]
+    assert _labels_for_scope(
+        data_root,
+        taxonomy_path,
+        "dynamic",
+        external_label_domains=domains,
+    ) == ["negative_external_ipn_dynamic", "swipe_up"]

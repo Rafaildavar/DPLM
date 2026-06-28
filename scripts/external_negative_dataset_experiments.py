@@ -517,6 +517,7 @@ def _run_scope_benchmark(
     mlflow_experiment: str,
     mlflow_tracking_uri: str,
     sources: dict[str, SourceSpec],
+    external_label_domains: dict[str, str],
 ) -> ScopeBenchmarkSummary:
     data_root = Path(variant.data_root)
     feature_mode = FEATURE_DYNAMIC_STATS if scope == "dynamic" else FEATURE_STATIC_MEAN
@@ -524,6 +525,12 @@ def _run_scope_benchmark(
     artifact_dir = out_root / variant.variant / scope
     artifact_dir.mkdir(parents=True, exist_ok=True)
     try:
+        include_labels = _labels_for_scope(
+            data_root,
+            taxonomy_path,
+            scope,
+            external_label_domains=external_label_domains,
+        )
         report = benchmark_rejection_methods(
             data_root=data_root,
             taxonomy_path=taxonomy_path,
@@ -531,6 +538,7 @@ def _run_scope_benchmark(
             feature_mode=feature_mode,
             target_dim=target_dim,
             methods=methods,
+            include_labels=include_labels,
             min_samples_per_class=2,
             max_folds=3,
         )
@@ -570,8 +578,15 @@ def _run_scope_benchmark(
         )
 
 
-def _labels_for_scope(data_root: Path, taxonomy_path: Path, scope: str) -> list[str]:
+def _labels_for_scope(
+    data_root: Path,
+    taxonomy_path: Path,
+    scope: str,
+    *,
+    external_label_domains: dict[str, str] | None = None,
+) -> list[str]:
     taxonomy = load_gesture_taxonomy(taxonomy_path)
+    external_label_domains = external_label_domains or {}
     selected_types = (
         {GESTURE_TYPE_STATIC, GESTURE_TYPE_QUASI_STATIC, GESTURE_TYPE_NEGATIVE}
         if scope == "static"
@@ -579,9 +594,27 @@ def _labels_for_scope(data_root: Path, taxonomy_path: Path, scope: str) -> list[
     )
     labels: list[str] = []
     for label in _class_counts(data_root):
+        external_domain = external_label_domains.get(label)
+        if external_domain and external_domain != scope:
+            continue
         if taxonomy.gesture_type_for_label(label) in selected_types:
             labels.append(label)
     return labels
+
+
+def _external_label_domains(
+    variant: MaterializedVariantSummary,
+    sources: dict[str, SourceSpec],
+) -> dict[str, str]:
+    domains: dict[str, str] = {}
+    for imported in variant.sources:
+        if imported.imported_samples <= 0:
+            continue
+        source = sources.get(imported.source)
+        if source is None:
+            continue
+        domains[imported.target_label] = source.domain
+    return domains
 
 
 def _write_training_files(
@@ -623,6 +656,7 @@ def _train_live_artifacts(
     *,
     variant: MaterializedVariantSummary,
     taxonomy_path: Path,
+    external_label_domains: dict[str, str],
     dynamic_model_types: Iterable[str],
     train_static: bool,
     train_dynamic: bool,
@@ -635,7 +669,12 @@ def _train_live_artifacts(
 
     if train_static:
         try:
-            include_labels = _labels_for_scope(data_root, taxonomy_path, "static")
+            include_labels = _labels_for_scope(
+                data_root,
+                taxonomy_path,
+                "static",
+                external_label_domains=external_label_domains,
+            )
             X, y, classes = load_dataset(
                 data_root,
                 expect_dim=42,
@@ -703,7 +742,12 @@ def _train_live_artifacts(
     if train_dynamic:
         for model_type in dynamic_model_types:
             try:
-                include_labels = _labels_for_scope(data_root, taxonomy_path, "dynamic")
+                include_labels = _labels_for_scope(
+                    data_root,
+                    taxonomy_path,
+                    "dynamic",
+                    external_label_domains=external_label_domains,
+                )
                 X, y, classes = load_dataset(
                     data_root,
                     expect_dim=44,
@@ -853,6 +897,7 @@ def run_external_negative_experiments(
         if variant.status != "ok":
             notes.append(f"{variant.variant}: skipped - {variant.skipped_reason}")
             continue
+        external_domains = _external_label_domains(variant, sources)
         for scope in scopes:
             clean_scope = str(scope).strip().lower()
             if clean_scope not in {"static", "dynamic"}:
@@ -867,6 +912,7 @@ def run_external_negative_experiments(
                     mlflow_experiment=mlflow_experiment,
                     mlflow_tracking_uri=mlflow_tracking_uri,
                     sources=sources,
+                    external_label_domains=external_domains,
                 )
             )
         if train_artifacts:
@@ -874,6 +920,7 @@ def run_external_negative_experiments(
                 _train_live_artifacts(
                     variant=variant,
                     taxonomy_path=taxonomy_path,
+                    external_label_domains=external_domains,
                     dynamic_model_types=dynamic_model_types,
                     train_static=True,
                     train_dynamic=True,
@@ -1012,13 +1059,10 @@ def build_markdown_summary(report: ExternalNegativeExperimentReport) -> str:
             "",
             "## How To Live-Test A Variant",
             "",
-            "Example for `hagrid_external`:",
+            "Example for current `ipn_external` dynamic variant:",
             "",
             "```bash",
-            "DPLM_MODELS_DIR=models/experiments/external_negative/hagrid_external \\",
-            "DPLM_MODEL_PATH=models/experiments/external_negative/hagrid_external/knn.pkl \\",
-            "DPLM_CLASSES_PATH=models/experiments/external_negative/hagrid_external/classes.json \\",
-            "DPLM_FEATURE_DIM_PATH=models/experiments/external_negative/hagrid_external/feature_dim.txt \\",
+            "DPLM_MODELS_DIR=models/experiments/external_negative/ipn_external \\",
             "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -m app.flet_app.main",
             "```",
             "",

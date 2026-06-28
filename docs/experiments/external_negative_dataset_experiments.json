@@ -1,5 +1,5 @@
 {
-  "generated_at": 1782667810.285093,
+  "generated_at": 1782683216.76838,
   "config_path": "/Users/remi/Developer/GUAP/DPLM/configs/external_negative_datasets.json",
   "internal_data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
   "variants": [
@@ -34,12 +34,13 @@
       "data_root": "/Users/remi/Developer/GUAP/DPLM/data/experiments/external_negative/ipn_external/gestures",
       "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external",
       "internal_samples": 291,
-      "external_samples": 0,
+      "external_samples": 80,
       "class_counts": {
         "CTRLZ": 21,
         "Hend": 20,
         "UP": 20,
         "gun": 20,
+        "negative_external_ipn_dynamic": 80,
         "no_gesture_static": 20,
         "partial_swipe": 20,
         "random_motion": 20,
@@ -56,14 +57,16 @@
           "source": "ipn_hand",
           "source_root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand",
           "target_label": "negative_external_ipn_dynamic",
-          "status": "missing",
-          "labels": {},
-          "imported_samples": 0,
-          "skipped_reason": "source root does not exist"
+          "status": "ok",
+          "labels": {
+            "negative_external_ipn_dynamic": 80
+          },
+          "imported_samples": 80,
+          "skipped_reason": ""
         }
       ],
-      "status": "skipped",
-      "skipped_reason": "variant requires external sources, but none were imported"
+      "status": "ok",
+      "skipped_reason": ""
     },
     {
       "variant": "hagrid_external",
@@ -106,12 +109,13 @@
       "data_root": "/Users/remi/Developer/GUAP/DPLM/data/experiments/external_negative/combined_external/gestures",
       "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external",
       "internal_samples": 291,
-      "external_samples": 0,
+      "external_samples": 80,
       "class_counts": {
         "CTRLZ": 21,
         "Hend": 20,
         "UP": 20,
         "gun": 20,
+        "negative_external_ipn_dynamic": 80,
         "no_gesture_static": 20,
         "partial_swipe": 20,
         "random_motion": 20,
@@ -128,10 +132,12 @@
           "source": "ipn_hand",
           "source_root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand",
           "target_label": "negative_external_ipn_dynamic",
-          "status": "missing",
-          "labels": {},
-          "imported_samples": 0,
-          "skipped_reason": "source root does not exist"
+          "status": "ok",
+          "labels": {
+            "negative_external_ipn_dynamic": 80
+          },
+          "imported_samples": 80,
+          "skipped_reason": ""
         },
         {
           "source": "hagrid",
@@ -143,8 +149,8 @@
           "skipped_reason": "source root does not exist"
         }
       ],
-      "status": "skipped",
-      "skipped_reason": "variant requires external sources, but none were imported"
+      "status": "ok",
+      "skipped_reason": ""
     }
   ],
   "benchmarks": [
@@ -177,6 +183,70 @@
         "best_negative_false_positive_rate": 0.0,
         "best_accepted_accuracy": 1.0,
         "best_coverage": 0.4118
+      },
+      "error": ""
+    },
+    {
+      "variant": "ipn_external",
+      "scope": "static",
+      "status": "ok",
+      "best_method": "one_vs_rest_logreg",
+      "recommendation": "Use `one_vs_rest_logreg` first: overall_success=0.9774, positive_recall=0.9669, negative_false_positive_rate=0.0100.",
+      "metrics": {
+        "best_overall_success": 0.9774,
+        "best_positive_recall": 0.9669,
+        "best_negative_reject_rate": 0.99,
+        "best_negative_false_positive_rate": 0.01,
+        "best_accepted_accuracy": 0.975,
+        "best_coverage": 0.543
+      },
+      "error": ""
+    },
+    {
+      "variant": "ipn_external",
+      "scope": "dynamic",
+      "status": "ok",
+      "best_method": "one_vs_rest_logreg",
+      "recommendation": "Use `one_vs_rest_logreg` first: overall_success=1.0000, positive_recall=1.0000, negative_false_positive_rate=0.0000.",
+      "metrics": {
+        "best_overall_success": 1.0,
+        "best_positive_recall": 1.0,
+        "best_negative_reject_rate": 1.0,
+        "best_negative_false_positive_rate": 0.0,
+        "best_accepted_accuracy": 1.0,
+        "best_coverage": 0.28
+      },
+      "error": ""
+    },
+    {
+      "variant": "combined_external",
+      "scope": "static",
+      "status": "ok",
+      "best_method": "one_vs_rest_logreg",
+      "recommendation": "Use `one_vs_rest_logreg` first: overall_success=0.9774, positive_recall=0.9669, negative_false_positive_rate=0.0100.",
+      "metrics": {
+        "best_overall_success": 0.9774,
+        "best_positive_recall": 0.9669,
+        "best_negative_reject_rate": 0.99,
+        "best_negative_false_positive_rate": 0.01,
+        "best_accepted_accuracy": 0.975,
+        "best_coverage": 0.543
+      },
+      "error": ""
+    },
+    {
+      "variant": "combined_external",
+      "scope": "dynamic",
+      "status": "ok",
+      "best_method": "one_vs_rest_logreg",
+      "recommendation": "Use `one_vs_rest_logreg` first: overall_success=1.0000, positive_recall=1.0000, negative_false_positive_rate=0.0000.",
+      "metrics": {
+        "best_overall_success": 1.0,
+        "best_positive_recall": 1.0,
+        "best_negative_reject_rate": 1.0,
+        "best_negative_false_positive_rate": 0.0,
+        "best_accepted_accuracy": 1.0,
+        "best_coverage": 0.28
       },
       "error": ""
     }
@@ -239,12 +309,128 @@
       "feature_mode": "dynamic_stats",
       "feature_dim": 271,
       "error": ""
+    },
+    {
+      "variant": "ipn_external",
+      "scope": "static",
+      "status": "ok",
+      "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external",
+      "model_paths": {
+        "model": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/knn.pkl",
+        "classes": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/classes.json",
+        "feature_dim": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/feature_dim.txt",
+        "feature_mode": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/feature_mode.txt",
+        "rejection": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/gesture_rejection.json",
+        "verifiers": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/static_rejection_verifiers.pkl"
+      },
+      "classes": [
+        "ctrlz",
+        "hend",
+        "up",
+        "gun",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "sh3",
+        "three",
+        "wrong_axis_motion"
+      ],
+      "sample_count": 221,
+      "feature_mode": "static_mean",
+      "feature_dim": 42,
+      "error": ""
+    },
+    {
+      "variant": "ipn_external",
+      "scope": "dynamic:knn",
+      "status": "ok",
+      "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external",
+      "model_paths": {
+        "model": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/dynamic_knn.pkl",
+        "classes": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/dynamic_classes.json",
+        "feature_dim": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/dynamic_feature_dim.txt",
+        "feature_mode": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/dynamic_feature_mode.txt",
+        "rejection": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/ipn_external/dynamic_knn_rejection.json"
+      },
+      "classes": [
+        "negative_external_ipn_dynamic",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "swipe_down",
+        "swipe_left",
+        "swipe_up",
+        "wrong_axis_motion"
+      ],
+      "sample_count": 250,
+      "feature_mode": "dynamic_stats",
+      "feature_dim": 271,
+      "error": ""
+    },
+    {
+      "variant": "combined_external",
+      "scope": "static",
+      "status": "ok",
+      "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external",
+      "model_paths": {
+        "model": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/knn.pkl",
+        "classes": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/classes.json",
+        "feature_dim": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/feature_dim.txt",
+        "feature_mode": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/feature_mode.txt",
+        "rejection": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/gesture_rejection.json",
+        "verifiers": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/static_rejection_verifiers.pkl"
+      },
+      "classes": [
+        "ctrlz",
+        "hend",
+        "up",
+        "gun",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "sh3",
+        "three",
+        "wrong_axis_motion"
+      ],
+      "sample_count": 221,
+      "feature_mode": "static_mean",
+      "feature_dim": 42,
+      "error": ""
+    },
+    {
+      "variant": "combined_external",
+      "scope": "dynamic:knn",
+      "status": "ok",
+      "model_root": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external",
+      "model_paths": {
+        "model": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/dynamic_knn.pkl",
+        "classes": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/dynamic_classes.json",
+        "feature_dim": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/dynamic_feature_dim.txt",
+        "feature_mode": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/dynamic_feature_mode.txt",
+        "rejection": "/Users/remi/Developer/GUAP/DPLM/models/experiments/external_negative/combined_external/dynamic_knn_rejection.json"
+      },
+      "classes": [
+        "negative_external_ipn_dynamic",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "swipe_down",
+        "swipe_left",
+        "swipe_up",
+        "wrong_axis_motion"
+      ],
+      "sample_count": 250,
+      "feature_mode": "dynamic_stats",
+      "feature_dim": 271,
+      "error": ""
     }
   ],
   "notes": [
-    "ipn_external: skipped - variant requires external sources, but none were imported",
     "hagrid_external: skipped - variant requires external sources, but none were imported",
-    "combined_external: skipped - variant requires external sources, but none were imported",
     "External datasets are treated as negative/rejection data, not as replacement for personalized GestureFlow samples.",
     "Live validation still decides whether an external variant is useful for the user's camera and gesture style."
   ]

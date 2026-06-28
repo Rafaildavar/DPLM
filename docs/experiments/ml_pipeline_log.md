@@ -2516,3 +2516,73 @@ Mapping:
 - `.venv/bin/python -m py_compile scripts/convert_ipn_hand.py` -> passed.
 - `.venv/bin/python -m pytest --no-cov tests/unit/test_convert_ipn_hand.py -q`
   -> `5 passed`.
+
+### H-051: IPN external negatives нужно сравнивать только в dynamic scope
+
+Статус: `validated`
+
+Дата: `2026-06-29`
+
+Проблема:
+- После конвертации IPN `external-negative-experiments` начал видеть
+  `negative_external_ipn_dynamic`.
+- Первый прогон показал улучшение и в static, и в dynamic строках, но это
+  методологически неверно: IPN Hand - dynamic source, а static должен
+  проверяться HaGRID/static negatives.
+
+Изменение:
+- `scripts/rejection_method_benchmark.py` получил параметр `include_labels`.
+- `scripts/external_negative_dataset_experiments.py` теперь фильтрует external
+  negative labels по `domain`:
+  - `ipn_hand` -> только `dynamic`;
+  - `hagrid` -> только `static`, когда появится локальный источник.
+- Live artifacts обучаются с тем же domain-aware фильтром.
+
+Команда:
+
+```bash
+PYTHON=.venv/bin/python make external-negative-experiments
+```
+
+Результат после фильтра:
+- `baseline_internal/static`:
+  - `positive_recall=0.9669`;
+  - `negative_reject_rate=0.9900`;
+  - `negative_false_positive_rate=0.0100`;
+  - `coverage=0.5430`.
+- `ipn_external/static`:
+  - совпадает с baseline, потому что IPN больше не попадает в static scope.
+- `baseline_internal/dynamic`:
+  - `positive_recall=1.0000`;
+  - `negative_reject_rate=1.0000`;
+  - `negative_false_positive_rate=0.0000`;
+  - `coverage=0.4118`;
+  - best method `open_set_policy`.
+- `ipn_external/dynamic`:
+  - `positive_recall=1.0000`;
+  - `negative_reject_rate=1.0000`;
+  - `negative_false_positive_rate=0.0000`;
+  - `coverage=0.2800`;
+  - best method `one_vs_rest_logreg`;
+  - sample count `250`, classes `9`.
+
+Интерпретация:
+- Offline benchmark не показывает прироста по core dynamic quality, потому что
+  baseline уже идеален на текущем offline split.
+- IPN все равно полезен как trained negative class для live/OOD проверки:
+  `dynamic_classes.json` теперь содержит `negative_external_ipn_dynamic`.
+- Решение о пользе IPN нужно принимать по live metrics:
+  `false_dynamic_activation_rate`, `sequence_edit_distance`,
+  `sequence_accuracy`, latency frames.
+
+Проверки:
+- `.venv/bin/python -m py_compile scripts/external_negative_dataset_experiments.py scripts/rejection_method_benchmark.py`
+  -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_external_negative_dataset_experiments.py tests/unit/test_rejection_method_benchmark.py -q`
+  -> `5 passed`.
+
+Следующий шаг:
+- Запустить live test с `ipn_external` dynamic artifact.
+- Затем добавить IPN-style continuous-session metrics:
+  `sequence_edit_distance`, `sequence_accuracy`,
+  `live_false_dynamic_activation_rate`, `dynamic_start/end_latency_frames`.

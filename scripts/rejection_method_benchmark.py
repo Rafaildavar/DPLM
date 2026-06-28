@@ -619,6 +619,7 @@ def benchmark_rejection_methods(
     feature_mode: str | None = None,
     target_dim: int | None = None,
     methods: Iterable[str] | str | None = None,
+    include_labels: Iterable[str] | None = None,
     min_samples_per_class: int = 2,
     max_folds: int = 3,
     random_state: int = 42,
@@ -640,10 +641,16 @@ def benchmark_rejection_methods(
     )
 
     all_records = load_gesture_sequences(data_root)
+    allowed_labels = (
+        {str(label) for label in include_labels}
+        if include_labels is not None
+        else None
+    )
     records = [
         record
         for record in all_records
         if taxonomy.gesture_type_for_label(record.label) in selected_types
+        and (allowed_labels is None or record.label in allowed_labels)
     ]
     counts = class_counts(records)
     kept_labels = {
