@@ -1,0 +1,29 @@
+{
+  "generated_at": 1782725470.798864,
+  "status": "mediapipe_unavailable",
+  "ipn_root": "/Users/remi/Developer/GUAP/DPLM/data/raw/ipn_hand",
+  "frames_root": "/Users/remi/Developer/GUAP/DPLM/data/raw/ipn_hand/frames04_extracted/frames",
+  "annotation_path": "/Users/remi/Developer/GUAP/DPLM/data/raw/ipn_hand/drive-download-20260628T185129Z-3-001/Annot_List.txt",
+  "mapping_path": "/Users/remi/Developer/GUAP/DPLM/configs/ipn_hand_mapping.json",
+  "out_root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand_frames04",
+  "limit_per_target_label": 5,
+  "max_frames_per_segment": 24,
+  "min_detected_frame_ratio": 0.5,
+  "segments_found": 5649,
+  "segments_included": 4848,
+  "converted_samples": 0,
+  "skipped_samples": 0,
+  "detection_rate": 0.0,
+  "labels": {},
+  "expectations": {
+    "production_model_unchanged": "met",
+    "outputs_under_data_external": "not_written",
+    "mapped_to_negative_labels": "not_checked",
+    "mlflow_conversion_report": "met"
+  },
+  "samples": [],
+  "warnings": [
+    "MediaPipe CLI preflight failed: exit=-6;     @        0x11f3fe2d8  mediapipe::api2::TensorsToDetectionsCalculator::Open()\n    @        0x11fa8bf70  mediapipe::CalculatorNode::OpenNode()\n    @        0x11fa7c06c  mediapipe::internal::SchedulerQueue::OpenCalculatorNode()\n    @        0x11fa7bed4  mediapipe::internal::SchedulerQueue::RunNextTask()\n    @        0x11ff914a0  mediapipe::ThreadPool::RunWorker()\n    @        0x11ff90ea0  mediapipe::ThreadPool::WorkerThread::ThreadBody()\n    @        0x1943acc08  _pthread_start\n    @        0x1943a7ba8  thread_start",
+    "no IPN samples were converted"
+  ]
+}

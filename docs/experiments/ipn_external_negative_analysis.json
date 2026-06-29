@@ -1,0 +1,118 @@
+{
+  "generated_at": 1782724460.158217,
+  "roots": [
+    {
+      "name": "existing",
+      "root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand",
+      "sample_count": 200,
+      "frame_count_mean": 49.335,
+      "detection_rate_mean": 0.894282,
+      "original_labels": {
+        "B0A": 54,
+        "B0B": 53,
+        "D0X": 19,
+        "G01": 10,
+        "G02": 11,
+        "G07": 11,
+        "G08": 11,
+        "G09": 10,
+        "G10": 10,
+        "G11": 11
+      },
+      "motion_directions": {
+        "diagonal_or_complex": 14,
+        "down": 66,
+        "left": 26,
+        "right": 48,
+        "up": 46
+      },
+      "model_metrics": {
+        "prototype_distance": {
+          "total": 200,
+          "negative_reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {
+            "far_from_prototype": 1,
+            "nearest_negative": 199
+          },
+          "nearest_labels": {
+            "negative_external_ipn_dynamic": 192,
+            "no_gesture_static": 2,
+            "partial_swipe": 3,
+            "swipe_left": 1,
+            "wrong_axis_motion": 2
+          },
+          "positive_distance_ratio_mean": 4.017592479197386,
+          "positive_distance_ratio_p95": 4.017592479197386
+        },
+        "prototype_dtw": {
+          "total": 200,
+          "negative_reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {
+            "far_from_prototype": 1,
+            "nearest_negative": 199
+          },
+          "nearest_labels": {
+            "negative_external_ipn_dynamic": 192,
+            "no_gesture_static": 1,
+            "partial_swipe": 3,
+            "swipe_left": 1,
+            "wrong_axis_motion": 3
+          },
+          "positive_distance_ratio_mean": 4.35775577145261,
+          "positive_distance_ratio_p95": 4.35775577145261
+        }
+      }
+    },
+    {
+      "name": "tar_expanded",
+      "root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand_tar",
+      "sample_count": 0,
+      "frame_count_mean": 0.0,
+      "detection_rate_mean": 0.0,
+      "original_labels": {},
+      "motion_directions": {},
+      "model_metrics": {
+        "prototype_distance": {
+          "total": 0,
+          "negative_reject_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {},
+          "nearest_labels": {},
+          "positive_distance_ratio_mean": 0.0,
+          "positive_distance_ratio_p95": 0.0
+        },
+        "prototype_dtw": {
+          "total": 0,
+          "negative_reject_rate": 0.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {},
+          "nearest_labels": {},
+          "positive_distance_ratio_mean": 0.0,
+          "positive_distance_ratio_p95": 0.0
+        }
+      }
+    }
+  ],
+  "recommendation": "`existing` is safe as dynamic negative training/validation data for `prototype_distance`. `tar_expanded` is empty; do not use it yet.",
+  "warnings": [
+    "external root not found: /Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand_tar"
+  ]
+}

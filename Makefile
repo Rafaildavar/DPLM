@@ -1,4 +1,4 @@
-.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert mlops-dashboard mlflow-ui
+.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
@@ -51,6 +51,16 @@ dynamic-prototype-experiments:
 
 ipn-convert:
 	$(PYTHON) -m scripts.convert_ipn_hand
+
+ipn-tar-convert:
+	$(PYTHON) -m scripts.convert_ipn_hand_tars \
+		--limit-total 240 \
+		--max-per-original-label 40 \
+		--max-frames-per-segment 48 \
+		--mlflow-tracking-uri $(MLFLOW_TRACKING_URI)
+
+ipn-external-analysis:
+	$(PYTHON) -m scripts.analyze_ipn_external_negatives
 
 mlops-dashboard:
 	$(PYTHON) -m scripts.mlops_dashboard

@@ -2850,3 +2850,55 @@ Live-замеры пользователя:
 - Цель:
   - `swipe_left` должен перейти из `route=none` в `route=dynamic`;
   - `negative_false_positive_rate` должен остаться `0`.
+
+### H-056: New IPN frame packs полезны как external negatives, но требуют стабильного feature extraction
+
+Статус: `blocked_by_mediapipe_runtime`, данные проанализированы
+
+Дата: `2026-06-29`
+
+Гипотеза:
+- Новые IPN packs можно использовать для расширения dynamic negative dataset.
+- Это должно снизить лишние срабатывания на random/partial/return/wrong-axis
+  motions без замены пользовательских positive gestures.
+
+Что сделано:
+- Добавлены `frames02.tar`, `frames03.tar`, `frames04.tar`, `frames05.tar`.
+- Для `frames04.tar` выполнена итеративная распаковка:
+  - extracted files: `158444`;
+  - extracted videos: `40`;
+  - extracted size: `2.0G`.
+- Для `frames04.tar` собран inventory:
+  - candidate segments: `1078`;
+  - selected test segments: `240`;
+  - основные negative labels: `D0X`, `B0A`, `B0B`, `G01`, `G02`, `G07`,
+    `G08`, `G09`, `G10`, `G11`.
+- Проверен existing compact IPN subset:
+  - samples: `200`;
+  - `prototype_distance` negative reject rate: `1.0000`;
+  - `prototype_distance` false positive rate: `0.0000`;
+  - `prototype_dtw` negative reject rate: `1.0000`;
+  - `prototype_dtw` false positive rate: `0.0000`.
+
+Что не получилось:
+- Headless MediaPipe extraction падает в native runtime:
+  `DrishtiMetalHelper / graph_service.h:139 service_ unavailable`.
+- Ошибка воспроизводится и на streaming tar conversion, и на распакованных
+  кадрах, значит проблема не в tar structure.
+
+Решение:
+- Не добавлять пустые/сомнительные samples в обучение.
+- Добавить safe MediaPipe preflight в IPN конвертеры.
+- Сохранять conversion status и artifacts в MLflow/документы.
+- Держать `G03-G06` как `validation_reference`, а не negative training,
+  потому что throw up/down/left/right слишком похожи на наши swipe gestures.
+
+Следующий шаг:
+- Стабилизировать feature extraction:
+  - либо запускать extraction в runtime, где Flet camera уже работает;
+  - либо подобрать совместимую MediaPipe Tasks версию;
+  - либо вынести batch extraction в Linux/Docker.
+- После extraction одного pack:
+  - rerun `PYTHON=.venv/bin/python make ipn-external-analysis`;
+  - сравнить `baseline_internal` vs `ipn_external_expanded`;
+  - включать expanded IPN только в dynamic rejection stage.

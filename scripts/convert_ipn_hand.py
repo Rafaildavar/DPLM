@@ -14,7 +14,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
+import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -398,6 +400,7 @@ def convert_ipn_hand(
     include_reference: bool = False,
     clean_auto: bool = True,
     extractor: LandmarkExtractor | None = None,
+    skip_mediapipe_preflight: bool = False,
 ) -> IpnConversionReport:
     ipn_root = _resolve_path(ipn_root)
     frames_root = _resolve_path(frames_root or ipn_root / "frames")
@@ -456,6 +459,36 @@ def convert_ipn_hand(
         for segment in segments
         if segment.include or (include_reference and segment.role == "validation_reference")
     ]
+    if extractor is None and not skip_mediapipe_preflight:
+        ok, detail = mediapipe_cli_available()
+        if not ok:
+            warnings.append(f"MediaPipe CLI preflight failed: {detail}")
+            warnings.append("no IPN samples were converted")
+            return IpnConversionReport(
+                generated_at=time.time(),
+                status="mediapipe_unavailable",
+                ipn_root=str(ipn_root),
+                frames_root=str(frames_root),
+                annotation_path=str(annotation_path),
+                mapping_path=str(mapping_path),
+                out_root=str(out_root),
+                limit_per_target_label=int(limit_per_target_label),
+                max_frames_per_segment=int(max_frames_per_segment),
+                min_detected_frame_ratio=float(min_detected_frame_ratio),
+                segments_found=len(segments),
+                segments_included=len(included),
+                converted_samples=0,
+                skipped_samples=0,
+                detection_rate=0.0,
+                labels={},
+                expectations={
+                    **expectations,
+                    "outputs_under_data_external": "not_written",
+                    "mapped_to_negative_labels": "not_checked",
+                },
+                samples=[],
+                warnings=warnings,
+            )
     if clean_auto and out_root.exists():
         for old_path in out_root.glob("**/sample_ipn_*.npy"):
             old_path.unlink(missing_ok=True)
@@ -761,6 +794,43 @@ def write_report(
     md_out.write_text(build_markdown_report(report), encoding="utf-8")
 
 
+def mediapipe_cli_available(timeout_seconds: int = 60) -> tuple[bool, str]:
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import numpy as np; "
+            "from cv.hand_landmarker import HandLandmarkerVideo; "
+            "det=HandLandmarkerVideo(num_hands=1); "
+            "det.detect_for_video_rgb(np.zeros((32,32,3), dtype=np.uint8)); "
+            "det.close(); "
+            "print('ok')"
+        ),
+    ]
+    env = {
+        **dict(os.environ),
+        "MPLCONFIGDIR": "/private/tmp/gestureflow_mpl",
+        "MEDIAPIPE_DISABLE_GPU": "1",
+    }
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=int(timeout_seconds),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timeout after {timeout_seconds}s"
+    output = (result.stdout or "") + "\n" + (result.stderr or "")
+    if result.returncode == 0:
+        return True, "ok"
+    tail = "\n".join(output.strip().splitlines()[-8:])
+    return False, f"exit={result.returncode}; {tail}"
+
+
 def log_mlflow_conversion(
     report: IpnConversionReport,
     *,
@@ -834,6 +904,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-detected-frame-ratio", type=float, default=0.50)
     parser.add_argument("--include-reference", action="store_true")
     parser.add_argument("--keep-existing-auto", action="store_true")
+    parser.add_argument("--skip-mediapipe-preflight", action="store_true")
     parser.add_argument("--json-out", type=Path, default=DEFAULT_JSON_OUT)
     parser.add_argument("--md-out", type=Path, default=DEFAULT_MD_OUT)
     parser.add_argument("--mlflow-experiment", default="GestureFlow")
@@ -854,6 +925,7 @@ def main() -> None:
         min_detected_frame_ratio=float(args.min_detected_frame_ratio),
         include_reference=bool(args.include_reference),
         clean_auto=not bool(args.keep_existing_auto),
+        skip_mediapipe_preflight=bool(args.skip_mediapipe_preflight),
     )
     write_report(report, json_out=args.json_out, md_out=args.md_out)
     logged = log_mlflow_conversion(
