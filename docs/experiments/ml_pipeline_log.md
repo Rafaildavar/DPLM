@@ -3048,3 +3048,48 @@ Production artifact:
   classifier + prototype/rejection layer.
 - MLflow/Markdown/JSON отчеты обновляются после UI-тренировки без ручного
   запуска второго этапа.
+
+### H-060: Live video lag вызван слишком тяжелым camera/MediaPipe frame budget
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Во время live-тестов видео начало лагать.
+- Последние `runtime_performance.jsonl` строки показывали:
+  - `detection_ms_avg` примерно `48-111 ms`;
+  - `inference_fps_capacity` примерно `9-21 FPS`;
+  - целевой `target_fps=30`.
+- Значит bottleneck не KNN/prototype, а hand detection + UI frame delivery.
+
+Гипотеза:
+- Если уменьшить количество пикселей для MediaPipe и снизить частоту preview
+  в Flet, лаг должен снизиться без потери геометрии жеста, потому что
+  landmarks нормализованы в координаты `[0..1]`.
+
+Изменение:
+- Camera capture запрашивается как `960x540`.
+- Inference frame downscale: max width `480`.
+- Preview frame cap: `12 FPS`.
+- Preview JPEG quality: `62`.
+- Runtime performance log теперь пишет:
+  - `camera_frame_width/height`;
+  - `inference_frame_width/height`;
+  - `preview_max_fps`.
+
+Проверка:
+- `py_compile`: OK.
+- `pytest tests/unit/test_camera_performance.py tests/unit/test_flet_frame_delivery.py`: `5 passed`.
+- `pytest tests/unit/test_flet_controller_commands.py`: `46 passed`.
+
+Live validation:
+- Перезапустить приложение.
+- Включить camera/auto recognition на 20-30 секунд.
+- Проверить:
+  `tail -n 5 ~/.dplm/logs/runtime_performance.jsonl`.
+- Ожидаемый эффект:
+  - `inference_frame_width=480`;
+  - `preview_max_fps=12`;
+  - `detection_ms_avg` должен стать заметно ниже предыдущих `48-111 ms`;
+  - видео в Flet должно идти ровнее.

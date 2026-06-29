@@ -256,8 +256,33 @@ LIVE_EVAL_DEFAULT_ATTEMPTS = 10
 LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 0.0
 LIVE_EVAL_DEFAULT_MIN_CONFIDENCE = 0.60
 LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
-CAMERA_PREVIEW_MAX_FPS = 20.0
+CAMERA_CAPTURE_WIDTH = 960
+CAMERA_CAPTURE_HEIGHT = 540
+CAMERA_INFERENCE_MAX_WIDTH = 480
+CAMERA_PREVIEW_MAX_WIDTH = 960
+CAMERA_PREVIEW_MAX_FPS = 12.0
+CAMERA_PREVIEW_JPEG_QUALITY = 62
 RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
+
+
+def _resize_frame_to_max_width(frame: Any, max_width: int) -> Any:
+    if frame is None or int(max_width) <= 0:
+        return frame
+    try:
+        height, width = frame.shape[:2]
+    except (AttributeError, ValueError):
+        return frame
+    if width <= int(max_width):
+        return frame
+
+    import cv2
+
+    scale = float(max_width) / float(width)
+    return cv2.resize(
+        frame,
+        (int(max_width), max(1, int(round(height * scale)))),
+        interpolation=cv2.INTER_AREA,
+    )
 
 
 class AppController:
@@ -2871,6 +2896,8 @@ class AppController:
 
             cap = open_default_capture(
                 int(self._config.recognition.camera_index),
+                width=CAMERA_CAPTURE_WIDTH,
+                height=CAMERA_CAPTURE_HEIGHT,
                 fps=int(self._config.recognition.target_fps),
             )
         except Exception as e:
@@ -2967,18 +2994,27 @@ class AppController:
                         self._embedded_infer = self._create_embedded_infer()
                     if self._embedded_infer is None:
                         continue
+                    camera_h, camera_w = frame_bgr.shape[:2]
                     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                    h, w = rgb.shape[:2]
-                    if w > 640:
-                        scale = 640.0 / w
-                        rgb = cv2.resize(
-                            rgb,
-                            (640, max(1, int(round(h * scale)))),
-                            interpolation=cv2.INTER_AREA,
-                        )
-                        rgb = np.ascontiguousarray(rgb)
+                    rgb = _resize_frame_to_max_width(
+                        rgb,
+                        CAMERA_INFERENCE_MAX_WIDTH,
+                    )
+                    rgb = np.ascontiguousarray(rgb)
                     out = self._embedded_infer.process_frame_rgb(rgb)
                     if out is not None:
+                        perf = out.get("performance")
+                        if isinstance(perf, dict):
+                            inference_h, inference_w = rgb.shape[:2]
+                            perf.update(
+                                {
+                                    "camera_frame_width": int(camera_w),
+                                    "camera_frame_height": int(camera_h),
+                                    "inference_frame_width": int(inference_w),
+                                    "inference_frame_height": int(inference_h),
+                                    "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
+                                }
+                            )
                         landmarks_json = out.get("landmarks_json") or "[]"
                         self._dispatch_infer_result(out)
                 except Exception as e:
@@ -2986,20 +3022,24 @@ class AppController:
 
             preview_now = time.monotonic()
             if preview_now >= next_preview_t:
-                self._draw_landmarks_on_frame(frame_bgr, landmarks_json)
-                self._draw_sample_recording_overlay_on_frame(frame_bgr)
+                preview_frame = _resize_frame_to_max_width(
+                    frame_bgr,
+                    CAMERA_PREVIEW_MAX_WIDTH,
+                )
+                self._draw_landmarks_on_frame(preview_frame, landmarks_json)
+                self._draw_sample_recording_overlay_on_frame(preview_frame)
 
                 # Keep ML at target FPS, but cap JPEG/base64/Flet preview work.
                 ok2, buf = cv2.imencode(
                     ".jpg",
-                    frame_bgr,
-                    [int(cv2.IMWRITE_JPEG_QUALITY), 75],
+                    preview_frame,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), CAMERA_PREVIEW_JPEG_QUALITY],
                 )
                 if ok2:
                     data = buf.tobytes()
                     with self._frame_lock:
                         self._latest_jpeg_bytes = data
-                        self._frame_h, self._frame_w = frame_bgr.shape[:2]
+                        self._frame_h, self._frame_w = preview_frame.shape[:2]
                     self.camera_frame_updated.emit()
                 next_preview_t = preview_now + preview_interval
 
@@ -3592,6 +3632,17 @@ class AppController:
                 "total_inference_ms": total_ms,
                 "detection_ms": max(0.0, detection_ms),
                 "shared_detection": bool(performance.get("shared_detection")),
+                "camera_frame_width": int(performance.get("camera_frame_width") or 0),
+                "camera_frame_height": int(performance.get("camera_frame_height") or 0),
+                "inference_frame_width": int(
+                    performance.get("inference_frame_width") or 0
+                ),
+                "inference_frame_height": int(
+                    performance.get("inference_frame_height") or 0
+                ),
+                "preview_max_fps": float(
+                    performance.get("preview_max_fps") or CAMERA_PREVIEW_MAX_FPS
+                ),
             }
         )
         if len(samples) > 300:
@@ -3610,11 +3661,17 @@ class AppController:
             max(0, int(round((len(total_values) - 1) * 0.95))),
         )
         average_ms = sum(total_values) / len(total_values)
+        last_sample = samples[-1]
         row = {
             "recorded_at": time.time(),
             "recognition_model_mode": self.recognition_model_mode,
             "dynamic_model_profile": self.dynamic_model_profile,
             "target_fps": int(getattr(self, "_target_fps", 0) or 0),
+            "preview_max_fps": round(float(last_sample.get("preview_max_fps") or 0.0), 2),
+            "camera_frame_width": int(last_sample.get("camera_frame_width") or 0),
+            "camera_frame_height": int(last_sample.get("camera_frame_height") or 0),
+            "inference_frame_width": int(last_sample.get("inference_frame_width") or 0),
+            "inference_frame_height": int(last_sample.get("inference_frame_height") or 0),
             "samples": len(samples),
             "shared_detection_rate": round(
                 sum(1 for item in samples if item["shared_detection"]) / len(samples),
