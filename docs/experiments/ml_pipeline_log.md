@@ -3228,3 +3228,54 @@ Live result:
 - `live_static_reject_rate`;
 - `live_static_rejection_reason_finger_count_mismatch`;
 - `live_confusion_static_vs_dynamic`.
+
+### H-064: Static confidence `0.55` означает fallback, а не уверенность модели
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Пользователь отдельно проверил static model: жесты доходят только до
+  confidence `0.55`.
+- В коде static-инференса `0.55` является fallback-значением:
+  рука найдена, но classifier не дал настоящий prediction.
+- Текущий `~/.dplm/config.json` указывал:
+  - `models_dir = models/experiments/dynamic_prototype/prototype_distance`;
+  - `model_path = .../prototype_distance/knn.pkl`;
+  - `classes_path = .../prototype_distance/classes.json`.
+- В `prototype_distance` лежат только dynamic artifacts:
+  `dynamic_knn.pkl`, `dynamic_classes.json`, `dynamic_prototypes.json`.
+  Static `knn.pkl/classes.json/feature_dim.txt` там отсутствуют.
+
+Гипотеза:
+- При выборе dynamic prototype variant приложение случайно перенесло static
+  model paths в dynamic-only папку.
+- Static classifier не загружался, поэтому UI показывал fallback confidence
+  `0.55` без реальной static-классификации.
+
+Решение:
+- `prototype_distance` и `prototype_dtw` помечены как dynamic-only variants.
+- При применении этих variants:
+  - `models_dir` остаётся variant-папкой для dynamic artifacts;
+  - static `model_path/classes_path/feature_dim_path` остаются production:
+    `models/knn.pkl`, `models/classes.json`, `models/feature_dim.txt`.
+- Для уже существующего сломанного config добавлен runtime fallback:
+  если configured static artifact отсутствует, берём production artifact.
+
+Как проверять:
+- Перезапустить приложение.
+- В `auto` режиме выбрать `prototype_distance`.
+- Static test:
+  - `gun`, `hend`, `three`, `up` должны давать не fallback `0.55`, а
+    реальные `static_model_label/static_model_confidence` из classifier.
+- В логах live evaluation ожидать:
+  - `recognition_model_mode=auto`;
+  - `route=static` для static gestures;
+  - `selected_reason=static_fallback`;
+  - `static_decision_source=accepted`.
+
+Критерий успеха:
+- Static gestures перестают зависать на `0.55`.
+- Dynamic prototype layer продолжает использовать
+  `models/experiments/dynamic_prototype/prototype_distance`.

@@ -208,6 +208,10 @@ MODEL_VARIANT_DIRS = {
     "prototype_distance": "models/experiments/dynamic_prototype/prototype_distance",
     "prototype_dtw": "models/experiments/dynamic_prototype/prototype_dtw",
 }
+DYNAMIC_ONLY_MODEL_VARIANTS = {
+    "prototype_distance",
+    "prototype_dtw",
+}
 MODEL_VARIANT_LABELS = {
     MODEL_VARIANT_PRODUCTION: "production",
     "baseline_internal": "baseline_internal",
@@ -570,14 +574,19 @@ class AppController:
         ):
             os.environ.pop(env_key, None)
         models_dir = MODEL_VARIANT_DIRS[target]
+        static_models_dir = (
+            MODEL_VARIANT_DIRS[MODEL_VARIANT_PRODUCTION]
+            if target in DYNAMIC_ONLY_MODEL_VARIANTS
+            else models_dir
+        )
         raw = self.get_app_config()
         paths = dict(raw.get("paths") or {})
         paths.update(
             {
                 "models_dir": models_dir,
-                "model_path": f"{models_dir}/knn.pkl",
-                "classes_path": f"{models_dir}/classes.json",
-                "feature_dim_path": f"{models_dir}/feature_dim.txt",
+                "model_path": f"{static_models_dir}/knn.pkl",
+                "classes_path": f"{static_models_dir}/classes.json",
+                "feature_dim_path": f"{static_models_dir}/feature_dim.txt",
             }
         )
         raw["paths"] = paths
@@ -706,6 +715,20 @@ class AppController:
     def _configured_path(self, value: str | Path) -> Path:
         return resolve_config_path(value)
 
+    def _production_models_dir(self) -> Path:
+        return self._configured_path(MODEL_VARIANT_DIRS[MODEL_VARIANT_PRODUCTION])
+
+    def _configured_static_artifact_path(
+        self,
+        configured_value: str | Path,
+        production_filename: str,
+    ) -> Path:
+        configured = self._configured_path(configured_value)
+        if configured.exists():
+            return configured
+        fallback = self._production_models_dir() / production_filename
+        return fallback if fallback.exists() else configured
+
     def _configured_data_dir(self) -> Path:
         return self._configured_path(self._config.paths.data_dir)
 
@@ -713,22 +736,37 @@ class AppController:
         return self._configured_path(self._config.paths.models_dir)
 
     def _configured_model_path(self) -> Path:
-        return self._configured_path(self._config.paths.model_path)
+        return self._configured_static_artifact_path(
+            self._config.paths.model_path,
+            "knn.pkl",
+        )
 
     def _configured_classes_path(self) -> Path:
-        return self._configured_path(self._config.paths.classes_path)
+        return self._configured_static_artifact_path(
+            self._config.paths.classes_path,
+            "classes.json",
+        )
 
     def _configured_feature_dim_path(self) -> Path:
-        return self._configured_path(self._config.paths.feature_dim_path)
+        return self._configured_static_artifact_path(
+            self._config.paths.feature_dim_path,
+            "feature_dim.txt",
+        )
 
     def _configured_log_dir(self) -> Path:
         return self._configured_path(self._config.paths.log_dir)
 
     def _configured_feature_mode_path(self) -> Path:
-        return self._configured_models_dir() / "feature_mode.txt"
+        return self._configured_static_artifact_path(
+            self._configured_models_dir() / "feature_mode.txt",
+            "feature_mode.txt",
+        )
 
     def _static_rejection_verifier_path(self) -> Path:
-        return self._configured_models_dir() / "static_rejection_verifiers.pkl"
+        return self._configured_static_artifact_path(
+            self._configured_models_dir() / "static_rejection_verifiers.pkl",
+            "static_rejection_verifiers.pkl",
+        )
 
     def _configured_taxonomy_path(self) -> Path:
         return DEFAULT_TAXONOMY_PATH
