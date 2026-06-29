@@ -374,10 +374,11 @@ class GesturesView:
         sample_path = self._gesture_sample_path(row)
         if sample_path is None:
             return None
+        is_dynamic = self._gesture_type(row) == GESTURE_TYPE_DYNAMIC
         try:
-            cache_key = f"{sample_path}:{sample_path.stat().st_mtime_ns}"
+            cache_key = f"{sample_path}:{sample_path.stat().st_mtime_ns}:{is_dynamic}"
         except OSError:
-            cache_key = str(sample_path)
+            cache_key = f"{sample_path}:{is_dynamic}"
         if cache_key in self._preview_cache:
             return self._preview_cache[cache_key]
         try:
@@ -391,6 +392,7 @@ class GesturesView:
                     return None
                 points = frame[:21, :2]
                 trail = seq[:, 0, :2] if seq.shape[0] > 1 else None
+                frames = seq[:, :21, :2] if is_dynamic and seq.shape[0] > 1 else None
             elif seq.ndim == 2 and seq.shape[0] > 0:
                 flat_seq = seq.reshape(seq.shape[0], -1)
                 idx = min(flat_seq.shape[0] // 2, flat_seq.shape[0] - 1)
@@ -405,28 +407,100 @@ class GesturesView:
                     return None
                 points = flat[:42].reshape(21, 2)
                 trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+                frames = (
+                    flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
+                    if is_dynamic and flat_seq.shape[0] > 1
+                    else None
+                )
             else:
                 return None
             if not np.isfinite(points).all() or np.all(np.abs(points) < 1e-6):
                 return None
-            preview = self._sample_png_base64(
-                points,
-                trail=trail,
-                dynamic=self._gesture_type(row) == GESTURE_TYPE_DYNAMIC,
-            )
+            if is_dynamic and frames is not None:
+                preview = self._sample_gif_base64(frames, trail=trail)
+            else:
+                preview = self._sample_png_base64(points, trail=trail, dynamic=False)
             self._preview_cache[cache_key] = preview
             return preview
         except Exception:
             self._preview_cache[cache_key] = None
             return None
 
+    def _sample_gif_base64(self, frames, *, trail=None) -> str:
+        import io
+
+        import numpy as np
+        from PIL import Image
+
+        seq = np.asarray(frames, dtype=float)
+        valid = [
+            i for i in range(seq.shape[0])
+            if np.isfinite(seq[i]).all() and not np.all(np.abs(seq[i]) < 1e-6)
+        ]
+        if not valid:
+            raise ValueError("animated preview has no valid frames")
+        wanted = np.linspace(0, len(valid) - 1, num=min(12, len(valid)), dtype=int)
+        indices = [valid[int(item)] for item in wanted]
+
+        all_points = seq[indices].reshape(-1, 2)
+        bounds = (
+            float(all_points[:, 0].min()),
+            float(all_points[:, 1].min()),
+            float(all_points[:, 0].max()),
+            float(all_points[:, 1].max()),
+        )
+        images: list[Image.Image] = []
+        for frame_no, idx in enumerate(indices):
+            trail_slice = None
+            if trail is not None:
+                trail_arr = np.asarray(trail, dtype=float)
+                if trail_arr.ndim == 2 and trail_arr.shape[1] >= 2:
+                    trail_slice = trail_arr[: idx + 1, :2]
+            png_bytes = self._sample_png_bytes(
+                seq[idx],
+                trail=trail_slice,
+                dynamic=True,
+                bounds=bounds,
+                progress=frame_no / max(1, len(indices) - 1),
+            )
+            images.append(Image.open(io.BytesIO(png_bytes)).convert("P", palette=Image.Palette.ADAPTIVE))
+
+        out = io.BytesIO()
+        images[0].save(
+            out,
+            format="GIF",
+            save_all=True,
+            append_images=images[1:],
+            duration=115,
+            loop=0,
+            optimize=True,
+            disposal=2,
+        )
+        return base64.b64encode(out.getvalue()).decode("ascii")
+
     def _sample_png_base64(self, points, *, trail=None, dynamic: bool = False) -> str:
+        return base64.b64encode(
+            self._sample_png_bytes(points, trail=trail, dynamic=dynamic)
+        ).decode("ascii")
+
+    def _sample_png_bytes(
+        self,
+        points,
+        *,
+        trail=None,
+        dynamic: bool = False,
+        bounds: tuple[float, float, float, float] | None = None,
+        progress: float | None = None,
+    ) -> bytes:
         import cv2
         import numpy as np
 
         pts = np.asarray(points, dtype=float)
-        min_x, min_y = pts.min(axis=0)
-        max_x, max_y = pts.max(axis=0)
+        if bounds is None:
+            min_x, min_y = pts.min(axis=0)
+            max_x, max_y = pts.max(axis=0)
+        else:
+            min_x, min_y, max_x, max_y = bounds
         span_x = max(max_x - min_x, 1e-4)
         span_y = max(max_y - min_y, 1e-4)
         width, height = 560, 300
@@ -448,6 +522,10 @@ class GesturesView:
         for y in range(48, height, 48):
             cv2.line(canvas, (0, y), (width, y), (28, 31, 35), 1, cv2.LINE_AA)
         cv2.rectangle(canvas, (1, 1), (width - 2, height - 2), (52, 57, 66), 2)
+        if progress is not None:
+            bar_w = max(12, int((width - 44) * max(0.0, min(1.0, float(progress)))))
+            cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (36, 40, 45), -1)
+            cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (82, 199, 216), -1)
 
         if trail is not None:
             tr = np.asarray(trail, dtype=float)
@@ -531,7 +609,7 @@ class GesturesView:
         ok, encoded = cv2.imencode(".png", canvas)
         if not ok:
             raise ValueError("preview encode failed")
-        return base64.b64encode(encoded.tobytes()).decode("ascii")
+        return encoded.tobytes()
 
     def _border(self, color: str, width: float = 1) -> ft.Border:
         side = ft.BorderSide(width, color)
