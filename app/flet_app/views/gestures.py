@@ -442,25 +442,14 @@ class GesturesView:
         wanted = np.linspace(0, len(valid) - 1, num=min(12, len(valid)), dtype=int)
         indices = [valid[int(item)] for item in wanted]
 
-        all_points = seq[indices].reshape(-1, 2)
-        bounds = (
-            float(all_points[:, 0].min()),
-            float(all_points[:, 1].min()),
-            float(all_points[:, 0].max()),
-            float(all_points[:, 1].max()),
-        )
+        layout = self._camera_motion_preview_layout(seq, trail, valid)
         images: list[Image.Image] = []
         for frame_no, idx in enumerate(indices):
-            trail_slice = None
-            if trail is not None:
-                trail_arr = np.asarray(trail, dtype=float)
-                if trail_arr.ndim == 2 and trail_arr.shape[1] >= 2:
-                    trail_slice = trail_arr[: idx + 1, :2]
-            png_bytes = self._sample_png_bytes(
+            png_bytes = self._sample_camera_motion_png_bytes(
                 seq[idx],
-                trail=trail_slice,
-                dynamic=True,
-                bounds=bounds,
+                all_frames=seq,
+                layout=layout,
+                frame_index=idx,
                 progress=frame_no / max(1, len(indices) - 1),
             )
             images.append(Image.open(io.BytesIO(png_bytes)).convert("P", palette=Image.Palette.ADAPTIVE))
@@ -477,6 +466,218 @@ class GesturesView:
             disposal=2,
         )
         return base64.b64encode(out.getvalue()).decode("ascii")
+
+    def _camera_motion_preview_layout(self, seq, trail, valid_indices) -> dict:
+        import numpy as np
+
+        width, height = 560, 300
+        frames = np.asarray(seq, dtype=float)
+        valid_frames = frames[valid_indices]
+        centered = valid_frames - valid_frames.mean(axis=1, keepdims=True)
+        local_points = centered.reshape(-1, 2)
+        local_min = local_points.min(axis=0)
+        local_max = local_points.max(axis=0)
+        local_span = np.maximum(local_max - local_min, 1e-4)
+        hand_scale = min((width * 0.36) / local_span[0], (height * 0.56) / local_span[1])
+        hand_w = float(local_span[0] * hand_scale)
+        hand_h = float(local_span[1] * hand_scale)
+
+        path = None
+        if trail is not None:
+            trail_arr = np.asarray(trail, dtype=float)
+            if trail_arr.ndim == 2 and trail_arr.shape[0] >= frames.shape[0] and trail_arr.shape[1] >= 2:
+                trail_arr = trail_arr[: frames.shape[0], :2]
+                finite = np.isfinite(trail_arr).all(axis=1)
+                if finite.any() and not np.all(np.abs(trail_arr[finite]) < 1e-6):
+                    path = trail_arr
+
+        if path is None:
+            path = frames.mean(axis=1)
+
+        path = np.asarray(path, dtype=float)
+        finite_path = path[np.isfinite(path).all(axis=1)]
+        if len(finite_path) < 2:
+            center = np.array([[width / 2, (height - 20) / 2]], dtype=float)
+            path_px = np.repeat(center, frames.shape[0], axis=0)
+        else:
+            min_xy = finite_path.min(axis=0)
+            max_xy = finite_path.max(axis=0)
+            span_xy = np.maximum(max_xy - min_xy, 1e-4)
+            safe_x = 30 + hand_w / 2
+            safe_y = 28 + hand_h / 2
+            usable_w = max(1.0, width - safe_x * 2)
+            usable_h = max(1.0, height - 30 - safe_y * 2)
+            scalers = []
+            if span_xy[0] > 1e-4:
+                scalers.append(usable_w / span_xy[0])
+            if span_xy[1] > 1e-4:
+                scalers.append(usable_h / span_xy[1])
+            motion_scale = min(scalers) if scalers else 1.0
+            path_w = span_xy[0] * motion_scale
+            path_h = span_xy[1] * motion_scale
+            offset = np.array(
+                [
+                    (width - path_w) / 2 - min_xy[0] * motion_scale,
+                    (height - 30 - path_h) / 2 - min_xy[1] * motion_scale,
+                ],
+                dtype=float,
+            )
+            path_px = path * motion_scale + offset
+            if not np.isfinite(path_px).all():
+                center = np.array([[width / 2, (height - 20) / 2]], dtype=float)
+                path_px = np.repeat(center, frames.shape[0], axis=0)
+
+        return {
+            "width": width,
+            "height": height,
+            "hand_scale": float(hand_scale),
+            "path_px": path_px,
+        }
+
+    def _sample_camera_motion_png_bytes(
+        self,
+        points,
+        *,
+        all_frames,
+        layout: dict,
+        frame_index: int,
+        progress: float,
+    ) -> bytes:
+        import cv2
+        import numpy as np
+
+        width = int(layout["width"])
+        height = int(layout["height"])
+        hand_scale = float(layout["hand_scale"])
+        path_px = np.asarray(layout["path_px"], dtype=float)
+        idx = max(0, min(int(frame_index), len(path_px) - 1))
+
+        canvas = np.zeros((height, width, 3), dtype=np.uint8)
+        canvas[:, :] = (18, 20, 22)
+        for x in range(48, width, 48):
+            cv2.line(canvas, (x, 0), (x, height), (28, 31, 35), 1, cv2.LINE_AA)
+        for y in range(48, height, 48):
+            cv2.line(canvas, (0, y), (width, y), (28, 31, 35), 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (1, 1), (width - 2, height - 2), (52, 57, 66), 2)
+
+        full_path = path_px[np.isfinite(path_px).all(axis=1)]
+        if len(full_path) >= 2:
+            for p1, p2 in zip(full_path, full_path[1:]):
+                cv2.line(
+                    canvas,
+                    (int(round(p1[0])), int(round(p1[1]))),
+                    (int(round(p2[0])), int(round(p2[1]))),
+                    (42, 54, 58),
+                    3,
+                    cv2.LINE_AA,
+                )
+
+        visible_path = path_px[: idx + 1]
+        if len(visible_path) >= 2:
+            finite = visible_path[np.isfinite(visible_path).all(axis=1)]
+            for i, (p1, p2) in enumerate(zip(finite, finite[1:])):
+                blend = i / max(1, len(finite) - 1)
+                color = (
+                    int(70 + 20 * blend),
+                    int(154 + 62 * blend),
+                    int(180 + 54 * blend),
+                )
+                cv2.line(
+                    canvas,
+                    (int(round(p1[0])), int(round(p1[1]))),
+                    (int(round(p2[0])), int(round(p2[1]))),
+                    color,
+                    5,
+                    cv2.LINE_AA,
+                )
+            cv2.circle(
+                canvas,
+                (int(round(finite[-1][0])), int(round(finite[-1][1]))),
+                6,
+                (82, 199, 216),
+                -1,
+                cv2.LINE_AA,
+            )
+
+        def map_hand(frame_points, anchor_point) -> list[tuple[float, float]]:
+            frame = np.asarray(frame_points, dtype=float)
+            center_point = frame.mean(axis=0)
+            return [
+                (
+                    float(anchor_point[0] + (point[0] - center_point[0]) * hand_scale),
+                    float(anchor_point[1] + (point[1] - center_point[1]) * hand_scale),
+                )
+                for point in frame
+            ]
+
+        frames = np.asarray(all_frames, dtype=float)
+        if idx > 0 and frames.ndim == 3:
+            ghost_indices = np.linspace(0, idx, num=min(4, idx + 1), dtype=int)[:-1]
+            for ghost_no, ghost_idx in enumerate(ghost_indices):
+                if ghost_idx >= len(frames) or ghost_idx >= len(path_px):
+                    continue
+                ghost_mapped = map_hand(frames[int(ghost_idx)], path_px[int(ghost_idx)])
+                overlay = canvas.copy()
+                for a, b in HAND_CONNECTIONS:
+                    if a < len(ghost_mapped) and b < len(ghost_mapped):
+                        x1, y1 = ghost_mapped[a]
+                        x2, y2 = ghost_mapped[b]
+                        cv2.line(
+                            overlay,
+                            (int(round(x1)), int(round(y1))),
+                            (int(round(x2)), int(round(y2))),
+                            (66, 91, 94),
+                            4,
+                            cv2.LINE_AA,
+                        )
+                alpha = 0.14 + 0.05 * ghost_no
+                canvas = cv2.addWeighted(overlay, alpha, canvas, 1.0 - alpha, 0)
+
+        pts = np.asarray(points, dtype=float)
+        anchor = path_px[idx]
+        mapped = map_hand(pts, anchor)
+
+        glow = canvas.copy()
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    glow,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (0, 215, 255),
+                    10,
+                    cv2.LINE_AA,
+                )
+        canvas = cv2.addWeighted(glow, 0.20, canvas, 0.80, 0)
+
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (0, 215, 255),
+                    5,
+                    cv2.LINE_AA,
+                )
+
+        for x, y in mapped:
+            cv2.circle(canvas, (int(round(x)), int(round(y))), 7, (18, 20, 22), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (int(round(x)), int(round(y))), 5, (231, 238, 240), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (int(round(x)), int(round(y))), 2, (80, 255, 120), -1, cv2.LINE_AA)
+
+        bar_w = max(12, int((width - 44) * max(0.0, min(1.0, float(progress)))))
+        cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (36, 40, 45), -1)
+        cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (82, 199, 216), -1)
+
+        ok, encoded = cv2.imencode(".png", canvas)
+        if not ok:
+            raise ValueError("camera motion preview encode failed")
+        return encoded.tobytes()
 
     def _sample_png_base64(self, points, *, trail=None, dynamic: bool = False) -> str:
         return base64.b64encode(
