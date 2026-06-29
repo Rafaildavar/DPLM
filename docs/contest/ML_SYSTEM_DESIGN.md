@@ -24,6 +24,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
+| Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | live A/B against `sequence_knn` |
 
 Status legend:
 
@@ -88,7 +89,9 @@ static poses. A natural swipe should be recognized after movement ends by
 | Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
 | Static rejection verifiers | `models/static_rejection_verifiers.pkl` | one-vs-rest, one-class, isolation, LOF, metric, MLP verifiers | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
+| Dynamic sequence MLP artifacts | `models/dynamic_sequence_mlp.*` | neural baseline over 36-frame dynamic sequences | Added |
 | Dynamic prototype verifier | `models/dynamic_prototypes.json` | open-set sequence verifier for dynamic gestures | Added |
+| Dynamic sequence MLP verifier | `models/dynamic_sequence_mlp_prototypes.json` | open-set verifier for the sequence MLP profile | Added |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
 | Live rejection protocol | `docs/experiments/live_rejection_test_protocol.md` | step-by-step live A/B test plan | Added |
@@ -347,6 +350,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Auto routing | Validated | fresh static hijack `0%` |
 | Vertical direction quality | In Progress | `swipe_down` still confused with return-up motion |
 | Dynamic sequence verifier | Added | `prototype_distance` selected as cheaper offline-tied best |
+| Dynamic neural sequence baseline | Added | `sequence_mlp` trained/logged as next model after KNN |
 | User/market feedback | Planned | needed for product thinking criterion |
 
 ## 12. Current Risks
@@ -386,7 +390,8 @@ summarize and annotate; execution stays behind deterministic policies.
 
 | Task | Status | Owner |
 |---|---|---|
-| Try sequence model only after data quality stabilizes | Backlog | ML research |
+| Live A/B `sequence_knn` vs `sequence_mlp` | Next | ML research |
+| Try GRU/LSTM only after `sequence_mlp` live result | Backlog | ML research |
 | Add user study script and feedback table | Backlog | product |
 | Package reproducible demo mode | Backlog | engineering |
 
@@ -415,3 +420,4 @@ Change log:
 | `2026-06-28` | Added IPN converter and conversion report | H-049 |
 | `2026-06-29` | Added no-command/return-motion live policy and planned dynamic verifier | H-053 |
 | `2026-06-29` | Added dynamic prototype verifier and offline comparison | H-054 |
+| `2026-06-29` | Added `sequence_mlp` neural dynamic baseline | H-068 |

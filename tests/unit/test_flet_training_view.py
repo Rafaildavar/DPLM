@@ -190,3 +190,12 @@ def test_sequence_knn_uses_sequence_model_and_metadata_paths():
         "models/dynamic_sequence_feature_dim.txt",
         "models/dynamic_sequence_feature_mode.txt",
     )
+
+
+def test_sequence_mlp_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_mlp") == "models/dynamic_sequence_mlp.pkl"
+    assert _dynamic_metadata_out_for_type("sequence_mlp") == (
+        "models/dynamic_sequence_mlp_classes.json",
+        "models/dynamic_sequence_mlp_feature_dim.txt",
+        "models/dynamic_sequence_mlp_feature_mode.txt",
+    )

@@ -190,23 +190,28 @@ DYNAMIC_MODEL_PROFILE_KNN = "knn"
 DYNAMIC_MODEL_PROFILE_SVM = "svm"
 DYNAMIC_MODEL_PROFILE_EXTRA_TREES = "extra_trees"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN = "sequence_knn"
+DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP = "sequence_mlp"
 DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_KNN,
     DYNAMIC_MODEL_PROFILE_SVM,
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
 )
 DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_KNN: "dynamic_knn.pkl",
     DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_knn.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_prototypes.json",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp_prototypes.json",
 }
 MODEL_VARIANT_PRODUCTION = "production"
 MODEL_VARIANT_DIRS = {
@@ -5455,6 +5460,19 @@ class AppController:
         actual_data_root = data_root or str(self._configured_data_dir())
         dynamic_model_path = Path(dynamic_model_out_path or self._dynamic_model_path())
         dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
+        production_prototypes = dynamic_model_dir / "dynamic_prototypes.json"
+        for profile, filename in DYNAMIC_MODEL_FILENAMES.items():
+            if dynamic_model_path.name == filename:
+                production_prototypes = dynamic_model_dir / DYNAMIC_PROTOTYPE_FILENAMES.get(
+                    profile,
+                    "dynamic_prototypes.json",
+                )
+                break
+        else:
+            if dynamic_model_path.stem.startswith("dynamic_sequence"):
+                production_prototypes = (
+                    dynamic_model_dir / f"{dynamic_model_path.stem}_prototypes.json"
+                )
         external_root = project_root / "data" / "external"
         return [
             sys.executable,
@@ -5474,7 +5492,7 @@ class AppController:
             str(project_root / "models" / "experiments" / "dynamic_prototype"),
             "--write-production",
             "--production-out",
-            str(dynamic_model_dir / "dynamic_prototypes.json"),
+            str(production_prototypes),
             "--report-json",
             str(project_root / "docs" / "experiments" / "dynamic_prototype_ui_training.json"),
             "--report-md",

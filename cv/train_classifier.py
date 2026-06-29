@@ -8,6 +8,7 @@ import joblib
 import numpy as np
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -20,7 +21,15 @@ from cv.gesture_features import (
     feature_vector_size,
 )
 
-SUPPORTED_MODEL_TYPES = ("knn", "sequence_knn", "svm", "extra_trees", "rf", "logreg")
+SUPPORTED_MODEL_TYPES = (
+    "knn",
+    "sequence_knn",
+    "sequence_mlp",
+    "svm",
+    "extra_trees",
+    "rf",
+    "logreg",
+)
 DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD = 0.65
 DEFAULT_REJECT_MIN_MARGIN = 0.10
 DEFAULT_REJECT_DISTANCE_MULTIPLIER = 2.50
@@ -142,6 +151,20 @@ def build_classifier(
             n_neighbors=max(1, int(neighbors)),
             metric="euclidean",
             weights=weights,
+        )
+    if model == "sequence_mlp":
+        return make_pipeline(
+            StandardScaler(),
+            MLPClassifier(
+                hidden_layer_sizes=(128, 64),
+                activation="relu",
+                solver="adam",
+                alpha=1e-3,
+                learning_rate_init=1e-3,
+                max_iter=800,
+                n_iter_no_change=30,
+                random_state=int(random_state),
+            ),
         )
     if model == "svm":
         return make_pipeline(
@@ -276,7 +299,7 @@ def parse_args() -> argparse.Namespace:
         "--model-type",
         choices=SUPPORTED_MODEL_TYPES,
         default="knn",
-        help="Тип классификатора: knn, sequence_knn, svm, extra_trees, rf или logreg",
+        help="Тип классификатора: knn, sequence_knn, sequence_mlp, svm, extra_trees, rf или logreg",
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
     p.add_argument(

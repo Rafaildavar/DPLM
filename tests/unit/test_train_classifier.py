@@ -77,6 +77,13 @@ def test_build_classifier_supports_non_knn_models():
     assert clf.__class__.__name__ == "ExtraTreesClassifier"
 
 
+def test_build_classifier_supports_sequence_mlp_model():
+    clf = build_classifier("sequence_mlp", random_state=7)
+
+    assert clf.__class__.__name__ == "Pipeline"
+    assert clf.steps[-1][1].__class__.__name__ == "MLPClassifier"
+
+
 def test_default_rejection_metadata_path_keeps_dynamic_metadata_separate():
     assert (
         default_rejection_metadata_path(Path("models/knn.pkl"))

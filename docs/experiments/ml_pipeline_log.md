@@ -3459,3 +3459,75 @@ Live result:
 - В MLflow метрики остаются машинно-сравнимыми через scalar charts.
 - Красивое объяснение run находится во вкладке `Artifacts`, а не теряется в
   неудобных дефолтных карточках.
+
+### H-068: Sequence MLP как следующая модель для сложных динамических жестов
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- `sequence_knn` хорошо распознает `swipe_up` и `swipe_left` в live, но KNN
+  принципиально выбирает ближайший класс даже для неполного или чужого
+  движения.
+- Для произвольных пользовательских dynamic-жестов нужен baseline, который
+  умеет нелинейные временные шаблоны, но не требует тяжелого PyTorch/TensorFlow
+  окружения.
+
+Решение:
+- Добавлена новая dynamic-модель `sequence_mlp`.
+- Признаки: `dynamic_sequence`, то есть canonical sequence из 36 кадров,
+  развернутая в один вектор.
+- Модель: `StandardScaler + MLPClassifier(hidden_layer_sizes=(128, 64))`.
+- Артефакты не перезаписывают `sequence_knn`:
+  - `models/dynamic_sequence_mlp.pkl`;
+  - `models/dynamic_sequence_mlp_classes.json`;
+  - `models/dynamic_sequence_mlp_feature_dim.txt`;
+  - `models/dynamic_sequence_mlp_feature_mode.txt`;
+  - `models/dynamic_sequence_mlp_rejection.json`;
+  - `models/dynamic_sequence_mlp_prototypes.json`.
+- UI получил отдельный пункт `sequence_mlp` в обучении и live dynamic profile.
+- Prototype/rejection layer обучается отдельно:
+  `dynamic_sequence_mlp_prototypes.json`.
+
+Offline результат:
+- Training run: `sequence_mlp-dynamic_sequence`.
+- Samples: `170`.
+- Classes: `8`.
+- Feature dim: `1584`.
+- Train accuracy: `1.0000`.
+- Prototype verifier:
+  - overall: `0.9935`;
+  - positive recall: `0.9444`;
+  - negative reject: `1.0000`;
+  - negative false positive: `0.0000`;
+  - sequence accuracy: `0.9444`.
+
+Почему не LSTM прямо сейчас:
+- В текущем `.venv` нет `torch`, `tensorflow` или `keras`.
+- Добавление LSTM сейчас потребовало бы тяжелой зависимости и усложнило бы
+  воспроизводимость перед конкурсом.
+- `sequence_mlp` закрывает следующий исследовательский шаг: neural baseline на
+  временной последовательности без изменения runtime-архитектуры.
+
+Как проверять live:
+- Mode: `auto`.
+- Dynamic: `sequence_mlp`.
+- Reject: `open_set_policy`.
+- Threshold: начать с `0.90`, затем сравнить с `0.80`.
+- Positive:
+  - `swipe_up`: 20;
+  - `swipe_left`: 20;
+  - `swipe_down`: 20.
+- Negative:
+  - `partial_swipe`: 10;
+  - `wrong_axis_motion`: 10;
+  - `return_motion`: 10;
+  - `random_motion`: 10.
+
+Критерий успеха:
+- `sequence_mlp` не хуже `sequence_knn` по positive recall.
+- False positive на negative/почти-жестах ниже или хотя бы не выше.
+- Если `sequence_mlp` выигрывает live, сделать его кандидатом production
+  dynamic profile; если нет, оставить как research baseline и перейти к
+  lightweight GRU/LSTM при добавлении PyTorch.

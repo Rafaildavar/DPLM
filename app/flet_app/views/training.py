@@ -44,6 +44,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "svm": "models/dynamic_svm.pkl",
     "extra_trees": "models/dynamic_extra_trees.pkl",
     "sequence_knn": "models/dynamic_sequence_knn.pkl",
+    "sequence_mlp": "models/dynamic_sequence_mlp.pkl",
     "rf": "models/dynamic_rf.pkl",
     "logreg": "models/dynamic_logreg.pkl",
 }
@@ -82,6 +83,12 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_classes.json",
             "models/dynamic_sequence_feature_dim.txt",
             "models/dynamic_sequence_feature_mode.txt",
+        )
+    if clean == "sequence_mlp":
+        return (
+            "models/dynamic_sequence_mlp_classes.json",
+            "models/dynamic_sequence_mlp_feature_dim.txt",
+            "models/dynamic_sequence_mlp_feature_mode.txt",
         )
     return (
         _DEFAULT_DYNAMIC_CLASSES_OUT,
@@ -218,6 +225,7 @@ class TrainingView:
                 ft.DropdownOption(key="svm", text="svm"),
                 ft.DropdownOption(key="extra_trees", text="extra_trees"),
                 ft.DropdownOption(key="sequence_knn", text="sequence_knn"),
+                ft.DropdownOption(key="sequence_mlp", text="sequence_mlp"),
                 ft.DropdownOption(key="rf", text="rf"),
                 ft.DropdownOption(key="logreg", text="logreg"),
             ],
@@ -729,7 +737,7 @@ class TrainingView:
                 self._dyn_model_out.update()
             except Exception:
                 pass
-        if model_type == "sequence_knn":
+        if model_type in {"sequence_knn", "sequence_mlp"}:
             self._dyn_feature_mode.value = "dynamic_sequence"
             try:
                 self._dyn_feature_mode.update()

@@ -394,12 +394,18 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         )
         metrics, attempts = evaluate_model(payload, test)
         variant_dir = args.variant_root / method
-        save_dynamic_prototype_model(payload, variant_dir / "dynamic_prototypes.json")
+        legacy_variant_model_path = variant_dir / "dynamic_prototypes.json"
+        variant_model_path = legacy_variant_model_path
+        if args.write_production and args.production_out.name:
+            variant_model_path = variant_dir / args.production_out.name
+        save_dynamic_prototype_model(payload, legacy_variant_model_path)
+        if variant_model_path != legacy_variant_model_path:
+            save_dynamic_prototype_model(payload, variant_model_path)
         _copy_base_dynamic_artifacts(args.base_models_dir, variant_dir)
         report = {
             "method": method,
             "metrics": metrics,
-            "model_path": str(variant_dir / "dynamic_prototypes.json"),
+            "model_path": str(variant_model_path),
             "attempts": [row.__dict__ for row in attempts],
             "thresholds": payload.get("thresholds", {}),
             "negative_conflict_filter": conflict_report,
@@ -484,9 +490,19 @@ def _copy_base_dynamic_artifacts(base_dir: Path, target_dir: Path) -> None:
         "dynamic_knn.pkl",
         "dynamic_svm.pkl",
         "dynamic_extra_trees.pkl",
+        "dynamic_sequence_knn.pkl",
+        "dynamic_sequence_mlp.pkl",
         "dynamic_classes.json",
         "dynamic_feature_dim.txt",
         "dynamic_feature_mode.txt",
+        "dynamic_sequence_classes.json",
+        "dynamic_sequence_feature_dim.txt",
+        "dynamic_sequence_feature_mode.txt",
+        "dynamic_sequence_knn_rejection.json",
+        "dynamic_sequence_mlp_classes.json",
+        "dynamic_sequence_mlp_feature_dim.txt",
+        "dynamic_sequence_mlp_feature_mode.txt",
+        "dynamic_sequence_mlp_rejection.json",
     ):
         source = base_dir / name
         if source.exists():
