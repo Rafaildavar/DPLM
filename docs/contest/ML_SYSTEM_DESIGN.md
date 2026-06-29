@@ -23,7 +23,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
-| Dynamic sequence verifier | Planned | H-053: KNN nearest-class behavior is insufficient for reject/unknown | prototype DTW / calibrated verifier experiment |
+| Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 
 Status legend:
 
@@ -88,6 +88,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
 | Static rejection verifiers | `models/static_rejection_verifiers.pkl` | one-vs-rest, one-class, isolation, LOF, metric, MLP verifiers | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
+| Dynamic prototype verifier | `models/dynamic_prototypes.json` | open-set sequence verifier for dynamic gestures | Added |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
 | Live rejection protocol | `docs/experiments/live_rejection_test_protocol.md` | step-by-step live A/B test plan | Added |
@@ -345,7 +346,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | MLflow integration | Stable | training and live runs tracked |
 | Auto routing | Validated | fresh static hijack `0%` |
 | Vertical direction quality | In Progress | `swipe_down` still confused with return-up motion |
-| Dynamic sequence verifier | Planned | needed because KNN lacks unknown/reject behavior |
+| Dynamic sequence verifier | Added | `prototype_distance` selected as cheaper offline-tied best |
 | User/market feedback | Planned | needed for product thinking criterion |
 
 ## 12. Current Risks
@@ -369,7 +370,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Run `no_command` live evaluation and log to MLflow | Next | user + ML pipeline |
 | Download/place a small IPN subset under `data/raw/ipn_hand` | Next | data pipeline |
 | Add IPN converter and dynamic intent detector experiment | Next | ML pipeline |
-| Add generic sequence/prototype dynamic classifier | Next | ML pipeline |
+| Add generic sequence/prototype dynamic classifier | Done | H-054 |
 | Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
 
@@ -413,3 +414,4 @@ Change log:
 | `2026-06-28` | Accepted arbitrary custom dynamic gesture architecture | H-048 |
 | `2026-06-28` | Added IPN converter and conversion report | H-049 |
 | `2026-06-29` | Added no-command/return-motion live policy and planned dynamic verifier | H-053 |
+| `2026-06-29` | Added dynamic prototype verifier and offline comparison | H-054 |

@@ -537,6 +537,30 @@ class GestureRecognitionRouter:
             "dynamic_model_confidence_for_motion": float(
                 dynamic_decision.get("model_confidence_for_motion") or 0.0
             ),
+            "dynamic_prototype_method": str(
+                dynamic_decision.get("prototype_method") or ""
+            ),
+            "dynamic_prototype_label": str(
+                dynamic_decision.get("prototype_label") or ""
+            ),
+            "dynamic_prototype_nearest_type": str(
+                dynamic_decision.get("prototype_nearest_type") or ""
+            ),
+            "dynamic_prototype_confidence": float(
+                dynamic_decision.get("prototype_confidence") or 0.0
+            ),
+            "dynamic_prototype_distance": float(
+                dynamic_decision.get("prototype_distance") or 0.0
+            ),
+            "dynamic_prototype_threshold": float(
+                dynamic_decision.get("prototype_threshold") or 0.0
+            ),
+            "dynamic_prototype_margin": float(
+                dynamic_decision.get("prototype_margin") or 0.0
+            ),
+            "dynamic_prototype_reason": str(
+                dynamic_decision.get("prototype_reason") or ""
+            ),
             "dynamic_negative_label": str(
                 dynamic_decision.get("negative_label") or ""
             ),

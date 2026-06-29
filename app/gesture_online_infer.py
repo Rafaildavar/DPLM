@@ -24,6 +24,10 @@ from cv.gesture_features import (
 )
 from cv.dynamic_direction import classify_swipe_direction
 from cv.dynamic_motion import DynamicMotionSegmenter
+from cv.dynamic_prototype import (
+    load_dynamic_prototype_model,
+    predict_dynamic_prototype,
+)
 from cv.hand_landmarker import (
     DetectedHand,
     HandLandmarkerVideo,
@@ -90,6 +94,7 @@ class GestureOnlineInfer:
         gesture_signatures_path: Optional[Path] = None,
         gesture_rejection_path: Optional[Path] = None,
         static_rejection_verifier_path: Optional[Path] = None,
+        dynamic_prototypes_path: Optional[Path] = None,
         static_rejection_method: str = DEFAULT_STATIC_REJECTION_METHOD,
         window: int = 30,
         two_hands: bool = False,
@@ -118,6 +123,7 @@ class GestureOnlineInfer:
             static_rejection_method
         )
         self._static_rejection_verifiers: dict[str, Any] = {}
+        self._dynamic_prototypes: dict[str, Any] = {}
         self._dynamic_segmenter: DynamicMotionSegmenter | None = None
         self._pending_dynamic_prediction: tuple[str, float] | None = None
         self._pending_dynamic_repeats = 0
@@ -138,6 +144,9 @@ class GestureOnlineInfer:
         )
         static_rejection_verifier_path = static_rejection_verifier_path or (
             model_path.parent / "static_rejection_verifiers.pkl"
+        )
+        dynamic_prototypes_path = dynamic_prototypes_path or (
+            model_path.parent / "dynamic_prototypes.json"
         )
 
         try:
@@ -215,6 +224,9 @@ class GestureOnlineInfer:
             self._static_rejection_verifiers = self._load_static_rejection_verifiers(
                 static_rejection_verifier_path
             )
+        self._dynamic_prototypes = self._load_dynamic_prototypes(
+            dynamic_prototypes_path
+        )
         try:
             self._gesture_taxonomy = load_gesture_taxonomy()
         except Exception:
@@ -450,6 +462,7 @@ class GestureOnlineInfer:
         self,
         model_feat: np.ndarray,
         motion: dict[str, float],
+        sequence: np.ndarray | None = None,
     ) -> tuple[str, float]:
         self._last_dynamic_decision = {}
         motion_decision = classify_swipe_direction(motion, self._classes)
@@ -489,6 +502,31 @@ class GestureOnlineInfer:
                 model_confidence = max(model_confidence, float(probability))
 
         negative_label, negative_confidence = self._best_negative_prediction(ranked)
+        prototype_decision = self._dynamic_prototype_decision(sequence)
+        prototype_fields = self._dynamic_prototype_fields(prototype_decision)
+        if prototype_decision and not bool(prototype_decision.get("accepted")):
+            self._last_dynamic_decision = {
+                "source": "prototype_rejected",
+                "motion_label": motion_decision.label if motion_decision.accepted else "",
+                "motion_confidence": float(motion_decision.confidence)
+                if motion_decision.accepted
+                else 0.0,
+                "model_label": model_label,
+                "model_confidence": model_confidence,
+                "negative_label": negative_label,
+                "negative_confidence": negative_confidence,
+                "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                **prototype_fields,
+                **motion_decision.as_dict(),
+            }
+            return "", 0.0
+
+        prototype_label = str(prototype_decision.get("label") or "") if prototype_decision else ""
+        prototype_confidence = (
+            float(prototype_decision.get("confidence") or 0.0)
+            if prototype_decision
+            else 0.0
+        )
         compatible_label = ""
         compatible_confidence = 0.0
         for probability, label in sorted(ranked, reverse=True):
@@ -505,9 +543,28 @@ class GestureOnlineInfer:
                 (probability for probability, label in ranked if label == motion_decision.label),
                 default=0.0,
             )
+            if prototype_label and prototype_label != motion_decision.label:
+                self._last_dynamic_decision = {
+                    "source": "prototype_motion_conflict",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return "", 0.0
             source = "motion_first"
             if model_label == motion_decision.label or compatible_label == motion_decision.label:
                 source = "motion_and_model_agree"
+            if prototype_label == motion_decision.label:
+                source = "motion_and_prototype_agree"
             if negative_confidence >= DYNAMIC_NEGATIVE_REJECT_THRESHOLD:
                 self._last_dynamic_decision = {
                     "source": "negative_rejected",
@@ -521,6 +578,7 @@ class GestureOnlineInfer:
                     "compatible_model_label": compatible_label,
                     "compatible_model_confidence": compatible_confidence,
                     "model_confidence_for_motion": float(model_for_motion),
+                    **prototype_fields,
                     **motion_decision.as_dict(),
                 }
                 return "", 0.0
@@ -536,9 +594,36 @@ class GestureOnlineInfer:
                 "compatible_model_label": compatible_label,
                 "compatible_model_confidence": compatible_confidence,
                 "model_confidence_for_motion": float(model_for_motion),
+                **prototype_fields,
                 **motion_decision.as_dict(),
             }
-            return motion_decision.label, max(motion_confidence, float(model_for_motion))
+            return motion_decision.label, max(
+                motion_confidence,
+                float(model_for_motion),
+                prototype_confidence,
+            )
+
+        if prototype_label:
+            model_for_prototype = max(
+                (probability for probability, label in ranked if label == prototype_label),
+                default=0.0,
+            )
+            self._last_dynamic_decision = {
+                "source": "prototype_accepted",
+                "motion_label": "",
+                "motion_confidence": 0.0,
+                "model_label": model_label,
+                "model_confidence": model_confidence,
+                "negative_label": negative_label,
+                "negative_confidence": negative_confidence,
+                "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                "compatible_model_label": compatible_label,
+                "compatible_model_confidence": compatible_confidence,
+                "model_confidence_for_prototype": float(model_for_prototype),
+                **prototype_fields,
+                **motion_decision.as_dict(),
+            }
+            return prototype_label, max(prototype_confidence, float(model_for_prototype))
 
         if compatible_label:
             self._last_dynamic_decision = {
@@ -552,6 +637,7 @@ class GestureOnlineInfer:
                 "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
                 "compatible_model_label": compatible_label,
                 "compatible_model_confidence": compatible_confidence,
+                **prototype_fields,
                 **motion_decision.as_dict(),
             }
             return compatible_label, compatible_confidence
@@ -566,6 +652,7 @@ class GestureOnlineInfer:
                 "negative_label": negative_label,
                 "negative_confidence": negative_confidence,
                 "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                **prototype_fields,
                 **motion_decision.as_dict(),
             }
             return "", 0.0
@@ -579,9 +666,43 @@ class GestureOnlineInfer:
             "negative_label": negative_label,
             "negative_confidence": negative_confidence,
             "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+            **prototype_fields,
             **motion_decision.as_dict(),
         }
         return "", 0.0
+
+    def _dynamic_prototype_decision(
+        self,
+        sequence: np.ndarray | None,
+    ) -> dict[str, Any]:
+        payload = getattr(self, "_dynamic_prototypes", {}) or {}
+        if sequence is None or not payload:
+            return {}
+        try:
+            decision = predict_dynamic_prototype(payload, sequence)
+        except Exception as exc:
+            print(f"[w] dynamic prototype decision failed: {exc}", flush=True)
+            return {}
+        return decision if isinstance(decision, dict) else {}
+
+    @staticmethod
+    def _dynamic_prototype_fields(decision: dict[str, Any]) -> dict[str, Any]:
+        if not decision:
+            return {}
+        return {
+            "prototype_method": str(decision.get("method") or ""),
+            "prototype_label": str(
+                decision.get("label")
+                or decision.get("nearest_label")
+                or ""
+            ),
+            "prototype_nearest_type": str(decision.get("nearest_type") or ""),
+            "prototype_confidence": float(decision.get("confidence") or 0.0),
+            "prototype_distance": float(decision.get("distance") or 0.0),
+            "prototype_threshold": float(decision.get("threshold") or 0.0),
+            "prototype_margin": float(decision.get("margin") or 0.0),
+            "prototype_reason": str(decision.get("reason") or ""),
+        }
 
     def _label_from_estimator_class(self, raw_class: Any) -> str:
         try:
@@ -1047,6 +1168,21 @@ class GestureOnlineInfer:
             return {}
         return payload
 
+    def _load_dynamic_prototypes(self, prototypes_path: Path) -> dict[str, Any]:
+        if not prototypes_path.exists():
+            return {}
+        try:
+            payload = load_dynamic_prototype_model(prototypes_path)
+        except Exception as exc:
+            print(f"[w] dynamic_prototypes.json ignored: {exc}", flush=True)
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        prototypes = payload.get("prototypes")
+        if not isinstance(prototypes, list) or not prototypes:
+            return {}
+        return payload
+
     def reset_temporal_state(self) -> None:
         self._window.clear()
         self._finger_count_window.clear()
@@ -1129,7 +1265,11 @@ class GestureOnlineInfer:
                 if self._clf is not None
                 else np.empty((1, 0), dtype=np.float32)
             )
-            label, confidence = self._dynamic_prediction(model_feat, motion)
+            label, confidence = self._dynamic_prediction(
+                model_feat,
+                motion,
+                sequence=update.completed_sequence,
+            )
         except Exception as exc:
             print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
             self.reset_temporal_state()
@@ -1493,7 +1633,11 @@ class GestureOnlineInfer:
             model_feat = self._build_model_feature().reshape(1, -1)
             try:
                 if self._uses_global_dynamic_motion():
-                    label, confidence = self._dynamic_prediction(model_feat, motion)
+                    label, confidence = self._dynamic_prediction(
+                        model_feat,
+                        motion,
+                        sequence=np.stack(tuple(self._window), axis=0),
+                    )
                 else:
                     label, confidence = self._static_prediction(model_feat)
                     static_decision = dict(

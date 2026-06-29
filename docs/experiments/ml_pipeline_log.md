@@ -2697,3 +2697,93 @@ Live-замеры пользователя:
   - иначе возвращать `no_command`.
 - Сравнить `knn`, `open_set_policy`, `prototype_dtw`, `one_vs_rest` в MLflow и
   live UI.
+
+### H-054: Dynamic prototype verifier сравнивает `prototype_distance` и `prototype_dtw`
+
+Статус: `implemented`, нужна live validation
+
+Дата: `2026-06-29`
+
+Гипотеза:
+- KNN плохо подходит как финальное решение для dynamic gestures, потому что
+  всегда выбирает ближайший известный класс.
+- Prototype verifier должен лучше решать open-set задачу:
+  "похож ли этот сегмент на пользовательский жест достаточно сильно, чтобы
+  выполнить команду".
+
+Что реализовано:
+- Новый модуль `cv.dynamic_prototype`:
+  - `prototype_distance`: нормализованный L2 по canonical sequence;
+  - `prototype_dtw`: DTW-distance по последовательности landmarks;
+  - per-class thresholds по positive radius;
+  - negative guard через synthetic negatives и IPN external negatives;
+  - reject reasons: `nearest_negative`, `far_from_prototype`,
+    `missing_threshold`.
+- Новый экспериментальный скрипт:
+  `scripts.dynamic_prototype_experiments`.
+- Новый Make target:
+  `PYTHON=.venv/bin/python make dynamic-prototype-experiments`.
+- Runtime integration:
+  - `GestureOnlineInfer` загружает `dynamic_prototypes.json`, если он есть;
+  - prototype verifier работает как второй слой после segmentation/motion intent;
+  - при reject команда не исполняется;
+  - в route/live logs добавлены поля:
+    `dynamic_prototype_method`, `dynamic_prototype_distance`,
+    `dynamic_prototype_threshold`, `dynamic_prototype_reason`.
+- UI model variants:
+  - `prototype_distance`;
+  - `prototype_dtw`.
+
+Данные эксперимента:
+- Train samples: `277`;
+- Test samples: `93`;
+- External negatives: `true`;
+- labels:
+  - positives: `swipe_down`, `swipe_left`, `swipe_up`;
+  - negatives: `no_gesture_static`, `partial_swipe`, `random_motion`,
+    `return_motion`, `wrong_axis_motion`,
+    `negative_external_ipn_dynamic`.
+
+Offline comparison:
+
+| Method | Overall | Positive recall | Negative reject | Negative FP | Sequence accuracy | Edit distance |
+|---|---:|---:|---:|---:|---:|---:|
+| `prototype_distance` | `0.9892` | `0.9444` | `1.0000` | `0.0000` | `0.9444` | `1` |
+| `prototype_dtw` | `0.9892` | `0.9444` | `1.0000` | `0.0000` | `0.9444` | `1` |
+
+Интерпретация:
+- На текущем offline split оба метода равны по качеству.
+- `prototype_distance` выбран текущим default/best, потому что он дешевле по
+  вычислениям и проще для live.
+- Главное улучшение относительно KNN: negative false positive `0.0000` на
+  mixed internal + IPN negative split.
+- Оставшийся offline miss: `swipe_left` один раз отвергнут как слишком далёкий,
+  но не перепутан с другим классом. Для команд это безопаснее, чем ложное
+  выполнение.
+
+Сгенерированные локальные артефакты:
+- `models/dynamic_prototypes.json` - лучший method для production/live;
+- `models/experiments/dynamic_prototype/prototype_distance/`;
+- `models/experiments/dynamic_prototype/prototype_dtw/`;
+- `docs/experiments/dynamic_prototype_comparison.md`;
+- `docs/experiments/dynamic_prototype_comparison.json`.
+
+Проверки:
+- `.venv/bin/python -m py_compile cv/dynamic_prototype.py scripts/dynamic_prototype_experiments.py app/gesture_online_infer.py app/services/recognition_router.py app/flet_app/controller.py`
+  -> passed.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_dynamic_prototype.py tests/unit/test_gesture_online_infer_no_hand.py -q`
+  -> `23 passed`.
+- `.venv/bin/python -m pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
+  -> `44 passed`.
+
+Следующий шаг:
+- Live A/B:
+  - variant `prototype_distance`, expected `no_command`, 20 attempts;
+  - variant `prototype_distance`, `swipe_up/down/left`, 20 attempts each;
+  - затем то же для `prototype_dtw`, если latency приемлемая.
+- Сравнить в MLflow:
+  - `live_negative_false_positive_rate`;
+  - `live_dynamic_recall`;
+  - `live_dynamic_prototype_reason_*`;
+  - `live_wrong_dynamic_direction_rate`;
+  - `system_runtime_inference_ms_p95_max`.

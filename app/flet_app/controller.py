@@ -205,12 +205,16 @@ MODEL_VARIANT_DIRS = {
     "baseline_internal": "models/experiments/external_negative/baseline_internal",
     "ipn_external": "models/experiments/external_negative/ipn_external",
     "combined_external": "models/experiments/external_negative/combined_external",
+    "prototype_distance": "models/experiments/dynamic_prototype/prototype_distance",
+    "prototype_dtw": "models/experiments/dynamic_prototype/prototype_dtw",
 }
 MODEL_VARIANT_LABELS = {
     MODEL_VARIANT_PRODUCTION: "production",
     "baseline_internal": "baseline_internal",
     "ipn_external": "ipn_external",
     "combined_external": "combined_external",
+    "prototype_distance": "prototype_distance",
+    "prototype_dtw": "prototype_dtw",
 }
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
@@ -749,6 +753,9 @@ class AppController:
 
     def _dynamic_feature_mode_path(self) -> Path:
         return self._configured_models_dir() / "dynamic_feature_mode.txt"
+
+    def _dynamic_prototypes_path(self) -> Path:
+        return self._configured_models_dir() / "dynamic_prototypes.json"
 
     def _embedded_model_paths(self) -> tuple[Path, Path, Path, Path]:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
@@ -1374,6 +1381,8 @@ class AppController:
         static_decision_counts: dict[str, int] = {}
         static_reject_reason_counts: dict[str, int] = {}
         static_rejection_method_counts: dict[str, int] = {}
+        dynamic_prototype_method_counts: dict[str, int] = {}
+        dynamic_prototype_reason_counts: dict[str, int] = {}
         static_hijack_count = 0
         static_accept_count = 0
         static_reject_count = 0
@@ -1390,6 +1399,16 @@ class AppController:
                 end_reason_counts[end_reason] = end_reason_counts.get(end_reason, 0) + 1
             if decision == "negative_rejected":
                 negative_rejected_count += 1
+            prototype_method = str(item.get("dynamic_prototype_method") or "").strip()
+            if prototype_method:
+                dynamic_prototype_method_counts[prototype_method] = (
+                    dynamic_prototype_method_counts.get(prototype_method, 0) + 1
+                )
+            prototype_reason = str(item.get("dynamic_prototype_reason") or "").strip()
+            if prototype_reason:
+                dynamic_prototype_reason_counts[prototype_reason] = (
+                    dynamic_prototype_reason_counts.get(prototype_reason, 0) + 1
+                )
             static_decision = str(item.get("static_decision_source") or "").strip()
             if static_decision:
                 static_decision_counts[static_decision] = (
@@ -1443,6 +1462,12 @@ class AppController:
         for method, count in static_rejection_method_counts.items():
             suffix = self._live_evaluation_metric_suffix(method)
             metrics[f"live_static_rejection_method_{suffix}_count"] = float(count)
+        for method, count in dynamic_prototype_method_counts.items():
+            suffix = self._live_evaluation_metric_suffix(method)
+            metrics[f"live_dynamic_prototype_method_{suffix}_count"] = float(count)
+        for reason, count in dynamic_prototype_reason_counts.items():
+            suffix = self._live_evaluation_metric_suffix(reason)
+            metrics[f"live_dynamic_prototype_reason_{suffix}_count"] = float(count)
 
         metrics["live_dynamic_recall"] = (
             float(correct / target) if expected_type == GESTURE_TYPE_DYNAMIC else 0.0
@@ -1625,6 +1650,10 @@ class AppController:
             "attempt_segment_frames": "dynamic_segment_frames",
             "attempt_motion_confidence": "dynamic_motion_confidence",
             "attempt_model_confidence": "dynamic_model_confidence",
+            "attempt_dynamic_prototype_confidence": "dynamic_prototype_confidence",
+            "attempt_dynamic_prototype_distance": "dynamic_prototype_distance",
+            "attempt_dynamic_prototype_threshold": "dynamic_prototype_threshold",
+            "attempt_dynamic_prototype_margin": "dynamic_prototype_margin",
         }
         for metric_name, field_name in optional_fields.items():
             value = _float(attempt.get(field_name))
@@ -2295,6 +2324,30 @@ class AppController:
             "dynamic_model_confidence_for_motion": _float_or_none(
                 route_metadata.get("dynamic_model_confidence_for_motion")
             ),
+            "dynamic_prototype_method": str(
+                route_metadata.get("dynamic_prototype_method") or ""
+            ),
+            "dynamic_prototype_label": str(
+                route_metadata.get("dynamic_prototype_label") or ""
+            ),
+            "dynamic_prototype_nearest_type": str(
+                route_metadata.get("dynamic_prototype_nearest_type") or ""
+            ),
+            "dynamic_prototype_confidence": _float_or_none(
+                route_metadata.get("dynamic_prototype_confidence")
+            ),
+            "dynamic_prototype_distance": _float_or_none(
+                route_metadata.get("dynamic_prototype_distance")
+            ),
+            "dynamic_prototype_threshold": _float_or_none(
+                route_metadata.get("dynamic_prototype_threshold")
+            ),
+            "dynamic_prototype_margin": _float_or_none(
+                route_metadata.get("dynamic_prototype_margin")
+            ),
+            "dynamic_prototype_reason": str(
+                route_metadata.get("dynamic_prototype_reason") or ""
+            ),
             "dynamic_negative_label": str(
                 route_metadata.get("dynamic_negative_label") or ""
             ),
@@ -2751,6 +2804,7 @@ class AppController:
                     classes_path=self._dynamic_classes_path(),
                     feature_dim_path=self._dynamic_feature_dim_path(),
                     feature_mode_path=self._dynamic_feature_mode_path(),
+                    dynamic_prototypes_path=self._dynamic_prototypes_path(),
                     window=DYNAMIC_RECOGNITION_WINDOW,
                     two_hands=self._two_hands_mode,
                     initialize_detector=False,
@@ -2770,6 +2824,7 @@ class AppController:
                     feature_dim_path=feature_dim_path,
                     feature_mode_path=feature_mode_path,
                     static_rejection_verifier_path=self._static_rejection_verifier_path(),
+                    dynamic_prototypes_path=self._dynamic_prototypes_path(),
                     static_rejection_method=self.static_rejection_method,
                     window=self._embedded_recognition_window(),
                     two_hands=self._two_hands_mode,

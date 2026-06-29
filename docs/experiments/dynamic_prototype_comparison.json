@@ -1,0 +1,1843 @@
+{
+  "generated_at": 1782719852.5226738,
+  "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
+  "external_negative_root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand",
+  "include_external_negatives": true,
+  "train_count": 277,
+  "test_count": 93,
+  "records_by_label": {
+    "negative_external_ipn_dynamic": 200,
+    "no_gesture_static": 20,
+    "partial_swipe": 20,
+    "random_motion": 20,
+    "return_motion": 20,
+    "swipe_down": 20,
+    "swipe_left": 30,
+    "swipe_up": 20,
+    "wrong_axis_motion": 20
+  },
+  "train_by_label": {
+    "negative_external_ipn_dynamic": 150,
+    "no_gesture_static": 15,
+    "partial_swipe": 15,
+    "random_motion": 15,
+    "return_motion": 15,
+    "swipe_down": 15,
+    "swipe_left": 22,
+    "swipe_up": 15,
+    "wrong_axis_motion": 15
+  },
+  "test_by_label": {
+    "negative_external_ipn_dynamic": 50,
+    "no_gesture_static": 5,
+    "partial_swipe": 5,
+    "random_motion": 5,
+    "return_motion": 5,
+    "swipe_down": 5,
+    "swipe_left": 8,
+    "swipe_up": 5,
+    "wrong_axis_motion": 5
+  },
+  "best_method": "prototype_distance",
+  "reports": [
+    {
+      "method": "prototype_distance",
+      "metrics": {
+        "total": 93,
+        "positive_total": 18,
+        "negative_total": 75,
+        "positive_recall": 0.9444444444444444,
+        "positive_reject_rate": 0.05555555555555555,
+        "positive_wrong_rate": 0.0,
+        "negative_reject_rate": 1.0,
+        "negative_false_positive_rate": 0.0,
+        "overall_success": 0.989247311827957,
+        "sequence_edit_distance": 1,
+        "sequence_accuracy": 0.9444444444444444,
+        "per_label": {
+          "swipe_down": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          },
+          "swipe_left": {
+            "total": 8,
+            "correct": 7,
+            "wrong": 0,
+            "rejected": 1
+          },
+          "swipe_up": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          }
+        }
+      },
+      "model_path": "/Users/remi/Developer/GUAP/DPLM/models/experiments/dynamic_prototype/prototype_distance/dynamic_prototypes.json",
+      "attempts": [
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19014212489128113,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0040.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24732735753059387,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_157_0163.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.45150092244148254,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_158_0172.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.26280155777931213,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_205_0072.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.28754302859306335,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0098.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4562494158744812,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0175.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24335946142673492,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0046.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.36491817235946655,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0008.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23796199262142181,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0035.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.49437224864959717,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0164.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1584383249282837,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm1_4_r_229_0005.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17241838574409485,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_230_0022.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.25292500853538513,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_231_0043.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3238914906978607,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0073.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1891009360551834,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_229_0007.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3359161615371704,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_12_r_158_0167.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.42984840273857117,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0171.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21388348937034607,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_205_0068.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20957989990711212,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0109.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.8517565727233887,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0013.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19954197108745575,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_230_0024.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6917677521705627,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_232_0051.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4228038787841797,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0159.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19901767373085022,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_229_0016.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15025925636291504,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_11_r_208_0130.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2166692167520523,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_205_0076.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4363088011741638,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0180.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3008565604686737,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0093.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2670057415962219,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0020.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2237483710050583,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_206_0104.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23559793829917908,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0137.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.37902724742889404,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0178.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2777520716190338,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0042.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.33515664935112,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0134.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21186888217926025,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_207_0121.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31174978613853455,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0055.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.26095813512802124,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0025.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22324742376804352,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_207_0126.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.36129459738731384,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0118.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21708734333515167,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_232_0067.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19312064349651337,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_231_0039.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2638593018054962,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0021.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.208201602101326,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0037.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21570761501789093,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_157_0165.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23661655187606812,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_231_0036.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.42149344086647034,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_159_0195.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3806474506855011,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_159_0198.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3070366680622101,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_159_0197.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2565039396286011,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0066.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2956171929836273,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_207_0114.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10784005373716354,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0018.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.004696615505963564,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0016.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.38745447993278503,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0004.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.006604019086807966,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0015.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.006787074264138937,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0002.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 2.2534713745117188,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0012.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 6.38422155380249,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0006.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6327395439147949,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0016.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4030996561050415,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0019.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.678859293460846,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0010.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.03417531028389931,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0018.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.08971557766199112,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0002.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.044082485139369965,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0014.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.0611560195684433,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0004.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.07422307133674622,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0008.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.6042306423187256,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0008.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.2980259656906128,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0009.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 3.3712658882141113,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7509995698928833,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0005.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.8314075469970703,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0000.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.02958570420742035,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.027823906391859055,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0001.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.025070562958717346,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0004.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.02992570586502552,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0017.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.06661088764667511,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0014.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.018827758729457855,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0026.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03723646700382233,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0022.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05003351718187332,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0011.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03233426809310913,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0013.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.039818596094846725,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0029.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03629156947135925,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0014.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.10055586695671082,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0007.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.030055660754442215,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0003.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05471101775765419,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04360331594944,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0000.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05071985349059105,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0007.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04883846268057823,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0009.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.039751842617988586,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0018.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.11366590112447739,
+          "threshold": 0.07067403913626435,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0015.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.03496779501438141,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0019.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.127768874168396,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0018.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.08820696920156479,
+          "threshold": 0.05997562445851697,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.1329987645149231,
+          "threshold": 0.08423302953072921,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0007.npy"
+        }
+      ],
+      "thresholds": {
+        "swipe_down": {
+          "threshold": 0.08423302953072921,
+          "positive_radius": 0.08423302953072921,
+          "positive_distance_mean": 0.04118366539478302,
+          "positive_distance_p95": 0.060736724361777274,
+          "impostor_distance_p10": 0.167724084854126
+        },
+        "swipe_left": {
+          "threshold": 0.05997562445851697,
+          "positive_radius": 0.05997562445851697,
+          "positive_distance_mean": 0.03237365728074854,
+          "positive_distance_p95": 0.046239626966416834,
+          "impostor_distance_p10": 0.24863650500774384
+        },
+        "swipe_up": {
+          "threshold": 0.07067403913626435,
+          "positive_radius": 0.07067403913626435,
+          "positive_distance_mean": 0.040809942533572514,
+          "positive_distance_p95": 0.05297947227954865,
+          "impostor_distance_p10": 0.18810766637325288
+        }
+      }
+    },
+    {
+      "method": "prototype_dtw",
+      "metrics": {
+        "total": 93,
+        "positive_total": 18,
+        "negative_total": 75,
+        "positive_recall": 0.9444444444444444,
+        "positive_reject_rate": 0.05555555555555555,
+        "positive_wrong_rate": 0.0,
+        "negative_reject_rate": 1.0,
+        "negative_false_positive_rate": 0.0,
+        "overall_success": 0.989247311827957,
+        "sequence_edit_distance": 1,
+        "sequence_accuracy": 0.9444444444444444,
+        "per_label": {
+          "swipe_down": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          },
+          "swipe_left": {
+            "total": 8,
+            "correct": 7,
+            "wrong": 0,
+            "rejected": 1
+          },
+          "swipe_up": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          }
+        }
+      },
+      "model_path": "/Users/remi/Developer/GUAP/DPLM/models/experiments/dynamic_prototype/prototype_dtw/dynamic_prototypes.json",
+      "attempts": [
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18116828799247742,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0040.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2414703369140625,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_157_0163.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4205748438835144,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_158_0172.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2568287253379822,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_205_0072.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.27914267778396606,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0098.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.44424182176589966,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0175.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16853314638137817,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0046.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23075087368488312,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0008.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22537493705749512,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0035.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4604889154434204,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0164.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15546083450317383,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm1_4_r_229_0005.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1645755171775818,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_230_0022.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23966696858406067,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_231_0043.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31477293372154236,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0073.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17082852125167847,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_229_0007.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3056698739528656,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_12_r_158_0167.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.39809563755989075,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0171.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21090419590473175,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_205_0068.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18222223222255707,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0109.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.765209436416626,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0013.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18030185997486115,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_230_0024.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6361956596374512,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_232_0051.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.39771953225135803,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0159.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1918398141860962,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_229_0016.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.11720395088195801,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_11_r_208_0130.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2053745537996292,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_205_0076.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4015236794948578,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0180.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2942700684070587,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0093.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2163970023393631,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0020.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21616120636463165,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_206_0104.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2121620923280716,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0137.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3714768588542938,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0178.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18177886307239532,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0042.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2895653247833252,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0134.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20632410049438477,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_207_0121.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.30122900009155273,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0055.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21419493854045868,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0025.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2176813781261444,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_207_0126.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3204042911529541,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0118.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21066756546497345,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_232_0067.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19054432213306427,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_231_0039.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2200496941804886,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0021.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16604232788085938,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0037.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18652735650539398,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_157_0165.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2156364470720291,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_231_0036.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3930552899837494,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_159_0195.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3685726523399353,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_159_0198.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22357529401779175,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_159_0197.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.204716295003891,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0066.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.286456435918808,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_207_0114.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10686539113521576,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0018.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.004433433059602976,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0016.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16863340139389038,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0004.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.005826422479003668,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0015.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.006476446054875851,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/no_gesture_static/sample_auto_0002.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.9522132873535156,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0012.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 5.025031566619873,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0006.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5643306374549866,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0016.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3851514458656311,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0019.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5782289505004883,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/partial_swipe/sample_auto_0010.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.034165963530540466,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0018.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.08943691104650497,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0002.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.044077906757593155,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0014.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.06114630028605461,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0004.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.07404318451881409,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/random_motion/sample_auto_0008.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.4157685041427612,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0008.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7666545510292053,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0009.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.9676761627197266,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6491973996162415,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0005.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.614876627922058,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/return_motion/sample_auto_0000.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.028086436912417412,
+          "threshold": 0.06401234907828122,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.025057774037122726,
+          "threshold": 0.06401234907828122,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0001.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.031423285603523254,
+          "threshold": 0.06401234907828122,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0004.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.025620797649025917,
+          "threshold": 0.06401234907828122,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0017.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03578827157616615,
+          "threshold": 0.06401234907828122,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_down/sample_0014.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.018305504694581032,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0026.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03446986526250839,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0022.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04900389909744263,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0011.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.029256798326969147,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0013.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.029367953538894653,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0029.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.0344851016998291,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0014.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.07713453471660614,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0007.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.028273556381464005,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_left/sample_0003.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04337433725595474,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04082952439785004,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0000.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03640880063176155,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0007.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03866421431303024,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0009.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.030669458210468292,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/swipe_up/sample_0018.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.09147237241268158,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0015.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.03496412932872772,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0019.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12691424787044525,
+          "threshold": 0.0,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0018.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.08331767469644547,
+          "threshold": 0.05461890087462961,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.11973795294761658,
+          "threshold": 0.06073274781280795,
+          "path": "/Users/remi/Developer/GUAP/DPLM/data/gestures/wrong_axis_motion/sample_auto_0007.npy"
+        }
+      ],
+      "thresholds": {
+        "swipe_down": {
+          "threshold": 0.06401234907828122,
+          "positive_radius": 0.06401234907828122,
+          "positive_distance_mean": 0.0351735845208168,
+          "positive_distance_p95": 0.04901101402938365,
+          "impostor_distance_p10": 0.1614987164735794
+        },
+        "swipe_left": {
+          "threshold": 0.05461890087462961,
+          "positive_radius": 0.05461890087462961,
+          "positive_distance_mean": 0.028348613953725857,
+          "positive_distance_p95": 0.04369512069970369,
+          "impostor_distance_p10": 0.24653969407081605
+        },
+        "swipe_up": {
+          "threshold": 0.06073274781280795,
+          "positive_radius": 0.06073274781280795,
+          "positive_distance_mean": 0.0345714437464873,
+          "positive_distance_p95": 0.048578704893589016,
+          "impostor_distance_p10": 0.18747351467609408
+        }
+      }
+    }
+  ],
+  "production_out": "/Users/remi/Developer/GUAP/DPLM/models/dynamic_prototypes.json"
+}
