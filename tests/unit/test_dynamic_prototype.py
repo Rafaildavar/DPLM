@@ -36,6 +36,16 @@ def _up_sequence(frames=16):
     return _sequence([0.5] * frames, np.linspace(0.82, 0.25, frames))
 
 
+class _ComplexSequenceClassifier:
+    classes_ = np.asarray([0, 1, 2])
+
+    def predict(self, _features):
+        return np.asarray([1])
+
+    def predict_proba(self, _features):
+        return np.asarray([[0.14, 0.78, 0.08]])
+
+
 def test_prototype_distance_accepts_positive_and_rejects_negative():
     train = [
         DynamicSequenceRecord("swipe_left", _left_sequence(14)),
@@ -109,6 +119,130 @@ def test_online_dynamic_prediction_uses_prototype_as_reject_verifier():
     assert confidence == 0.0
     assert infer._last_dynamic_decision["source"] == "prototype_rejected"
     assert infer._last_dynamic_decision["prototype_reason"] == "nearest_negative"
+
+
+def test_online_dynamic_motion_can_override_positive_prototype_reject():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_down", "swipe_left", "swipe_up", "random_motion"]
+    infer._clf = None
+    infer._dynamic_prototypes = {"positive_labels": ["swipe_left"]}
+    infer._gesture_taxonomy = None
+    infer._dynamic_prototype_decision = lambda _sequence: {
+        "accepted": False,
+        "reason": "far_from_prototype",
+        "label": "",
+        "confidence": 0.0,
+    }
+
+    label, confidence = infer._dynamic_prediction(
+        np.empty((1, 0), dtype=np.float32),
+        {
+            "dx": -0.5,
+            "dy": 0.0,
+            "path_length": 0.5,
+            "displacement": 0.5,
+            "direction_cos": -1.0,
+            "direction_sin": 0.0,
+        },
+        sequence=_left_sequence(10),
+    )
+
+    assert label == "swipe_left"
+    assert confidence >= 0.68
+    assert infer._last_dynamic_decision["source"] == "motion_over_prototype_reject"
+    assert infer._last_dynamic_decision["prototype_reason"] == "far_from_prototype"
+
+
+def test_online_dynamic_motion_does_not_override_nearest_negative_reject():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_down", "swipe_left", "swipe_up", "random_motion"]
+    infer._clf = None
+    infer._dynamic_prototypes = {"positive_labels": ["swipe_left"]}
+    infer._gesture_taxonomy = None
+    infer._dynamic_prototype_decision = lambda _sequence: {
+        "accepted": False,
+        "reason": "nearest_negative",
+        "nearest_type": "negative",
+        "label": "",
+        "confidence": 0.0,
+    }
+
+    label, confidence = infer._dynamic_prediction(
+        np.empty((1, 0), dtype=np.float32),
+        {
+            "dx": -0.5,
+            "dy": 0.0,
+            "path_length": 0.5,
+            "displacement": 0.5,
+            "direction_cos": -1.0,
+            "direction_sin": 0.0,
+        },
+        sequence=_left_sequence(10),
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert infer._last_dynamic_decision["source"] == "prototype_rejected"
+    assert infer._last_dynamic_decision["prototype_reason"] == "nearest_negative"
+
+
+def test_online_dynamic_complex_model_can_override_swipe_motion():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_left", "circle_clockwise", "random_motion"]
+    infer._clf = _ComplexSequenceClassifier()
+    infer._dynamic_prototypes = {}
+    infer._gesture_taxonomy = None
+
+    label, confidence = infer._dynamic_prediction(
+        np.zeros((1, 1584), dtype=np.float32),
+        {
+            "dx": -0.5,
+            "dy": 0.0,
+            "path_length": 0.65,
+            "displacement": 0.5,
+            "direction_cos": -1.0,
+            "direction_sin": 0.0,
+        },
+        sequence=_left_sequence(18),
+    )
+
+    assert label == "circle_clockwise"
+    assert confidence == 0.78
+    assert infer._last_dynamic_decision["source"] == "complex_model_over_motion"
+    assert infer._last_dynamic_decision["motion_label"] == "swipe_left"
+    assert infer._last_dynamic_decision["complex_model_margin"] > 0.50
+
+
+def test_online_dynamic_complex_prototype_does_not_conflict_with_swipe_motion():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_left", "circle_clockwise", "random_motion"]
+    infer._clf = None
+    infer._dynamic_prototypes = {"positive_labels": ["circle_clockwise"]}
+    infer._gesture_taxonomy = None
+    infer._dynamic_prototype_decision = lambda _sequence: {
+        "accepted": True,
+        "label": "circle_clockwise",
+        "confidence": 0.77,
+        "reason": "accepted",
+    }
+
+    label, confidence = infer._dynamic_prediction(
+        np.empty((1, 0), dtype=np.float32),
+        {
+            "dx": -0.5,
+            "dy": 0.0,
+            "path_length": 0.65,
+            "displacement": 0.5,
+            "direction_cos": -1.0,
+            "direction_sin": 0.0,
+        },
+        sequence=_left_sequence(18),
+    )
+
+    assert label == "circle_clockwise"
+    assert confidence == 0.77
+    assert infer._last_dynamic_decision["source"] == "complex_prototype_over_motion"
+    assert infer._last_dynamic_decision["motion_label"] == "swipe_left"
 
 
 def test_external_negative_conflict_filter_keeps_user_positive_priority(tmp_path):

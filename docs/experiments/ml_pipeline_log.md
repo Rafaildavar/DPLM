@@ -3349,3 +3349,68 @@ Live result:
 - Dynamic recall выше, чем у `knn` на `dynamic_stats`.
 - False positive на negative motions не растёт критично.
 - Камера не лагает сильнее, чем на текущем `knn`.
+
+### H-066: Sequence KNN нужен отдельный open-set verifier
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Live test показал сильный рост positive recall:
+  - `swipe_up`: `20/20`;
+  - `swipe_left`: `20/20`.
+- При этом negative/почти-жесты стали хуже: `sequence_knn`, как и любой KNN,
+  склонен выбирать ближайший positive class даже для незавершенного движения.
+- `swipe_down` тяжело тестировать из-за возврата руки вверх: подготовительное
+  движение часто становится похожим на `swipe_up`.
+
+Гипотеза:
+- Для time-series classifier нужен отдельный reject layer:
+  - `sequence_knn` отвечает за positive class;
+  - `dynamic_sequence_prototypes.json` отвечает за open-set rejection;
+  - motion heuristic не должна перебивать `nearest_negative`.
+
+Решение:
+- Обучен отдельный prototype/rejection artifact:
+  - `models/dynamic_sequence_prototypes.json`;
+  - `models/experiments/dynamic_prototype/prototype_distance/dynamic_sequence_prototypes.json`.
+- Offline prototype metrics:
+  - overall: `0.9935`;
+  - positive recall: `0.9444`;
+  - negative reject: `1.0000`;
+  - negative false positive: `0.0000`.
+- Runtime policy для сохранённого sequence-профиля:
+  - `dynamic_sequence_prototypes.json` подключается как отдельный open-set
+    verifier;
+  - `prototype_rejected` не должен превращаться в accepted gesture только из-за
+    направления движения.
+
+Как проверять:
+- Перезапустить приложение, чтобы runtime загрузил
+  `dynamic_sequence_prototypes.json`.
+- Настройки:
+  - Mode: `auto`;
+  - Dynamic: `sequence_knn`;
+  - Variant: `prototype_distance`;
+  - threshold: сначала `0.90`, затем при misses проверить `0.80`.
+- Live positive:
+  - `swipe_up`: 20;
+  - `swipe_left`: 20;
+  - `swipe_down`: 20, руку после движения лучше убирать из кадра вниз/в сторону.
+- Live negative:
+  - `partial_swipe`: 10;
+  - `wrong_axis_motion`: 10;
+  - `return_motion`: 10;
+  - `random_motion`: 10.
+
+Критерий успеха:
+- Positive recall остается высоким для `swipe_up`/`swipe_left`.
+- Negative false positive rate заметно ниже, чем у чистого `sequence_knn`.
+- В live logs появляются `dynamic_prototype_method=prototype_distance` и
+  rejected attempts с `dynamic_prototype_reason=nearest_negative` или
+  `low_confidence`.
+
+Следующая гипотеза:
+- Если sequence KNN + prototype verifier даст стабильный reject, сравнить
+  модель временных рядов сильнее: LSTM/GRU или lightweight temporal CNN.

@@ -47,17 +47,20 @@ from app.services.gesture_taxonomy import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DYNAMIC_GATE_MIN_PATH_LENGTH = 0.12
-DYNAMIC_GATE_MIN_DISPLACEMENT = 0.06
-DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.05
+DYNAMIC_GATE_MIN_PATH_LENGTH = 0.08
+DYNAMIC_GATE_MIN_DISPLACEMENT = 0.04
+DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.035
 DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
 DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
-DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.20
+DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.15
 DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
+DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE = 0.60
+DYNAMIC_COMPLEX_MODEL_MIN_MARGIN = 0.08
+DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.68
 DYNAMIC_SEGMENT_PRE_ROLL_FRAMES = 3
 DYNAMIC_SEGMENT_ONSET_PATH = 0.015
 DYNAMIC_SEGMENT_ONSET_DISPLACEMENT = 0.012
-DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES = 5
+DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES = 3
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
 STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
@@ -474,7 +477,13 @@ class GestureOnlineInfer:
         sequence: np.ndarray | None = None,
     ) -> tuple[str, float]:
         self._last_dynamic_decision = {}
-        motion_decision = classify_swipe_direction(motion, self._classes)
+        motion_decision = classify_swipe_direction(
+            motion,
+            self._classes,
+            min_path_length=DYNAMIC_GATE_MIN_PATH_LENGTH,
+            min_displacement=DYNAMIC_GATE_MIN_DISPLACEMENT,
+            min_axis_ratio=DYNAMIC_DIRECTION_DOMINANCE_RATIO,
+        )
         model_label = ""
         model_confidence = 0.0
         probabilities = np.asarray([], dtype=float)
@@ -514,6 +523,28 @@ class GestureOnlineInfer:
         prototype_decision = self._dynamic_prototype_decision(sequence)
         prototype_fields = self._dynamic_prototype_fields(prototype_decision)
         if prototype_decision and not bool(prototype_decision.get("accepted")):
+            if (
+                motion_decision.accepted
+                and float(motion_decision.confidence) >= DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE
+                and negative_confidence < DYNAMIC_NEGATIVE_REJECT_THRESHOLD
+                and self._dynamic_motion_can_override_prototype_reject(
+                    motion_decision.label,
+                    prototype_decision,
+                )
+            ):
+                self._last_dynamic_decision = {
+                    "source": "motion_over_prototype_reject",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": float(motion_decision.confidence),
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return motion_decision.label, float(motion_decision.confidence)
             self._last_dynamic_decision = {
                 "source": "prototype_rejected",
                 "motion_label": motion_decision.label if motion_decision.accepted else "",
@@ -545,6 +576,11 @@ class GestureOnlineInfer:
                 compatible_label = label
                 compatible_confidence = float(probability)
                 break
+        (
+            complex_model_label,
+            complex_model_confidence,
+            complex_model_margin,
+        ) = self._best_complex_model_prediction(ranked)
 
         if motion_decision.accepted:
             motion_confidence = float(motion_decision.confidence)
@@ -552,6 +588,64 @@ class GestureOnlineInfer:
                 (probability for probability, label in ranked if label == motion_decision.label),
                 default=0.0,
             )
+            if (
+                prototype_label
+                and prototype_label != motion_decision.label
+                and self._is_complex_dynamic_label(prototype_label)
+                and negative_confidence < DYNAMIC_NEGATIVE_REJECT_THRESHOLD
+            ):
+                model_for_prototype = max(
+                    (probability for probability, label in ranked if label == prototype_label),
+                    default=0.0,
+                )
+                self._last_dynamic_decision = {
+                    "source": "complex_prototype_over_motion",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    "model_confidence_for_prototype": float(model_for_prototype),
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return prototype_label, max(
+                    prototype_confidence,
+                    float(model_for_prototype),
+                )
+            if (
+                complex_model_label
+                and complex_model_label != motion_decision.label
+                and negative_confidence < DYNAMIC_NEGATIVE_REJECT_THRESHOLD
+                and self._complex_model_prediction_confident(
+                    complex_model_confidence,
+                    complex_model_margin,
+                )
+            ):
+                self._last_dynamic_decision = {
+                    "source": "complex_model_over_motion",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "complex_model_label": complex_model_label,
+                    "complex_model_confidence": complex_model_confidence,
+                    "complex_model_margin": complex_model_margin,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return complex_model_label, complex_model_confidence
             if prototype_label and prototype_label != motion_decision.label:
                 self._last_dynamic_decision = {
                     "source": "prototype_motion_conflict",
@@ -679,6 +773,71 @@ class GestureOnlineInfer:
             **motion_decision.as_dict(),
         }
         return "", 0.0
+
+    def _best_complex_model_prediction(
+        self,
+        ranked: list[tuple[float, str]],
+    ) -> tuple[str, float, float]:
+        ordered = sorted(ranked, key=lambda item: item[0], reverse=True)
+        if not ordered:
+            return "", 0.0, 0.0
+
+        top_confidence, top_label = ordered[0]
+        if not self._is_complex_dynamic_label(top_label):
+            return "", 0.0, 0.0
+
+        second_confidence = float(ordered[1][0]) if len(ordered) > 1 else 0.0
+        return (
+            str(top_label),
+            float(top_confidence),
+            float(top_confidence - second_confidence),
+        )
+
+    @staticmethod
+    def _complex_model_prediction_confident(
+        confidence: float,
+        margin: float,
+    ) -> bool:
+        return (
+            float(confidence) >= DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE
+            and float(margin) >= DYNAMIC_COMPLEX_MODEL_MIN_MARGIN
+        )
+
+    def _is_complex_dynamic_label(self, label: str) -> bool:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return False
+        if clean.startswith("swipe_") or self._is_negative_label(clean):
+            return False
+        return True
+
+    def _dynamic_motion_can_override_prototype_reject(
+        self,
+        label: str,
+        prototype_decision: dict[str, Any],
+    ) -> bool:
+        clean = str(label or "").strip().lower()
+        if not clean or not prototype_decision:
+            return False
+
+        positive_labels = {
+            str(item or "").strip().lower()
+            for item in (self._dynamic_prototypes or {}).get("positive_labels", [])
+            if str(item or "").strip()
+        }
+        if not positive_labels:
+            positive_labels = {
+                str(item.get("label") or "").strip().lower()
+                for item in (self._dynamic_prototypes or {}).get("prototypes", [])
+                if isinstance(item, dict)
+                and not bool(item.get("is_negative"))
+                and str(item.get("label") or "").strip()
+            }
+        if clean not in positive_labels:
+            return False
+
+        reason = str(prototype_decision.get("reason") or "").strip().lower()
+        return reason == "far_from_prototype"
 
     def _dynamic_prototype_decision(
         self,
