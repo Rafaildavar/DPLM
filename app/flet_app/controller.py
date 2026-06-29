@@ -198,27 +198,18 @@ DYNAMIC_MODEL_PROFILE_SVM = "svm"
 DYNAMIC_MODEL_PROFILE_EXTRA_TREES = "extra_trees"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN = "sequence_knn"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP = "sequence_mlp"
+DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP
 DYNAMIC_MODEL_PROFILES = (
-    DYNAMIC_MODEL_PROFILE_KNN,
-    DYNAMIC_MODEL_PROFILE_SVM,
-    DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
+    DYNAMIC_MODEL_PROFILE_PRODUCTION,
 )
 DYNAMIC_MODEL_FILENAMES = {
-    DYNAMIC_MODEL_PROFILE_KNN: "dynamic_knn.pkl",
-    DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
-    DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_knn.pkl",
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp.pkl",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence",
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_prototypes.json",
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp_prototypes.json",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp_prototypes.json",
 }
 INTENT_GATE_MODEL_FILENAME = "intent_gate_mlp.pkl"
 MODEL_VARIANT_PRODUCTION = "production"
@@ -370,7 +361,7 @@ class AppController:
         self._is_camera_active: bool = False
         self._embedded_active: bool = False
         self._recognition_model_mode: str = RECOGNITION_MODEL_AUTO
-        self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_KNN
+        self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_PRODUCTION
         self._static_rejection_method: str = STATIC_REJECTION_OPEN_SET_POLICY
         self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
         self._gesture_mode: bool = True
@@ -496,13 +487,13 @@ class AppController:
     @property
     def dynamic_model_profile(self) -> str:
         profile = str(
-            getattr(self, "_dynamic_model_profile", DYNAMIC_MODEL_PROFILE_KNN)
-            or DYNAMIC_MODEL_PROFILE_KNN
+            getattr(self, "_dynamic_model_profile", DYNAMIC_MODEL_PROFILE_PRODUCTION)
+            or DYNAMIC_MODEL_PROFILE_PRODUCTION
         ).strip()
         return (
             profile
             if profile in DYNAMIC_MODEL_PROFILES
-            else DYNAMIC_MODEL_PROFILE_KNN
+            else DYNAMIC_MODEL_PROFILE_PRODUCTION
         )
 
     @property
@@ -592,7 +583,9 @@ class AppController:
                     "exists": models_dir.exists(),
                     "selected": key == current,
                     "static_model_exists": (models_dir / "knn.pkl").exists(),
-                    "dynamic_model_exists": (models_dir / "dynamic_knn.pkl").exists(),
+                    "dynamic_model_exists": (
+                        models_dir / DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION]
+                    ).exists(),
                 }
             )
         return variants
@@ -846,7 +839,7 @@ class AppController:
     def _dynamic_model_path(self) -> Path:
         filename = DYNAMIC_MODEL_FILENAMES.get(
             self.dynamic_model_profile,
-            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_KNN],
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION],
         )
         return self._configured_models_dir() / filename
 
@@ -4215,7 +4208,7 @@ class AppController:
     def set_dynamic_model_profile(self, profile: str) -> None:
         target = str(profile or "").strip().lower()
         if target not in DYNAMIC_MODEL_PROFILES:
-            target = DYNAMIC_MODEL_PROFILE_KNN
+            target = DYNAMIC_MODEL_PROFILE_PRODUCTION
         if target == self.dynamic_model_profile:
             return
 
@@ -5771,6 +5764,11 @@ class AppController:
         project_root = Path(__file__).resolve().parents[2]
         actual_data_root = data_root or str(self._configured_data_dir())
         dynamic_model_path = Path(dynamic_model_out_path or self._dynamic_model_path())
+        production_model_filename = DYNAMIC_MODEL_FILENAMES[
+            DYNAMIC_MODEL_PROFILE_PRODUCTION
+        ]
+        if dynamic_model_path.name != production_model_filename:
+            dynamic_model_path = dynamic_model_path.with_name(production_model_filename)
         dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
         production_prototypes = dynamic_model_dir / "dynamic_prototypes.json"
         for profile, filename in DYNAMIC_MODEL_FILENAMES.items():

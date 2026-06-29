@@ -19,6 +19,7 @@ import flet as ft
 
 from app.flet_app.controller import (
     AppController,
+    DYNAMIC_MODEL_PROFILE_PRODUCTION,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
 )
@@ -228,11 +229,10 @@ class HomeView:
             dense=True,
             visible=controller.recognition_model_mode in {"auto", "dynamic"},
             options=[
-                ft.DropdownOption(key="knn", text="knn"),
-                ft.DropdownOption(key="svm", text="svm"),
-                ft.DropdownOption(key="extra_trees", text="extra_trees"),
-                ft.DropdownOption(key="sequence_knn", text="sequence_knn"),
-                ft.DropdownOption(key="sequence_mlp", text="sequence_mlp"),
+                ft.DropdownOption(
+                    key=DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                    text=DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                ),
             ],
             on_select=self._on_dynamic_profile_changed,
         )
@@ -440,7 +440,7 @@ class HomeView:
 
     def _on_dynamic_profile_changed(self, _e) -> None:
         self._controller.set_dynamic_model_profile(
-            str(self._dynamic_profile_dd.value or "knn")
+            str(self._dynamic_profile_dd.value or DYNAMIC_MODEL_PROFILE_PRODUCTION)
         )
 
     def _on_static_rejection_method_changed(self, _e) -> None:

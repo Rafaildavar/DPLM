@@ -3741,3 +3741,43 @@ MLflow:
 - Старые positive dynamic gestures остаются >= `90%`.
 - Новый complex gesture >= `80%`.
 - Negative/почти-жесты не становятся хуже по false positive rate.
+
+### H-073: `sequence_mlp` зафиксирован как production dynamic profile
+
+Статус: `implemented`, needs UI smoke test
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- После live A/B `sequence_mlp + open_set_policy` стал главным кандидатом для
+  динамических жестов.
+- Старые варианты (`knn`, `svm`, `extra_trees`, `sequence_knn`) полезны как
+  исследовательские baselines, но в UI они путают пользователя и повышают риск
+  случайно обучить/запустить не production-путь.
+
+Решение:
+- Production dynamic profile в runtime теперь только `sequence_mlp`.
+- Home UI показывает единственный dynamic profile: `sequence_mlp`.
+- Dynamic training UI фиксирует:
+  - model type: `sequence_mlp`;
+  - feature mode: `dynamic_sequence`;
+  - model artifact: `models/dynamic_sequence_mlp.pkl`;
+  - metadata artifacts: `models/dynamic_sequence_mlp_*`;
+  - verifier artifact: `models/dynamic_sequence_mlp_prototypes.json`.
+- Legacy dynamic profile values нормализуются обратно в `sequence_mlp`, чтобы
+  старые настройки не уводили runtime в `dynamic_knn.pkl`.
+
+Что это даёт:
+- Пользовательский live/testing flow становится однозначным.
+- MLflow live run names больше не должны появляться как `...-knn-...` для
+  production dynamic-пайплайна.
+- Следующие эксперименты с LSTM/GRU можно делать отдельно, не смешивая их с
+  production UI.
+
+Следующая проверка:
+- Открыть Home и убедиться, что в `Dynamic` доступен только `sequence_mlp`.
+- На вкладке Training переобучить dynamic model и проверить лог:
+  `model=sequence_mlp`, `feature_mode=dynamic_sequence`,
+  `out=models/dynamic_sequence_mlp.pkl`.
+- Запустить live evaluation и проверить в MLflow run name:
+  `live-<gesture>-auto-sequence_mlp-open_set_policy`.

@@ -38,26 +38,18 @@ _DEFAULT_DATA_ROOT = "data/gestures"
 _DEFAULT_MODEL_OUT = "models/knn.pkl"
 _DEFAULT_RECORD_SAMPLES = 8
 _DEFAULT_RECORD_FRAMES = 30
-_DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_knn.pkl"
+_DEFAULT_DYNAMIC_MODEL_TYPE = "sequence_mlp"
+_DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_sequence_mlp.pkl"
 _DYNAMIC_MODEL_OUT_BY_TYPE = {
-    "knn": "models/dynamic_knn.pkl",
-    "svm": "models/dynamic_svm.pkl",
-    "extra_trees": "models/dynamic_extra_trees.pkl",
-    "sequence_knn": "models/dynamic_sequence_knn.pkl",
     "sequence_mlp": "models/dynamic_sequence_mlp.pkl",
-    "rf": "models/dynamic_rf.pkl",
-    "logreg": "models/dynamic_logreg.pkl",
 }
-_DEFAULT_DYNAMIC_CLASSES_OUT = "models/dynamic_classes.json"
-_DEFAULT_DYNAMIC_FEATURE_DIM_OUT = "models/dynamic_feature_dim.txt"
-_DEFAULT_DYNAMIC_FEATURE_MODE_OUT = "models/dynamic_feature_mode.txt"
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
 _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL = 20
 _DEFAULT_NEGATIVE_SEED = 42
 _STATIC_TRAINING_SCOPE = "static,quasi_static,negative"
 _DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
-_DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_stats"
+_DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_sequence"
 _DEFAULT_MODEL_TYPE = "knn"
 _DEFAULT_K_NEIGHBORS = 5
 _PLACEHOLDER_DATA_URL = (
@@ -68,8 +60,8 @@ _PLACEHOLDER_DATA_URL = (
 
 
 def _dynamic_model_out_for_type(model_type: str) -> str:
-    clean = str(model_type or _DEFAULT_MODEL_TYPE).strip().lower()
-    return _DYNAMIC_MODEL_OUT_BY_TYPE.get(clean, f"models/dynamic_{clean}.pkl")
+    clean = str(model_type or _DEFAULT_DYNAMIC_MODEL_TYPE).strip().lower()
+    return _DYNAMIC_MODEL_OUT_BY_TYPE.get(clean, _DEFAULT_DYNAMIC_MODEL_OUT)
 
 
 def _known_dynamic_model_outputs() -> set[str]:
@@ -77,24 +69,14 @@ def _known_dynamic_model_outputs() -> set[str]:
 
 
 def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
-    clean = str(model_type or _DEFAULT_MODEL_TYPE).strip().lower()
-    if clean == "sequence_knn":
-        return (
-            "models/dynamic_sequence_classes.json",
-            "models/dynamic_sequence_feature_dim.txt",
-            "models/dynamic_sequence_feature_mode.txt",
-        )
+    clean = str(model_type or _DEFAULT_DYNAMIC_MODEL_TYPE).strip().lower()
     if clean == "sequence_mlp":
         return (
             "models/dynamic_sequence_mlp_classes.json",
             "models/dynamic_sequence_mlp_feature_dim.txt",
             "models/dynamic_sequence_mlp_feature_mode.txt",
         )
-    return (
-        _DEFAULT_DYNAMIC_CLASSES_OUT,
-        _DEFAULT_DYNAMIC_FEATURE_DIM_OUT,
-        _DEFAULT_DYNAMIC_FEATURE_MODE_OUT,
-    )
+    return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
 
 
 class TrainingView:
@@ -209,26 +191,19 @@ class TrainingView:
             value=_DEFAULT_DYNAMIC_FEATURE_MODE,
             border_color=COLOR_SURFACE_HIGH,
             options=[
-                ft.DropdownOption(key="dynamic_stats", text="dynamic_stats"),
                 ft.DropdownOption(key="dynamic_sequence", text="dynamic_sequence"),
-                ft.DropdownOption(key="hybrid_stats", text="hybrid_stats"),
-                ft.DropdownOption(key="static_stats", text="static_stats"),
             ],
+            disabled=True,
             editable=False,
         )
         self._dyn_model_type = ft.Dropdown(
             label="Модель",
-            value=_DEFAULT_MODEL_TYPE,
+            value=_DEFAULT_DYNAMIC_MODEL_TYPE,
             border_color=COLOR_SURFACE_HIGH,
             options=[
-                ft.DropdownOption(key="knn", text="knn"),
-                ft.DropdownOption(key="svm", text="svm"),
-                ft.DropdownOption(key="extra_trees", text="extra_trees"),
-                ft.DropdownOption(key="sequence_knn", text="sequence_knn"),
                 ft.DropdownOption(key="sequence_mlp", text="sequence_mlp"),
-                ft.DropdownOption(key="rf", text="rf"),
-                ft.DropdownOption(key="logreg", text="logreg"),
             ],
+            disabled=True,
             editable=False,
             on_select=self._on_dynamic_model_type_changed,
         )
@@ -236,12 +211,14 @@ class TrainingView:
             label="Файл dynamic-модели",
             value=_DEFAULT_DYNAMIC_MODEL_OUT,
             border_color=COLOR_SURFACE_HIGH,
+            disabled=True,
         )
         self._dyn_tr_neighbors = ft.TextField(
             label="K",
             value=str(_DEFAULT_K_NEIGHBORS),
             width=100,
             border_color=COLOR_SURFACE_HIGH,
+            disabled=True,
         )
         self._dyn_tr_start_btn = ft.FilledButton(
             content=ft.Text("Обучить dynamic модель", weight=ft.FontWeight.BOLD),
@@ -717,7 +694,7 @@ class TrainingView:
             return default
 
     def _on_dynamic_model_type_changed(self, _e) -> None:
-        model_type = str(self._dyn_model_type.value or "knn")
+        model_type = str(self._dyn_model_type.value or _DEFAULT_DYNAMIC_MODEL_TYPE)
         current = str(self._dyn_model_out.value or "").strip()
         suggested = _dynamic_model_out_for_type(model_type)
         if not current or current in _known_dynamic_model_outputs():
@@ -726,12 +703,11 @@ class TrainingView:
                 self._dyn_model_out.update()
             except Exception:
                 pass
-        if model_type in {"sequence_knn", "sequence_mlp"}:
-            self._dyn_feature_mode.value = "dynamic_sequence"
-            try:
-                self._dyn_feature_mode.update()
-            except Exception:
-                pass
+        self._dyn_feature_mode.value = "dynamic_sequence"
+        try:
+            self._dyn_feature_mode.update()
+        except Exception:
+            pass
 
     def _on_record_start(self, _e, *, mode: str = "developer") -> None:
         if mode == "user":
@@ -849,17 +825,10 @@ class TrainingView:
                 1,
                 self._parse_int(self._dyn_tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
             )
-            feature_mode = (
-                str(self._dyn_feature_mode.value or _DEFAULT_DYNAMIC_FEATURE_MODE)
-                .strip()
-                or _DEFAULT_DYNAMIC_FEATURE_MODE
-            )
+            feature_mode = _DEFAULT_DYNAMIC_FEATURE_MODE
             expect_dim = None
-            model_type = str(self._dyn_model_type.value or _DEFAULT_MODEL_TYPE).strip()
-            out_path = (
-                self._dyn_model_out.value
-                or _dynamic_model_out_for_type(model_type)
-            ).strip()
+            model_type = _DEFAULT_DYNAMIC_MODEL_TYPE
+            out_path = _dynamic_model_out_for_type(model_type)
             (
                 classes_out_path,
                 feature_dim_out_path,

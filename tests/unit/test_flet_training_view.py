@@ -1,10 +1,8 @@
 from app.flet_app.views.training import (
     TrainingView,
     _DEFAULT_DATA_ROOT,
-    _DEFAULT_DYNAMIC_CLASSES_OUT,
-    _DEFAULT_DYNAMIC_FEATURE_DIM_OUT,
     _DEFAULT_DYNAMIC_FEATURE_MODE,
-    _DEFAULT_DYNAMIC_FEATURE_MODE_OUT,
+    _DEFAULT_DYNAMIC_MODEL_TYPE,
     _DEFAULT_DYNAMIC_MODEL_OUT,
     _DEFAULT_DYNAMIC_RECORD_FRAMES,
     _DEFAULT_DYNAMIC_RECORD_SAMPLES,
@@ -134,21 +132,27 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
 
     view._dyn_model_out.value = ""
     view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
-    view._dyn_model_type.value = "svm"
+    view._dyn_model_type.value = "sequence_mlp"
     view._dyn_tr_neighbors.value = ""
 
     view._on_train_start(None, mode="dynamic")
 
     training_call = controller.training_calls[-1]
     assert training_call["data_root"] == _DEFAULT_DATA_ROOT
-    assert training_call["out_path"] == _dynamic_model_out_for_type("svm")
+    assert training_call["out_path"] == _DEFAULT_DYNAMIC_MODEL_OUT
     assert training_call["neighbors"] == _DEFAULT_K_NEIGHBORS
     assert training_call["expect_dim"] is None
-    assert training_call["model_type"] == "svm"
+    assert training_call["model_type"] == _DEFAULT_DYNAMIC_MODEL_TYPE
     assert training_call["feature_mode"] == _DEFAULT_DYNAMIC_FEATURE_MODE
-    assert training_call["classes_out_path"] == _DEFAULT_DYNAMIC_CLASSES_OUT
-    assert training_call["feature_dim_out_path"] == _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
-    assert training_call["feature_mode_out_path"] == _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
+    assert training_call["classes_out_path"] == "models/dynamic_sequence_mlp_classes.json"
+    assert (
+        training_call["feature_dim_out_path"]
+        == "models/dynamic_sequence_mlp_feature_dim.txt"
+    )
+    assert (
+        training_call["feature_mode_out_path"]
+        == "models/dynamic_sequence_mlp_feature_mode.txt"
+    )
     assert training_call["training_scope"] == _DYNAMIC_TRAINING_SCOPE
 
 
@@ -166,29 +170,24 @@ def test_developer_negative_flow_generates_samples_automatically():
     assert generation_call["seed"] == _DEFAULT_NEGATIVE_SEED
 
 
-def test_dynamic_model_type_updates_default_output_path_without_overriding_custom_path():
+def test_dynamic_model_type_keeps_production_sequence_mlp_output_path():
     controller = _DummyController()
     view = TrainingView(_DummyPage(), controller)
 
-    view._dyn_model_type.value = "extra_trees"
+    view._dyn_model_type.value = _DEFAULT_DYNAMIC_MODEL_TYPE
     view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
     view._on_dynamic_model_type_changed(None)
 
-    assert view._dyn_model_out.value == _dynamic_model_out_for_type("extra_trees")
-
-    view._dyn_model_type.value = "svm"
-    view._dyn_model_out.value = "models/custom_dynamic.pkl"
-    view._on_dynamic_model_type_changed(None)
-
-    assert view._dyn_model_out.value == "models/custom_dynamic.pkl"
+    assert view._dyn_model_out.value == _DEFAULT_DYNAMIC_MODEL_OUT
+    assert view._dyn_feature_mode.value == "dynamic_sequence"
 
 
-def test_sequence_knn_uses_sequence_model_and_metadata_paths():
-    assert _dynamic_model_out_for_type("sequence_knn") == "models/dynamic_sequence_knn.pkl"
+def test_legacy_dynamic_model_type_falls_back_to_sequence_mlp_paths():
+    assert _dynamic_model_out_for_type("sequence_knn") == _DEFAULT_DYNAMIC_MODEL_OUT
     assert _dynamic_metadata_out_for_type("sequence_knn") == (
-        "models/dynamic_sequence_classes.json",
-        "models/dynamic_sequence_feature_dim.txt",
-        "models/dynamic_sequence_feature_mode.txt",
+        "models/dynamic_sequence_mlp_classes.json",
+        "models/dynamic_sequence_mlp_feature_dim.txt",
+        "models/dynamic_sequence_mlp_feature_mode.txt",
     )
 
 

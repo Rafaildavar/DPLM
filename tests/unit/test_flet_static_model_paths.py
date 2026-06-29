@@ -3,8 +3,7 @@ from pathlib import Path
 from app.flet_app import controller as controller_module
 from app.flet_app.controller import (
     AppController,
-    DYNAMIC_MODEL_PROFILE_KNN,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN,
+    DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
     MODEL_VARIANT_DIRS,
     MODEL_VARIANT_PRODUCTION,
@@ -35,10 +34,10 @@ def test_static_artifact_paths_fall_back_to_production_for_dynamic_only_variant(
     variant_rel = "models/experiments/dynamic_prototype/prototype_distance"
     variant_dir = tmp_path / variant_rel
     variant_dir.mkdir(parents=True)
-    (variant_dir / "dynamic_knn.pkl").write_text("x", encoding="utf-8")
+    (variant_dir / "dynamic_sequence_mlp.pkl").write_text("x", encoding="utf-8")
 
     controller = AppController.__new__(AppController)
-    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_KNN
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
     controller._config = AppConfig()
     controller._config.paths.models_dir = variant_rel
     controller._config.paths.model_path = f"{variant_rel}/knn.pkl"
@@ -46,7 +45,7 @@ def test_static_artifact_paths_fall_back_to_production_for_dynamic_only_variant(
     controller._config.paths.feature_dim_path = f"{variant_rel}/feature_dim.txt"
 
     assert controller._configured_models_dir() == variant_dir
-    assert controller._dynamic_model_path() == variant_dir / "dynamic_knn.pkl"
+    assert controller._dynamic_model_path() == variant_dir / "dynamic_sequence_mlp.pkl"
     assert controller._configured_model_path() == production_dir / "knn.pkl"
     assert controller._configured_classes_path() == production_dir / "classes.json"
     assert controller._configured_feature_dim_path() == production_dir / "feature_dim.txt"
@@ -86,23 +85,27 @@ def test_apply_dynamic_only_model_variant_keeps_static_paths_in_production():
     assert emitted == ["prototype_distance"]
 
 
-def test_sequence_dynamic_profile_uses_own_metadata_files(tmp_path):
+def test_legacy_dynamic_profile_falls_back_to_sequence_mlp_paths(tmp_path):
     controller = AppController.__new__(AppController)
-    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN
+    controller._dynamic_model_profile = "sequence_knn"
     controller._config = AppConfig()
     controller._config.paths.models_dir = str(tmp_path / "models")
 
-    assert controller._dynamic_model_path().name == "dynamic_sequence_knn.pkl"
-    assert controller._dynamic_classes_path().name == "dynamic_sequence_classes.json"
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_PRODUCTION
+    assert controller._dynamic_model_path().name == "dynamic_sequence_mlp.pkl"
+    assert controller._dynamic_classes_path().name == "dynamic_sequence_mlp_classes.json"
     assert (
         controller._dynamic_feature_dim_path().name
-        == "dynamic_sequence_feature_dim.txt"
+        == "dynamic_sequence_mlp_feature_dim.txt"
     )
     assert (
         controller._dynamic_feature_mode_path().name
-        == "dynamic_sequence_feature_mode.txt"
+        == "dynamic_sequence_mlp_feature_mode.txt"
     )
-    assert controller._dynamic_prototypes_path().name == "dynamic_sequence_prototypes.json"
+    assert (
+        controller._dynamic_prototypes_path().name
+        == "dynamic_sequence_mlp_prototypes.json"
+    )
 
 
 def test_sequence_mlp_dynamic_profile_uses_own_metadata_files(tmp_path):

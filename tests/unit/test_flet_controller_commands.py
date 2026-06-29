@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from app.flet_app.controller import (
     AUTO_STATIC_GESTURE_CONFIRM_FRAMES,
     AppController,
-    DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
+    DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
@@ -42,7 +42,7 @@ def _dispatch_controller():
     controller._pointer_mode = False
     controller._show_landmark_overlay = True
     controller._recognition_model_mode = "static"
-    controller._dynamic_model_profile = "knn"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
     controller._auto_execute_on_gesture = True
     controller._status = "Idle"
     controller.confidence_changed = _Event()
@@ -147,20 +147,26 @@ def test_build_training_command_can_write_dynamic_model_metadata(monkeypatch, tm
 
     cmd = controller._build_training_command(
         data_root=str(tmp_path / "gestures"),
-        out_path=str(tmp_path / "dynamic_knn.pkl"),
+        out_path=str(tmp_path / "dynamic_sequence_mlp.pkl"),
         neighbors=5,
-        feature_mode="dynamic_stats",
-        model_type="extra_trees",
-        classes_out_path=str(tmp_path / "dynamic_classes.json"),
-        feature_dim_out_path=str(tmp_path / "dynamic_feature_dim.txt"),
-        feature_mode_out_path=str(tmp_path / "dynamic_feature_mode.txt"),
+        feature_mode="dynamic_sequence",
+        model_type="sequence_mlp",
+        classes_out_path=str(tmp_path / "dynamic_sequence_mlp_classes.json"),
+        feature_dim_out_path=str(tmp_path / "dynamic_sequence_mlp_feature_dim.txt"),
+        feature_mode_out_path=str(tmp_path / "dynamic_sequence_mlp_feature_mode.txt"),
     )
 
-    assert cmd[cmd.index("--feature-mode") + 1] == "dynamic_stats"
-    assert cmd[cmd.index("--model-type") + 1] == "extra_trees"
-    assert cmd[cmd.index("--classes-out") + 1].endswith("dynamic_classes.json")
-    assert cmd[cmd.index("--feature-dim-out") + 1].endswith("dynamic_feature_dim.txt")
-    assert cmd[cmd.index("--feature-mode-out") + 1].endswith("dynamic_feature_mode.txt")
+    assert cmd[cmd.index("--feature-mode") + 1] == "dynamic_sequence"
+    assert cmd[cmd.index("--model-type") + 1] == "sequence_mlp"
+    assert cmd[cmd.index("--classes-out") + 1].endswith(
+        "dynamic_sequence_mlp_classes.json"
+    )
+    assert cmd[cmd.index("--feature-dim-out") + 1].endswith(
+        "dynamic_sequence_mlp_feature_dim.txt"
+    )
+    assert cmd[cmd.index("--feature-mode-out") + 1].endswith(
+        "dynamic_sequence_mlp_feature_mode.txt"
+    )
 
 
 def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
@@ -176,11 +182,11 @@ def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
 
     cmd = controller._build_training_command(
         data_root=str(tmp_path / "gestures"),
-        out_path=str(tmp_path / "dynamic_knn.pkl"),
-        feature_mode="dynamic_stats",
-        classes_out_path=str(tmp_path / "dynamic_classes.json"),
-        feature_dim_out_path=str(tmp_path / "dynamic_feature_dim.txt"),
-        feature_mode_out_path=str(tmp_path / "dynamic_feature_mode.txt"),
+        out_path=str(tmp_path / "dynamic_sequence_mlp.pkl"),
+        feature_mode="dynamic_sequence",
+        classes_out_path=str(tmp_path / "dynamic_sequence_mlp_classes.json"),
+        feature_dim_out_path=str(tmp_path / "dynamic_sequence_mlp_feature_dim.txt"),
+        feature_mode_out_path=str(tmp_path / "dynamic_sequence_mlp_feature_mode.txt"),
         training_scope="dynamic",
     )
 
@@ -209,7 +215,7 @@ def test_build_dynamic_prototype_training_command_uses_external_negatives(
     )
 
     cmd = controller._build_dynamic_prototype_training_command(
-        dynamic_model_out_path=str(model_dir / "dynamic_knn.pkl"),
+        dynamic_model_out_path=str(model_dir / "dynamic_sequence_mlp.pkl"),
     )
 
     assert cmd[1:4] == ["-u", "-m", "scripts.dynamic_prototype_experiments"]
@@ -220,12 +226,12 @@ def test_build_dynamic_prototype_training_command_uses_external_negatives(
     assert cmd[cmd.index("--base-models-dir") + 1] == str(model_dir)
     assert "--write-production" in cmd
     assert cmd[cmd.index("--production-out") + 1] == str(
-        model_dir / "dynamic_prototypes.json"
+        model_dir / "dynamic_sequence_mlp_prototypes.json"
     )
     assert cmd[cmd.index("--mlflow-tracking-uri") + 1] == "sqlite:///tmp_mlflow.db"
 
 
-def test_build_sequence_prototype_training_command_uses_sequence_output(
+def test_build_legacy_sequence_prototype_training_command_uses_sequence_mlp_output(
     monkeypatch,
     tmp_path,
 ):
@@ -244,7 +250,7 @@ def test_build_sequence_prototype_training_command_uses_sequence_output(
     )
 
     assert cmd[cmd.index("--production-out") + 1] == str(
-        model_dir / "dynamic_sequence_prototypes.json"
+        model_dir / "dynamic_sequence_mlp_prototypes.json"
     )
 
 
@@ -389,30 +395,31 @@ def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
         "feature_mode.txt",
     ]
     assert [path.name for path in dynamic_paths] == [
-        "dynamic_knn.pkl",
-        "dynamic_classes.json",
-        "dynamic_feature_dim.txt",
-        "dynamic_feature_mode.txt",
+        "dynamic_sequence_mlp.pkl",
+        "dynamic_sequence_mlp_classes.json",
+        "dynamic_sequence_mlp_feature_dim.txt",
+        "dynamic_sequence_mlp_feature_mode.txt",
     ]
     assert static_window == 30
     assert dynamic_window == DYNAMIC_RECOGNITION_WINDOW
 
 
-def test_embedded_dynamic_model_path_uses_selected_profile(monkeypatch, tmp_path):
+def test_embedded_dynamic_model_path_normalizes_legacy_profile(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
     controller._recognition_model_mode = "dynamic"
-    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_EXTRA_TREES
+    controller._dynamic_model_profile = "extra_trees"
     model_dir = tmp_path / "models"
 
     monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
 
     dynamic_paths = controller._embedded_model_paths()
 
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_PRODUCTION
     assert [path.name for path in dynamic_paths] == [
-        "dynamic_extra_trees.pkl",
-        "dynamic_classes.json",
-        "dynamic_feature_dim.txt",
-        "dynamic_feature_mode.txt",
+        "dynamic_sequence_mlp.pkl",
+        "dynamic_sequence_mlp_classes.json",
+        "dynamic_sequence_mlp_feature_dim.txt",
+        "dynamic_sequence_mlp_feature_mode.txt",
     ]
 
 
@@ -485,10 +492,10 @@ def test_set_recognition_model_mode_accepts_auto_and_falls_back_to_auto():
     assert emitted == [RECOGNITION_MODEL_AUTO]
 
 
-def test_set_dynamic_model_profile_restarts_embedded_infer():
+def test_set_dynamic_model_profile_normalizes_legacy_profile():
     controller = _dispatch_controller()
     controller._recognition_model_mode = "dynamic"
-    controller._dynamic_model_profile = "knn"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
     controller._embedded_active = True
     closed = []
     emitted = []
@@ -497,16 +504,16 @@ def test_set_dynamic_model_profile_restarts_embedded_infer():
         def close(self):
             closed.append(True)
 
-    controller._embedded_infer = FakeInfer()
+    infer = FakeInfer()
+    controller._embedded_infer = infer
     controller.dynamic_model_profile_changed.connect(emitted.append)
 
     controller.set_dynamic_model_profile("extra_trees")
 
-    assert controller.dynamic_model_profile == "extra_trees"
-    assert controller._embedded_infer is None
-    assert closed == [True]
-    assert emitted == ["extra_trees"]
-    assert "dynamic:extra_trees" in controller.status
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_PRODUCTION
+    assert controller._embedded_infer is infer
+    assert closed == []
+    assert emitted == []
 
 
 def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp_path):
@@ -1345,7 +1352,7 @@ def test_dispatch_cursor_only_ignores_gesture_execution_but_keeps_landmarks():
 def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     controller = _dispatch_controller()
     controller._recognition_model_mode = "dynamic"
-    controller._dynamic_model_profile = "knn"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
     controller._ensure_embedded_recognition_for_live_controls = lambda: None
     monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
 
@@ -1405,7 +1412,7 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     ]
     assert rows[-1]["event_type"] == "run_completed"
     assert rows[-1]["recognition_model_mode"] == "dynamic"
-    assert rows[-1]["dynamic_model_profile"] == "knn"
+    assert rows[-1]["dynamic_model_profile"] == DYNAMIC_MODEL_PROFILE_PRODUCTION
     assert rows[-1]["route_counts"] == {"dynamic": 2, "none": 1}
     assert rows[0]["route"] == "dynamic"
     assert rows[0]["selected_reason"] == "dynamic_accepted"
@@ -1588,7 +1595,7 @@ def test_dynamic_live_evaluation_counts_static_route_as_wrong(monkeypatch, tmp_p
 def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     controller = _dispatch_controller()
     controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
-    controller._dynamic_model_profile = "knn"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
     controller._ensure_embedded_recognition_for_live_controls = lambda: None
     monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
     monkeypatch.setenv("MLFLOW_TRACKING_URI", "sqlite:///test-live.db")
@@ -1676,7 +1683,7 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
             {
                 "recorded_at": 2.0,
                 "recognition_model_mode": "auto",
-                "dynamic_model_profile": "knn",
+                "dynamic_model_profile": DYNAMIC_MODEL_PROFILE_PRODUCTION,
                 "target_fps": 30,
                 "samples": 10,
                 "shared_detection_rate": 1.0,
@@ -1714,7 +1721,10 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
 
     assert calls["tracking_uri"] == "sqlite:///test-live.db"
     assert calls["experiment"] == "GestureFlow"
-    assert calls["run_name"] == "live-swipe_left-auto-knn-open_set_policy"
+    assert (
+        calls["run_name"]
+        == "live-swipe_left-auto-sequence_mlp-open_set_policy"
+    )
     assert calls["log_system_metrics"] is True
     assert calls["tags"]["run_kind"] == "live_evaluation"
     assert calls["tags"]["artifact_bundle"] == "live_evaluation/index.html"
