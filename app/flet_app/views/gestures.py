@@ -65,7 +65,11 @@ class GesturesView:
         self._summary_dynamic = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_ACCENT)
         self._summary_bound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_SUCCESS)
         self._summary_unbound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_WARNING)
-        self._detail_body = ft.Column(spacing=12)
+        self._detail_body = ft.Column(
+            spacing=12,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
         self._empty_title = ft.Text(
             "Жестов пока нет",
             size=18,
@@ -574,7 +578,7 @@ class GesturesView:
                 ],
             )
         return ft.Container(
-            height=210,
+            height=124,
             bgcolor="#101316",
             border=self._border(COLOR_SURFACE_HIGH),
             border_radius=8,
@@ -985,8 +989,8 @@ class GesturesView:
                     ft.Text(f"id #{self._row_id(row)}", size=12, color=COLOR_MUTED),
                 ],
             ),
-            ft.Text(description, size=12, color=COLOR_MUTED),
             self._command_panel(row),
+            ft.Text(description, size=12, color=COLOR_MUTED),
             self._detail_line(
                 self._gesture_type_icon(gesture_type),
                 "Тип жеста",
@@ -1155,6 +1159,7 @@ class GesturesView:
                     content=surface_card(
                         ft.Column(
                             spacing=12,
+                            expand=True,
                             controls=[
                                 ft.Row(
                                     spacing=10,
@@ -1169,7 +1174,10 @@ class GesturesView:
                                         ),
                                     ],
                                 ),
-                                self._detail_body,
+                                ft.Container(
+                                    content=self._detail_body,
+                                    expand=True,
+                                ),
                             ],
                         ),
                         padding=14,
