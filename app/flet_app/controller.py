@@ -234,6 +234,15 @@ STATIC_REJECTION_METHODS = (
 )
 DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
+LIVE_EVAL_NO_COMMAND_LABEL = "no_command"
+DYNAMIC_POST_EVENT_SUPPRESS_SECONDS = 0.35
+DYNAMIC_RETURN_SUPPRESS_SECONDS = 1.15
+DYNAMIC_OPPOSITE_LABELS = {
+    "swipe_down": {"swipe_up"},
+    "swipe_up": {"swipe_down"},
+    "swipe_left": {"swipe_right"},
+    "swipe_right": {"swipe_left"},
+}
 SAMPLE_RECORDING_READY_FRAMES = 6
 SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
@@ -302,6 +311,7 @@ class AppController:
         self._pending_label: str = ""
         self._pending_frames: int = 0
         self._pending_confidence_total: float = 0.0
+        self._dynamic_return_guard: dict[str, Any] = {}
         self._live_evaluation: dict[str, Any] | None = None
         self._last_live_evaluation_snapshot: dict[str, Any] | None = None
         self._live_evaluation_lock = threading.RLock()
@@ -804,14 +814,27 @@ class AppController:
         self._pending_frames = 0
         self._pending_confidence_total = 0.0
 
+    def _is_no_command_label(self, label: str) -> bool:
+        return str(label or "").strip().lower() == LIVE_EVAL_NO_COMMAND_LABEL
+
     def _gesture_type_for_label(self, label: str) -> str:
+        if self._is_no_command_label(label):
+            return GESTURE_TYPE_NEGATIVE
         taxonomy = getattr(self, "_gesture_taxonomy_cache", None)
         if taxonomy is None:
             taxonomy = load_gesture_taxonomy(self._configured_taxonomy_path())
             self._gesture_taxonomy_cache = taxonomy
         return taxonomy.gesture_type_for_label(label)
 
+    def _is_negative_label(self, label: str) -> bool:
+        try:
+            return self._gesture_type_for_label(label) == GESTURE_TYPE_NEGATIVE
+        except Exception:
+            return False
+
     def _gesture_confirm_frames(self, label: str = "") -> int:
+        if label and self._is_negative_label(label):
+            return DYNAMIC_GESTURE_CONFIRM_FRAMES
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
             return DYNAMIC_GESTURE_CONFIRM_FRAMES
         if self.recognition_model_mode == RECOGNITION_MODEL_AUTO and label:
@@ -841,6 +864,52 @@ class AppController:
 
         avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
         return self._pending_frames >= self._gesture_confirm_frames(clean), avg_conf
+
+    def _dynamic_return_guard_active(
+        self,
+        label: str,
+        route_metadata: dict[str, Any] | None,
+        *,
+        now: float | None = None,
+    ) -> str:
+        route = str((route_metadata or {}).get("route") or "").strip().lower()
+        if route != "dynamic":
+            try:
+                if self._gesture_type_for_label(label) != GESTURE_TYPE_DYNAMIC:
+                    return ""
+            except Exception:
+                return ""
+
+        guard = getattr(self, "_dynamic_return_guard", {}) or {}
+        monotonic_now = time.monotonic() if now is None else float(now)
+        if monotonic_now > float(guard.get("until") or 0.0):
+            return ""
+
+        if monotonic_now <= float(guard.get("all_until") or 0.0):
+            return "post_dynamic_cooldown"
+
+        previous = str(guard.get("label") or "").strip().lower()
+        current = str(label or "").strip().lower()
+        if current in DYNAMIC_OPPOSITE_LABELS.get(previous, set()):
+            return "opposite_return_motion"
+        return ""
+
+    def _mark_dynamic_event_accepted(
+        self,
+        label: str,
+        route_metadata: dict[str, Any] | None,
+        *,
+        now: float | None = None,
+    ) -> None:
+        route = str((route_metadata or {}).get("route") or "").strip().lower()
+        if route != "dynamic":
+            return
+        monotonic_now = time.monotonic() if now is None else float(now)
+        self._dynamic_return_guard = {
+            "label": str(label or "").strip().lower(),
+            "all_until": monotonic_now + DYNAMIC_POST_EVENT_SUPPRESS_SECONDS,
+            "until": monotonic_now + DYNAMIC_RETURN_SUPPRESS_SECONDS,
+        }
 
     def _live_evaluation_snapshot_from_session(
         self,
@@ -938,7 +1007,12 @@ class AppController:
         with self._live_evaluation_lock:
             return bool(self._live_evaluation and self._live_evaluation.get("active"))
 
-    def list_recognition_labels(self) -> list[str]:
+    def list_recognition_labels(
+        self,
+        *,
+        include_negative: bool = False,
+        include_no_command: bool = True,
+    ) -> list[str]:
         labels: list[str] = []
         seen: set[str] = set()
 
@@ -946,6 +1020,12 @@ class AppController:
             clean = str(value or "").strip()
             key = clean.lower()
             if clean and key not in seen:
+                if (
+                    not include_negative
+                    and not self._is_no_command_label(clean)
+                    and self._is_negative_label(clean)
+                ):
+                    return
                 labels.append(clean)
                 seen.add(key)
 
@@ -965,7 +1045,10 @@ class AppController:
         for row in self.list_recorded_gestures():
             add(str(row.get("label") or ""))
 
-        return sorted(labels, key=lambda x: x.lower())
+        if include_no_command:
+            add(LIVE_EVAL_NO_COMMAND_LABEL)
+
+        return sorted(labels, key=lambda x: (x.lower() != LIVE_EVAL_NO_COMMAND_LABEL, x.lower()))
 
     def start_live_evaluation(
         self,
@@ -2345,7 +2428,23 @@ class AppController:
 
             expected = str(session.get("expected_label") or "")
             expected_type = self._gesture_type_for_label(expected)
+            predicted_type = self._gesture_type_for_label(clean_label)
             route = str((route_metadata or {}).get("route") or "")
+            if expected_type == GESTURE_TYPE_NEGATIVE:
+                result = (
+                    "correct"
+                    if predicted_type == GESTURE_TYPE_NEGATIVE
+                    else "wrong"
+                )
+                self._record_live_evaluation_attempt(
+                    session,
+                    result=result,
+                    predicted_label=clean_label,
+                    confidence=conf,
+                    route_metadata=route_metadata,
+                    now=monotonic_now,
+                )
+                return
             if expected_type == GESTURE_TYPE_DYNAMIC and route != "dynamic":
                 self._record_live_evaluation_attempt(
                     session,
@@ -3356,12 +3455,38 @@ class AppController:
         if not confirmed:
             return
         if label and label != self._last_label:
+            evaluation_active = self.live_evaluation_active()
+            if self._is_negative_label(label):
+                self._consume_live_evaluation_prediction(
+                    label,
+                    stable_conf,
+                    route_metadata=route_metadata,
+                )
+                self._last_label = label
+                self._set_status(f"Rejected gesture evidence: {label}")
+                self._record_recognition_event(label, stable_conf, False)
+                return
+
+            suppressed_reason = self._dynamic_return_guard_active(
+                label,
+                route_metadata,
+            )
+            if suppressed_reason:
+                self._last_label = label
+                self._reset_gesture_confirmation()
+                print(
+                    f"[ctrl.gesture] suppressed={label!r} "
+                    f"reason={suppressed_reason}",
+                    flush=True,
+                )
+                self._set_status(f"Suppressed return motion: {label}")
+                return
+
             print(
                 f"[ctrl.gesture] detected={label!r} conf={stable_conf:.3f} "
                 f"frames={self._pending_frames} prev={self._last_label!r}",
                 flush=True,
             )
-            evaluation_active = self.live_evaluation_active()
             self._consume_live_evaluation_prediction(
                 label,
                 stable_conf,
@@ -3375,6 +3500,7 @@ class AppController:
                 )
                 if callable(acknowledger):
                     acknowledger()
+                self._mark_dynamic_event_accepted(label, route_metadata)
             self._last_label = label
             self.gesture_detected.emit(label)
             # Главное: при детекции жеста сразу запускаем команду через БД-

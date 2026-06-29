@@ -17,7 +17,11 @@ import threading
 
 import flet as ft
 
-from app.flet_app.controller import AppController, STATIC_REJECTION_METHODS
+from app.flet_app.controller import (
+    AppController,
+    LIVE_EVAL_NO_COMMAND_LABEL,
+    STATIC_REJECTION_METHODS,
+)
 from app.flet_app.theme import (
     COLOR_ACCENT,
     COLOR_DANGER,
@@ -326,7 +330,7 @@ class HomeView:
         fallback = ["swipe_up", "swipe_down", "swipe_left", "swipe_right"]
         out: list[str] = []
         seen: set[str] = set()
-        for label in [*labels, *fallback]:
+        for label in [LIVE_EVAL_NO_COMMAND_LABEL, *labels, *fallback]:
             clean = str(label or "").strip()
             key = clean.lower()
             if clean and key not in seen:

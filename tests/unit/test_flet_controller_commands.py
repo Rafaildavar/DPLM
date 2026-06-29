@@ -18,6 +18,7 @@ from app.flet_app.controller import (
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
+    LIVE_EVAL_NO_COMMAND_LABEL,
     RECOGNITION_MODEL_AUTO,
     _Event,
 )
@@ -33,6 +34,7 @@ def _dispatch_controller():
     controller._pending_label = ""
     controller._pending_frames = 0
     controller._pending_confidence_total = 0.0
+    controller._dynamic_return_guard = {}
     controller._live_evaluation = None
     controller._last_live_evaluation_snapshot = None
     controller._live_evaluation_lock = threading.RLock()
@@ -912,6 +914,64 @@ def test_auto_dispatch_confirms_taxonomy_dynamic_label_faster():
     assert recorded == [("swipe_up", pytest.approx(0.9), True)]
 
 
+def test_dispatch_suppresses_opposite_return_motion_after_dynamic_event():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    emitted = []
+    executed = []
+    recorded = []
+    controller.gesture_detected.connect(emitted.append)
+    controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
+    controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
+
+    controller._dispatch_infer_result(
+        {
+            "label": "swipe_down",
+            "confidence": 0.9,
+            "landmarks_json": "[]",
+            "router": {"route": "dynamic"},
+        }
+    )
+    controller._dispatch_infer_result(
+        {
+            "label": "swipe_up",
+            "confidence": 0.9,
+            "landmarks_json": "[]",
+            "router": {"route": "dynamic"},
+        }
+    )
+
+    assert emitted == ["swipe_down"]
+    assert executed == [("swipe_down", pytest.approx(0.9))]
+    assert recorded == [("swipe_down", pytest.approx(0.9), True)]
+    assert controller._status == "Suppressed return motion: swipe_up"
+
+
+def test_dispatch_treats_negative_label_as_rejection_not_command():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    emitted = []
+    executed = []
+    recorded = []
+    controller.gesture_detected.connect(emitted.append)
+    controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
+    controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
+
+    controller._dispatch_infer_result(
+        {
+            "label": "random_motion",
+            "confidence": 0.95,
+            "landmarks_json": "[]",
+            "router": {"route": "dynamic"},
+        }
+    )
+
+    assert emitted == []
+    assert executed == []
+    assert recorded == [("random_motion", pytest.approx(0.95), False)]
+    assert controller._status == "Rejected gesture evidence: random_motion"
+
+
 def test_confirmed_dynamic_event_is_acknowledged_without_full_reset():
     controller = _dispatch_controller()
     controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
@@ -1143,6 +1203,44 @@ def test_negative_live_evaluation_counts_no_prediction_as_correct(monkeypatch, t
     snapshot = controller.current_live_evaluation()
     assert snapshot["active"] is False
     assert snapshot["correct"] == 1
+    assert snapshot["missed"] == 0
+
+
+def test_no_command_live_evaluation_counts_negative_prediction_as_correct(
+    monkeypatch,
+    tmp_path,
+):
+    controller = _dispatch_controller()
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        LIVE_EVAL_NO_COMMAND_LABEL,
+        attempts=2,
+        timeout_seconds=0.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["next_ready_at"] = 0.0
+    controller._consume_live_evaluation_prediction(
+        "random_motion",
+        0.95,
+        route_metadata={
+            "route": "dynamic",
+            "dynamic_decision_source": "negative_rejected",
+        },
+        now=40.0,
+    )
+    controller._consume_live_evaluation_prediction(
+        "swipe_up",
+        0.95,
+        route_metadata={"route": "dynamic"},
+        now=42.0,
+    )
+
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is False
+    assert snapshot["correct"] == 1
+    assert snapshot["wrong"] == 1
     assert snapshot["missed"] == 0
 
 

@@ -2632,3 +2632,68 @@ Live variants:
   -> passed.
 - `.venv/bin/python -m pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
   -> `41 passed`.
+
+### H-053: Dynamic live errors are split between model choice and event policy
+
+Статус: `testing`
+
+Дата: `2026-06-29`
+
+Проблема:
+- Live A/B после добавления `baseline_internal` и `ipn_external` показал, что
+  `swipe_up` и `swipe_left` могут давать `10/10`, но `swipe_down` часто
+  ошибается в `swipe_up`.
+- Пользовательский сценарий объясняет ошибку: после `swipe_down` руку нужно
+  вернуть вверх к стартовой позиции, и этот возврат похож на отдельный
+  `swipe_up`.
+- `random_motion`, `partial_swipe`, `wrong_axis_motion`, `return_motion`
+  технически являются negative-классами, но в UI они отображались как обычные
+  цели теста, что создавало ощущение ложного распознавания.
+- KNN как dynamic baseline всегда выбирает ближайший класс и сам по себе не
+  умеет говорить "unknown / reject", поэтому для произвольных жестов нужен
+  дополнительный verifier.
+
+Live-замеры пользователя:
+- `baseline_internal`:
+  - `swipe_up`: `10/10`, accuracy `100%`;
+  - `swipe_left`: `10/10`, accuracy `100%`;
+  - `swipe_down`: `4/10`, wrong mostly `swipe_up`.
+- `ipn_external`:
+  - один run `swipe_up` провалился в `swipe_left`;
+  - повторный `swipe_up`: `10/10`;
+  - `swipe_left`: `10/10`;
+  - `swipe_down`: `5/10`.
+
+Изменение:
+- Добавлен пользовательский live-evaluation target `no_command`.
+  Его смысл: любые случайные движения, partial swipe, wrong axis и return
+  motion не должны запускать команду.
+- Технические negative-label больше не должны восприниматься как обычные
+  пользовательские команды в live UI.
+- В dispatch добавлен post-dynamic return guard:
+  - короткое suppress-окно после любого dynamic event;
+  - более длинное suppress-окно для противоположного направления
+    (`swipe_down` -> `swipe_up`, `swipe_left` -> `swipe_right`).
+- Negative prediction теперь считается rejection evidence, а не командой.
+
+Что это решает:
+- Возврат руки после засчитанного жеста больше не должен превращаться в новый
+  command event.
+- Negative-сценарии тестируются как false-positive test через `no_command`.
+- MLflow продолжает видеть attempt-level данные, но интерпретация становится
+  продуктовой: "команда не должна сработать" вместо "распознать fake class".
+
+Что не решает:
+- KNN по-прежнему остается baseline-моделью для динамики.
+- Если движение действительно похоже на пользовательский жест, nearest-neighbor
+  может выбрать ближайший класс. Для этого нужен следующий ML-шаг:
+  dynamic sequence verifier.
+
+Следующий ML-шаг:
+- Добавить отдельный dynamic method `prototype_dtw`:
+  - хранить несколько прототипов на класс;
+  - сравнивать sequence shape через DTW / normalized trajectory distance;
+  - возвращать gesture только если distance ниже class threshold;
+  - иначе возвращать `no_command`.
+- Сравнить `knn`, `open_set_policy`, `prototype_dtw`, `one_vs_rest` в MLflow и
+  live UI.

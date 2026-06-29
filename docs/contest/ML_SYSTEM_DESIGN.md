@@ -1,6 +1,6 @@
 # GestureFlow ML System Design
 
-Last updated: `2026-06-28`
+Last updated: `2026-06-29`
 
 Purpose: единый living-документ по ML-системе GestureFlow для JMLC. Здесь
 фиксируется не только текущая архитектура, но и путь разработки: что уже
@@ -13,16 +13,17 @@ Purpose: единый living-документ по ML-системе GestureFlow
 |---|---|---|---|
 | Static gesture recognition | Stable | legacy/static pipeline works through Flet | refresh per-class live metrics |
 | Dynamic gesture recording | Stable | developer UI records dynamic samples | keep protocol in `gesture_protocol.md` |
-| Dynamic natural swipe segmentation | Validated | H-036/H-038, `velocity_drop` and `hand_lost` events | repeat near/mid/far validation |
+| Dynamic natural swipe segmentation | In Progress | H-036/H-038 natural end, H-053 return guard added | repeat no-command/return-motion validation |
 | Auto routing static/dynamic | Validated | H-038: static hijack `0%` on 30 fresh dynamic attempts | add negative/no-gesture live run |
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
-| `swipe_up/down` dynamic recognition | In Progress | H-038: `7/10`, wrong direction `30%` | analyze correct vs wrong trajectory features |
-| Negative examples / rejection layer | Added | H-041: static/dynamic synthetic negatives + rejection metadata | run static/negative live validation |
+| `swipe_up/down` dynamic recognition | In Progress | H-053: up can be `10/10`, down drops to `4-5/10` via return-up phase | validate return guard and add sequence verifier |
+| Negative examples / rejection layer | Added | H-041 synthetic negatives, H-053 `no_command` live target | run no-command live validation |
 | Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
 | Live rejection A/B testing | Added | H-043/H-044: Flet + MLflow track `static_rejection_method`, charts added | run 20-attempt live matrix |
 | MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
 | HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
+| Dynamic sequence verifier | Planned | H-053: KNN nearest-class behavior is insufficient for reject/unknown | prototype DTW / calibrated verifier experiment |
 
 Status legend:
 
@@ -135,14 +136,15 @@ Key signals:
 
 Latest evidence:
 
-| Expected | Score | Static hijack | Wrong direction | Avg latency |
+| Expected | Latest score | Routing risk | Failure mode | Evidence |
 |---|---:|---:|---:|---:|
-| `swipe_up` | `7/10` | `0%` | `30%` | `2.02s` |
-| `swipe_down` | `7/10` | `0%` | `30%` | `2.60s` |
-| `swipe_left` | `10/10` | `0%` | `0%` | `1.46s` |
+| `swipe_up` | `10/10` in latest baseline run | `0%` in prior route tests | current risk: variant-sensitive false left | live screenshots, H-053 |
+| `swipe_down` | `4-5/10` latest runs | `0%` in prior route tests | wrong mostly `swipe_up` after return phase | live screenshots, H-053 |
+| `swipe_left` | `10/10` latest runs | `0%` in prior route tests | `0%` in latest positive runs | live screenshots, H-053 |
 
-Interpretation: routing is now good; vertical direction separation is the
-current bottleneck.
+Interpretation: routing is now good, but dynamic inference still needs two
+guards: event policy for return-motion and a model-level verifier so KNN does
+not force every ambiguous movement into the nearest known class.
 
 ## 6. Online Inference Design
 
@@ -342,7 +344,8 @@ summarize and annotate; execution stays behind deterministic policies.
 | Rejection benchmark | Added | static/dynamic reports compare 9 methods |
 | MLflow integration | Stable | training and live runs tracked |
 | Auto routing | Validated | fresh static hijack `0%` |
-| Vertical direction quality | In Progress | `swipe_up/down` recall `70%` |
+| Vertical direction quality | In Progress | `swipe_down` still confused with return-up motion |
+| Dynamic sequence verifier | Planned | needed because KNN lacks unknown/reject behavior |
 | User/market feedback | Planned | needed for product thinking criterion |
 
 ## 12. Current Risks
@@ -350,7 +353,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
-| Vertical direction confusion | `swipe_up/down` unstable | analyze correct/wrong features, strengthen axis gate |
+| Vertical direction confusion | `swipe_up/down` unstable | return guard, then sequence verifier with reject threshold |
 | No static/negative live validation yet | false triggers may be hidden | run 20 no-gesture/background attempts and check static rejection metrics |
 | Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
@@ -363,7 +366,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Task | Status | Owner |
 |---|---|---|
 | Test real static gestures after rejection policy | Next | user + ML pipeline |
-| Run negative live evaluation and log to MLflow | Next | user + ML pipeline |
+| Run `no_command` live evaluation and log to MLflow | Next | user + ML pipeline |
 | Download/place a small IPN subset under `data/raw/ipn_hand` | Next | data pipeline |
 | Add IPN converter and dynamic intent detector experiment | Next | ML pipeline |
 | Add generic sequence/prototype dynamic classifier | Next | ML pipeline |
@@ -409,3 +412,4 @@ Change log:
 | `2026-06-28` | Added IPN Hand research analysis | H-047 |
 | `2026-06-28` | Accepted arbitrary custom dynamic gesture architecture | H-048 |
 | `2026-06-28` | Added IPN converter and conversion report | H-049 |
+| `2026-06-29` | Added no-command/return-motion live policy and planned dynamic verifier | H-053 |
