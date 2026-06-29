@@ -1,6 +1,15 @@
 import numpy as np
 
-from app.flet_app.controller import _resize_frame_to_max_width
+from app.flet_app.controller import (
+    CAMERA_INFERENCE_MAX_FPS,
+    CAMERA_PREVIEW_MAX_FPS,
+    _resize_frame_to_max_width,
+)
+
+
+def test_camera_smooth_preview_profile_keeps_inference_throttled():
+    assert CAMERA_PREVIEW_MAX_FPS == 60.0
+    assert CAMERA_INFERENCE_MAX_FPS == 20.0
 
 
 def test_resize_frame_to_max_width_downscales_wide_frame():

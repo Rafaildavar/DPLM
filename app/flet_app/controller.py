@@ -259,8 +259,9 @@ LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
 CAMERA_CAPTURE_WIDTH = 960
 CAMERA_CAPTURE_HEIGHT = 540
 CAMERA_INFERENCE_MAX_WIDTH = 480
+CAMERA_INFERENCE_MAX_FPS = 20.0
 CAMERA_PREVIEW_MAX_WIDTH = 960
-CAMERA_PREVIEW_MAX_FPS = 12.0
+CAMERA_PREVIEW_MAX_FPS = 60.0
 CAMERA_PREVIEW_JPEG_QUALITY = 62
 RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
 
@@ -2961,8 +2962,14 @@ class AppController:
             1.0,
             min(float(self._target_fps), CAMERA_PREVIEW_MAX_FPS),
         )
+        inference_interval = 1.0 / max(
+            1.0,
+            min(float(self._target_fps), CAMERA_INFERENCE_MAX_FPS),
+        )
         next_t = time.monotonic()
         next_preview_t = next_t
+        next_inference_t = next_t
+        last_landmarks_json = "[]"
 
         while not self._camera_stop.is_set():
             cap = self._camera_cap
@@ -2974,51 +2981,65 @@ class AppController:
                 continue
 
             frame_bgr = cv2.flip(frame_bgr, 1)
-            landmarks_json = "[]"
+            landmarks_json = last_landmarks_json
 
             if self._sample_recording is not None:
                 try:
                     recording_landmarks = self._process_sample_recording_frame(frame_bgr)
                     if recording_landmarks:
                         landmarks_json = recording_landmarks
+                        last_landmarks_json = recording_landmarks
                 except Exception as e:
                     print(f"[!] embedded recording frame error: {e}")
                     self._finish_sample_recording(1, f"[!] Ошибка записи сэмпла: {e}")
 
-            # Встроенный CV (MediaPipe + KNN) — синхронно в этом же потоке;
-            # как в исходной версии, это безопасно потому что MediaPipe-объекты
-            # создаются и используются в одном потоке.
-            if self._embedded_active and self._sample_recording is None:
+            # Видео может идти чаще, чем ML inference. Для smooth-preview
+            # режима держим camera loop лёгким, а MediaPipe запускаем
+            # по отдельному лимиту FPS.
+            inference_now = time.monotonic()
+            should_run_inference = (
+                self._embedded_active
+                and self._sample_recording is None
+                and inference_now >= next_inference_t
+            )
+            if should_run_inference:
+                next_inference_t = inference_now + inference_interval
                 try:
                     if self._embedded_infer is None:
                         self._embedded_infer = self._create_embedded_infer()
-                    if self._embedded_infer is None:
-                        continue
-                    camera_h, camera_w = frame_bgr.shape[:2]
-                    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                    rgb = _resize_frame_to_max_width(
-                        rgb,
-                        CAMERA_INFERENCE_MAX_WIDTH,
-                    )
-                    rgb = np.ascontiguousarray(rgb)
-                    out = self._embedded_infer.process_frame_rgb(rgb)
-                    if out is not None:
-                        perf = out.get("performance")
-                        if isinstance(perf, dict):
-                            inference_h, inference_w = rgb.shape[:2]
-                            perf.update(
-                                {
-                                    "camera_frame_width": int(camera_w),
-                                    "camera_frame_height": int(camera_h),
-                                    "inference_frame_width": int(inference_w),
-                                    "inference_frame_height": int(inference_h),
-                                    "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
-                                }
-                            )
-                        landmarks_json = out.get("landmarks_json") or "[]"
-                        self._dispatch_infer_result(out)
+                    if self._embedded_infer is not None:
+                        camera_h, camera_w = frame_bgr.shape[:2]
+                        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        rgb = _resize_frame_to_max_width(
+                            rgb,
+                            CAMERA_INFERENCE_MAX_WIDTH,
+                        )
+                        rgb = np.ascontiguousarray(rgb)
+                        out = self._embedded_infer.process_frame_rgb(rgb)
+                        if out is not None:
+                            perf = out.get("performance")
+                            if isinstance(perf, dict):
+                                inference_h, inference_w = rgb.shape[:2]
+                                perf.update(
+                                    {
+                                        "camera_frame_width": int(camera_w),
+                                        "camera_frame_height": int(camera_h),
+                                        "inference_frame_width": int(inference_w),
+                                        "inference_frame_height": int(inference_h),
+                                        "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
+                                        "inference_max_fps": float(
+                                            CAMERA_INFERENCE_MAX_FPS
+                                        ),
+                                    }
+                                )
+                            landmarks_json = out.get("landmarks_json") or "[]"
+                            last_landmarks_json = landmarks_json
+                            self._dispatch_infer_result(out)
                 except Exception as e:
                     print(f"[!] embedded CV frame error: {e}")
+            elif not self._embedded_active and self._sample_recording is None:
+                landmarks_json = "[]"
+                last_landmarks_json = "[]"
 
             preview_now = time.monotonic()
             if preview_now >= next_preview_t:
@@ -3643,6 +3664,9 @@ class AppController:
                 "preview_max_fps": float(
                     performance.get("preview_max_fps") or CAMERA_PREVIEW_MAX_FPS
                 ),
+                "inference_max_fps": float(
+                    performance.get("inference_max_fps") or CAMERA_INFERENCE_MAX_FPS
+                ),
             }
         )
         if len(samples) > 300:
@@ -3668,6 +3692,10 @@ class AppController:
             "dynamic_model_profile": self.dynamic_model_profile,
             "target_fps": int(getattr(self, "_target_fps", 0) or 0),
             "preview_max_fps": round(float(last_sample.get("preview_max_fps") or 0.0), 2),
+            "inference_max_fps": round(
+                float(last_sample.get("inference_max_fps") or 0.0),
+                2,
+            ),
             "camera_frame_width": int(last_sample.get("camera_frame_width") or 0),
             "camera_frame_height": int(last_sample.get("camera_frame_height") or 0),
             "inference_frame_width": int(last_sample.get("inference_frame_width") or 0),

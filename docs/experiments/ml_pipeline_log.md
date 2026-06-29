@@ -3093,3 +3093,43 @@ Live validation:
   - `preview_max_fps=12`;
   - `detection_ms_avg` должен стать заметно ниже предыдущих `48-111 ms`;
   - видео в Flet должно идти ровнее.
+
+### H-061: 60 FPS smooth-preview нужно тестировать отдельно от ML FPS
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Проблема:
+- Пользователь хочет проверить режим `60 FPS`, чтобы видео было визуально
+  гладким.
+- Но MediaPipe hand detection не может стабильно работать на каждом кадре
+  60 FPS, если один inference занимает больше `16.7 ms`.
+
+Решение:
+- Разделяем цели:
+  - camera/preview target: до `60 FPS`;
+  - ML inference cap: `20 FPS`;
+  - inference frame: max width `480`.
+- В camera loop preview больше не обязан ждать inference каждый кадр.
+- На кадрах без inference используется последний `landmarks_json`.
+- Runtime performance log теперь пишет:
+  - `preview_max_fps`;
+  - `inference_max_fps`;
+  - `camera_frame_width/height`;
+  - `inference_frame_width/height`.
+
+Что проверяем:
+- В настройках приложения поставить `FPS=60`.
+- Перезапустить приложение.
+- Включить `auto` recognition на 20-30 секунд.
+- Проверить:
+  `tail -n 5 ~/.dplm/logs/runtime_performance.jsonl`.
+
+Ожидаемый результат:
+- `target_fps=60`;
+- `preview_max_fps=60`;
+- `inference_max_fps=20`;
+- визуально preview должен быть плавнее;
+- качество жестов нужно проверять отдельно live evaluation, потому что ML
+  теперь осознанно не запускается на каждом camera frame.
