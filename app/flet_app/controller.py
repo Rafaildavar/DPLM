@@ -4231,21 +4231,55 @@ class AppController:
                 .all()
             )
             current = {
-                row.gesture_id: row.name
+                row.gesture_id: row
                 for row in session.query(DbCommand)
                 .filter(DbCommand.gesture_id.isnot(None))
                 .all()
             }
-            return [
-                {
-                    "id": int(g.id),
-                    "label": str(g.label or ""),
-                    "description": str(g.description or ""),
-                    "isTwoHands": bool(getattr(g, "is_two_hands", False) or False),
-                    "boundCommandName": current.get(g.id, ""),
-                }
-                for g in rows
-            ]
+            out: list[dict[str, Any]] = []
+            for g in rows:
+                command = current.get(g.id)
+                action_spec: dict[str, Any] = {}
+                raw_spec = (
+                    str(getattr(command, "action_spec", "") or "").strip()
+                    if command is not None
+                    else ""
+                )
+                if raw_spec:
+                    try:
+                        loaded = json.loads(raw_spec)
+                        if isinstance(loaded, dict):
+                            action_spec = loaded
+                    except json.JSONDecodeError:
+                        action_spec = {}
+                try:
+                    sample_count = len(getattr(g, "samples", []) or [])
+                except Exception:
+                    sample_count = 0
+                out.append(
+                    {
+                        "id": int(g.id),
+                        "label": str(g.label or ""),
+                        "description": str(g.description or ""),
+                        "samplesPath": str(getattr(g, "samples_path", "") or ""),
+                        "sampleCount": int(sample_count),
+                        "isTwoHands": bool(
+                            getattr(g, "is_two_hands", False) or False
+                        ),
+                        "boundCommandName": str(getattr(command, "name", "") or ""),
+                        "boundCommandDescription": str(
+                            getattr(command, "description", "") or ""
+                        ),
+                        "boundCommandPlatform": str(
+                            getattr(command, "platform", "") or "all"
+                        ),
+                        "boundCommandScriptPath": str(
+                            getattr(command, "script_path", "") or ""
+                        ),
+                        "boundCommandActionSpec": action_spec,
+                    }
+                )
+            return out
         finally:
             session.close()
 

@@ -7,6 +7,10 @@
 """
 from __future__ import annotations
 
+import base64
+import json
+from pathlib import Path
+
 import flet as ft
 
 from app.flet_app.controller import AppController
@@ -21,6 +25,16 @@ from app.flet_app.theme import (
 )
 
 
+HAND_CONNECTIONS = (
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20),
+    (0, 17),
+)
+
+
 class GesturesView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
         self._page = page
@@ -28,6 +42,7 @@ class GesturesView:
         self._rows: list[dict] = []
         self._selected_id: int | None = None
         self._filter = "all"
+        self._command_help_open = False
 
         self._list_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
         self._info_text = ft.Text("", size=12, color=COLOR_MUTED)
@@ -56,12 +71,25 @@ class GesturesView:
             on_change=self._on_filters_changed,
         )
         self._filter_dd = ft.Dropdown(
-            label="Фильтр",
+            label="Показать",
             value="all",
             dense=True,
             height=46,
+            width=250,
+            filled=True,
+            fill_color="#171A1D",
+            bgcolor="#171A1D",
             border_color=COLOR_SURFACE_HIGH,
+            border_radius=8,
             focused_border_color=COLOR_ACCENT,
+            content_padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+            leading_icon=ft.Icons.FILTER_ALT,
+            trailing_icon=ft.Icons.KEYBOARD_ARROW_DOWN,
+            color=COLOR_ON_SURFACE,
+            text_style=ft.TextStyle(size=13, color=COLOR_ON_SURFACE),
+            label_style=ft.TextStyle(size=11, color=COLOR_MUTED),
+            menu_height=240,
+            menu_width=260,
             options=[
                 ft.DropdownOption(key="all", text="все"),
                 ft.DropdownOption(key="bound", text="привязанные"),
@@ -162,7 +190,10 @@ class GesturesView:
         self._render()
 
     def _select_row(self, row: dict) -> None:
-        self._selected_id = self._row_id(row)
+        row_id = self._row_id(row)
+        if row_id != self._selected_id:
+            self._command_help_open = False
+        self._selected_id = row_id
         self._render()
 
     def _row_id(self, row: dict) -> int:
@@ -175,7 +206,15 @@ class GesturesView:
         return str(row.get("label") or "").strip() or "gesture"
 
     def _description(self, row: dict) -> str:
-        return str(row.get("description") or "").strip()
+        text = str(row.get("description") or "").strip()
+        prefix = "Auto-imported from "
+        if text.startswith(prefix):
+            path = text[len(prefix):].strip()
+            marker = "data/gestures/"
+            if marker in path:
+                path = marker + path.split(marker, 1)[1]
+            return f"Импортировано из {path}"
+        return text
 
     def _bound_command(self, row: dict) -> str:
         return str(row.get("boundCommandName") or "").strip()
@@ -189,6 +228,152 @@ class GesturesView:
             if value > 0:
                 return value
         return None
+
+    def _action_spec(self, row: dict) -> dict:
+        raw = row.get("boundCommandActionSpec") or row.get("actionSpec") or {}
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str) and raw.strip():
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                return {}
+            return data if isinstance(data, dict) else {}
+        return {}
+
+    def _gesture_sample_path(self, row: dict) -> Path | None:
+        raw = str(row.get("samplePreviewPath") or row.get("samplesPath") or "").strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if path.is_file() and path.suffix == ".npy":
+            return path
+        if path.is_dir():
+            for pattern in ("sample_*.npy", "aug_sample_*.npy", "*.npy"):
+                matches = sorted(path.glob(pattern))
+                if matches:
+                    return matches[0]
+        return None
+
+    def _gesture_preview_src(self, row: dict) -> str | None:
+        sample_path = self._gesture_sample_path(row)
+        if sample_path is None:
+            return None
+        try:
+            import numpy as np
+
+            arr = np.load(sample_path, allow_pickle=False)
+            seq = np.asarray(arr, dtype=float)
+            if seq.ndim == 3:
+                frame = seq[min(len(seq) // 2, len(seq) - 1)]
+                if frame.shape[0] < 21 or frame.shape[1] < 2:
+                    return None
+                points = frame[:21, :2]
+                trail = None
+            elif seq.ndim == 2 and seq.shape[0] > 0:
+                flat_seq = seq.reshape(seq.shape[0], -1)
+                idx = min(flat_seq.shape[0] // 2, flat_seq.shape[0] - 1)
+                nonzero = [
+                    i for i in range(flat_seq.shape[0])
+                    if np.any(np.abs(flat_seq[i, :42]) > 1e-6)
+                ]
+                if nonzero:
+                    idx = nonzero[len(nonzero) // 2]
+                flat = flat_seq[idx]
+                if flat.shape[0] < 42:
+                    return None
+                points = flat[:42].reshape(21, 2)
+                trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+            else:
+                return None
+            if not np.isfinite(points).all() or np.all(np.abs(points) < 1e-6):
+                return None
+            return self._sample_png_base64(points, trail=trail)
+        except Exception:
+            return None
+
+    def _sample_png_base64(self, points, *, trail=None) -> str:
+        import cv2
+        import numpy as np
+
+        pts = np.asarray(points, dtype=float)
+        min_x, min_y = pts.min(axis=0)
+        max_x, max_y = pts.max(axis=0)
+        span_x = max(max_x - min_x, 1e-4)
+        span_y = max(max_y - min_y, 1e-4)
+        width, height = 420, 210
+        pad = 28
+        scale = min((width - pad * 2) / span_x, (height - pad * 2) / span_y)
+        offset_x = (width - span_x * scale) / 2
+        offset_y = (height - span_y * scale) / 2
+
+        def map_point(point) -> tuple[float, float]:
+            x = offset_x + (float(point[0]) - min_x) * scale
+            y = offset_y + (float(point[1]) - min_y) * scale
+            return x, y
+
+        mapped = [map_point(point) for point in pts]
+        canvas = np.zeros((height, width, 3), dtype=np.uint8)
+        canvas[:, :] = (22, 19, 16)
+        cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), (54, 47, 43), 2)
+        cv2.putText(
+            canvas,
+            "real sample",
+            (20, 31),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (161, 168, 165),
+            1,
+            cv2.LINE_AA,
+        )
+
+        if trail is not None:
+            tr = np.asarray(trail, dtype=float)
+            if tr.ndim == 2 and tr.shape[1] >= 2:
+                tr = tr[np.isfinite(tr).all(axis=1)]
+            else:
+                tr = np.empty((0, 2), dtype=float)
+            if len(tr) >= 2 and not np.all(np.abs(tr[:, :2]) < 1e-6):
+                t_min = tr[:, :2].min(axis=0)
+                t_max = tr[:, :2].max(axis=0)
+                t_span = np.maximum(t_max - t_min, 1e-4)
+                trail_points = []
+                for item in tr[:, :2]:
+                    x = width - 110 + ((item[0] - t_min[0]) / t_span[0]) * 76
+                    y = 32 + ((item[1] - t_min[1]) / t_span[1]) * 54
+                    trail_points.append((int(round(x)), int(round(y))))
+                for p1, p2 in zip(trail_points, trail_points[1:]):
+                    cv2.line(canvas, p1, p2, (78, 168, 216), 3, cv2.LINE_AA)
+
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (216, 199, 82),
+                    5,
+                    cv2.LINE_AA,
+                )
+
+        for x, y in mapped:
+            cv2.circle(
+                canvas,
+                (int(round(x)), int(round(y))),
+                6,
+                (231, 238, 240),
+                -1,
+                cv2.LINE_AA,
+            )
+
+        ok, encoded = cv2.imencode(".png", canvas)
+        if not ok:
+            raise ValueError("preview encode failed")
+        return base64.b64encode(encoded.tobytes()).decode("ascii")
 
     def _border(self, color: str, width: float = 1) -> ft.Border:
         side = ft.BorderSide(width, color)
@@ -210,6 +395,34 @@ class GesturesView:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=controls,
             ),
+        )
+
+    def _gesture_preview(self, row: dict) -> ft.Container:
+        src = self._gesture_preview_src(row)
+        if src:
+            content: ft.Control = ft.Image(
+                src=src,
+                fit=ft.BoxFit.CONTAIN,
+                border_radius=8,
+                gapless_playback=True,
+            )
+        else:
+            content = ft.Column(
+                spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.BACK_HAND, size=42, color=COLOR_ACCENT),
+                    ft.Text("sample preview", size=12, color=COLOR_MUTED),
+                ],
+            )
+        return ft.Container(
+            height=176,
+            bgcolor="#101316",
+            border=self._border(COLOR_SURFACE_HIGH),
+            border_radius=8,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            content=content,
         )
 
     def _status_chip(self, bound: bool) -> ft.Container:
@@ -341,6 +554,160 @@ class GesturesView:
             ),
         )
 
+    def _action_summary(self, row: dict) -> str:
+        spec = self._action_spec(row)
+        action = str(spec.get("action") or "").strip()
+        script_path = str(row.get("boundCommandScriptPath") or "").strip()
+        command_desc = str(row.get("boundCommandDescription") or "").strip()
+        if command_desc:
+            return command_desc
+        if not self._bound_command(row):
+            return "Команда пока не назначена."
+        if action == "open_url":
+            return f"Откроет сайт: {spec.get('url', '')}".strip()
+        if action == "open_app":
+            return f"Запустит приложение: {spec.get('app', '')}".strip()
+        if action == "open_path":
+            return f"Откроет файл или папку: {spec.get('path', '')}".strip()
+        if action == "scroll":
+            clicks = int(spec.get("clicks") or 0)
+            direction = "вниз" if clicks < 0 else "вверх"
+            return f"Прокрутит страницу {direction} на {abs(clicks)} щелчков."
+        if action == "press":
+            return f"Нажмёт клавишу: {spec.get('key', '')}".strip()
+        if action == "key_combination":
+            keys = ", ".join(str(k) for k in spec.get("keys", []))
+            return f"Нажмёт сочетание клавиш: {keys}".strip()
+        if action == "media_key":
+            kind = str(spec.get("kind") or "")
+            return f"Отправит media-key: {kind}".strip()
+        if action == "notify":
+            return f"Покажет уведомление: {spec.get('message', '')}".strip()
+        if action == "wait":
+            return f"Подождёт {spec.get('seconds', '')} сек."
+        if action == "run_script":
+            return f"Запустит скрипт: {spec.get('script_path', '')}".strip()
+        if action == "sequence":
+            steps = spec.get("steps") or []
+            return f"Выполнит сценарий из {len(steps)} шагов."
+        if action in {"volume_up", "volume_down", "mute_toggle", "screenshot", "lock_screen"}:
+            labels = {
+                "volume_up": "Увеличит громкость.",
+                "volume_down": "Уменьшит громкость.",
+                "mute_toggle": "Включит или выключит звук.",
+                "screenshot": "Сделает снимок экрана.",
+                "lock_screen": "Заблокирует экран.",
+            }
+            return labels[action]
+        if script_path.startswith("open:"):
+            return f"Откроет ресурс: {script_path.removeprefix('open:')}"
+        if script_path:
+            return f"Выполнит ресурс: {script_path}"
+        return "Команда выполнится через системный executor."
+
+    def _action_details(self, row: dict) -> list[ft.Control]:
+        spec = self._action_spec(row)
+        if not spec:
+            script_path = str(row.get("boundCommandScriptPath") or "").strip()
+            if not script_path:
+                return []
+            return [self._detail_line(ft.Icons.CODE, "Источник", script_path, COLOR_MUTED)]
+
+        controls: list[ft.Control] = []
+        action = str(spec.get("action") or "unknown")
+        controls.append(self._detail_line(ft.Icons.ROUTE, "Тип действия", action, COLOR_ACCENT))
+        platform = str(spec.get("platform") or row.get("boundCommandPlatform") or "all")
+        controls.append(self._detail_line(ft.Icons.DESKTOP_MAC, "Платформа", platform, COLOR_MUTED))
+        for key in ("url", "app", "path", "key", "kind", "message", "seconds", "script_path"):
+            if key in spec and spec.get(key) not in (None, ""):
+                controls.append(
+                    self._detail_line(
+                        ft.Icons.CHEVRON_RIGHT,
+                        key,
+                        str(spec.get(key)),
+                        COLOR_MUTED,
+                    )
+                )
+        if action == "key_combination" and spec.get("keys"):
+            controls.append(
+                self._detail_line(
+                    ft.Icons.KEYBOARD,
+                    "keys",
+                    " + ".join(str(k) for k in spec.get("keys", [])),
+                    COLOR_MUTED,
+                )
+            )
+        if action == "sequence":
+            steps = spec.get("steps") if isinstance(spec.get("steps"), list) else []
+            for i, step in enumerate(steps[:4], start=1):
+                if isinstance(step, dict):
+                    controls.append(
+                        self._detail_line(
+                            ft.Icons.FORMAT_LIST_NUMBERED,
+                            f"Шаг {i}",
+                            self._short_action_text(step),
+                            COLOR_MUTED,
+                        )
+                    )
+        return controls
+
+    def _short_action_text(self, spec: dict) -> str:
+        action = str(spec.get("action") or "action")
+        for key in ("url", "app", "path", "key", "kind", "message", "script_path"):
+            if spec.get(key):
+                return f"{action}: {spec.get(key)}"
+        if action == "key_combination":
+            return f"{action}: {' + '.join(str(k) for k in spec.get('keys', []))}"
+        return action
+
+    def _toggle_command_help(self) -> None:
+        self._command_help_open = not self._command_help_open
+        self._render_detail()
+        try:
+            self._detail_body.update()
+        except Exception:
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+    def _command_panel(self, row: dict) -> ft.Container:
+        bound = self._bound_command(row)
+        summary = self._action_summary(row)
+        controls: list[ft.Control] = [
+            ft.Row(
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.TERMINAL, size=18, color=COLOR_SUCCESS if bound else COLOR_WARNING),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text("Команда", size=12, color=COLOR_MUTED),
+                            ft.Text(bound or "Не назначена", size=16, weight=ft.FontWeight.W_600, color=COLOR_ON_SURFACE, no_wrap=True),
+                        ],
+                    ),
+                    ft.Icon(
+                        ft.Icons.EXPAND_LESS if self._command_help_open else ft.Icons.EXPAND_MORE,
+                        size=18,
+                        color=COLOR_MUTED,
+                    ),
+                ],
+            ),
+            ft.Text(summary, size=12, color=COLOR_MUTED),
+        ]
+        if self._command_help_open:
+            controls.extend(self._action_details(row))
+
+        return ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            padding=12,
+            on_click=lambda _e: self._toggle_command_help(),
+            content=ft.Column(spacing=10, controls=controls),
+        )
+
     def _selected_row(self) -> dict | None:
         for row in self._rows:
             if self._row_id(row) == self._selected_id:
@@ -372,41 +739,22 @@ class GesturesView:
         samples = self._sample_count(row)
         description = self._description(row) or "Описание не задано"
         self._detail_body.controls = [
-            ft.Row(
-                spacing=12,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            self._gesture_preview(row),
+            ft.Column(
+                spacing=4,
                 controls=[
-                    ft.Container(
-                        width=46,
-                        height=46,
-                        border_radius=8,
-                        bgcolor="#101316",
-                        alignment=ft.Alignment.CENTER,
-                        content=ft.Icon(ft.Icons.BACK_HAND, color=COLOR_ACCENT, size=24),
+                    ft.Text(
+                        label,
+                        size=22,
+                        weight=ft.FontWeight.BOLD,
+                        color=COLOR_ON_SURFACE,
+                        no_wrap=True,
                     ),
-                    ft.Column(
-                        spacing=2,
-                        expand=True,
-                        controls=[
-                            ft.Text(
-                                label,
-                                size=18,
-                                weight=ft.FontWeight.BOLD,
-                                color=COLOR_ON_SURFACE,
-                                no_wrap=True,
-                            ),
-                            ft.Text(f"id #{self._row_id(row)}", size=12, color=COLOR_MUTED),
-                        ],
-                    ),
+                    ft.Text(f"id #{self._row_id(row)}", size=12, color=COLOR_MUTED),
                 ],
             ),
             ft.Text(description, size=12, color=COLOR_MUTED),
-            self._detail_line(
-                ft.Icons.TERMINAL,
-                "Команда",
-                bound or "Не назначена",
-                COLOR_SUCCESS if bound else COLOR_WARNING,
-            ),
+            self._command_panel(row),
             self._detail_line(ft.Icons.PAN_TOOL_ALT, "Режим", hands, COLOR_ACCENT),
             self._detail_line(
                 ft.Icons.DATASET,
