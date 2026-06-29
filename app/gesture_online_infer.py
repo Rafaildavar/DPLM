@@ -67,6 +67,7 @@ STATIC_REJECTION_LOCAL_OUTLIER_FACTOR = "local_outlier_factor"
 STATIC_REJECTION_METRIC_NCA_CENTROID = "metric_nca_centroid"
 STATIC_REJECTION_MLP_NEGATIVE_CLASSES = "mlp_negative_classes"
 DEFAULT_STATIC_REJECTION_METHOD = STATIC_REJECTION_OPEN_SET_POLICY
+MIN_FINGER_SIGNATURE_STABILITY = 0.85
 STATIC_REJECTION_METHODS = (
     STATIC_REJECTION_NEGATIVE_CLASSES,
     STATIC_REJECTION_CONFIDENCE_THRESHOLD,
@@ -1413,6 +1414,11 @@ class GestureOnlineInfer:
             return True
 
         expected_count = int(signature["non_thumb_count"])
+        stability = float(signature.get("stability", 1.0))
+        if stability < MIN_FINGER_SIGNATURE_STABILITY:
+            return True
+        if expected_count <= 0 or int(current_count) <= 0:
+            return True
         if int(current_count) == expected_count:
             return True
 

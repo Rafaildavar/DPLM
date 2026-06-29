@@ -3177,3 +3177,54 @@ Live result:
 Критерий успеха:
 - Если preview включен: картинка отображается стабильно около `30 FPS`.
 - Если preview выключен: распознавание жестов работает без нагрузки Flet UI.
+
+### H-063: Static жесты не должны теряться из-за dynamic warmup и хрупкого finger-count guard
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- После стабилизации dynamic pipeline пользователь сообщил, что static жесты
+  перестали детектироваться.
+- Offline-проверка текущей `models/knn.pkl` на сохранённых static samples
+  показала, что сама ML-модель рабочая:
+  - `hend/up/gun/sh3/three` принимаются на своих samples;
+  - проблема находится в live-слое вокруг модели.
+- В live logs уже встречался rejection:
+  `finger_count_mismatch` для `hend`, где модель была уверена в `hend`, но
+  heuristic finger-count дал `current=0`.
+
+Гипотеза:
+- Static кандидат теряется из-за двух инженерных фильтров:
+  - auto-router скрывает static во время dynamic `warming_up`;
+  - finger-count guard слишком жёстко отклоняет жесты по нестабильной
+    pose-сигнатуре.
+
+Решение:
+- Router больше не блокирует static на фазе dynamic `warming_up`.
+- Static всё ещё скрывается во время реального dynamic `active/cooldown`, чтобы
+  не исполнять static-команду в середине свайпа.
+- Finger-count guard применяется только если:
+  - сигнатура класса стабильна (`stability >= 0.85`);
+  - ожидаемое число non-thumb fingers больше `0`;
+  - live-счётчик тоже видит больше `0`.
+- Если live finger-count равен `0`, это считается неопределённостью, а не
+  доказательством неправильной позы.
+
+Как проверять:
+- Включить `auto` recognition.
+- Static:
+  - `hend`, `gun`, `three`, `up`, `ctrlz`, `sh3` по 10 попыток.
+  - Ожидаем route=`static`, selected_reason=`static_fallback`.
+- Dynamic:
+  - `swipe_up`, `swipe_down`, `swipe_left` по 10 попыток.
+  - Ожидаем, что во время активного свайпа route остаётся `dynamic`.
+- Negative / near-miss:
+  - random hand movement не должен массово превращаться в static.
+
+Метрики:
+- `live_static_recall`;
+- `live_static_reject_rate`;
+- `live_static_rejection_reason_finger_count_mismatch`;
+- `live_confusion_static_vs_dynamic`.

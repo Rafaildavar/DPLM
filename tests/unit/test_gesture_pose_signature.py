@@ -29,23 +29,57 @@ def test_non_thumb_count_distinguishes_two_and_three_fingers() -> None:
 
 
 def test_infer_rejects_prediction_when_finger_count_mismatches() -> None:
-    infer = object.__new__(GestureOnlineInfer)
-    infer._detector = _StaticDetector(_hand_with_extended_fingers(2))
-    infer._clf = _AlwaysThreeClassifier()
-    infer._classes = ["three_fingers"]
-    infer._feature_dim = 42
-    infer._classifier_two_hands = False
-    infer._window = deque(maxlen=30)
-    infer._finger_count_window = deque(maxlen=5)
-    infer._gesture_signatures = {
-        "three_fingers": {"non_thumb_count": 3, "stability": 1.0}
-    }
+    infer = _infer_for_pose_guard(
+        _hand_with_extended_fingers(2),
+        signature={"non_thumb_count": 3, "stability": 1.0},
+    )
 
     out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
     assert out["label"] == ""
     assert out["confidence"] == 0.0
     assert len(infer._window) == 0
+
+
+def test_infer_allows_prediction_when_signature_is_not_stable_enough() -> None:
+    infer = _infer_for_pose_guard(
+        _hand_with_extended_fingers(2),
+        signature={"non_thumb_count": 3, "stability": 0.70},
+    )
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == "three_fingers"
+    assert out["confidence"] == 0.96
+
+
+def test_infer_allows_prediction_when_live_finger_count_is_zero() -> None:
+    infer = _infer_for_pose_guard(
+        _hand_with_extended_fingers(0),
+        signature={"non_thumb_count": 3, "stability": 1.0},
+    )
+
+    out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
+
+    assert out["label"] == "three_fingers"
+    assert out["confidence"] == 0.96
+
+
+def _infer_for_pose_guard(landmarks, *, signature):
+    infer = object.__new__(GestureOnlineInfer)
+    infer._detector = _StaticDetector(landmarks)
+    infer._clf = _AlwaysThreeClassifier()
+    infer._classes = ["three_fingers"]
+    infer._feature_dim = 42
+    infer._raw_feature_dim = 42
+    infer._feature_mode = "static_mean"
+    infer._classifier_two_hands = False
+    infer._window = deque(maxlen=30)
+    infer._finger_count_window = deque(maxlen=5)
+    infer._gesture_signatures = {"three_fingers": signature}
+    infer._gesture_rejection = {}
+    infer._last_static_decision = {}
+    return infer
 
 
 def _hand_with_extended_fingers(count: int):

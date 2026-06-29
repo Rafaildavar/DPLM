@@ -273,7 +273,6 @@ class GestureRecognitionRouter:
         if not isinstance(temporal, dict) or not bool(temporal.get("enabled")):
             return False
         return str(temporal.get("phase") or "") in {
-            "warming_up",
             "active",
             "cooldown",
         }

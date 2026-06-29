@@ -282,7 +282,7 @@ def test_router_returns_none_with_landmarks_when_no_candidate() -> None:
     assert out["route_reason"] == "no_valid_candidate"
 
 
-def test_router_holds_static_while_dynamic_channel_is_warming_up() -> None:
+def test_router_allows_static_while_dynamic_channel_is_warming_up() -> None:
     static = _FakeInfer(
         [{"label": "palm", "confidence": 0.99, "landmarks_json": "[static]"}]
     )
@@ -296,6 +296,39 @@ def test_router_holds_static_while_dynamic_channel_is_warming_up() -> None:
                     "enabled": True,
                     "phase": "warming_up",
                     "frames": 6,
+                    "required_frames": 36,
+                },
+            }
+        ]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == "palm"
+    assert out["route"] == ROUTE_STATIC
+    assert out["route_reason"] == REASON_STATIC_FALLBACK
+    assert out["router"]["static_label"] == "palm"
+
+
+def test_router_holds_static_while_dynamic_channel_is_active() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.99, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "",
+                "confidence": 0.0,
+                "landmarks_json": "[dynamic]",
+                "temporal": {
+                    "enabled": True,
+                    "phase": "active",
+                    "frames": 8,
                     "required_frames": 36,
                 },
             }
