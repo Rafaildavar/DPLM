@@ -20,6 +20,7 @@ import flet as ft
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
 )
@@ -231,7 +232,11 @@ class HomeView:
             options=[
                 ft.DropdownOption(
                     key=DYNAMIC_MODEL_PROFILE_PRODUCTION,
-                    text=DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                    text="dynamic_sequence_mlp.pkl",
+                ),
+                ft.DropdownOption(
+                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
+                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
                 ),
             ],
             on_select=self._on_dynamic_profile_changed,

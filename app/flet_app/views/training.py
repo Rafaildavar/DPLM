@@ -42,6 +42,7 @@ _DEFAULT_DYNAMIC_MODEL_TYPE = "sequence_mlp"
 _DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_sequence_mlp.pkl"
 _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_mlp": "models/dynamic_sequence_mlp.pkl",
+    "sequence_rocket": "models/dynamic_sequence_rocket.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
@@ -75,6 +76,12 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_mlp_classes.json",
             "models/dynamic_sequence_mlp_feature_dim.txt",
             "models/dynamic_sequence_mlp_feature_mode.txt",
+        )
+    if clean == "sequence_rocket":
+        return (
+            "models/dynamic_sequence_rocket_classes.json",
+            "models/dynamic_sequence_rocket_feature_dim.txt",
+            "models/dynamic_sequence_rocket_feature_mode.txt",
         )
     return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
 
@@ -202,8 +209,8 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
             options=[
                 ft.DropdownOption(key="sequence_mlp", text="sequence_mlp"),
+                ft.DropdownOption(key="sequence_rocket", text="sequence_rocket"),
             ],
-            disabled=True,
             editable=False,
             on_select=self._on_dynamic_model_type_changed,
         )
@@ -827,7 +834,11 @@ class TrainingView:
             )
             feature_mode = _DEFAULT_DYNAMIC_FEATURE_MODE
             expect_dim = None
-            model_type = _DEFAULT_DYNAMIC_MODEL_TYPE
+            model_type = str(
+                self._dyn_model_type.value or _DEFAULT_DYNAMIC_MODEL_TYPE
+            ).strip()
+            if model_type not in _DYNAMIC_MODEL_OUT_BY_TYPE:
+                model_type = _DEFAULT_DYNAMIC_MODEL_TYPE
             out_path = _dynamic_model_out_for_type(model_type)
             (
                 classes_out_path,

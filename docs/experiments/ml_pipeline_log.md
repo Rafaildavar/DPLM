@@ -3831,3 +3831,55 @@ MLflow:
 - Если live recall complex gesture выше, а false positive не хуже, тогда
   переключить единственный production dynamic profile с `sequence_mlp` на
   новый candidate.
+
+### H-075: UI A/B для `sequence_mlp` и `sequence_rocket`
+
+Статус: `implemented`, needs train/live A/B
+
+Дата: `2026-06-29`
+
+Проблема:
+- `sequence_rocket` уже добавлен как time-series candidate, но без UI-профиля
+  его нельзя удобно тестировать в live evaluation.
+- Нельзя писать оба кандидата в один `dynamic_sequence_mlp.pkl`, иначе
+  теряются метрики, артефакты и воспроизводимость.
+
+Решение:
+- Home UI теперь показывает два dynamic profile:
+  - `dynamic_sequence_mlp.pkl` как production/default;
+  - `sequence_rocket` как research A/B candidate.
+- Training UI умеет обучать `sequence_rocket` напрямую из интерфейса.
+- Артефакты разделены:
+  - `models/dynamic_sequence_mlp.pkl`;
+  - `models/dynamic_sequence_mlp_*`;
+  - `models/dynamic_sequence_mlp_prototypes.json`;
+  - `models/dynamic_sequence_rocket.pkl`;
+  - `models/dynamic_sequence_rocket_*`;
+  - `models/dynamic_sequence_rocket_prototypes.json`.
+- Dynamic prototype/rejection layer теперь пишет prototypes рядом с выбранной
+  dynamic-моделью, а не всегда поверх MLP.
+
+План live A/B:
+- Обучить `sequence_mlp`, выбрать `dynamic_sequence_mlp.pkl` на Home.
+- Прогнать:
+  - `swipe_up`: 20;
+  - `swipe_left`: 20;
+  - сложный новый dynamic gesture: 20;
+  - `partial_swipe`, `wrong_axis_motion`, `return_motion`, `random_motion`:
+    по 10.
+- Обучить `sequence_rocket`, выбрать `sequence_rocket` на Home.
+- Повторить тот же сценарий и сравнить в MLflow:
+  - `live_accuracy`;
+  - `live_recall`;
+  - `live_false_positive_rate`;
+  - `live_reject_rate`;
+  - `live_wrong_dynamic_direction_rate`;
+  - `system_runtime_inference_ms_avg`;
+  - `system_runtime_fps_capacity_avg`.
+
+Критерий успеха:
+- `sequence_rocket` полезен только если complex gesture recall выше, чем у
+  `sequence_mlp`, а false positives и latency не хуже.
+- Если `sequence_rocket` ловит сложные жесты лучше, но чаще принимает
+  partial/random движения, его оставляем research-кандидатом и усиливаем reject
+  layer перед production-переключением.

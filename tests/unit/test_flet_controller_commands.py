@@ -15,6 +15,7 @@ from app.flet_app.controller import (
     AUTO_STATIC_GESTURE_CONFIRM_FRAMES,
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
@@ -277,6 +278,29 @@ def test_build_sequence_mlp_prototype_training_command_uses_own_sequence_output(
     )
 
 
+def test_build_sequence_rocket_prototype_training_command_uses_own_sequence_output(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_sequence_rocket.pkl"),
+    )
+
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_sequence_rocket_prototypes.json"
+    )
+
+
 def test_dynamic_prototype_training_only_for_dynamic_scope():
     controller = AppController.__new__(AppController)
 
@@ -423,6 +447,25 @@ def test_embedded_dynamic_model_path_normalizes_legacy_profile(monkeypatch, tmp_
     ]
 
 
+def test_embedded_dynamic_model_paths_can_use_sequence_rocket(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+
+    dynamic_paths = controller._embedded_model_paths()
+
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_sequence_rocket.pkl",
+        "dynamic_sequence_rocket_classes.json",
+        "dynamic_sequence_rocket_feature_dim.txt",
+        "dynamic_sequence_rocket_feature_mode.txt",
+    ]
+
+
 def test_apply_model_variant_updates_config_and_resets_infer(monkeypatch, tmp_path):
     for key in (
         "DPLM_MODELS_DIR",
@@ -514,6 +557,29 @@ def test_set_dynamic_model_profile_normalizes_legacy_profile():
     assert controller._embedded_infer is infer
     assert closed == []
     assert emitted == []
+
+
+def test_set_dynamic_model_profile_accepts_sequence_rocket_and_resets_infer():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
+    controller._embedded_active = True
+    closed = []
+    emitted = []
+
+    class FakeInfer:
+        def close(self):
+            closed.append(True)
+
+    controller._embedded_infer = FakeInfer()
+    controller.dynamic_model_profile_changed.connect(emitted.append)
+
+    controller.set_dynamic_model_profile(DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET)
+
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET
+    assert controller._embedded_infer is None
+    assert closed == [True]
+    assert emitted == [DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET]
 
 
 def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp_path):

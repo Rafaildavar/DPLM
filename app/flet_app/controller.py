@@ -198,18 +198,23 @@ DYNAMIC_MODEL_PROFILE_SVM = "svm"
 DYNAMIC_MODEL_PROFILE_EXTRA_TREES = "extra_trees"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN = "sequence_knn"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP = "sequence_mlp"
+DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET = "sequence_rocket"
 DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP
 DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
 )
 DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp_prototypes.json",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket_prototypes.json",
 }
 INTENT_GATE_MODEL_FILENAME = "intent_gate_mlp.pkl"
 MODEL_VARIANT_PRODUCTION = "production"
@@ -583,9 +588,10 @@ class AppController:
                     "exists": models_dir.exists(),
                     "selected": key == current,
                     "static_model_exists": (models_dir / "knn.pkl").exists(),
-                    "dynamic_model_exists": (
-                        models_dir / DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION]
-                    ).exists(),
+                    "dynamic_model_exists": any(
+                        (models_dir / filename).exists()
+                        for filename in DYNAMIC_MODEL_FILENAMES.values()
+                    ),
                 }
             )
         return variants
@@ -5764,11 +5770,10 @@ class AppController:
         project_root = Path(__file__).resolve().parents[2]
         actual_data_root = data_root or str(self._configured_data_dir())
         dynamic_model_path = Path(dynamic_model_out_path or self._dynamic_model_path())
-        production_model_filename = DYNAMIC_MODEL_FILENAMES[
-            DYNAMIC_MODEL_PROFILE_PRODUCTION
-        ]
-        if dynamic_model_path.name != production_model_filename:
-            dynamic_model_path = dynamic_model_path.with_name(production_model_filename)
+        if dynamic_model_path.name not in set(DYNAMIC_MODEL_FILENAMES.values()):
+            dynamic_model_path = dynamic_model_path.with_name(
+                DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION]
+            )
         dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
         production_prototypes = dynamic_model_dir / "dynamic_prototypes.json"
         for profile, filename in DYNAMIC_MODEL_FILENAMES.items():
