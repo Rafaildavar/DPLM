@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "labels": [
+    "static",
+    "dynamic",
+    "none"
+  ],
+  "target_dim": 44,
+  "feature_dim": 25,
+  "confidence_threshold": 0.75,
+  "model_type": "intent_gate_mlp"
+}

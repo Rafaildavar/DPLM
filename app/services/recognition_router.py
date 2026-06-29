@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
 from app.services.gesture_taxonomy import (
     GESTURE_TYPE_DYNAMIC,
+    GESTURE_TYPE_NEGATIVE,
+    GESTURE_TYPE_QUASI_STATIC,
+    GESTURE_TYPE_STATIC,
     GestureTaxonomy,
     load_gesture_taxonomy,
+)
+from cv.intent_gate import (
+    DEFAULT_INTENT_CONFIDENCE_THRESHOLD,
+    INTENT_DYNAMIC,
+    INTENT_NONE,
+    INTENT_STATIC,
+    load_intent_gate_model,
+    predict_intent_gate,
 )
 
 ROUTE_NONE = "none"
@@ -23,6 +35,10 @@ REASON_LOW_CONFIDENCE = "low_confidence"
 REASON_NOT_DYNAMIC_TYPE = "not_dynamic_type"
 REASON_DYNAMIC_LABEL_REQUIRES_DYNAMIC_ROUTE = "dynamic_label_requires_dynamic_route"
 REASON_DYNAMIC_OBSERVATION_PENDING = "dynamic_observation_pending"
+REASON_INTENT_NONE = "intent_none"
+REASON_INTENT_DYNAMIC_PENDING = "intent_dynamic_pending"
+REASON_INTENT_STATIC_FALLBACK = "intent_static_fallback"
+REASON_INTENT_STATIC_NO_CANDIDATE = "intent_static_no_candidate"
 DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.60
 DEFAULT_STATIC_CONFIDENCE_THRESHOLD = 0.50
 
@@ -60,6 +76,9 @@ class GestureRecognitionRouter:
         taxonomy: GestureTaxonomy | None = None,
         dynamic_confidence_threshold: float = DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD,
         static_confidence_threshold: float = DEFAULT_STATIC_CONFIDENCE_THRESHOLD,
+        intent_gate: Any | None = None,
+        intent_gate_path: str | None = None,
+        intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD,
     ) -> None:
         self._static_infer = static_infer
         self._dynamic_infer = dynamic_infer
@@ -71,6 +90,11 @@ class GestureRecognitionRouter:
         self._static_confidence_threshold = max(
             0.0,
             min(1.0, float(static_confidence_threshold)),
+        )
+        self._intent_gate = intent_gate or self._load_intent_gate(intent_gate_path)
+        self._intent_confidence_threshold = max(
+            0.0,
+            min(1.0, float(intent_confidence_threshold)),
         )
 
     @property
@@ -232,6 +256,57 @@ class GestureRecognitionRouter:
         dynamic_candidate = self._candidate(ROUTE_DYNAMIC, dynamic_out)
         static_assessment = self._assess_static_candidate(static_candidate)
         dynamic_assessment = self._assess_dynamic_candidate(dynamic_candidate)
+        intent_decision = self._intent_decision(static_out, dynamic_out)
+
+        if intent_decision.get("accepted"):
+            intent_label = str(intent_decision.get("label") or "")
+            if intent_label == INTENT_NONE:
+                return self._without_candidate(
+                    static_out,
+                    dynamic_out,
+                    static_assessment=static_assessment,
+                    dynamic_assessment=dynamic_assessment,
+                    selected_reason=REASON_INTENT_NONE,
+                    intent_decision=intent_decision,
+                )
+            if intent_label == INTENT_DYNAMIC:
+                if dynamic_assessment.accepted:
+                    return self._with_route(
+                        dynamic_candidate,
+                        static_out,
+                        dynamic_out,
+                        static_assessment=static_assessment,
+                        dynamic_assessment=dynamic_assessment,
+                        selected_reason=REASON_DYNAMIC_ACCEPTED,
+                        intent_decision=intent_decision,
+                    )
+                return self._without_candidate(
+                    static_out,
+                    dynamic_out,
+                    static_assessment=static_assessment,
+                    dynamic_assessment=dynamic_assessment,
+                    selected_reason=REASON_INTENT_DYNAMIC_PENDING,
+                    intent_decision=intent_decision,
+                )
+            if intent_label == INTENT_STATIC:
+                if static_assessment.accepted:
+                    return self._with_route(
+                        static_candidate,
+                        static_out,
+                        dynamic_out,
+                        static_assessment=static_assessment,
+                        dynamic_assessment=dynamic_assessment,
+                        selected_reason=REASON_INTENT_STATIC_FALLBACK,
+                        intent_decision=intent_decision,
+                    )
+                return self._without_candidate(
+                    static_out,
+                    dynamic_out,
+                    static_assessment=static_assessment,
+                    dynamic_assessment=dynamic_assessment,
+                    selected_reason=REASON_INTENT_STATIC_NO_CANDIDATE,
+                    intent_decision=intent_decision,
+                )
 
         if dynamic_assessment.accepted:
             return self._with_route(
@@ -241,6 +316,7 @@ class GestureRecognitionRouter:
                 static_assessment=static_assessment,
                 dynamic_assessment=dynamic_assessment,
                 selected_reason=REASON_DYNAMIC_ACCEPTED,
+                intent_decision=intent_decision,
             )
         if static_assessment.accepted and self._should_hold_static(dynamic_out):
             return self._without_candidate(
@@ -249,6 +325,7 @@ class GestureRecognitionRouter:
                 static_assessment=static_assessment,
                 dynamic_assessment=dynamic_assessment,
                 selected_reason=REASON_DYNAMIC_OBSERVATION_PENDING,
+                intent_decision=intent_decision,
             )
         if static_assessment.accepted:
             return self._with_route(
@@ -258,6 +335,7 @@ class GestureRecognitionRouter:
                 static_assessment=static_assessment,
                 dynamic_assessment=dynamic_assessment,
                 selected_reason=REASON_STATIC_FALLBACK,
+                intent_decision=intent_decision,
             )
 
         return self._without_candidate(
@@ -266,6 +344,7 @@ class GestureRecognitionRouter:
             static_assessment=static_assessment,
             dynamic_assessment=dynamic_assessment,
             selected_reason=REASON_NO_VALID_CANDIDATE,
+            intent_decision=intent_decision,
         )
 
     def _should_hold_static(self, dynamic_out: dict[str, Any]) -> bool:
@@ -285,6 +364,7 @@ class GestureRecognitionRouter:
         static_assessment: CandidateAssessment,
         dynamic_assessment: CandidateAssessment,
         selected_reason: str,
+        intent_decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         base = static_out if static_out.get("landmarks_json") else dynamic_out
         out = dict(base or self._empty())
@@ -299,6 +379,7 @@ class GestureRecognitionRouter:
             static_assessment=static_assessment,
             dynamic_assessment=dynamic_assessment,
             selected_reason=selected_reason,
+            intent_decision=intent_decision,
         )
         return out
 
@@ -314,7 +395,7 @@ class GestureRecognitionRouter:
         self,
         candidate: RecognitionCandidate,
     ) -> CandidateAssessment:
-        gesture_type = self._gesture_type_for_label(candidate.label)
+        gesture_type = self._gesture_type_for_dynamic_candidate(candidate.label)
         if not candidate.label:
             return CandidateAssessment(
                 candidate=candidate,
@@ -382,6 +463,64 @@ class GestureRecognitionRouter:
             return ""
         return self._taxonomy.gesture_type_for_label(clean)
 
+    def _gesture_type_for_dynamic_candidate(self, label: str) -> str:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return ""
+
+        base_type = self._gesture_type_for_label(clean)
+        if base_type == GESTURE_TYPE_DYNAMIC:
+            return base_type
+
+        declared_type = self._declared_taxonomy_type(clean)
+        if declared_type:
+            return declared_type
+
+        if self._looks_like_negative_label(clean):
+            return GESTURE_TYPE_NEGATIVE
+
+        if base_type == GESTURE_TYPE_STATIC:
+            return GESTURE_TYPE_DYNAMIC
+        return base_type
+
+    def _declared_taxonomy_type(self, label: str) -> str:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return ""
+
+        explicit = getattr(self._taxonomy, "label_to_type", {}).get(clean)
+        if explicit:
+            return str(explicit)
+
+        patterns_by_type = getattr(self._taxonomy, "patterns_by_type", {})
+        if not isinstance(patterns_by_type, dict):
+            return ""
+        for gesture_type in (
+            GESTURE_TYPE_NEGATIVE,
+            GESTURE_TYPE_QUASI_STATIC,
+            GESTURE_TYPE_STATIC,
+            GESTURE_TYPE_DYNAMIC,
+        ):
+            for pattern in patterns_by_type.get(gesture_type, ()):
+                if fnmatch.fnmatchcase(clean, str(pattern)):
+                    return gesture_type
+        return ""
+
+    @staticmethod
+    def _looks_like_negative_label(label: str) -> bool:
+        clean = str(label or "").strip().lower()
+        return clean.startswith(
+            (
+                "background_",
+                "negative_",
+                "no_gesture",
+                "partial_",
+                "random_",
+                "return_",
+                "wrong_axis_",
+            )
+        )
+
     def _with_route(
         self,
         candidate: RecognitionCandidate,
@@ -391,6 +530,7 @@ class GestureRecognitionRouter:
         static_assessment: CandidateAssessment,
         dynamic_assessment: CandidateAssessment,
         selected_reason: str,
+        intent_decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         out = dict(candidate.output)
         out["label"] = candidate.label
@@ -404,6 +544,64 @@ class GestureRecognitionRouter:
             static_assessment=static_assessment,
             dynamic_assessment=dynamic_assessment,
             selected_reason=selected_reason,
+            intent_decision=intent_decision,
+        )
+        return out
+
+    def _load_intent_gate(self, path: str | None) -> Any | None:
+        if not path:
+            return None
+        try:
+            from pathlib import Path
+
+            source = Path(path)
+            if not source.exists():
+                return None
+            return load_intent_gate_model(source)
+        except Exception as exc:
+            print(f"[w] intent gate ignored: {exc}", flush=True)
+            return None
+
+    def _intent_decision(
+        self,
+        static_out: dict[str, Any],
+        dynamic_out: dict[str, Any],
+    ) -> dict[str, Any]:
+        gate = getattr(self, "_intent_gate", None)
+        if gate is None:
+            return {"enabled": False, "accepted": False, "reason": "missing"}
+        raw_features = dynamic_out.get("intent_features") or static_out.get(
+            "intent_features"
+        )
+        if not raw_features:
+            return {"enabled": True, "accepted": False, "reason": "no_features"}
+        try:
+            if hasattr(gate, "predict_intent"):
+                decision = gate.predict_intent(raw_features)
+            else:
+                decision = predict_intent_gate(gate, raw_features)
+        except Exception as exc:
+            return {
+                "enabled": True,
+                "accepted": False,
+                "reason": f"predict_failed:{exc}",
+            }
+        if not isinstance(decision, dict):
+            return {"enabled": True, "accepted": False, "reason": "bad_decision"}
+        confidence = float(decision.get("confidence") or 0.0)
+        label = str(decision.get("label") or "")
+        out = dict(decision)
+        out.update(
+            {
+                "enabled": True,
+                "label": label,
+                "confidence": confidence,
+                "threshold": self._intent_confidence_threshold,
+                "accepted": bool(
+                    label in {INTENT_STATIC, INTENT_DYNAMIC, INTENT_NONE}
+                    and confidence >= self._intent_confidence_threshold
+                ),
+            }
         )
         return out
 
@@ -416,6 +614,7 @@ class GestureRecognitionRouter:
         static_assessment: CandidateAssessment,
         dynamic_assessment: CandidateAssessment,
         selected_reason: str,
+        intent_decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         dynamic_temporal = dynamic_out.get("temporal")
         if not isinstance(dynamic_temporal, dict):
@@ -436,9 +635,19 @@ class GestureRecognitionRouter:
             except (TypeError, ValueError):
                 return 0.0
 
+        intent = intent_decision if isinstance(intent_decision, dict) else {}
         return {
             "route": route,
             "selected_reason": selected_reason,
+            "intent_gate_enabled": bool(intent.get("enabled")),
+            "intent_gate_label": str(intent.get("label") or ""),
+            "intent_gate_confidence": float(intent.get("confidence") or 0.0),
+            "intent_gate_margin": float(intent.get("margin") or 0.0),
+            "intent_gate_threshold": float(
+                intent.get("threshold") or self._intent_confidence_threshold
+            ),
+            "intent_gate_accepted": bool(intent.get("accepted")),
+            "intent_gate_reason": str(intent.get("reason") or ""),
             "static_label": str(static_out.get("label") or ""),
             "static_confidence": float(static_out.get("confidence") or 0.0),
             "static_type": static_assessment.gesture_type,

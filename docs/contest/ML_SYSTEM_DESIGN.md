@@ -25,6 +25,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | live A/B against `sequence_knn` |
+| Intent gate `static/dynamic/none` | Added | H-070: MLP gate offline accuracy `0.9672`, macro F1 `0.9480` | live matrix: static, dynamic, random/no-command |
 
 Status legend:
 
@@ -60,6 +61,7 @@ flowchart LR
     MP --> LM["Landmarks + global motion"]
     LM --> SEG["Dynamic segmenter"]
     LM --> STATIC["Static feature window"]
+    LM --> INTENT["Intent gate: static / dynamic / none"]
     SEG --> DYNFEAT["Dynamic trajectory features"]
     STATIC --> SM["Static model"]
     SM --> REJECT["Static rejection policy"]
@@ -68,6 +70,7 @@ flowchart LR
     REJECT --> ROUTER["Recognition Router"]
     DM --> ROUTER
     MOTION --> ROUTER
+    INTENT --> ROUTER
     ROUTER --> UI["Flet live UI"]
     UI --> EVAL["Live evaluation"]
     EVAL --> JSONL["JSONL logs"]
@@ -92,6 +95,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Dynamic sequence MLP artifacts | `models/dynamic_sequence_mlp.*` | neural baseline over 36-frame dynamic sequences | Added |
 | Dynamic prototype verifier | `models/dynamic_prototypes.json` | open-set sequence verifier for dynamic gestures | Added |
 | Dynamic sequence MLP verifier | `models/dynamic_sequence_mlp_prototypes.json` | open-set verifier for the sequence MLP profile | Added |
+| Intent gate model | `models/intent_gate_mlp.pkl` | first-stage `static/dynamic/none` ML router | Added |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
 | Rejection benchmark reports | `docs/experiments/rejection_method_benchmark_*.md` | offline comparison of reject methods | Added |
 | Live rejection protocol | `docs/experiments/live_rejection_test_protocol.md` | step-by-step live A/B test plan | Added |
@@ -121,6 +125,46 @@ Current properties:
   `confidence_threshold`, `one_class_svm`, `isolation_forest`,
   `local_outlier_factor`, `metric_nca_centroid`, `mlp_negative_classes`;
 - participates in auto routing only when dynamic route is not active.
+
+### Intent Gate
+
+The router now has a first-stage ML gate before choosing the final route. The
+goal is not to classify the exact gesture; it decides only whether the current
+window looks like:
+
+- `static`: stable pose, let the static recognizer compete;
+- `dynamic`: intentional movement, wait for/accept the dynamic recognizer;
+- `none`: random motion, return movement, partial gesture or no useful command.
+
+Implementation:
+
+- artifact: `models/intent_gate_mlp.pkl`;
+- training script: `scripts/train_intent_gate.py`;
+- features: 25 compact sequence statistics over 44-dim landmark/motion frames;
+- labels: taxonomy-derived `static`, `dynamic`, `negative -> none`;
+- external negatives: IPN-derived `.npy` sequences under `data/external`;
+- MLflow run kind: `intent_gate_training`;
+- logged artifacts: model, metadata, markdown/json report, SVG confusion matrix.
+
+Current offline result:
+
+| Metric | Value |
+|---|---:|
+| accuracy | `0.9672` |
+| macro F1 | `0.9480` |
+| dynamic precision | `0.9444` |
+| dynamic recall | `0.9444` |
+| dynamic false positive rate | `0.0061` |
+| none recall | `0.9778` |
+
+Runtime policy:
+
+- if gate says `dynamic` confidently, static labels are held until the dynamic
+  segment completes;
+- if gate says `static` confidently, static route can win;
+- if gate says `none` confidently, router emits no command;
+- if the gate is missing or below threshold, the previous deterministic router
+  policy is used as fallback.
 
 ### Dynamic
 
@@ -351,6 +395,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Vertical direction quality | In Progress | `swipe_down` still confused with return-up motion |
 | Dynamic sequence verifier | Added | `prototype_distance` selected as cheaper offline-tied best |
 | Dynamic neural sequence baseline | Added | `sequence_mlp` trained/logged as next model after KNN |
+| Intent gate `static/dynamic/none` | Added | first-stage MLP router trained/logged with external negatives |
 | User/market feedback | Planned | needed for product thinking criterion |
 
 ## 12. Current Risks
@@ -372,6 +417,7 @@ summarize and annotate; execution stays behind deterministic policies.
 |---|---|---|
 | Test real static gestures after rejection policy | Next | user + ML pipeline |
 | Run `no_command` live evaluation and log to MLflow | Next | user + ML pipeline |
+| Live-test intent gate against static/dynamic/none scenarios | Next | user + ML pipeline |
 | Download/place a small IPN subset under `data/raw/ipn_hand` | Next | data pipeline |
 | Add IPN converter and dynamic intent detector experiment | Next | ML pipeline |
 | Add generic sequence/prototype dynamic classifier | Done | H-054 |

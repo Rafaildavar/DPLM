@@ -3574,3 +3574,72 @@ Live результат пользователя:
 - Complex gesture live recall >= `80%`.
 - Старые swipe-классы не проседают ниже `90%`.
 - Negative false positive остается низким при threshold `0.90`.
+
+### H-070: First-stage ML intent gate для `static/dynamic/none`
+
+Статус: `implemented-offline`, needs live validation
+
+Дата: `2026-06-29`
+
+Гипотеза:
+- Перед конкретной классификацией жеста нужен отдельный ML-слой, который
+  решает только намерение: `static`, `dynamic` или `none`.
+- Это должно уменьшить ложные срабатывания, когда пользователь просто двигает
+  рукой, возвращает руку в стартовую точку или показывает почти-жест.
+
+Что взято из research-подхода:
+- Из IPN Hand: динамическое распознавание стоит рассматривать как spotting
+  временного события, а не как один frame-level prediction.
+- Из HaGRID-like логики: отдельные no-gesture/negative примеры полезны для
+  reject/open-set поведения, но не должны становиться пользовательскими
+  командами.
+
+Реализация:
+- Добавлен `cv/intent_gate.py`: компактные sequence-level признаки для intent.
+- Добавлен `scripts/train_intent_gate.py`: обучение `intent_gate_mlp`.
+- Runtime router теперь сначала спрашивает gate:
+  - `dynamic`: держит static и ждёт/принимает dynamic-сегмент;
+  - `static`: разрешает static route;
+  - `none`: не отдаёт команду;
+  - low confidence / missing model: fallback на старый deterministic router.
+- Flet auto-mode передаёт в `GestureRecognitionRouter`
+  `models/intent_gate_mlp.pkl`, с fallback из экспериментальной папки моделей в
+  production `models/`.
+- Live evaluation logs now include `intent_gate_*` route fields.
+
+Данные:
+- Internal GestureFlow samples: `291`.
+- External negative samples: `440`.
+- Total for intent gate: `731`.
+- Intent classes:
+  - `static`: `121`;
+  - `dynamic`: `70`;
+  - `none`: `540`.
+
+Offline результат:
+- accuracy: `0.9672`;
+- macro F1: `0.9480`;
+- dynamic precision: `0.9444`;
+- dynamic recall: `0.9444`;
+- dynamic false positive rate: `0.0061`;
+- none recall: `0.9778`.
+
+Артефакты:
+- `models/intent_gate_mlp.pkl`;
+- `models/intent_gate_metadata.json`;
+- `docs/experiments/intent_gate_training.md`;
+- `docs/experiments/intent_gate_training.json`;
+- `docs/experiments/intent_gate_confusion_matrix.svg`;
+- MLflow run: `intent-gate-mlp`, experiment `GestureFlow`,
+  artifact path `intent_gate`.
+
+Критерий live-проверки:
+- Static gestures: не проседают ниже текущего baseline.
+- Dynamic gestures: `swipe_up`, `swipe_left`, complex dynamic gesture остаются
+  >= `90%` для стабильных классов и >= `80%` для нового complex-класса.
+- Random/no-command/partial/return movements: majority should be rejected as
+  `none`, not mapped to a command.
+- В MLflow смотреть:
+  `live_accuracy`, `live_dynamic_recall`, `live_static_hijack_rate`,
+  `live_false_trigger_rate`, `intent_gate_label`,
+  `intent_gate_confidence`, `intent_gate_reason`.

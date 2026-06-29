@@ -213,6 +213,7 @@ DYNAMIC_PROTOTYPE_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_prototypes.json",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp_prototypes.json",
 }
+INTENT_GATE_MODEL_FILENAME = "intent_gate_mlp.pkl"
 MODEL_VARIANT_PRODUCTION = "production"
 MODEL_VARIANT_DIRS = {
     MODEL_VARIANT_PRODUCTION: "models",
@@ -847,6 +848,13 @@ class AppController:
             "dynamic_prototypes.json",
         )
         return self._configured_models_dir() / filename
+
+    def _intent_gate_model_path(self) -> Path:
+        configured = self._configured_models_dir() / INTENT_GATE_MODEL_FILENAME
+        if configured.exists():
+            return configured
+        fallback = self._production_models_dir() / INTENT_GATE_MODEL_FILENAME
+        return fallback if fallback.exists() else configured
 
     def _embedded_model_paths(self) -> tuple[Path, Path, Path, Path]:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
@@ -2314,6 +2322,19 @@ class AppController:
         return {
             "route": route,
             "selected_reason": str(route_metadata.get("selected_reason") or ""),
+            "intent_gate_enabled": bool(route_metadata.get("intent_gate_enabled")),
+            "intent_gate_label": str(route_metadata.get("intent_gate_label") or ""),
+            "intent_gate_confidence": _float_or_none(
+                route_metadata.get("intent_gate_confidence")
+            ),
+            "intent_gate_margin": _float_or_none(
+                route_metadata.get("intent_gate_margin")
+            ),
+            "intent_gate_threshold": _float_or_none(
+                route_metadata.get("intent_gate_threshold")
+            ),
+            "intent_gate_accepted": bool(route_metadata.get("intent_gate_accepted")),
+            "intent_gate_reason": str(route_metadata.get("intent_gate_reason") or ""),
             "static_label": str(route_metadata.get("static_label") or ""),
             "static_confidence": _float_or_none(
                 route_metadata.get("static_confidence")
@@ -2903,6 +2924,7 @@ class AppController:
                 infer = GestureRecognitionRouter(
                     static_infer=static_infer,
                     dynamic_infer=dynamic_infer,
+                    intent_gate_path=str(self._intent_gate_model_path()),
                 )
             else:
                 model_path, classes_path, feature_dim_path, feature_mode_path = (

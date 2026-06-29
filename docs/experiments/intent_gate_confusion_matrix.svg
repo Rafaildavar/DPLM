@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="470" height="446" viewBox="0 0 470 446">
+<rect width="100%" height="100%" fill="#0f172a"/>
+<text x="28" y="36" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Intent gate confusion matrix</text>
+<text x="28" y="62" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="13">expected rows, predicted columns</text>
+<text x="196.0" y="74" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="middle">static</text>
+<text x="288.0" y="74" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="middle">dynamic</text>
+<text x="380.0" y="74" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="middle">none</text>
+<text x="132" y="143.0" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="end">static</text>
+<rect x="150" y="92" width="86" height="86" rx="10" fill="#22c55e" opacity="0.333"/>
+<text x="193.0" y="143.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">28</text>
+<rect x="242" y="92" width="86" height="86" rx="10" fill="#ef4444" opacity="0.185"/>
+<text x="285.0" y="143.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">1</text>
+<rect x="334" y="92" width="86" height="86" rx="10" fill="#ef4444" opacity="0.185"/>
+<text x="377.0" y="143.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">1</text>
+<text x="132" y="235.0" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="end">dynamic</text>
+<rect x="150" y="184" width="86" height="86" rx="10" fill="#ef4444" opacity="0.180"/>
+<text x="193.0" y="235.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">0</text>
+<rect x="242" y="184" width="86" height="86" rx="10" fill="#22c55e" opacity="0.273"/>
+<text x="285.0" y="235.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">17</text>
+<rect x="334" y="184" width="86" height="86" rx="10" fill="#ef4444" opacity="0.185"/>
+<text x="377.0" y="235.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">1</text>
+<text x="132" y="327.0" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="13" text-anchor="end">none</text>
+<rect x="150" y="276" width="86" height="86" rx="10" fill="#ef4444" opacity="0.196"/>
+<text x="193.0" y="327.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">3</text>
+<rect x="242" y="276" width="86" height="86" rx="10" fill="#ef4444" opacity="0.180"/>
+<text x="285.0" y="327.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">0</text>
+<rect x="334" y="276" width="86" height="86" rx="10" fill="#22c55e" opacity="0.900"/>
+<text x="377.0" y="327.0" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">132</text>
+</svg>

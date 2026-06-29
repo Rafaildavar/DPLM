@@ -14,6 +14,7 @@ from typing import Any, Deque, Dict, List, Optional
 import numpy as np
 
 from cv.gesture_features import (
+    DYNAMIC_SEQUENCE_TARGET_FRAMES,
     FEATURE_DYNAMIC_SEQUENCE,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
@@ -22,6 +23,10 @@ from cv.gesture_features import (
     build_feature_vector,
     infer_raw_dim_from_feature_size,
     trajectory_features,
+)
+from cv.intent_gate import (
+    DEFAULT_INTENT_TARGET_DIM,
+    build_intent_feature_vector,
 )
 from cv.dynamic_direction import classify_swipe_direction
 from cv.dynamic_motion import DynamicMotionSegmenter
@@ -125,6 +130,9 @@ class GestureOnlineInfer:
         self._requested_two_hands = bool(two_hands)
         self._detector_two_hands = True
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
+        self._intent_window: Deque[np.ndarray] = deque(
+            maxlen=max(DYNAMIC_SEQUENCE_TARGET_FRAMES, int(window))
+        )
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
         self._gesture_rejection: dict[str, Any] = {}
@@ -1353,6 +1361,7 @@ class GestureOnlineInfer:
 
     def reset_temporal_state(self) -> None:
         self._window.clear()
+        self._intent_window.clear()
         self._finger_count_window.clear()
         segmenter = getattr(self, "_dynamic_segmenter", None)
         if segmenter is not None:
@@ -1366,6 +1375,7 @@ class GestureOnlineInfer:
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
         self._window.clear()
+        self._intent_window.clear()
         self._finger_count_window.clear()
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
@@ -1408,6 +1418,23 @@ class GestureOnlineInfer:
             "end_reason": str(getattr(update, "end_reason", "") or ""),
         }
 
+    def _intent_feature_payload(
+        self,
+        sequence: np.ndarray | None = None,
+    ) -> list[float]:
+        try:
+            if sequence is None:
+                if not self._intent_window:
+                    return []
+                sequence = np.stack(tuple(self._intent_window), axis=0)
+            feature = build_intent_feature_vector(
+                sequence,
+                target_dim=DEFAULT_INTENT_TARGET_DIM,
+            )
+        except Exception:
+            return []
+        return [float(value) for value in feature.astype(float).tolist()]
+
     def _classify_completed_dynamic_update(
         self,
         update: Any,
@@ -1425,6 +1452,7 @@ class GestureOnlineInfer:
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
+                "intent_features": self._intent_feature_payload(),
             }
 
         self._window.clear()
@@ -1436,6 +1464,9 @@ class GestureOnlineInfer:
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
+                "intent_features": self._intent_feature_payload(
+                    update.completed_sequence
+                ),
             }
 
         try:
@@ -1457,6 +1488,9 @@ class GestureOnlineInfer:
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
+                "intent_features": self._intent_feature_payload(
+                    update.completed_sequence
+                ),
             }
 
         if label:
@@ -1471,6 +1505,7 @@ class GestureOnlineInfer:
                 getattr(self, "_last_dynamic_decision", {}) or {}
             ),
             "temporal": temporal_state,
+            "intent_features": self._intent_feature_payload(update.completed_sequence),
         }
 
     def _process_segmented_dynamic_frame(
@@ -1501,6 +1536,7 @@ class GestureOnlineInfer:
                     ),
                     "end_reason": "pending_repeat",
                 },
+                "intent_features": self._intent_feature_payload(),
             }
 
         update = self._segmenter().update(feat, motion_scale=motion_scale)
@@ -1513,6 +1549,7 @@ class GestureOnlineInfer:
                     update,
                     motion_scale=motion_scale,
                 ),
+                "intent_features": self._intent_feature_payload(),
             }
 
         return self._classify_completed_dynamic_update(
@@ -1777,6 +1814,7 @@ class GestureOnlineInfer:
                 feat = np.concatenate([feat, pad], axis=0)
 
         if self._uses_global_dynamic_motion():
+            self._intent_window.append(feat.astype(np.float32, copy=False))
             hand_scales = []
             for hand in hands:
                 points = np.asarray(hand.landmarks, dtype=np.float32)
@@ -1813,6 +1851,7 @@ class GestureOnlineInfer:
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
                     "temporal": temporal_state,
+                    "intent_features": self._intent_feature_payload(),
                 }
             model_feat = self._build_model_feature().reshape(1, -1)
             try:
@@ -1834,6 +1873,7 @@ class GestureOnlineInfer:
                     "label": "",
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
+                    "intent_features": self._intent_feature_payload(),
                 }
         elif normalized and not self._uses_temporal_features():
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
@@ -1860,6 +1900,7 @@ class GestureOnlineInfer:
             "landmarks_json": landmarks_json,
             "temporal": temporal_state,
             "static_decision": static_decision,
+            "intent_features": self._intent_feature_payload(),
         }
 
     def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
