@@ -3051,7 +3051,7 @@ Production artifact:
 
 ### H-060: Live video lag вызван слишком тяжелым camera/MediaPipe frame budget
 
-Статус: `implemented`, needs live validation
+Статус: `superseded-live`
 
 Дата: `2026-06-29`
 
@@ -3096,7 +3096,7 @@ Live validation:
 
 ### H-061: 60 FPS smooth-preview нужно тестировать отдельно от ML FPS
 
-Статус: `implemented`, needs live validation
+Статус: `superseded-live`
 
 Дата: `2026-06-29`
 
@@ -3133,3 +3133,47 @@ Live validation:
 - визуально preview должен быть плавнее;
 - качество жестов нужно проверять отдельно live evaluation, потому что ML
   теперь осознанно не запускается на каждом camera frame.
+
+Live result:
+- При `preview_max_fps=60` Flet preview может не отображаться вообще.
+- Причина вероятно в перегрузке Flet JPEG/base64 update pipeline.
+- 60 FPS preview признан неподходящим baseline для contest demo.
+
+### H-062: Для contest demo нужен стабильный ML-first camera mode
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Главная цель сейчас не идеальное видео, а корректная live-детекция жестов.
+- Preview в Flet должен быть стабильным, но не должен блокировать ML.
+- Dynamic pipeline должен работать на окне `36` кадров.
+
+Решение:
+- `CAMERA_PREVIEW_MAX_FPS=30`.
+- `CAMERA_INFERENCE_MAX_FPS=30`.
+- `DYNAMIC_RECOGNITION_WINDOW=36`.
+- Runtime log пишет:
+  - `preview_enabled`;
+  - `preview_max_fps`;
+  - `inference_max_fps`;
+  - `dynamic_window_frames`.
+- Добавлен аварийный режим без Flet preview:
+  `DPLM_DISABLE_CAMERA_PREVIEW=1`.
+
+Как проверять:
+- Обычный режим:
+  - в настройках поставить `FPS=60` или `FPS=30`;
+  - перезапустить приложение;
+  - включить `auto` recognition;
+  - ожидать в логах `preview_max_fps=30`, `inference_max_fps=30`,
+    `dynamic_window_frames=36`.
+- Detection-only режим:
+  - запустить приложение с `DPLM_DISABLE_CAMERA_PREVIEW=1`;
+  - preview не обновляется;
+  - gesture detection и live evaluation продолжают работать.
+
+Критерий успеха:
+- Если preview включен: картинка отображается стабильно около `30 FPS`.
+- Если preview выключен: распознавание жестов работает без нагрузки Flet UI.

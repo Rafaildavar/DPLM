@@ -259,11 +259,17 @@ LIVE_EVAL_ATTEMPT_COOLDOWN_SECONDS = 0.85
 CAMERA_CAPTURE_WIDTH = 960
 CAMERA_CAPTURE_HEIGHT = 540
 CAMERA_INFERENCE_MAX_WIDTH = 480
-CAMERA_INFERENCE_MAX_FPS = 20.0
+CAMERA_INFERENCE_MAX_FPS = 30.0
 CAMERA_PREVIEW_MAX_WIDTH = 960
-CAMERA_PREVIEW_MAX_FPS = 60.0
+CAMERA_PREVIEW_MAX_FPS = 30.0
 CAMERA_PREVIEW_JPEG_QUALITY = 62
+CAMERA_PREVIEW_DISABLE_ENV = "DPLM_DISABLE_CAMERA_PREVIEW"
 RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
+
+
+def _camera_preview_enabled() -> bool:
+    value = str(os.environ.get(CAMERA_PREVIEW_DISABLE_ENV, "")).strip().lower()
+    return value not in {"1", "true", "yes", "on"}
 
 
 def _resize_frame_to_max_width(frame: Any, max_width: int) -> Any:
@@ -2958,6 +2964,7 @@ class AppController:
         import numpy as np
 
         frame_interval = 1.0 / float(self._target_fps)
+        preview_enabled = _camera_preview_enabled()
         preview_interval = 1.0 / max(
             1.0,
             min(float(self._target_fps), CAMERA_PREVIEW_MAX_FPS),
@@ -3027,8 +3034,12 @@ class AppController:
                                         "inference_frame_width": int(inference_w),
                                         "inference_frame_height": int(inference_h),
                                         "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
+                                        "preview_enabled": bool(preview_enabled),
                                         "inference_max_fps": float(
                                             CAMERA_INFERENCE_MAX_FPS
+                                        ),
+                                        "dynamic_window_frames": int(
+                                            DYNAMIC_RECOGNITION_WINDOW
                                         ),
                                     }
                                 )
@@ -3042,7 +3053,7 @@ class AppController:
                 last_landmarks_json = "[]"
 
             preview_now = time.monotonic()
-            if preview_now >= next_preview_t:
+            if preview_enabled and preview_now >= next_preview_t:
                 preview_frame = _resize_frame_to_max_width(
                     frame_bgr,
                     CAMERA_PREVIEW_MAX_WIDTH,
@@ -3062,6 +3073,8 @@ class AppController:
                         self._latest_jpeg_bytes = data
                         self._frame_h, self._frame_w = preview_frame.shape[:2]
                     self.camera_frame_updated.emit()
+                next_preview_t = preview_now + preview_interval
+            elif not preview_enabled:
                 next_preview_t = preview_now + preview_interval
 
             after_work = time.monotonic()
@@ -3664,8 +3677,13 @@ class AppController:
                 "preview_max_fps": float(
                     performance.get("preview_max_fps") or CAMERA_PREVIEW_MAX_FPS
                 ),
+                "preview_enabled": bool(performance.get("preview_enabled", True)),
                 "inference_max_fps": float(
                     performance.get("inference_max_fps") or CAMERA_INFERENCE_MAX_FPS
+                ),
+                "dynamic_window_frames": int(
+                    performance.get("dynamic_window_frames")
+                    or DYNAMIC_RECOGNITION_WINDOW
                 ),
             }
         )
@@ -3692,9 +3710,13 @@ class AppController:
             "dynamic_model_profile": self.dynamic_model_profile,
             "target_fps": int(getattr(self, "_target_fps", 0) or 0),
             "preview_max_fps": round(float(last_sample.get("preview_max_fps") or 0.0), 2),
+            "preview_enabled": bool(last_sample.get("preview_enabled", True)),
             "inference_max_fps": round(
                 float(last_sample.get("inference_max_fps") or 0.0),
                 2,
+            ),
+            "dynamic_window_frames": int(
+                last_sample.get("dynamic_window_frames") or DYNAMIC_RECOGNITION_WINDOW
             ),
             "camera_frame_width": int(last_sample.get("camera_frame_width") or 0),
             "camera_frame_height": int(last_sample.get("camera_frame_height") or 0),
