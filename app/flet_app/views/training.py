@@ -43,6 +43,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "knn": "models/dynamic_knn.pkl",
     "svm": "models/dynamic_svm.pkl",
     "extra_trees": "models/dynamic_extra_trees.pkl",
+    "sequence_knn": "models/dynamic_sequence_knn.pkl",
     "rf": "models/dynamic_rf.pkl",
     "logreg": "models/dynamic_logreg.pkl",
 }
@@ -72,6 +73,21 @@ def _dynamic_model_out_for_type(model_type: str) -> str:
 
 def _known_dynamic_model_outputs() -> set[str]:
     return set(_DYNAMIC_MODEL_OUT_BY_TYPE.values())
+
+
+def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
+    clean = str(model_type or _DEFAULT_MODEL_TYPE).strip().lower()
+    if clean == "sequence_knn":
+        return (
+            "models/dynamic_sequence_classes.json",
+            "models/dynamic_sequence_feature_dim.txt",
+            "models/dynamic_sequence_feature_mode.txt",
+        )
+    return (
+        _DEFAULT_DYNAMIC_CLASSES_OUT,
+        _DEFAULT_DYNAMIC_FEATURE_DIM_OUT,
+        _DEFAULT_DYNAMIC_FEATURE_MODE_OUT,
+    )
 
 
 class TrainingView:
@@ -187,6 +203,7 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
             options=[
                 ft.DropdownOption(key="dynamic_stats", text="dynamic_stats"),
+                ft.DropdownOption(key="dynamic_sequence", text="dynamic_sequence"),
                 ft.DropdownOption(key="hybrid_stats", text="hybrid_stats"),
                 ft.DropdownOption(key="static_stats", text="static_stats"),
             ],
@@ -200,6 +217,7 @@ class TrainingView:
                 ft.DropdownOption(key="knn", text="knn"),
                 ft.DropdownOption(key="svm", text="svm"),
                 ft.DropdownOption(key="extra_trees", text="extra_trees"),
+                ft.DropdownOption(key="sequence_knn", text="sequence_knn"),
                 ft.DropdownOption(key="rf", text="rf"),
                 ft.DropdownOption(key="logreg", text="logreg"),
             ],
@@ -702,12 +720,19 @@ class TrainingView:
             return default
 
     def _on_dynamic_model_type_changed(self, _e) -> None:
+        model_type = str(self._dyn_model_type.value or "knn")
         current = str(self._dyn_model_out.value or "").strip()
-        suggested = _dynamic_model_out_for_type(str(self._dyn_model_type.value or "knn"))
+        suggested = _dynamic_model_out_for_type(model_type)
         if not current or current in _known_dynamic_model_outputs():
             self._dyn_model_out.value = suggested
             try:
                 self._dyn_model_out.update()
+            except Exception:
+                pass
+        if model_type == "sequence_knn":
+            self._dyn_feature_mode.value = "dynamic_sequence"
+            try:
+                self._dyn_feature_mode.update()
             except Exception:
                 pass
 
@@ -838,9 +863,11 @@ class TrainingView:
                 self._dyn_model_out.value
                 or _dynamic_model_out_for_type(model_type)
             ).strip()
-            classes_out_path = _DEFAULT_DYNAMIC_CLASSES_OUT
-            feature_dim_out_path = _DEFAULT_DYNAMIC_FEATURE_DIM_OUT
-            feature_mode_out_path = _DEFAULT_DYNAMIC_FEATURE_MODE_OUT
+            (
+                classes_out_path,
+                feature_dim_out_path,
+                feature_mode_out_path,
+            ) = _dynamic_metadata_out_for_type(model_type)
             training_scope = _DYNAMIC_TRAINING_SCOPE
             self._append_log(
                 f"[i] Обучение отдельной dynamic-модели: "

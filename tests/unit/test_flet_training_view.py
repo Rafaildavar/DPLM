@@ -15,6 +15,7 @@ from app.flet_app.views.training import (
     _DEFAULT_RECORD_FRAMES,
     _DYNAMIC_TRAINING_SCOPE,
     _STATIC_TRAINING_SCOPE,
+    _dynamic_metadata_out_for_type,
     _dynamic_model_out_for_type,
 )
 
@@ -180,3 +181,12 @@ def test_dynamic_model_type_updates_default_output_path_without_overriding_custo
     view._on_dynamic_model_type_changed(None)
 
     assert view._dyn_model_out.value == "models/custom_dynamic.pkl"
+
+
+def test_sequence_knn_uses_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_knn") == "models/dynamic_sequence_knn.pkl"
+    assert _dynamic_metadata_out_for_type("sequence_knn") == (
+        "models/dynamic_sequence_classes.json",
+        "models/dynamic_sequence_feature_dim.txt",
+        "models/dynamic_sequence_feature_mode.txt",
+    )

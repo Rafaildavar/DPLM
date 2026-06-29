@@ -189,15 +189,24 @@ RECOGNITION_MODEL_DYNAMIC = "dynamic"
 DYNAMIC_MODEL_PROFILE_KNN = "knn"
 DYNAMIC_MODEL_PROFILE_SVM = "svm"
 DYNAMIC_MODEL_PROFILE_EXTRA_TREES = "extra_trees"
+DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN = "sequence_knn"
 DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_KNN,
     DYNAMIC_MODEL_PROFILE_SVM,
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN,
 )
 DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_KNN: "dynamic_knn.pkl",
     DYNAMIC_MODEL_PROFILE_SVM: "dynamic_svm.pkl",
     DYNAMIC_MODEL_PROFILE_EXTRA_TREES: "dynamic_extra_trees.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_knn.pkl",
+}
+DYNAMIC_METADATA_PREFIXES = {
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence",
+}
+DYNAMIC_PROTOTYPE_FILENAMES = {
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN: "dynamic_sequence_prototypes.json",
 }
 MODEL_VARIANT_PRODUCTION = "production"
 MODEL_VARIANT_DIRS = {
@@ -816,16 +825,23 @@ class AppController:
         return self._configured_models_dir() / filename
 
     def _dynamic_classes_path(self) -> Path:
-        return self._configured_models_dir() / "dynamic_classes.json"
+        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
+        return self._configured_models_dir() / f"{prefix}_classes.json"
 
     def _dynamic_feature_dim_path(self) -> Path:
-        return self._configured_models_dir() / "dynamic_feature_dim.txt"
+        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
+        return self._configured_models_dir() / f"{prefix}_feature_dim.txt"
 
     def _dynamic_feature_mode_path(self) -> Path:
-        return self._configured_models_dir() / "dynamic_feature_mode.txt"
+        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
+        return self._configured_models_dir() / f"{prefix}_feature_mode.txt"
 
     def _dynamic_prototypes_path(self) -> Path:
-        return self._configured_models_dir() / "dynamic_prototypes.json"
+        filename = DYNAMIC_PROTOTYPE_FILENAMES.get(
+            self.dynamic_model_profile,
+            "dynamic_prototypes.json",
+        )
+        return self._configured_models_dir() / filename
 
     def _embedded_model_paths(self) -> tuple[Path, Path, Path, Path]:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:

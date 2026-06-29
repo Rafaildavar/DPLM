@@ -231,6 +231,7 @@ class HomeView:
                 ft.DropdownOption(key="knn", text="knn"),
                 ft.DropdownOption(key="svm", text="svm"),
                 ft.DropdownOption(key="extra_trees", text="extra_trees"),
+                ft.DropdownOption(key="sequence_knn", text="sequence_knn"),
             ],
             on_select=self._on_dynamic_profile_changed,
         )

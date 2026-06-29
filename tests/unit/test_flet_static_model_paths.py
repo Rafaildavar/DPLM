@@ -4,6 +4,7 @@ from app.flet_app import controller as controller_module
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_KNN,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN,
     MODEL_VARIANT_DIRS,
     MODEL_VARIANT_PRODUCTION,
 )
@@ -82,3 +83,22 @@ def test_apply_dynamic_only_model_variant_keeps_static_paths_in_production():
     assert paths["classes_path"] == "models/classes.json"
     assert paths["feature_dim_path"] == "models/feature_dim.txt"
     assert emitted == ["prototype_distance"]
+
+
+def test_sequence_dynamic_profile_uses_own_metadata_files(tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_KNN
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = str(tmp_path / "models")
+
+    assert controller._dynamic_model_path().name == "dynamic_sequence_knn.pkl"
+    assert controller._dynamic_classes_path().name == "dynamic_sequence_classes.json"
+    assert (
+        controller._dynamic_feature_dim_path().name
+        == "dynamic_sequence_feature_dim.txt"
+    )
+    assert (
+        controller._dynamic_feature_mode_path().name
+        == "dynamic_sequence_feature_mode.txt"
+    )
+    assert controller._dynamic_prototypes_path().name == "dynamic_sequence_prototypes.json"

@@ -3,12 +3,14 @@ from pathlib import Path
 import numpy as np
 
 from cv.gesture_features import (
+    FEATURE_DYNAMIC_SEQUENCE,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     DYNAMIC_TRAJECTORY_FEATURE_DIM,
     DYNAMIC_TRAJECTORY_WEIGHT,
+    DYNAMIC_SEQUENCE_TARGET_FRAMES,
     MOTION_DYNAMIC_LIKE,
     MOTION_STATIC_LIKE,
     align_sequence,
@@ -16,6 +18,7 @@ from cv.gesture_features import (
     build_feature_vector,
     class_motion_profiles,
     infer_target_dim,
+    infer_raw_dim_from_feature_size,
     sequence_motion_energy,
     sequence_to_matrix,
     trajectory_features,
@@ -57,11 +60,21 @@ def test_feature_modes_have_expected_sizes_and_motion_signal():
     static_stats = build_feature_vector(sequence, FEATURE_STATIC_STATS, target_dim=4)
     dynamic_stats = build_feature_vector(sequence, FEATURE_DYNAMIC_STATS, target_dim=4)
     hybrid_stats = build_feature_vector(sequence, FEATURE_HYBRID_STATS, target_dim=4)
+    dynamic_sequence = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_SEQUENCE,
+        target_dim=4,
+    )
 
     assert static_mean.shape == (4,)
     assert static_stats.shape == (16,)
     assert dynamic_stats.shape == (24 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
     assert hybrid_stats.shape == (40 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
+    assert dynamic_sequence.shape == (4 * DYNAMIC_SEQUENCE_TARGET_FRAMES,)
+    assert infer_raw_dim_from_feature_size(
+        FEATURE_DYNAMIC_SEQUENCE,
+        dynamic_sequence.shape[0],
+    ) == 4
     assert np.allclose(dynamic_stats[:4], 3.0)
     assert sequence_motion_energy(sequence) > 0
 

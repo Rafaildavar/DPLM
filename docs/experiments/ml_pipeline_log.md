@@ -3279,3 +3279,73 @@ Live result:
 - Static gestures перестают зависать на `0.55`.
 - Dynamic prototype layer продолжает использовать
   `models/experiments/dynamic_prototype/prototype_distance`.
+
+### H-065: Dynamic gestures нужно сравнить с time-series baseline
+
+Статус: `implemented`, needs live validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Static gestures снова распознаются, но пользователь сообщил, что dynamic
+  gestures в текущем auto pipeline не работают стабильно.
+- Текущий `dynamic_stats` сжимает жест в агрегаты: displacement, velocity
+  stats, path stats, trajectory summary.
+- Для жестов вроде пользовательских свайпов и будущих произвольных движений
+  важна форма траектории во времени, а не только суммарные статистики.
+
+Гипотеза:
+- Time-series baseline должен лучше подходить для dynamic gestures:
+  - жест хранится как последовательность;
+  - скорость выполнения меньше влияет после time normalization;
+  - модель видит порядок движения, а не только итоговый вектор статистик.
+
+Решение:
+- Добавлен feature mode `dynamic_sequence`.
+- Он приводит gesture segment к `36` кадрам через canonical time normalization
+  и раскладывает последовательность в вектор `36 x raw_dim`.
+- Добавлен UI/runtime profile `sequence_knn`.
+- Для него используются отдельные artifacts:
+  - `dynamic_sequence_knn.pkl`;
+  - `dynamic_sequence_classes.json`;
+  - `dynamic_sequence_feature_dim.txt`;
+  - `dynamic_sequence_feature_mode.txt`;
+  - `dynamic_sequence_knn_rejection.json`.
+- `sequence_knn` намеренно не подхватывает старый
+  `dynamic_prototypes.json`, чтобы проверить сам time-series classifier без
+  жёсткого prototype gate.
+
+Обучение:
+- Production:
+  `models/dynamic_sequence_knn.pkl`.
+- Active prototype-distance variant:
+  `models/experiments/dynamic_prototype/prototype_distance/dynamic_sequence_knn.pkl`.
+- Training scope:
+  `no_gesture_static`, `partial_swipe`, `random_motion`, `return_motion`,
+  `swipe_down`, `swipe_left`, `swipe_up`, `wrong_axis_motion`.
+- Training accuracy: `1.0`.
+
+Как проверять:
+- Перезапустить приложение.
+- На главной:
+  - Variant: текущий `prototype_distance` можно оставить;
+  - Mode: `auto`;
+  - Dynamic: `sequence_knn`.
+- Live evaluation:
+  - `swipe_up` 10 попыток;
+  - `swipe_left` 10 попыток;
+  - `swipe_down` 10 попыток;
+  - затем negative gestures по 5-10 попыток.
+
+Метрики:
+- `live_dynamic_recall`;
+- `live_dynamic_false_positive_rate`;
+- `live_dynamic_missed_rate`;
+- `live_dynamic_wrong_axis_rate`;
+- `live_confusion_static_vs_dynamic`;
+- latency/runtime в `runtime_performance.jsonl`.
+
+Критерий успеха:
+- Dynamic recall выше, чем у `knn` на `dynamic_stats`.
+- False positive на negative motions не растёт критично.
+- Камера не лагает сильнее, чем на текущем `knn`.

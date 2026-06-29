@@ -20,7 +20,7 @@ from cv.gesture_features import (
     feature_vector_size,
 )
 
-SUPPORTED_MODEL_TYPES = ("knn", "svm", "extra_trees", "rf", "logreg")
+SUPPORTED_MODEL_TYPES = ("knn", "sequence_knn", "svm", "extra_trees", "rf", "logreg")
 DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD = 0.65
 DEFAULT_REJECT_MIN_MARGIN = 0.10
 DEFAULT_REJECT_DISTANCE_MULTIPLIER = 2.50
@@ -137,7 +137,7 @@ def build_classifier(
     random_state: int = 42,
 ):
     model = str(model_type or "knn").strip().lower()
-    if model == "knn":
+    if model in {"knn", "sequence_knn"}:
         return KNeighborsClassifier(
             n_neighbors=max(1, int(neighbors)),
             metric="euclidean",
@@ -276,7 +276,7 @@ def parse_args() -> argparse.Namespace:
         "--model-type",
         choices=SUPPORTED_MODEL_TYPES,
         default="knn",
-        help="Тип классификатора: knn, svm, extra_trees, rf или logreg",
+        help="Тип классификатора: knn, sequence_knn, svm, extra_trees, rf или logreg",
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
     p.add_argument(

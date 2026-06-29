@@ -14,6 +14,7 @@ from typing import Any, Deque, Dict, List, Optional
 import numpy as np
 
 from cv.gesture_features import (
+    FEATURE_DYNAMIC_SEQUENCE,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
     FEATURE_STATIC_MEAN,
@@ -339,7 +340,11 @@ class GestureOnlineInfer:
 
     def _uses_temporal_features(self) -> bool:
         mode = getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
-        return mode in {FEATURE_DYNAMIC_STATS, FEATURE_HYBRID_STATS}
+        return mode in {
+            FEATURE_DYNAMIC_SEQUENCE,
+            FEATURE_DYNAMIC_STATS,
+            FEATURE_HYBRID_STATS,
+        }
 
     def _window_ready_for_prediction(self) -> bool:
         if not self._uses_temporal_features():
