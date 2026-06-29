@@ -53,6 +53,10 @@ DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
 DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
 DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.20
 DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
+DYNAMIC_SEGMENT_PRE_ROLL_FRAMES = 3
+DYNAMIC_SEGMENT_ONSET_PATH = 0.015
+DYNAMIC_SEGMENT_ONSET_DISPLACEMENT = 0.012
+DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES = 5
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
 STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
@@ -211,9 +215,8 @@ class GestureOnlineInfer:
         self._raw_feature_dim = self._infer_raw_feature_dim()
         self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
         if self._uses_global_dynamic_motion():
-            self._dynamic_segmenter = DynamicMotionSegmenter(
+            self._dynamic_segmenter = self._create_dynamic_segmenter(
                 target_frames=max(2, int(window)),
-                max_active_frames=max(60, int(window) * 2),
             )
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
@@ -1208,11 +1211,22 @@ class GestureOnlineInfer:
     def _segmenter(self) -> DynamicMotionSegmenter:
         segmenter = getattr(self, "_dynamic_segmenter", None)
         if segmenter is None:
-            segmenter = DynamicMotionSegmenter(
+            segmenter = self._create_dynamic_segmenter(
                 target_frames=int(self._window.maxlen or 36),
             )
             self._dynamic_segmenter = segmenter
         return segmenter
+
+    @staticmethod
+    def _create_dynamic_segmenter(*, target_frames: int) -> DynamicMotionSegmenter:
+        return DynamicMotionSegmenter(
+            target_frames=max(2, int(target_frames)),
+            pre_roll_frames=DYNAMIC_SEGMENT_PRE_ROLL_FRAMES,
+            onset_path=DYNAMIC_SEGMENT_ONSET_PATH,
+            onset_displacement=DYNAMIC_SEGMENT_ONSET_DISPLACEMENT,
+            min_active_frames=DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES,
+            max_active_frames=max(60, int(target_frames)),
+        )
 
     def _temporal_state_from_segment_update(
         self,

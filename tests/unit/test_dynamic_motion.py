@@ -105,6 +105,25 @@ def test_segmenter_emits_swipe_when_hand_leaves_after_motion():
     assert motion[0] < -0.4
 
 
+def test_online_segmenter_emits_fast_horizontal_swipe_before_hand_leaves():
+    from app.gesture_online_infer import GestureOnlineInfer
+
+    segmenter = GestureOnlineInfer._create_dynamic_segmenter(target_frames=36)
+    points = [0.80, 0.72, 0.64, 0.56, 0.48]
+
+    updates = [
+        segmenter.update(_frame(x, 0.5), motion_scale=0.50)
+        for x in points
+    ]
+    hand_lost = segmenter.finish_due_to_hand_lost()
+
+    assert all(update.completed_sequence is None for update in updates)
+    assert hand_lost.completed_sequence is not None
+    assert hand_lost.end_reason == "hand_lost"
+    motion = trajectory_features(hand_lost.completed_sequence, target_dim=44)
+    assert motion[0] < -0.4
+
+
 def test_segmenter_handles_different_gesture_speeds():
     for motion_frames in (8, 14, 28):
         segmenter = DynamicMotionSegmenter()

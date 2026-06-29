@@ -2787,3 +2787,66 @@ Offline comparison:
   - `live_dynamic_prototype_reason_*`;
   - `live_wrong_dynamic_direction_rate`;
   - `system_runtime_inference_ms_p95_max`.
+
+### H-055: Live A/B prototype verifier показал, что DTW не готов для runtime
+
+Статус: `implemented`, нужна повторная live validation
+
+Дата: `2026-06-29`
+
+Live-замеры пользователя:
+
+| Variant | Target | Result | Вывод |
+|---|---:|---:|---|
+| `prototype_distance` | `swipe_up` | `8/10` | Работает, misses без wrong direction |
+| `prototype_distance` | `swipe_left` | `1/9` и отдельный `0/3` | Главная проблема не verifier, а отсутствие completed dynamic segment (`route=none`) |
+| `prototype_distance` | `swipe_down` | `9/10` | Работает, misses без wrong direction |
+| `prototype_dtw` | `swipe_down` | `1/4`, wrong `3/4` | Не готов как runtime default |
+
+Что подтвердили логи:
+- У `swipe_left` почти все ошибки имеют:
+  - `route=none`;
+  - `dynamic_segment_frames=0`;
+  - пустые `dynamic_prototype_*`.
+- Значит `prototype_distance` не отвергал `swipe_left`; сегмент просто не доходил
+  до prototype verifier.
+- Единственный completed `swipe_left` был принят:
+  - `prototype_distance`;
+  - distance `0.05045`;
+  - threshold `0.05998`;
+  - `motion_and_prototype_agree`.
+- У `prototype_dtw` появились wrong direction и runtime spikes:
+  - `live_wrong_dynamic_direction_rate=0.75` на одном из прогонов;
+  - `system_runtime_inference_ms_p95_max` до `44.5 ms`.
+
+Решение:
+- `prototype_dtw` оставить как research/offline method, не использовать как live
+  default до оптимизации и пересмотра thresholds.
+- `prototype_distance` оставить основным verifier-кандидатом.
+- Stage-1 dynamic segmenter сделать более recall-oriented:
+  - `pre_roll_frames`: `5 -> 3`;
+  - `onset_path`: `0.04 -> 0.015`;
+  - `onset_displacement`: `0.025 -> 0.012`;
+  - `min_active_frames`: `8 -> 5` для online candidate generation.
+
+Почему это безопасно:
+- Segmenter теперь должен чаще создавать candidate segment для быстрых
+  горизонтальных жестов.
+- Precision защищает второй слой:
+  - prototype verifier;
+  - negative classes;
+  - motion/prototype agreement.
+
+Проверка:
+- Добавлен unit-test на быстрый горизонтальный swipe с уходом руки из кадра:
+  `test_online_segmenter_emits_fast_horizontal_swipe_before_hand_leaves`.
+
+Следующий live шаг:
+- Повторить только `prototype_distance`:
+  - `swipe_left`: `10` attempts;
+  - `swipe_up`: `10` attempts;
+  - `swipe_down`: `10` attempts;
+  - `no_command/random_motion`: `10` attempts.
+- Цель:
+  - `swipe_left` должен перейти из `route=none` в `route=dynamic`;
+  - `negative_false_positive_rate` должен остаться `0`.
