@@ -504,7 +504,7 @@ class GesturesView:
         span_x = max(max_x - min_x, 1e-4)
         span_y = max(max_y - min_y, 1e-4)
         width, height = 560, 300
-        pad = 42
+        pad = 58
         scale = min((width - pad * 2) / span_x, (height - pad * 2) / span_y)
         offset_x = (width - span_x * scale) / 2
         offset_y = (height - span_y * scale) / 2
@@ -637,6 +637,36 @@ class GesturesView:
         src = self._gesture_preview_src(row)
         gesture_type = self._gesture_type(row)
         gesture_color = self._gesture_type_color(gesture_type)
+        real_badge = ft.Container(
+            bgcolor="#101316",
+            border=self._border(COLOR_SURFACE_HIGH),
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=9, vertical=5),
+            content=ft.Row(
+                spacing=6,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.CENTER_FOCUS_STRONG, size=13, color=COLOR_ACCENT),
+                    ft.Text("запись", size=11, color=COLOR_ON_SURFACE, no_wrap=True),
+                ],
+            ),
+        )
+        type_badge = ft.Container(
+            bgcolor="#101316",
+            border=self._border(COLOR_SURFACE_HIGH),
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=9, vertical=5),
+            content=ft.Row(
+                spacing=6,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(self._gesture_type_icon(gesture_type), size=13, color=gesture_color),
+                    ft.Text(self._gesture_type_label(gesture_type), size=11, color=gesture_color, no_wrap=True),
+                ],
+            ),
+        )
         if src:
             media: ft.Control = ft.Image(
                 src=src,
@@ -656,43 +686,32 @@ class GesturesView:
                 ],
             )
         return ft.Container(
-            height=124,
-            bgcolor="#101316",
+            height=168,
+            bgcolor="#0E1114",
             border=self._border(COLOR_SURFACE_HIGH),
             border_radius=8,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            content=ft.Stack(
-                expand=True,
+            padding=8,
+            content=ft.Column(
+                spacing=8,
                 controls=[
-                    media,
-                    ft.Container(
-                        left=12,
-                        top=12,
-                        bgcolor="#101316",
-                        border_radius=8,
-                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-                        content=ft.Row(
-                            spacing=6,
-                            tight=True,
-                            controls=[
-                                ft.Icon(ft.Icons.CENTER_FOCUS_STRONG, size=14, color=COLOR_ACCENT),
-                                ft.Text("реальная запись", size=11, color=COLOR_ON_SURFACE),
-                            ],
-                        ),
+                    ft.Row(
+                        spacing=8,
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            real_badge,
+                            type_badge,
+                        ],
                     ),
                     ft.Container(
-                        right=12,
-                        top=12,
+                        expand=True,
                         bgcolor="#101316",
                         border_radius=8,
-                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-                        content=ft.Row(
-                            spacing=6,
-                            tight=True,
-                            controls=[
-                                ft.Icon(self._gesture_type_icon(gesture_type), size=14, color=gesture_color),
-                                ft.Text(self._gesture_type_label(gesture_type), size=11, color=gesture_color),
-                            ],
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        content=ft.Stack(
+                            expand=True,
+                            controls=[media],
                         ),
                     ),
                 ],
