@@ -3531,3 +3531,46 @@ Offline результат:
 - Если `sequence_mlp` выигрывает live, сделать его кандидатом production
   dynamic profile; если нет, оставить как research baseline и перейти к
   lightweight GRU/LSTM при добавлении PyTorch.
+
+### H-069: Первый live A/B сигнал в пользу sequence_mlp для динамики
+
+Статус: `validated-positive`, needs complex/negative validation
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- После перехода с KNN на `sequence_mlp` dynamic-распознавание стало выглядеть
+  как реальная ML-система для временных жестов, а не как nearest-neighbor
+  lookup.
+- Reject layer при threshold `0.90` стал полезно консервативным: даже не очень
+  хороший `swipe_up` не проходит, если confidence ниже порога.
+
+Live результат пользователя:
+- `swipe_up`: `20/20`, correct `20`, wrong `0`, missed `0`,
+  accuracy `100%`, displayed confidence около `93%`.
+- `swipe_left`: `20/20`, correct `19`, wrong `1`, missed `0`,
+  accuracy `95%`, displayed confidence около `96%`.
+
+Вывод:
+- Для динамики KNN больше не выглядит лучшим production-кандидатом: он полезен
+  как baseline, но плохо подходит для произвольных динамических жестов из-за
+  nearest-class поведения.
+- `sequence_mlp + prototype/reject layer` становится главным кандидатом для
+  live dynamic pipeline.
+- Порог `0.90` выглядит разумным для команд, потому что система лучше
+  пропустит слабый жест, чем выполнит лишнюю команду.
+
+Следующая проверка:
+- Записать более сложный dynamic-класс, например `circle_clockwise`,
+  `zigzag_right` или `hook_down`.
+- Обучить `sequence_mlp` заново.
+- Прогнать:
+  - новый complex gesture: 20 attempts;
+  - старые `swipe_up`/`swipe_left`: по 10 attempts для regression check;
+  - negative/почти-жесты: `partial_swipe`, `wrong_axis_motion`,
+    `return_motion`, `random_motion` по 10 attempts.
+
+Критерий успеха:
+- Complex gesture live recall >= `80%`.
+- Старые swipe-классы не проседают ниже `90%`.
+- Negative false positive остается низким при threshold `0.90`.
