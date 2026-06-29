@@ -499,6 +499,48 @@ class GesturesView:
         )
         return base64.b64encode(out.getvalue()).decode("ascii")
 
+    def _preview_canvas(self, width: int, height: int):
+        import cv2
+        import numpy as np
+
+        y, x = np.mgrid[0:height, 0:width]
+        nx = (x - width / 2) / max(1.0, width / 2)
+        ny = (y - height / 2) / max(1.0, height / 2)
+        spotlight = np.clip(1.0 - (nx * nx + ny * ny), 0.0, 1.0)
+        vertical = y / max(1.0, height - 1)
+
+        canvas = np.zeros((height, width, 3), dtype=np.uint8)
+        canvas[:, :, 0] = np.clip(16 + spotlight * 14 + vertical * 5, 0, 255).astype(np.uint8)
+        canvas[:, :, 1] = np.clip(18 + spotlight * 12 + vertical * 4, 0, 255).astype(np.uint8)
+        canvas[:, :, 2] = np.clip(20 + spotlight * 8 + vertical * 3, 0, 255).astype(np.uint8)
+
+        grid = canvas.copy()
+        for x_pos in range(28, width, 28):
+            color = (29, 33, 36) if x_pos % 56 else (35, 40, 43)
+            cv2.line(grid, (x_pos, 0), (x_pos, height), color, 1, cv2.LINE_AA)
+        for y_pos in range(28, height, 28):
+            color = (29, 33, 36) if y_pos % 56 else (35, 40, 43)
+            cv2.line(grid, (0, y_pos), (width, y_pos), color, 1, cv2.LINE_AA)
+        canvas = cv2.addWeighted(grid, 0.46, canvas, 0.54, 0)
+
+        frame = canvas.copy()
+        cv2.rectangle(frame, (1, 1), (width - 2, height - 2), (54, 61, 70), 2, cv2.LINE_AA)
+        cv2.rectangle(frame, (8, 8), (width - 9, height - 9), (25, 29, 33), 1, cv2.LINE_AA)
+        canvas = cv2.addWeighted(frame, 0.76, canvas, 0.24, 0)
+
+        accent = (216, 199, 82)
+        corner = 24
+        for x0, y0, sx, sy in (
+            (12, 12, 1, 1),
+            (width - 12, 12, -1, 1),
+            (12, height - 12, 1, -1),
+            (width - 12, height - 12, -1, -1),
+        ):
+            cv2.line(canvas, (x0, y0), (x0 + sx * corner, y0), accent, 1, cv2.LINE_AA)
+            cv2.line(canvas, (x0, y0), (x0, y0 + sy * corner), accent, 1, cv2.LINE_AA)
+
+        return canvas
+
     def _camera_motion_preview_layout(self, seq, trail, valid_indices) -> dict:
         import numpy as np
 
@@ -536,7 +578,7 @@ class GesturesView:
         local_min = local_points.min(axis=0)
         local_max = local_points.max(axis=0)
         local_span = np.maximum(local_max - local_min, 1e-4)
-        hand_scale = min((width * 0.26) / local_span[0], (height * 0.48) / local_span[1])
+        hand_scale = min((width * 0.32) / local_span[0], (height * 0.56) / local_span[1])
 
         if path is None:
             path = frames.mean(axis=1)
@@ -550,14 +592,17 @@ class GesturesView:
             content_min = np.array([22.0, 18.0], dtype=float)
             content_max = np.array([width - 22.0, height - 32.0], dtype=float)
             if path_is_camera:
-                path_px = np.column_stack(
-                    [
-                        content_min[0]
-                        + np.clip(path[:, 0], 0.0, 1.0) * (content_max[0] - content_min[0]),
-                        content_min[1]
-                        + np.clip(path[:, 1], 0.0, 1.0) * (content_max[1] - content_min[1]),
-                    ]
-                )
+                content_span = np.maximum(content_max - content_min, 1e-4)
+                world_min = finite_path.min(axis=0) + local_min
+                world_max = finite_path.max(axis=0) + local_max
+                world_span = np.maximum(world_max - world_min, 1e-4)
+                fit_scale = min(content_span[0] / world_span[0], content_span[1] / world_span[1]) * 0.9
+                max_hand_scale = min((width * 0.46) / local_span[0], (height * 0.72) / local_span[1])
+                path_scale = min(float(fit_scale), float(max_hand_scale))
+                world_px = world_span * path_scale
+                offset = content_min + (content_span - world_px) / 2 - world_min * path_scale
+                path_px = path * path_scale + offset
+                hand_scale = path_scale
             else:
                 min_xy = finite_path.min(axis=0)
                 max_xy = finite_path.max(axis=0)
@@ -632,35 +677,51 @@ class GesturesView:
         path_px = np.asarray(layout["path_px"], dtype=float)
         idx = max(0, min(int(frame_index), len(path_px) - 1))
 
-        canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        canvas[:, :] = (18, 20, 22)
-        for x in range(48, width, 48):
-            cv2.line(canvas, (x, 0), (x, height), (28, 31, 35), 1, cv2.LINE_AA)
-        for y in range(48, height, 48):
-            cv2.line(canvas, (0, y), (width, y), (28, 31, 35), 1, cv2.LINE_AA)
-        cv2.rectangle(canvas, (1, 1), (width - 2, height - 2), (52, 57, 66), 2)
+        canvas = self._preview_canvas(width, height)
 
         full_path = path_px[np.isfinite(path_px).all(axis=1)]
         if len(full_path) >= 2:
+            path_shadow = canvas.copy()
+            for p1, p2 in zip(full_path, full_path[1:]):
+                cv2.line(
+                    path_shadow,
+                    (int(round(p1[0])), int(round(p1[1]))),
+                    (int(round(p2[0])), int(round(p2[1]))),
+                    (12, 15, 18),
+                    8,
+                    cv2.LINE_AA,
+                )
+            canvas = cv2.addWeighted(path_shadow, 0.22, canvas, 0.78, 0)
             for p1, p2 in zip(full_path, full_path[1:]):
                 cv2.line(
                     canvas,
                     (int(round(p1[0])), int(round(p1[1]))),
                     (int(round(p2[0])), int(round(p2[1]))),
-                    (42, 54, 58),
-                    3,
+                    (52, 62, 64),
+                    2,
                     cv2.LINE_AA,
                 )
 
         visible_path = path_px[: idx + 1]
         if len(visible_path) >= 2:
             finite = visible_path[np.isfinite(visible_path).all(axis=1)]
+            path_glow = canvas.copy()
+            for p1, p2 in zip(finite, finite[1:]):
+                cv2.line(
+                    path_glow,
+                    (int(round(p1[0])), int(round(p1[1]))),
+                    (int(round(p2[0])), int(round(p2[1]))),
+                    (216, 199, 82),
+                    12,
+                    cv2.LINE_AA,
+                )
+            canvas = cv2.addWeighted(path_glow, 0.18, canvas, 0.82, 0)
             for i, (p1, p2) in enumerate(zip(finite, finite[1:])):
                 blend = i / max(1, len(finite) - 1)
                 color = (
-                    int(70 + 20 * blend),
-                    int(154 + 62 * blend),
-                    int(180 + 54 * blend),
+                    int(216 - 126 * blend),
+                    int(199 + 6 * blend),
+                    int(82 + 150 * blend),
                 )
                 cv2.line(
                     canvas,
@@ -673,8 +734,16 @@ class GesturesView:
             cv2.circle(
                 canvas,
                 (int(round(finite[-1][0])), int(round(finite[-1][1]))),
-                6,
-                (82, 199, 216),
+                11,
+                (216, 199, 82),
+                -1,
+                cv2.LINE_AA,
+            )
+            cv2.circle(
+                canvas,
+                (int(round(finite[-1][0])), int(round(finite[-1][1]))),
+                5,
+                (245, 231, 112),
                 -1,
                 cv2.LINE_AA,
             )
@@ -709,11 +778,11 @@ class GesturesView:
                             overlay,
                             (int(round(x1)), int(round(y1))),
                             (int(round(x2)), int(round(y2))),
-                            (66, 91, 94),
-                            4,
+                            (74, 87, 86),
+                            5,
                             cv2.LINE_AA,
                         )
-                alpha = 0.14 + 0.05 * ghost_no
+                alpha = 0.09 + 0.04 * ghost_no
                 canvas = cv2.addWeighted(overlay, alpha, canvas, 1.0 - alpha, 0)
 
         pts = np.asarray(points, dtype=float)
@@ -730,10 +799,10 @@ class GesturesView:
                     (int(round(x1)), int(round(y1))),
                     (int(round(x2)), int(round(y2))),
                     (0, 215, 255),
-                    10,
+                    14,
                     cv2.LINE_AA,
                 )
-        canvas = cv2.addWeighted(glow, 0.20, canvas, 0.80, 0)
+        canvas = cv2.addWeighted(glow, 0.18, canvas, 0.82, 0)
 
         for a, b in HAND_CONNECTIONS:
             if a < len(mapped) and b < len(mapped):
@@ -743,19 +812,40 @@ class GesturesView:
                     canvas,
                     (int(round(x1)), int(round(y1))),
                     (int(round(x2)), int(round(y2))),
-                    (0, 215, 255),
+                    (18, 20, 22),
+                    8,
+                    cv2.LINE_AA,
+                )
+
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (58, 211, 244),
                     5,
+                    cv2.LINE_AA,
+                )
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (112, 232, 255),
+                    2,
                     cv2.LINE_AA,
                 )
 
         for x, y in mapped:
-            cv2.circle(canvas, (int(round(x)), int(round(y))), 7, (18, 20, 22), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (int(round(x)), int(round(y))), 8, (18, 20, 22), -1, cv2.LINE_AA)
             cv2.circle(canvas, (int(round(x)), int(round(y))), 5, (231, 238, 240), -1, cv2.LINE_AA)
-            cv2.circle(canvas, (int(round(x)), int(round(y))), 2, (80, 255, 120), -1, cv2.LINE_AA)
+            cv2.circle(canvas, (int(round(x)), int(round(y))), 2, (216, 199, 82), -1, cv2.LINE_AA)
 
         bar_w = max(12, int((width - 44) * max(0.0, min(1.0, float(progress)))))
-        cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (36, 40, 45), -1)
-        cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (82, 199, 216), -1)
+        cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (35, 39, 43), -1)
+        cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (216, 199, 82), -1)
 
         ok, encoded = cv2.imencode(".png", canvas)
         if not ok:
@@ -799,17 +889,11 @@ class GesturesView:
             return x, y
 
         mapped = [map_point(point) for point in pts]
-        canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        canvas[:, :] = (18, 20, 22)
-        for x in range(48, width, 48):
-            cv2.line(canvas, (x, 0), (x, height), (28, 31, 35), 1, cv2.LINE_AA)
-        for y in range(48, height, 48):
-            cv2.line(canvas, (0, y), (width, y), (28, 31, 35), 1, cv2.LINE_AA)
-        cv2.rectangle(canvas, (1, 1), (width - 2, height - 2), (52, 57, 66), 2)
+        canvas = self._preview_canvas(width, height)
         if progress is not None:
             bar_w = max(12, int((width - 44) * max(0.0, min(1.0, float(progress)))))
-            cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (36, 40, 45), -1)
-            cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (82, 199, 216), -1)
+            cv2.rectangle(canvas, (22, height - 18), (width - 22, height - 13), (35, 39, 43), -1)
+            cv2.rectangle(canvas, (22, height - 18), (22 + bar_w, height - 13), (216, 199, 82), -1)
 
         if trail is not None:
             tr = np.asarray(trail, dtype=float)
@@ -829,12 +913,13 @@ class GesturesView:
                 for i, (p1, p2) in enumerate(zip(trail_points, trail_points[1:])):
                     blend = i / max(1, len(trail_points) - 1)
                     color = (
-                        int(78 + 80 * blend),
-                        int(168 + 28 * blend),
-                        int(216 - 70 * blend),
+                        int(216 - 126 * blend),
+                        int(199 + 6 * blend),
+                        int(82 + 150 * blend),
                     )
                     cv2.line(canvas, p1, p2, color, 5 if dynamic else 3, cv2.LINE_AA)
-                cv2.circle(canvas, trail_points[-1], 6, (216, 199, 82), -1, cv2.LINE_AA)
+                cv2.circle(canvas, trail_points[-1], 7, (216, 199, 82), -1, cv2.LINE_AA)
+                cv2.circle(canvas, trail_points[-1], 3, (245, 231, 112), -1, cv2.LINE_AA)
 
         glow = canvas.copy()
         for a, b in HAND_CONNECTIONS:
@@ -845,11 +930,11 @@ class GesturesView:
                     glow,
                     (int(round(x1)), int(round(y1))),
                     (int(round(x2)), int(round(y2))),
-                    (82, 199, 216),
-                    11,
+                    (0, 215, 255),
+                    14,
                     cv2.LINE_AA,
                 )
-        canvas = cv2.addWeighted(glow, 0.22, canvas, 0.78, 0)
+        canvas = cv2.addWeighted(glow, 0.18, canvas, 0.82, 0)
 
         for a, b in HAND_CONNECTIONS:
             if a < len(mapped) and b < len(mapped):
@@ -859,8 +944,29 @@ class GesturesView:
                     canvas,
                     (int(round(x1)), int(round(y1))),
                     (int(round(x2)), int(round(y2))),
-                    (82, 199, 216),
-                    6,
+                    (18, 20, 22),
+                    8,
+                    cv2.LINE_AA,
+                )
+
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (58, 211, 244),
+                    5,
+                    cv2.LINE_AA,
+                )
+                cv2.line(
+                    canvas,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (112, 232, 255),
+                    2,
                     cv2.LINE_AA,
                 )
 
@@ -868,7 +974,7 @@ class GesturesView:
             cv2.circle(
                 canvas,
                 (int(round(x)), int(round(y))),
-                8,
+                9,
                 (18, 20, 22),
                 -1,
                 cv2.LINE_AA,
@@ -885,7 +991,7 @@ class GesturesView:
                 canvas,
                 (int(round(x)), int(round(y))),
                 2,
-                (216, 199, 82) if dynamic else (82, 199, 216),
+                (216, 199, 82),
                 -1,
                 cv2.LINE_AA,
             )
@@ -970,7 +1076,7 @@ class GesturesView:
                 ],
             )
         return ft.Container(
-            height=168,
+            height=204,
             bgcolor="#0E1114",
             border=self._border(COLOR_SURFACE_HIGH),
             border_radius=8,
