@@ -9,6 +9,7 @@ from cv.dynamic_prototype import (
     predict_dynamic_prototype,
 )
 from scripts.dynamic_prototype_experiments import (
+    _copy_base_dynamic_artifacts,
     filter_conflicting_external_negatives,
 )
 
@@ -151,3 +152,12 @@ def test_external_negative_conflict_filter_keeps_user_positive_priority(tmp_path
     assert report["conflicting_negative_labels"] == {
         "negative_external_ipn_dynamic": 1
     }
+
+
+def test_copy_base_dynamic_artifacts_skips_same_file(tmp_path):
+    model_path = tmp_path / "dynamic_knn.pkl"
+    model_path.write_bytes(b"model")
+
+    _copy_base_dynamic_artifacts(tmp_path, tmp_path)
+
+    assert model_path.read_bytes() == b"model"

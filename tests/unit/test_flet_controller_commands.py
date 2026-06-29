@@ -198,22 +198,26 @@ def test_build_dynamic_prototype_training_command_uses_external_negatives(
 ):
     controller = AppController.__new__(AppController)
     model_dir = tmp_path / "models"
+    variant_dir = tmp_path / "models" / "experiments" / "prototype_distance"
 
     monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
-    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: variant_dir)
     monkeypatch.setattr(
         controller,
         "_live_evaluation_mlflow_tracking_uri",
         lambda: "sqlite:///tmp_mlflow.db",
     )
 
-    cmd = controller._build_dynamic_prototype_training_command()
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_knn.pkl"),
+    )
 
     assert cmd[1:4] == ["-u", "-m", "scripts.dynamic_prototype_experiments"]
     assert cmd[cmd.index("--data-root") + 1] == str(tmp_path / "gestures")
     assert cmd[cmd.index("--external-negative-root") + 1].endswith("data/external")
     assert "--include-external-negatives" in cmd
     assert cmd[cmd.index("--methods") + 1] == "prototype_distance"
+    assert cmd[cmd.index("--base-models-dir") + 1] == str(model_dir)
     assert "--write-production" in cmd
     assert cmd[cmd.index("--production-out") + 1] == str(
         model_dir / "dynamic_prototypes.json"

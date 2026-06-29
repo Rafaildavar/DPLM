@@ -5058,6 +5058,7 @@ class AppController:
                 if final_code == 0 and self._should_train_dynamic_prototypes(training_scope):
                     final_code = self._run_dynamic_prototype_training(
                         data_root=data_root,
+                        dynamic_model_out_path=out_path,
                         on_line=on_line,
                     )
                 if on_done:
@@ -5079,10 +5080,14 @@ class AppController:
         self,
         *,
         data_root: str = "",
+        dynamic_model_out_path: str = "",
         on_line: Optional[Callable[[str], None]] = None,
     ) -> int:
         project_root = Path(__file__).resolve().parents[2]
-        cmd = self._build_dynamic_prototype_training_command(data_root=data_root)
+        cmd = self._build_dynamic_prototype_training_command(
+            data_root=data_root,
+            dynamic_model_out_path=dynamic_model_out_path,
+        )
         if on_line:
             on_line(
                 "[i] Обучение dynamic prototype/rejection layer "
@@ -5283,9 +5288,12 @@ class AppController:
         self,
         *,
         data_root: str = "",
+        dynamic_model_out_path: str = "",
     ) -> list[str]:
         project_root = Path(__file__).resolve().parents[2]
         actual_data_root = data_root or str(self._configured_data_dir())
+        dynamic_model_path = Path(dynamic_model_out_path or self._dynamic_model_path())
+        dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
         external_root = project_root / "data" / "external"
         return [
             sys.executable,
@@ -5300,12 +5308,12 @@ class AppController:
             "--methods",
             "prototype_distance",
             "--base-models-dir",
-            str(self._configured_models_dir()),
+            str(dynamic_model_dir),
             "--variant-root",
             str(project_root / "models" / "experiments" / "dynamic_prototype"),
             "--write-production",
             "--production-out",
-            str(self._dynamic_prototypes_path()),
+            str(dynamic_model_dir / "dynamic_prototypes.json"),
             "--report-json",
             str(project_root / "docs" / "experiments" / "dynamic_prototype_ui_training.json"),
             "--report-md",

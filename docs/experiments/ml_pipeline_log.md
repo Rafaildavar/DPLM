@@ -3011,3 +3011,40 @@ Production artifact:
   `random_motion`, `return_motion`, `wrong_axis_motion`;
 - prototype count: `72`;
 - training record count: `457`.
+
+### H-059: UI dynamic training не должен зависеть от выбранного model profile
+
+Статус: `fixed`, regression tested
+
+Дата: `2026-06-29`
+
+Проблема:
+- При выбранном профиле `prototype_distance` UI-тренировка dynamic модели
+  успешно обновляла `models/dynamic_knn.pkl`, но post-training prototype step
+  падал на `SameFileError`.
+- Причина: prototype experiment получал одну и ту же папку как
+  `--base-models-dir` и как output variant dir:
+  `models/experiments/dynamic_prototype/prototype_distance`.
+- В результате `dynamic_knn.pkl` копировался в самого себя.
+
+Решение:
+- Prototype/rejection post-training теперь отталкивается от реального
+  `out_path` свежей dynamic модели, выбранного в UI.
+- Для обычного обучения из интерфейса:
+  - `--base-models-dir models`;
+  - `--production-out models/dynamic_prototypes.json`.
+- В копировании базовых dynamic artifacts добавлена защита: same-file copy
+  пропускается.
+
+Проверка:
+- `py_compile`: OK.
+- `pytest tests/unit/test_flet_controller_commands.py tests/unit/test_dynamic_prototype.py`: `51 passed`.
+- Smoke run:
+  `scripts.dynamic_prototype_experiments --methods prototype_distance ...`
+  завершился успешно.
+
+Результат:
+- Кнопка `Обучить dynamic модель` снова должна проходить оба этапа:
+  classifier + prototype/rejection layer.
+- MLflow/Markdown/JSON отчеты обновляются после UI-тренировки без ручного
+  запуска второго этапа.

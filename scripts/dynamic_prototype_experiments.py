@@ -488,7 +488,13 @@ def _copy_base_dynamic_artifacts(base_dir: Path, target_dir: Path) -> None:
     ):
         source = base_dir / name
         if source.exists():
-            shutil.copy2(source, target_dir / name)
+            target = target_dir / name
+            try:
+                if source.resolve() == target.resolve():
+                    continue
+            except OSError:
+                pass
+            shutil.copy2(source, target)
 
 
 def _counts(records: Iterable[DynamicSequenceRecord]) -> dict[str, int]:
