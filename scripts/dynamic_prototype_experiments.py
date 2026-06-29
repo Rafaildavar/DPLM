@@ -7,6 +7,7 @@ import json
 import random
 import shutil
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -53,6 +54,17 @@ class EvaluationRow:
     path: str
 
 
+@dataclass(frozen=True)
+class NegativeConflictRow:
+    path: str
+    negative_label: str
+    nearest_positive_label: str
+    distance: float
+    threshold: float
+    distance_ratio: float
+    reason: str
+
+
 def discover_records(
     *,
     data_root: Path,
@@ -92,6 +104,121 @@ def discover_records(
             if record is not None:
                 records.append(record)
     return records
+
+
+def filter_conflicting_external_negatives(
+    records: Iterable[DynamicSequenceRecord],
+    *,
+    external_negative_root: Path | None,
+    method: str = METHOD_PROTOTYPE_DISTANCE,
+    target_dim: int = 44,
+    target_frames: int = 36,
+    max_prototypes_per_label: int = 8,
+    threshold_multiplier: float = 1.25,
+    threshold_floor: float = 0.015,
+    conflict_margin: float = 1.20,
+    max_report_rows: int = 100,
+) -> tuple[list[DynamicSequenceRecord], dict[str, Any]]:
+    items = list(records)
+    root = _safe_resolve(external_negative_root) if external_negative_root else None
+    positives = [record for record in items if not record.is_negative]
+    external_negatives = [
+        record
+        for record in items
+        if record.is_negative and root is not None and _is_under(record.path, root)
+    ]
+    base_report: dict[str, Any] = {
+        "enabled": True,
+        "method": method,
+        "conflict_margin": float(conflict_margin),
+        "external_negative_root": str(root) if root else "",
+        "positive_count": len(positives),
+        "external_negative_total": len(external_negatives),
+        "safe_external_negative_count": len(external_negatives),
+        "conflict_count": 0,
+        "conflict_rate": 0.0,
+        "nearest_positive_labels": {},
+        "conflicting_negative_labels": {},
+        "conflicts": [],
+        "status": "ok",
+    }
+    if not root:
+        return items, {**base_report, "status": "missing_external_root"}
+    if not external_negatives:
+        return items, {**base_report, "status": "no_external_negatives"}
+    if not positives:
+        return items, {**base_report, "status": "no_positive_gestures"}
+
+    positive_model = fit_dynamic_prototype_model(
+        positives,
+        method=method,
+        target_dim=target_dim,
+        target_frames=target_frames,
+        max_prototypes_per_label=max_prototypes_per_label,
+        threshold_multiplier=threshold_multiplier,
+        threshold_floor=threshold_floor,
+    )
+
+    conflict_paths: set[str] = set()
+    conflicts: list[NegativeConflictRow] = []
+    nearest_positive_labels: Counter[str] = Counter()
+    conflicting_negative_labels: Counter[str] = Counter()
+    for record in external_negatives:
+        decision = predict_dynamic_prototype(positive_model, record.sequence)
+        nearest_label = str(decision.get("nearest_label") or "")
+        nearest_type = str(decision.get("nearest_type") or "")
+        distance = _safe_float(decision.get("distance"), default=float("inf"))
+        threshold = _safe_float(decision.get("threshold"), default=0.0)
+        ratio = distance / threshold if threshold > 0 else float("inf")
+        if nearest_label:
+            nearest_positive_labels[nearest_label] += 1
+        is_conflict = (
+            nearest_type == "positive"
+            and threshold > 0.0
+            and distance <= threshold * float(conflict_margin)
+        )
+        if not is_conflict:
+            continue
+        conflict_paths.add(record.path)
+        conflicting_negative_labels[record.label] += 1
+        conflicts.append(
+            NegativeConflictRow(
+                path=record.path,
+                negative_label=record.label,
+                nearest_positive_label=nearest_label,
+                distance=float(distance),
+                threshold=float(threshold),
+                distance_ratio=float(ratio),
+                reason=str(decision.get("reason") or "near_positive"),
+            )
+        )
+
+    filtered = [
+        record
+        for record in items
+        if record.path not in conflict_paths
+    ]
+    conflict_count = len(conflict_paths)
+    safe_count = max(0, len(external_negatives) - conflict_count)
+    report = {
+        **base_report,
+        "safe_external_negative_count": safe_count,
+        "conflict_count": conflict_count,
+        "conflict_rate": conflict_count / len(external_negatives)
+        if external_negatives
+        else 0.0,
+        "nearest_positive_labels": dict(sorted(nearest_positive_labels.items())),
+        "conflicting_negative_labels": dict(sorted(conflicting_negative_labels.items())),
+        "conflicts": [
+            row.__dict__
+            for row in sorted(
+                conflicts,
+                key=lambda item: (item.distance_ratio, item.negative_label, item.path),
+            )[: max(0, int(max_report_rows))]
+        ],
+        "status": "ok",
+    }
+    return filtered, report
 
 
 def split_records(
@@ -226,6 +353,27 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         target_dim=args.target_dim,
         target_frames=args.target_frames,
     )
+    conflict_report = {
+        "enabled": False,
+        "status": "disabled",
+        "conflict_count": 0,
+        "conflict_rate": 0.0,
+        "external_negative_total": 0,
+        "safe_external_negative_count": 0,
+    }
+    if args.include_external_negatives and not args.disable_negative_conflict_filter:
+        records, conflict_report = filter_conflicting_external_negatives(
+            records,
+            external_negative_root=args.external_negative_root,
+            method=args.negative_conflict_method,
+            target_dim=args.target_dim,
+            target_frames=args.target_frames,
+            max_prototypes_per_label=args.max_prototypes_per_label,
+            threshold_multiplier=args.threshold_multiplier,
+            threshold_floor=args.threshold_floor,
+            conflict_margin=args.negative_conflict_margin,
+            max_report_rows=args.negative_conflict_max_report_rows,
+        )
     train, test = split_records(
         records,
         seed=args.seed,
@@ -252,6 +400,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "model_path": str(variant_dir / "dynamic_prototypes.json"),
             "attempts": [row.__dict__ for row in attempts],
             "thresholds": payload.get("thresholds", {}),
+            "negative_conflict_filter": conflict_report,
         }
         reports.append(report)
         _log_mlflow(report, payload, args)
@@ -280,6 +429,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         "records_by_label": _counts(records),
         "train_by_label": _counts(train),
         "test_by_label": _counts(test),
+        "negative_conflict_filter": conflict_report,
         "best_method": best["method"],
         "reports": reports,
         "production_out": str(args.production_out) if args.write_production else "",
@@ -366,6 +516,32 @@ def _levenshtein(left: list[str], right: list[str]) -> int:
     return dp[rows][cols]
 
 
+def _safe_resolve(path: Path | str | None) -> Path | None:
+    if path is None:
+        return None
+    try:
+        return Path(path).resolve()
+    except Exception:
+        return Path(path)
+
+
+def _is_under(path: str, root: Path) -> bool:
+    if not path:
+        return False
+    try:
+        Path(path).resolve().relative_to(root)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_float(value: Any, *, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _render_markdown(summary: dict[str, Any]) -> str:
     lines = [
         "# Dynamic Prototype Comparison",
@@ -375,11 +551,47 @@ def _render_markdown(summary: dict[str, Any]) -> str:
         f"- Test samples: `{summary['test_count']}`",
         f"- External negatives: `{summary['include_external_negatives']}`",
         "",
+        "## Negative Conflict Filter",
+        "",
+    ]
+    conflict = summary.get("negative_conflict_filter") or {}
+    if conflict.get("enabled"):
+        lines.extend(
+            [
+                f"- Status: `{conflict.get('status', '')}`",
+                f"- Method: `{conflict.get('method', '')}`",
+                f"- Conflict margin: `{float(conflict.get('conflict_margin') or 0.0):.2f}`",
+                f"- External negatives: `{int(conflict.get('external_negative_total') or 0)}`",
+                f"- Safe external negatives: `{int(conflict.get('safe_external_negative_count') or 0)}`",
+                f"- Conflicts removed: `{int(conflict.get('conflict_count') or 0)}`",
+                f"- Conflict rate: `{float(conflict.get('conflict_rate') or 0.0):.4f}`",
+                "",
+            ]
+        )
+        if conflict.get("conflicting_negative_labels"):
+            lines.extend(
+                [
+                    "| Negative label | Conflicts |",
+                    "|---|---:|",
+                    *[
+                        f"| `{label}` | {count} |"
+                        for label, count in sorted(
+                            conflict["conflicting_negative_labels"].items()
+                        )
+                    ],
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- Status: `disabled`", ""])
+    lines.extend(
+        [
         "## Method Metrics",
         "",
         "| Method | Overall | Positive recall | Negative reject | Negative FP | Sequence accuracy | Edit distance |",
         "|---|---:|---:|---:|---:|---:|---:|",
-    ]
+        ]
+    )
     for report in summary["reports"]:
         metrics = report["metrics"]
         lines.append(
@@ -446,12 +658,25 @@ def _log_mlflow(
                     "target_frames": args.target_frames,
                     "max_prototypes_per_label": args.max_prototypes_per_label,
                     "include_external_negatives": args.include_external_negatives,
+                    "negative_conflict_filter_enabled": not args.disable_negative_conflict_filter,
+                    "negative_conflict_method": args.negative_conflict_method,
+                    "negative_conflict_margin": args.negative_conflict_margin,
                     "prototype_count": len(payload.get("prototypes", [])),
                 }
             )
             for key, value in report["metrics"].items():
                 if isinstance(value, (int, float)):
                     mlflow.log_metric(key, float(value))
+            conflict = report.get("negative_conflict_filter") or {}
+            for key in (
+                "external_negative_total",
+                "safe_external_negative_count",
+                "conflict_count",
+                "conflict_rate",
+            ):
+                value = conflict.get(key)
+                if isinstance(value, (int, float)):
+                    mlflow.log_metric(f"negative_{key}", float(value))
             mlflow.log_dict(report, "dynamic_prototype_report.json")
             model_path = Path(report["model_path"])
             if model_path.exists():
@@ -468,6 +693,13 @@ def _parse_methods(raw: str) -> list[str]:
         if method not in SUPPORTED_DYNAMIC_PROTOTYPE_METHODS:
             raise ValueError(f"unsupported method: {method}")
     return methods
+
+
+def _parse_method(raw: str) -> str:
+    method = str(raw or "").strip().lower()
+    if method not in SUPPORTED_DYNAMIC_PROTOTYPE_METHODS:
+        raise ValueError(f"unsupported method: {raw}")
+    return method
 
 
 def parse_args() -> argparse.Namespace:
@@ -491,6 +723,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-prototypes-per-label", type=int, default=8)
     parser.add_argument("--threshold-multiplier", type=float, default=1.25)
     parser.add_argument("--threshold-floor", type=float, default=0.015)
+    parser.add_argument("--disable-negative-conflict-filter", action="store_true")
+    parser.add_argument(
+        "--negative-conflict-method",
+        type=_parse_method,
+        default=METHOD_PROTOTYPE_DISTANCE,
+    )
+    parser.add_argument("--negative-conflict-margin", type=float, default=1.20)
+    parser.add_argument("--negative-conflict-max-report-rows", type=int, default=100)
     parser.add_argument("--variant-root", type=Path, default=DEFAULT_VARIANT_ROOT)
     parser.add_argument("--base-models-dir", type=Path, default=DEFAULT_BASE_MODELS_DIR)
     parser.add_argument("--write-production", action="store_true")

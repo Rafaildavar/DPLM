@@ -8,6 +8,9 @@ from cv.dynamic_prototype import (
     fit_dynamic_prototype_model,
     predict_dynamic_prototype,
 )
+from scripts.dynamic_prototype_experiments import (
+    filter_conflicting_external_negatives,
+)
 
 
 def _sequence(xs, ys=None):
@@ -105,3 +108,46 @@ def test_online_dynamic_prediction_uses_prototype_as_reject_verifier():
     assert confidence == 0.0
     assert infer._last_dynamic_decision["source"] == "prototype_rejected"
     assert infer._last_dynamic_decision["prototype_reason"] == "nearest_negative"
+
+
+def test_external_negative_conflict_filter_keeps_user_positive_priority(tmp_path):
+    external_root = tmp_path / "external" / "ipn_hand"
+    negative_dir = external_root / "negative_external_ipn_dynamic"
+    negative_dir.mkdir(parents=True)
+    conflict_path = negative_dir / "sample_conflict.npy"
+    safe_path = negative_dir / "sample_safe.npy"
+    np.save(conflict_path, _left_sequence())
+    np.save(safe_path, _right_sequence())
+
+    records = [
+        DynamicSequenceRecord("swipe_left", _left_sequence(14), path="internal/a.npy"),
+        DynamicSequenceRecord("swipe_left", _left_sequence(22), path="internal/b.npy"),
+        DynamicSequenceRecord(
+            "negative_external_ipn_dynamic",
+            _left_sequence(18),
+            path=str(conflict_path),
+            is_negative=True,
+        ),
+        DynamicSequenceRecord(
+            "negative_external_ipn_dynamic",
+            _right_sequence(18),
+            path=str(safe_path),
+            is_negative=True,
+        ),
+    ]
+
+    filtered, report = filter_conflicting_external_negatives(
+        records,
+        external_negative_root=external_root,
+        threshold_floor=0.001,
+        conflict_margin=1.2,
+    )
+
+    paths = {record.path for record in filtered}
+    assert str(conflict_path) not in paths
+    assert str(safe_path) in paths
+    assert report["conflict_count"] == 1
+    assert report["safe_external_negative_count"] == 1
+    assert report["conflicting_negative_labels"] == {
+        "negative_external_ipn_dynamic": 1
+    }

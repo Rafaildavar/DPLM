@@ -2902,3 +2902,58 @@ Live-замеры пользователя:
   - rerun `PYTHON=.venv/bin/python make ipn-external-analysis`;
   - сравнить `baseline_internal` vs `ipn_external_expanded`;
   - включать expanded IPN только в dynamic rejection stage.
+
+### H-057: External negatives должны быть conflict-aware относительно пользовательских жестов
+
+Статус: `implemented`, smoke validated
+
+Дата: `2026-06-29`
+
+Проблема:
+- Пользователь может записать любой новый dynamic gesture.
+- External negative из IPN не должен навсегда означать "запрещенное движение".
+- Если новый пользовательский жест похож на IPN negative, positive sample
+  пользователя должен иметь приоритет.
+
+Решение:
+- В `scripts.dynamic_prototype_experiments` добавлен
+  `filter_conflicting_external_negatives`.
+- Перед train/test split строится prototype model только по пользовательским
+  positive dynamic gestures.
+- Каждый external negative сравнивается с nearest positive prototype.
+- Если `distance <= positive_threshold * conflict_margin`, sample исключается
+  из negative training для текущей модели и попадает в conflict/reference
+  отчет.
+
+Параметры:
+- default method: `prototype_distance`;
+- default conflict margin: `1.20`;
+- override через CLI:
+  - `--negative-conflict-method`;
+  - `--negative-conflict-margin`;
+  - `--disable-negative-conflict-filter`.
+
+MLOps:
+- В MLflow и JSON/Markdown отчет теперь пишутся:
+  - `negative_external_negative_total`;
+  - `negative_safe_external_negative_count`;
+  - `negative_conflict_count`;
+  - `negative_conflict_rate`;
+  - `nearest_positive_labels`;
+  - `conflicting_negative_labels`.
+
+Smoke result на текущих данных:
+- external negatives: `200`;
+- safe external negatives: `200`;
+- conflicts removed: `0`;
+- conflict rate: `0.0000`;
+- dynamic prototype result:
+  - overall success: `0.9892`;
+  - positive recall: `0.9444`;
+  - negative reject rate: `1.0000`;
+  - negative false positive rate: `0.0000`.
+
+Вывод:
+- Текущий IPN subset не конфликтует с `swipe_up`, `swipe_down`, `swipe_left`.
+- При добавлении нового пользовательского жеста похожие external negatives
+  будут автоматически исключаться из training scope, а не ломать распознавание.
