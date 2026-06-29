@@ -11,9 +11,8 @@ GUI-агностичный контроллер для Flet-версии DPLM.
     * выполнение команд (``CommandExecutor``);
     * (лениво) связку с БД и привязками жестов.
 
-Кадр камеры отдаётся UI как JPEG-байты (Flet ``Image`` умеет ``src_base64``).
-Цикл захвата работает в отдельном потоке — Flet UI обновляется через
-``page.update()`` из callback'а.
+Кадр камеры отдаётся UI как JPEG-байты, но Flet-preview отделён от ML:
+захват и распознавание идут по свежему кадру, а UI-доставка работает отдельно.
 """
 from __future__ import annotations
 
@@ -27,6 +26,8 @@ import tempfile
 import threading
 import time
 import json
+import zlib
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
 from typing import Any, Callable, Optional
@@ -45,6 +46,12 @@ from app.services.gesture_taxonomy import (
     labels_for_gesture_types,
     load_gesture_taxonomy,
     parse_gesture_type_scope,
+)
+from cv.gesture_dataset_files import (
+    augmented_sample_paths,
+    gesture_sample_paths,
+    real_sample_paths,
+    sample_source_from_path,
 )
 
 
@@ -269,6 +276,8 @@ DYNAMIC_OPPOSITE_LABELS = {
 SAMPLE_RECORDING_READY_FRAMES = 6
 SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
+SAMPLE_RECORDING_STATIC_AUGMENTATIONS = 0
+SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS = 0
 DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
 DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
 LIVE_EVAL_DEFAULT_ATTEMPTS = 10
@@ -284,6 +293,13 @@ CAMERA_PREVIEW_MAX_FPS = 30.0
 CAMERA_PREVIEW_JPEG_QUALITY = 62
 CAMERA_PREVIEW_DISABLE_ENV = "DPLM_DISABLE_CAMERA_PREVIEW"
 RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
+
+
+@dataclass(frozen=True)
+class _CameraFrame:
+    sequence: int
+    frame_bgr: Any
+    captured_at: float
 
 
 def _camera_preview_enabled() -> bool:
@@ -397,11 +413,15 @@ class AppController:
         # Камера -------------------------------------------------------------
         self._camera_cap: Any | None = None
         self._camera_thread: threading.Thread | None = None
+        self._camera_preview_thread: threading.Thread | None = None
         self._camera_stop = threading.Event()
         self._frame_lock = threading.Lock()
         self._latest_jpeg_bytes: bytes = b""
         self._frame_w = 0
         self._frame_h = 0
+        self._camera_frame_seq = 0
+        self._preview_condition = threading.Condition()
+        self._latest_preview_frame: _CameraFrame | None = None
         self._target_fps = int(self._config.recognition.target_fps)
         self._runtime_inference_samples: list[dict[str, Any]] = []
         self._runtime_perf_last_flush = time.monotonic()
@@ -3004,19 +3024,38 @@ class AppController:
             return
 
         self._camera_cap = cap
+        self._camera_frame_seq = 0
+        with self._preview_condition:
+            self._latest_preview_frame = None
         self._camera_stop.clear()
         self._camera_thread = threading.Thread(
-            target=self._camera_loop, name="dplm-camera", daemon=True
+            target=self._camera_capture_loop, name="dplm-camera-capture", daemon=True
         )
+        if _camera_preview_enabled():
+            self._camera_preview_thread = threading.Thread(
+                target=self._camera_preview_loop,
+                name="dplm-camera-preview",
+                daemon=True,
+            )
+        else:
+            self._camera_preview_thread = None
         self._camera_thread.start()
+        if self._camera_preview_thread is not None:
+            self._camera_preview_thread.start()
         self._set_camera_active(True)
         self._set_status("Camera: streaming")
         print("[✓] Flet: камера открыта")
 
     def stop_camera(self) -> None:
-        if not self._is_camera_active and not self._camera_thread:
+        if (
+            not self._is_camera_active
+            and not self._camera_thread
+            and not self._camera_preview_thread
+        ):
             return
         self._camera_stop.set()
+        with self._preview_condition:
+            self._preview_condition.notify_all()
         cap = self._camera_cap
         self._camera_cap = None
         if cap is not None:
@@ -3024,10 +3063,17 @@ class AppController:
                 cap.release()
             except Exception:
                 pass
-        t = self._camera_thread
-        if t is not None:
-            t.join(timeout=2.0)
+        current_thread = threading.current_thread()
+        for t in (
+            self._camera_thread,
+            self._camera_preview_thread,
+        ):
+            if t is not None and t is not current_thread:
+                t.join(timeout=2.0)
         self._camera_thread = None
+        self._camera_preview_thread = None
+        with self._preview_condition:
+            self._latest_preview_frame = None
         with self._frame_lock:
             self._latest_jpeg_bytes = b""
             self._frame_w = 0
@@ -3039,25 +3085,17 @@ class AppController:
             self._set_status("Stopped")
         print("[i] Flet: камера остановлена")
 
-    def _camera_loop(self) -> None:
-        """Фоновый поток: читает кадры, кодирует в JPEG, кладёт base64."""
-        import cv2
-        import numpy as np
+    def _publish_preview_frame(self, frame: _CameraFrame) -> None:
+        with self._preview_condition:
+            self._latest_preview_frame = frame
+            self._preview_condition.notify()
 
-        frame_interval = 1.0 / float(self._target_fps)
-        preview_enabled = _camera_preview_enabled()
-        preview_interval = 1.0 / max(
-            1.0,
-            min(float(self._target_fps), CAMERA_PREVIEW_MAX_FPS),
-        )
-        inference_interval = 1.0 / max(
-            1.0,
-            min(float(self._target_fps), CAMERA_INFERENCE_MAX_FPS),
-        )
+    def _camera_capture_loop(self) -> None:
+        """Read fresh camera frames and run ML immediately; Flet preview is separate."""
+        import cv2
+
+        frame_interval = 1.0 / max(1.0, float(self._target_fps))
         next_t = time.monotonic()
-        next_preview_t = next_t
-        next_inference_t = next_t
-        last_landmarks_json = "[]"
 
         while not self._camera_stop.is_set():
             cap = self._camera_cap
@@ -3068,81 +3106,134 @@ class AppController:
                 time.sleep(0.01)
                 continue
 
-            frame_bgr = cv2.flip(frame_bgr, 1)
-            landmarks_json = last_landmarks_json
-
-            if self._sample_recording is not None:
-                try:
-                    recording_landmarks = self._process_sample_recording_frame(frame_bgr)
-                    if recording_landmarks:
-                        landmarks_json = recording_landmarks
-                        last_landmarks_json = recording_landmarks
-                except Exception as e:
-                    print(f"[!] embedded recording frame error: {e}")
-                    self._finish_sample_recording(1, f"[!] Ошибка записи сэмпла: {e}")
-
-            # Видео может идти чаще, чем ML inference. Для smooth-preview
-            # режима держим camera loop лёгким, а MediaPipe запускаем
-            # по отдельному лимиту FPS.
-            inference_now = time.monotonic()
-            should_run_inference = (
-                self._embedded_active
-                and self._sample_recording is None
-                and inference_now >= next_inference_t
+            self._camera_frame_seq += 1
+            frame = _CameraFrame(
+                sequence=int(self._camera_frame_seq),
+                frame_bgr=cv2.flip(frame_bgr, 1),
+                captured_at=time.monotonic(),
             )
-            if should_run_inference:
-                next_inference_t = inference_now + inference_interval
-                try:
-                    if self._embedded_infer is None:
-                        self._embedded_infer = self._create_embedded_infer()
-                    if self._embedded_infer is not None:
-                        camera_h, camera_w = frame_bgr.shape[:2]
-                        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                        rgb = _resize_frame_to_max_width(
-                            rgb,
-                            CAMERA_INFERENCE_MAX_WIDTH,
-                        )
-                        rgb = np.ascontiguousarray(rgb)
-                        out = self._embedded_infer.process_frame_rgb(rgb)
-                        if out is not None:
-                            perf = out.get("performance")
-                            if isinstance(perf, dict):
-                                inference_h, inference_w = rgb.shape[:2]
-                                perf.update(
-                                    {
-                                        "camera_frame_width": int(camera_w),
-                                        "camera_frame_height": int(camera_h),
-                                        "inference_frame_width": int(inference_w),
-                                        "inference_frame_height": int(inference_h),
-                                        "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
-                                        "preview_enabled": bool(preview_enabled),
-                                        "inference_max_fps": float(
-                                            CAMERA_INFERENCE_MAX_FPS
-                                        ),
-                                        "dynamic_window_frames": int(
-                                            DYNAMIC_RECOGNITION_WINDOW
-                                        ),
-                                    }
-                                )
-                            landmarks_json = out.get("landmarks_json") or "[]"
-                            last_landmarks_json = landmarks_json
-                            self._dispatch_infer_result(out)
-                except Exception as e:
-                    print(f"[!] embedded CV frame error: {e}")
-            elif not self._embedded_active and self._sample_recording is None:
-                landmarks_json = "[]"
-                last_landmarks_json = "[]"
+            self._process_camera_frame_for_ml(frame)
+            self._publish_preview_frame(frame)
 
-            preview_now = time.monotonic()
-            if preview_enabled and preview_now >= next_preview_t:
+            after_work = time.monotonic()
+            next_t += frame_interval
+            sleep = next_t - after_work
+            if sleep > 0:
+                time.sleep(sleep)
+            else:
+                next_t = after_work
+
+    def _process_camera_frame_for_ml(
+        self,
+        frame: _CameraFrame,
+    ) -> None:
+        import cv2
+        import numpy as np
+
+        frame_bgr = frame.frame_bgr
+        if self._sample_recording is not None:
+            try:
+                recording_landmarks = self._process_sample_recording_frame(frame_bgr)
+                if recording_landmarks:
+                    self._set_landmarks(recording_landmarks)
+            except Exception as e:
+                print(f"[!] embedded recording frame error: {e}")
+                self._finish_sample_recording(1, f"[!] Ошибка записи сэмпла: {e}")
+            return
+
+        if not self._embedded_active:
+            self._set_landmarks("[]")
+            return
+
+        try:
+            if self._embedded_infer is None:
+                self._embedded_infer = self._create_embedded_infer()
+            if self._embedded_infer is None:
+                return
+
+            camera_h, camera_w = frame_bgr.shape[:2]
+            rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            rgb = _resize_frame_to_max_width(
+                rgb,
+                CAMERA_INFERENCE_MAX_WIDTH,
+            )
+            rgb = np.ascontiguousarray(rgb)
+            inference_started_at = time.monotonic()
+            out = self._embedded_infer.process_frame_rgb(rgb)
+            if out is None:
+                return
+            perf = out.get("performance")
+            if isinstance(perf, dict):
+                inference_h, inference_w = rgb.shape[:2]
+                perf.update(
+                    {
+                        "camera_frame_width": int(camera_w),
+                        "camera_frame_height": int(camera_h),
+                        "camera_frame_sequence": int(frame.sequence),
+                        "inference_frame_width": int(inference_w),
+                        "inference_frame_height": int(inference_h),
+                        "preview_max_fps": float(CAMERA_PREVIEW_MAX_FPS),
+                        "preview_enabled": bool(_camera_preview_enabled()),
+                        "inference_max_fps": float(
+                            max(float(self._target_fps), CAMERA_INFERENCE_MAX_FPS)
+                        ),
+                        "inference_frame_policy": "fresh_capture_loop",
+                        "inference_queue_depth": 0,
+                        "capture_to_inference_ms": round(
+                            max(0.0, inference_started_at - frame.captured_at) * 1000.0,
+                            3,
+                        ),
+                        "dynamic_window_frames": int(DYNAMIC_RECOGNITION_WINDOW),
+                    }
+                )
+            self._dispatch_infer_result(out)
+        except Exception as e:
+            print(f"[!] embedded CV frame error: {e}")
+
+    def _camera_preview_loop(self) -> None:
+        """Encode latest camera frame for Flet; skipped preview frames do not hit ML."""
+        import cv2
+
+        preview_interval = 1.0 / max(
+            1.0,
+            min(float(self._target_fps), CAMERA_PREVIEW_MAX_FPS),
+        )
+        next_preview_t = time.monotonic()
+        last_sequence = 0
+
+        while not self._camera_stop.is_set():
+            with self._preview_condition:
+                self._preview_condition.wait_for(
+                    lambda: (
+                        self._camera_stop.is_set()
+                        or (
+                            self._latest_preview_frame is not None
+                            and self._latest_preview_frame.sequence != last_sequence
+                        )
+                    ),
+                    timeout=preview_interval,
+                )
+                if self._camera_stop.is_set():
+                    break
+
+            now = time.monotonic()
+            sleep = next_preview_t - now
+            if sleep > 0:
+                time.sleep(min(sleep, preview_interval))
+
+            with self._preview_condition:
+                frame = self._latest_preview_frame
+            if frame is None or frame.sequence == last_sequence:
+                continue
+
+            try:
                 preview_frame = _resize_frame_to_max_width(
-                    frame_bgr,
+                    frame.frame_bgr.copy(),
                     CAMERA_PREVIEW_MAX_WIDTH,
                 )
-                self._draw_landmarks_on_frame(preview_frame, landmarks_json)
+                self._draw_landmarks_on_frame(preview_frame, self._landmarks_json)
                 self._draw_sample_recording_overlay_on_frame(preview_frame)
 
-                # Keep ML at target FPS, but cap JPEG/base64/Flet preview work.
                 ok2, buf = cv2.imencode(
                     ".jpg",
                     preview_frame,
@@ -3154,17 +3245,11 @@ class AppController:
                         self._latest_jpeg_bytes = data
                         self._frame_h, self._frame_w = preview_frame.shape[:2]
                     self.camera_frame_updated.emit()
-                next_preview_t = preview_now + preview_interval
-            elif not preview_enabled:
-                next_preview_t = preview_now + preview_interval
+                    last_sequence = frame.sequence
+            except Exception as e:
+                print(f"[!] Flet preview frame error: {e}")
 
-            after_work = time.monotonic()
-            next_t += frame_interval
-            sleep = next_t - after_work
-            if sleep > 0:
-                time.sleep(sleep)
-            else:
-                next_t = after_work  # отстаём — сбрасываем расписание
+            next_preview_t = time.monotonic() + preview_interval
 
     def _hands_landmarks_json(self, hands: list[Any]) -> str:
         payload: list[list[list[float]]] = []
@@ -3243,7 +3328,7 @@ class AppController:
         return self._sample_recording_detector
 
     def _next_sample_path(self, label_dir: Path) -> Path:
-        existing = sorted(label_dir.glob("sample_*.npy"))
+        existing = real_sample_paths(label_dir)
         used: set[int] = set()
         for path in existing:
             try:
@@ -3405,6 +3490,86 @@ class AppController:
         verdict = "OK" if report.get("ok") else "WARN: " + ",".join(report["warnings"])
         return f"[✓] Сохранено: {path} | {' '.join(parts)} | {verdict}"
 
+    def _sample_recording_seed(self, label: str, path: Path) -> int:
+        payload = f"{label}:{path.name}".encode("utf-8", errors="ignore")
+        return int(zlib.crc32(payload) & 0xFFFFFFFF)
+
+    def _json_safe_sample_report(self, report: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, value in report.items():
+            if isinstance(value, tuple):
+                out[key] = [int(item) for item in value]
+            elif isinstance(value, list):
+                out[key] = [str(item) for item in value]
+            elif isinstance(value, bool):
+                out[key] = bool(value)
+            elif isinstance(value, int):
+                out[key] = int(value)
+            elif isinstance(value, float):
+                out[key] = float(value)
+            elif value is None:
+                out[key] = None
+            else:
+                out[key] = str(value)
+        return out
+
+    def _write_sample_metadata(
+        self,
+        path: Path,
+        metadata: dict[str, Any],
+        on_line: Optional[Callable[[str], None]],
+    ) -> None:
+        try:
+            path.with_suffix(".meta.json").write_text(
+                json.dumps(metadata, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            if on_line:
+                on_line(f"[w] Не удалось сохранить metadata: {exc}")
+
+    def _sample_metadata_payload(
+        self,
+        *,
+        session: dict[str, Any],
+        path: Path,
+        arr: Any,
+        kind: str,
+        report: dict[str, Any],
+        projected_hand_scale: float | None,
+        source_path: Path | None = None,
+        transform: str = "",
+        transform_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": 2,
+            "label": str(session.get("label") or ""),
+            "sample": path.name,
+            "kind": kind,
+            "source": "camera",
+            "source_sample": "",
+            "transform": transform,
+            "transform_metadata": transform_metadata or {},
+            "frames": int(arr.shape[0]),
+            "raw_feature_dim": int(arr.reshape(arr.shape[0], -1).shape[1]),
+            "two_hands": bool(session.get("two_hands")),
+            "include_global_motion": bool(session.get("include_global_motion")),
+            "projected_hand_scale_median": projected_hand_scale,
+            "quality": self._json_safe_sample_report(report),
+            "recorded_at": time.time(),
+        }
+
+    def _write_augmented_recording_samples(
+        self,
+        *,
+        session: dict[str, Any],
+        source_path: Path,
+        arr: Any,
+        projected_hand_scale: float | None,
+        on_line: Optional[Callable[[str], None]],
+    ) -> int:
+        return 0
+
     def _process_sample_recording_frame(self, frame_bgr: Any) -> str:
         import cv2
         import numpy as np
@@ -3528,46 +3693,47 @@ class AppController:
             projected_hand_scale = (
                 float(np.median(scales)) if scales else None
             )
-            metadata = {
-                "schema_version": 1,
-                "label": str(session.get("label") or ""),
-                "sample": out_path.name,
-                "frames": int(arr.shape[0]),
-                "raw_feature_dim": int(arr.shape[1]),
-                "projected_hand_scale_median": projected_hand_scale,
-                "projected_hand_scale_min": min(scales) if scales else None,
-                "projected_hand_scale_max": max(scales) if scales else None,
-                "recorded_at": time.time(),
-            }
-            try:
-                out_path.with_suffix(".meta.json").write_text(
-                    json.dumps(metadata, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            except OSError as exc:
-                if on_line:
-                    on_line(f"[w] Не удалось сохранить metadata: {exc}")
         report = self._sample_quality_report(
             arr,
             label=str(session.get("label") or ""),
             include_global_motion=bool(session.get("include_global_motion")),
         )
         report["projected_hand_scale"] = projected_hand_scale
+        self._write_sample_metadata(
+            out_path,
+            self._sample_metadata_payload(
+                session=session,
+                path=out_path,
+                arr=arr,
+                kind="real",
+                report=report,
+                projected_hand_scale=projected_hand_scale,
+            ),
+            on_line,
+        )
+        augmented_saved = self._write_augmented_recording_samples(
+            session=session,
+            source_path=out_path,
+            arr=arr,
+            projected_hand_scale=projected_hand_scale,
+            on_line=on_line,
+        )
         session["saved"] = int(session["saved"]) + 1
         session["frames_buf"] = []
         session["frame_scales"] = []
         self._reset_sample_recording_ready_gate(session)
         reports = session.setdefault("quality_reports", [])
-        reports.append({"path": out_path.name, **report})
+        reports.append({"path": out_path.name, "augmented": augmented_saved, **report})
         session["next_allowed_at"] = now + 0.45
         verdict = "OK" if report["ok"] else "WARN"
-        session["last_message"] = f"Сохранено: {out_path.name} ({verdict})"
+        aug_suffix = f", +{augmented_saved} aug" if augmented_saved else ""
+        session["last_message"] = f"Сохранено: {out_path.name} ({verdict}{aug_suffix})"
         if on_line:
             on_line(self._format_sample_quality_line(out_path, report))
         self._emit_sample_recording_changed(
             session,
             active=True,
-            message=f"Сохранено: {out_path.name} ({verdict})",
+            message=f"Сохранено: {out_path.name} ({verdict}{aug_suffix})",
         )
 
         if int(session["saved"]) >= int(session["target"]):
@@ -3631,7 +3797,9 @@ class AppController:
             except Exception:
                 pass
 
-        if self._status.startswith("Запись"):
+        if bool(session.get("started_camera_for_recording")) and self._is_camera_active:
+            self.stop_camera()
+        elif self._status.startswith("Запись"):
             self._set_status("Camera: streaming" if self._is_camera_active else "Idle")
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
@@ -3755,12 +3923,24 @@ class AppController:
                 "inference_frame_height": int(
                     performance.get("inference_frame_height") or 0
                 ),
+                "camera_frame_sequence": int(
+                    performance.get("camera_frame_sequence") or 0
+                ),
                 "preview_max_fps": float(
                     performance.get("preview_max_fps") or CAMERA_PREVIEW_MAX_FPS
                 ),
                 "preview_enabled": bool(performance.get("preview_enabled", True)),
                 "inference_max_fps": float(
                     performance.get("inference_max_fps") or CAMERA_INFERENCE_MAX_FPS
+                ),
+                "inference_frame_policy": str(
+                    performance.get("inference_frame_policy") or ""
+                ),
+                "inference_queue_depth": int(
+                    performance.get("inference_queue_depth") or 0
+                ),
+                "capture_to_inference_ms": float(
+                    performance.get("capture_to_inference_ms") or 0.0
                 ),
                 "dynamic_window_frames": int(
                     performance.get("dynamic_window_frames")
@@ -3779,6 +3959,9 @@ class AppController:
 
         total_values = sorted(item["total_inference_ms"] for item in samples)
         detection_values = sorted(item["detection_ms"] for item in samples)
+        capture_latency_values = sorted(
+            item["capture_to_inference_ms"] for item in samples
+        )
         p95_index = min(
             len(total_values) - 1,
             max(0, int(round((len(total_values) - 1) * 0.95))),
@@ -3803,6 +3986,21 @@ class AppController:
             "camera_frame_height": int(last_sample.get("camera_frame_height") or 0),
             "inference_frame_width": int(last_sample.get("inference_frame_width") or 0),
             "inference_frame_height": int(last_sample.get("inference_frame_height") or 0),
+            "camera_frame_sequence": int(last_sample.get("camera_frame_sequence") or 0),
+            "inference_frame_policy": str(
+                last_sample.get("inference_frame_policy") or ""
+            ),
+            "inference_queue_depth_max": int(
+                max(item["inference_queue_depth"] for item in samples)
+            ),
+            "capture_to_inference_ms_avg": round(
+                sum(capture_latency_values) / len(capture_latency_values),
+                3,
+            ),
+            "capture_to_inference_ms_p95": round(
+                capture_latency_values[p95_index],
+                3,
+            ),
             "samples": len(samples),
             "shared_detection_rate": round(
                 sum(1 for item in samples if item["shared_detection"]) / len(samples),
@@ -4435,13 +4633,6 @@ class AppController:
                 .order_by(DbGesture.label)
                 .all()
             )
-            rows = [
-                row
-                for row in rows
-                if getattr(row, "model_class_id", None) is not None
-                or str(getattr(row, "label", "") or "").strip().lower()
-                in trained_classes
-            ]
             current = {
                 row.gesture_id: row
                 for row in session.query(DbCommand)
@@ -4450,6 +4641,25 @@ class AppController:
             }
             out: list[dict[str, Any]] = []
             for g in rows:
+                try:
+                    sample_count = len(getattr(g, "samples", []) or [])
+                except Exception:
+                    sample_count = 0
+                clean_label = str(getattr(g, "label", "") or "").strip().lower()
+                samples_path = str(getattr(g, "samples_path", "") or "").strip()
+                has_dataset_path = False
+                if samples_path:
+                    try:
+                        has_dataset_path = self._configured_path(samples_path).exists()
+                    except Exception:
+                        has_dataset_path = bool(samples_path)
+                if (
+                    getattr(g, "model_class_id", None) is None
+                    and clean_label not in trained_classes
+                    and sample_count <= 0
+                    and not has_dataset_path
+                ):
+                    continue
                 command = current.get(g.id)
                 action_spec: dict[str, Any] = {}
                 raw_spec = (
@@ -4464,10 +4674,6 @@ class AppController:
                             action_spec = loaded
                     except json.JSONDecodeError:
                         action_spec = {}
-                try:
-                    sample_count = len(getattr(g, "samples", []) or [])
-                except Exception:
-                    sample_count = 0
                 out.append(
                     {
                         "id": int(g.id),
@@ -4778,7 +4984,7 @@ class AppController:
         seen_labels: set[str] = set()
         try:
             for label_dir in sorted(p for p in data_root.iterdir() if p.is_dir()):
-                samples = sorted(label_dir.glob("sample_*.npy"))
+                samples = gesture_sample_paths(label_dir)
                 if not samples:
                     continue
                 raw_label = label_dir.name
@@ -4834,7 +5040,7 @@ class AppController:
                         features_path=sample_path,
                         frames=frames,
                         hand_count=hand_count,
-                        source="dataset",
+                        source=sample_source_from_path(sample_path),
                         samples_path=label_dir,
                         is_two_hands=is_two_hands,
                         commit=False,
@@ -4861,10 +5067,18 @@ class AppController:
         if not root.exists():
             return out
         for label_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-            samples = sorted(label_dir.glob("sample_*.npy"))
-            if not samples:
+            real_samples = real_sample_paths(label_dir)
+            augmented_samples = augmented_sample_paths(label_dir)
+            if not real_samples:
                 continue
-            out.append({"label": label_dir.name, "samples": len(samples)})
+            out.append(
+                {
+                    "label": label_dir.name,
+                    "samples": len(real_samples),
+                    "realSamples": len(real_samples),
+                    "augmentedSamples": len(augmented_samples),
+                }
+            )
         return out
 
     def _label_dir_for_dataset_label(self, label: str) -> Path | None:
@@ -4915,7 +5129,7 @@ class AppController:
 
         data_root = self._configured_data_dir()
         label_dir = self._label_dir_for_dataset_label(raw_label)
-        file_paths: set[Path] = set(label_dir.glob("sample_*.npy")) if label_dir else set()
+        file_paths: set[Path] = set(gesture_sample_paths(label_dir)) if label_dir else set()
 
         try:
             if not self._db_initialized:
@@ -5075,6 +5289,14 @@ class AppController:
         if not clean:
             return False
 
+        if include_global_motion:
+            try:
+                self._ensure_dynamic_label_in_taxonomy(clean, on_line=on_line)
+            except Exception as e:
+                if on_line:
+                    on_line(f"[w] Не удалось обновить dynamic taxonomy: {e}")
+
+        camera_was_active = bool(self._is_camera_active)
         self.stop_recognition()
         self.stop_embedded_recognition()
 
@@ -5082,12 +5304,19 @@ class AppController:
         out_dir = data_dir / clean
         target_samples = max(1, int(num_samples))
         target_frames = max(1, int(frames))
+        augment_count = (
+            SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS
+            if include_global_motion
+            else SAMPLE_RECORDING_STATIC_AUGMENTATIONS
+        )
         session = {
             "label": clean,
             "target": target_samples,
             "frames": target_frames,
             "two_hands": bool(two_hands),
             "include_global_motion": bool(include_global_motion),
+            "augment_count": augment_count,
+            "started_camera_for_recording": False,
             "saved": 0,
             "frames_buf": [],
             "frame_scales": [],
@@ -5130,11 +5359,72 @@ class AppController:
 
         if not self._is_camera_active:
             self.start_camera()
+            with self._sample_recording_lock:
+                if self._sample_recording is session:
+                    session["started_camera_for_recording"] = not camera_was_active
         if not self._is_camera_active:
             self._finish_sample_recording(1, "[!] Камера не открылась, запись остановлена")
             return False
 
         self._set_status(f"Запись жеста: {clean}")
+        return True
+
+    def _ensure_dynamic_label_in_taxonomy(
+        self,
+        label: str,
+        *,
+        on_line: Optional[Callable[[str], None]] = None,
+    ) -> bool:
+        clean = str(label or "").strip()
+        if not clean:
+            return False
+
+        taxonomy_path = self._configured_taxonomy_path()
+        if not taxonomy_path.exists():
+            return False
+
+        raw = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return False
+
+        types = raw.setdefault("types", {})
+        if not isinstance(types, dict):
+            return False
+
+        dynamic = types.setdefault(GESTURE_TYPE_DYNAMIC, [])
+        if not isinstance(dynamic, list):
+            dynamic = []
+            types[GESTURE_TYPE_DYNAMIC] = dynamic
+
+        key = clean.lower()
+        changed = False
+        for gesture_type in ("static", "quasi_static"):
+            labels = types.get(gesture_type)
+            if not isinstance(labels, list):
+                continue
+            filtered = [
+                item
+                for item in labels
+                if str(item or "").strip().lower() != key
+            ]
+            if len(filtered) != len(labels):
+                types[gesture_type] = filtered
+                changed = True
+
+        if not any(str(item or "").strip().lower() == key for item in dynamic):
+            dynamic.append(clean)
+            changed = True
+
+        if not changed:
+            return False
+
+        taxonomy_path.write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self._gesture_taxonomy_cache = None
+        if on_line:
+            on_line(f"[i] Taxonomy: «{clean}» помечен как dynamic")
         return True
 
     def start_training(

@@ -225,6 +225,52 @@ def test_build_dynamic_prototype_training_command_uses_external_negatives(
     assert cmd[cmd.index("--mlflow-tracking-uri") + 1] == "sqlite:///tmp_mlflow.db"
 
 
+def test_build_sequence_prototype_training_command_uses_sequence_output(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_sequence_knn.pkl"),
+    )
+
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_sequence_prototypes.json"
+    )
+
+
+def test_build_sequence_mlp_prototype_training_command_uses_own_sequence_output(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_sequence_mlp.pkl"),
+    )
+
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_sequence_mlp_prototypes.json"
+    )
+
+
 def test_dynamic_prototype_training_only_for_dynamic_scope():
     controller = AppController.__new__(AppController)
 
@@ -281,6 +327,43 @@ def test_build_negative_generation_command_uses_configured_paths(monkeypatch, tm
     assert cmd[cmd.index("--manifest-out") + 1].endswith(
         "docs/experiments/negative_sampling_manifest.json"
     )
+
+
+def test_dynamic_recording_marks_label_dynamic_in_taxonomy(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    taxonomy_path = tmp_path / "gesture_taxonomy.json"
+    taxonomy_path.write_text(
+        json.dumps(
+            {
+                "default_type": "static",
+                "types": {
+                    "static": ["circle_clockwise", "palm"],
+                    "quasi_static": [],
+                    "dynamic": ["swipe_left"],
+                    "negative": ["random_motion"],
+                },
+                "patterns": {
+                    "dynamic": ["swipe_*"],
+                    "negative": ["random_*"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    lines = []
+    monkeypatch.setattr(controller, "_configured_taxonomy_path", lambda: taxonomy_path)
+
+    changed = controller._ensure_dynamic_label_in_taxonomy(
+        "circle_clockwise",
+        on_line=lines.append,
+    )
+
+    updated = json.loads(taxonomy_path.read_text(encoding="utf-8"))
+    assert changed is True
+    assert "circle_clockwise" not in updated["types"]["static"]
+    assert "circle_clockwise" in updated["types"]["dynamic"]
+    assert getattr(controller, "_gesture_taxonomy_cache", "not-reset") is None
+    assert any("помечен как dynamic" in line for line in lines)
 
 
 def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
@@ -472,6 +555,56 @@ def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp
         assert session.query(GestureSample).filter_by(gesture_id=gesture.id).count() == 3
 
 
+def test_get_db_gestures_shows_recorded_untrained_samples(monkeypatch, tmp_path):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "Circle"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 21, 2), dtype=np.float32))
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps([]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps([]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label="circle",
+            samples_path=str(label_dir),
+            model_class_id=None,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    rows = controller.get_db_gestures()
+
+    assert [row["label"] for row in rows] == ["circle"]
+    assert rows[0]["sampleCount"] == 1
+
+
 def test_list_recorded_gestures_hides_empty_folders(monkeypatch, tmp_path):
     data_root = tmp_path / "gestures"
     empty_dir = data_root / "EMPTY"
@@ -484,7 +617,14 @@ def test_list_recorded_gestures_hides_empty_folders(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
     monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
 
-    assert controller.list_recorded_gestures() == [{"label": "FULL", "samples": 1}]
+    assert controller.list_recorded_gestures() == [
+        {
+            "label": "FULL",
+            "samples": 1,
+            "realSamples": 1,
+            "augmentedSamples": 0,
+        }
+    ]
 
 
 def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
@@ -526,6 +666,8 @@ def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     assert controller._sample_recording["frames"] == 7
     assert controller._sample_recording["two_hands"] is True
     assert controller._sample_recording["include_global_motion"] is False
+    assert controller._sample_recording["augment_count"] == 0
+    assert controller._sample_recording["started_camera_for_recording"] is True
     assert controller._sample_recording["out_dir"] == tmp_path / "gestures" / "Wave"
     assert controller._status == "Запись жеста: Wave"
     assert any("Встроенная запись" in line for line in lines)
@@ -564,6 +706,38 @@ def test_cancel_sample_recording_closes_session_and_notifies_done():
     assert done_codes == [130]
     assert lines == ["[i] Запись сэмплов остановлена"]
     assert controller._status == "Camera: streaming"
+
+
+def test_finish_sample_recording_stops_camera_owned_by_recording(monkeypatch):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    done_codes = []
+    stopped = []
+    controller._sample_recording_detector = None
+    controller._sample_recording = {
+        "label": "Wave",
+        "on_line": None,
+        "on_done": done_codes.append,
+        "started_camera_for_recording": True,
+    }
+    controller._status = "Запись жеста: Wave"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(controller, "sync_dataset_to_db", lambda: {})
+
+    def stop_camera():
+        stopped.append(True)
+        controller._is_camera_active = False
+        controller._status = "Stopped"
+
+    monkeypatch.setattr(controller, "stop_camera", stop_camera)
+
+    controller._finish_sample_recording(0, "[✓] done")
+
+    assert stopped == [True]
+    assert done_codes == [0]
+    assert controller._sample_recording is None
 
 
 def test_process_sample_recording_frame_saves_npy(monkeypatch, tmp_path):
@@ -623,6 +797,61 @@ def test_process_sample_recording_frame_saves_npy(monkeypatch, tmp_path):
     assert detector.closed is True
     assert done_codes == [0]
     assert any("Сохранено" in line for line in lines)
+
+
+def test_process_sample_recording_frame_does_not_save_positive_augmentations(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "Wave"
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+
+    class FakeDetector:
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            pass
+
+    controller._sample_recording_detector = FakeDetector()
+    controller._sample_recording = {
+        "label": "Wave",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "include_global_motion": False,
+        "augment_count": 2,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": None,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: Wave"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(
+        controller,
+        "sync_dataset_to_db",
+        lambda: {"created": 1, "updated": 0, "total": 1, "samples": 3},
+    )
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    assert (label_dir / "sample_0000.npy").exists()
+    assert not (label_dir / "aug_sample_0000_00.npy").exists()
+    assert not (label_dir / "aug_sample_0000_01.npy").exists()
+    assert done_codes == [0]
 
 
 def test_process_dynamic_sample_recording_frame_saves_global_motion_features(

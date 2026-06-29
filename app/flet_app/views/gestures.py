@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 import flet as ft
@@ -42,6 +43,13 @@ HAND_CONNECTIONS = (
     (13, 17), (17, 18), (18, 19), (19, 20),
     (0, 17),
 )
+ANIMATED_PREVIEW_ENV = "DPLM_GESTURE_ANIMATED_PREVIEWS"
+PREVIEW_CACHE_LIMIT = 48
+
+
+def _animated_previews_enabled() -> bool:
+    value = str(os.environ.get(ANIMATED_PREVIEW_ENV, "")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 class GesturesView:
@@ -144,6 +152,10 @@ class GesturesView:
         )
 
     def on_show(self) -> None:
+        try:
+            self._controller.sync_dataset_to_db()
+        except Exception as exc:
+            print(f"[w] gestures auto-sync failed: {exc}", flush=True)
         self._refresh()
 
     def on_hide(self) -> None:
@@ -375,10 +387,14 @@ class GesturesView:
         if sample_path is None:
             return None
         is_dynamic = self._gesture_type(row) == GESTURE_TYPE_DYNAMIC
+        animated = bool(is_dynamic and _animated_previews_enabled())
         try:
-            cache_key = f"{sample_path}:{sample_path.stat().st_mtime_ns}:{is_dynamic}"
+            cache_key = (
+                f"{sample_path}:{sample_path.stat().st_mtime_ns}:"
+                f"{is_dynamic}:{animated}"
+            )
         except OSError:
-            cache_key = f"{sample_path}:{is_dynamic}"
+            cache_key = f"{sample_path}:{is_dynamic}:{animated}"
         if cache_key in self._preview_cache:
             return self._preview_cache[cache_key]
         try:
@@ -448,15 +464,49 @@ class GesturesView:
                 return None
             if not np.isfinite(points).all() or np.all(np.abs(points) < 1e-6):
                 return None
-            if is_dynamic and frames is not None:
+            if animated and frames is not None:
                 preview = self._sample_gif_base64(frames, trail=trail)
+            elif is_dynamic and frames is not None:
+                preview = self._sample_dynamic_png_base64(frames, trail=trail)
             else:
                 preview = self._sample_png_base64(points, trail=trail, dynamic=False)
             self._preview_cache[cache_key] = preview
+            self._trim_preview_cache()
             return preview
         except Exception:
             self._preview_cache[cache_key] = None
+            self._trim_preview_cache()
             return None
+
+    def _trim_preview_cache(self) -> None:
+        overflow = len(self._preview_cache) - PREVIEW_CACHE_LIMIT
+        if overflow <= 0:
+            return
+        for key in list(self._preview_cache.keys())[:overflow]:
+            self._preview_cache.pop(key, None)
+
+    def _sample_dynamic_png_base64(self, frames, *, trail=None) -> str:
+        import numpy as np
+
+        seq = np.asarray(frames, dtype=float)
+        valid = [
+            i
+            for i in range(seq.shape[0])
+            if np.isfinite(seq[i]).all() and not np.all(np.abs(seq[i]) < 1e-6)
+        ]
+        if not valid:
+            raise ValueError("dynamic preview has no valid frames")
+        idx = valid[min(len(valid) // 2, len(valid) - 1)]
+        layout = self._camera_motion_preview_layout(seq, trail, valid)
+        progress = valid.index(idx) / max(1, len(valid) - 1)
+        png_bytes = self._sample_camera_motion_png_bytes(
+            seq[idx],
+            all_frames=seq,
+            layout=layout,
+            frame_index=idx,
+            progress=progress,
+        )
+        return base64.b64encode(png_bytes).decode("ascii")
 
     def _sample_gif_base64(self, frames, *, trail=None) -> str:
         import io
@@ -1062,8 +1112,11 @@ class GesturesView:
                 src=src,
                 fit=ft.BoxFit.CONTAIN,
                 border_radius=8,
-                gapless_playback=True,
-                filter_quality=ft.FilterQuality.HIGH,
+                gapless_playback=bool(
+                    gesture_type == GESTURE_TYPE_DYNAMIC
+                    and _animated_previews_enabled()
+                ),
+                filter_quality=ft.FilterQuality.MEDIUM,
             )
         else:
             media = ft.Column(

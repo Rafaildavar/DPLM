@@ -32,6 +32,7 @@ from cv.dynamic_prototype import (
     predict_dynamic_prototype,
     save_dynamic_prototype_model,
 )
+from cv.gesture_dataset_files import gesture_sample_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "data" / "gestures"
@@ -453,11 +454,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _sample_paths(label_dir: Path) -> list[Path]:
-    paths = {
-        *label_dir.glob("sample_*.npy"),
-        *label_dir.glob("aug_sample_*.npy"),
-    }
-    return sorted(paths)
+    return gesture_sample_paths(label_dir)
 
 
 def _record_from_path(

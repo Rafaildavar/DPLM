@@ -447,8 +447,6 @@ class TrainingView:
         rows = self._controller.list_recorded_gestures()
         self._datasets_column.controls.clear()
         total_samples = 0
-        total_real_samples = 0
-        total_augmented_samples = 0
         class_counts: list[int] = []
         if not rows:
             self._datasets_column.controls.append(
@@ -462,11 +460,7 @@ class TrainingView:
             for row in rows:
                 label = str(row["label"])
                 samples = int(row["samples"])
-                real_samples = int(row.get("realSamples") or samples)
-                augmented_samples = int(row.get("augmentedSamples") or 0)
                 total_samples += samples
-                total_real_samples += real_samples
-                total_augmented_samples += augmented_samples
                 class_counts.append(samples)
                 pending_delete = self._pending_delete_label == label
                 actions: list[ft.Control]
@@ -513,12 +507,7 @@ class TrainingView:
                                     expand=True,
                                 ),
                                 ft.Text(
-                                    (
-                                        f"{samples} обучающих "
-                                        f"({real_samples} real + {augmented_samples} aug)"
-                                        if augmented_samples
-                                        else f"{samples} сэмплов"
-                                    ),
+                                    f"{samples} реальных сэмплов",
                                     size=12,
                                     color=COLOR_MUTED,
                                 ),
@@ -537,7 +526,7 @@ class TrainingView:
             balance_color = COLOR_MUTED
         self._dataset_classes_value.value = str(len(rows))
         self._dataset_samples_value.value = str(total_samples)
-        self._dataset_real_aug_value.value = f"{total_real_samples} / {total_augmented_samples}"
+        self._dataset_real_aug_value.value = str(total_samples)
         self._dataset_balance_value.value = balance_label
         self._dataset_balance_value.color = balance_color
         try:
@@ -1068,7 +1057,7 @@ class TrainingView:
                 ft.Container(
                     content=self._metric_tile(
                         ft.Icons.AUTO_FIX_HIGH,
-                        "real / aug",
+                        "real samples",
                         self._dataset_real_aug_value,
                         color=COLOR_WARNING,
                     ),
@@ -1126,7 +1115,6 @@ class TrainingView:
                         wrap=True,
                         controls=[
                             self._workflow_step("Запись", active=True),
-                            self._workflow_step("Аугментация"),
                             self._workflow_step("Обучение"),
                             self._workflow_step("Проверка"),
                         ],
@@ -1135,11 +1123,6 @@ class TrainingView:
                         spacing=8,
                         wrap=True,
                         controls=[
-                            self._status_chip(
-                                ft.Icons.AUTO_FIX_HIGH,
-                                "auto-augment",
-                                COLOR_SUCCESS,
-                            ),
                             self._status_chip(
                                 ft.Icons.SECURITY,
                                 "negative-защита",

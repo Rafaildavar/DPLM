@@ -20,6 +20,7 @@ from cv.gesture_features import (
     build_feature_vector,
     feature_vector_size,
 )
+from cv.gesture_dataset_files import gesture_sample_paths
 
 SUPPORTED_MODEL_TYPES = (
     "knn",
@@ -50,7 +51,7 @@ def load_dataset(
     feature_mode: str = FEATURE_STATIC_MEAN,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
-    Загружает семплы из data_root/<label>/sample_*.npy
+    Загружает реальные семплы из data_root/<label>/sample_*.npy
     Возвращает (X, y, classes), где:
       - X: (N, D) — признаки семплов в выбранном feature_mode
       - y: (N,) — индексы классов
@@ -72,7 +73,7 @@ def load_dataset(
         label = raw_label.lower() if lowercase_labels else raw_label
         if canonical_include and label not in canonical_include and raw_label not in raw_include:
             continue
-        sample_files = sorted(label_dir.glob("sample_*.npy"))
+        sample_files = gesture_sample_paths(label_dir)
         if not sample_files:
             print(f"[i] Пропуск: нет семплов в {label_dir}")
             continue

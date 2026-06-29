@@ -3643,3 +3643,46 @@ Offline результат:
   `live_accuracy`, `live_dynamic_recall`, `live_static_hijack_rate`,
   `live_false_trigger_rate`, `intent_gate_label`,
   `intent_gate_confidence`, `intent_gate_reason`.
+
+### H-071: Positive synthetic augmentation ухудшает live-качество персональных жестов
+
+Статус: `rejected`, removed from production pipeline
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- После добавления positive synthetic augmentation пользователь заметил, что
+  live-распознавание стало хуже: модель принимает “почти жесты” и неточные
+  движения легче, чем нужно.
+- Для персональных жестов с маленьким датасетом такие synthetic samples
+  расширяют класс слишком агрессивно и размывают границу между настоящим
+  жестом и случайным движением.
+
+Решение:
+- Новая запись жестов больше не создаёт `aug_sample_*`.
+- Базовый dataset loader теперь по умолчанию берёт только реальные
+  `sample_*.npy`.
+- Старые `aug_sample_*` могут лежать на диске, но обучение, синхронизация БД,
+  MLflow summaries и dynamic prototype experiments их не используют.
+- Negative/reject samples остаются: они решают другую задачу — научить систему
+  молчать, когда команды нет.
+
+Параллельные UX-фиксы:
+- Если камера была открыта только для записи жеста, она закрывается после
+  завершения/отмены записи и не остаётся активной на главном экране.
+- Экран `Жесты` при открытии автоматически синхронизирует `data/gestures` с БД.
+- `get_db_gestures()` показывает записанные, но ещё не обученные классы, если у
+  них есть реальные samples.
+
+Что проверено:
+- `tests/unit/test_flet_controller_commands.py`
+- `tests/unit/test_gesture_dataset_files.py`
+- `tests/unit/test_gestures_preview.py`
+- `tests/unit/test_camera_performance.py`
+- `tests/unit/test_flet_frame_delivery.py`
+
+Критерий следующей live-проверки:
+- Записать новый complex dynamic жест без augmentation.
+- Переобучить `sequence_mlp + intent_gate/prototype`.
+- Проверить, что настоящий жест проходит, а partial/random/return движения
+  чаще уходят в reject/none.
