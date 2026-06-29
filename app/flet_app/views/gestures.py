@@ -402,16 +402,48 @@ class GesturesView:
                 ]
                 if nonzero:
                     idx = nonzero[len(nonzero) // 2]
-                flat = flat_seq[idx]
-                if flat.shape[0] < 42:
-                    return None
-                points = flat[:42].reshape(21, 2)
-                trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
-                frames = (
-                    flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
-                    if is_dynamic and flat_seq.shape[0] > 1
-                    else None
-                )
+                if is_dynamic and flat_seq.shape[1] >= 44:
+                    block_candidates = []
+                    for offset in range(0, flat_seq.shape[1] - 43, 44):
+                        pose_flat = flat_seq[:, offset : offset + 42]
+                        if pose_flat.shape[1] < 42:
+                            continue
+                        pose_frames = pose_flat.reshape(flat_seq.shape[0], 21, 2)
+                        pose_signal = float(np.nanmean(np.abs(pose_flat)))
+                        wrist = flat_seq[:, offset + 42 : offset + 44]
+                        wrist_finite = wrist[np.isfinite(wrist).all(axis=1)]
+                        wrist_displacement = (
+                            float(np.linalg.norm(wrist_finite[-1] - wrist_finite[0]))
+                            if len(wrist_finite) >= 2
+                            else 0.0
+                        )
+                        block_candidates.append(
+                            (wrist_displacement + pose_signal, pose_frames, wrist)
+                        )
+                    if block_candidates:
+                        _score, frames, trail = max(
+                            block_candidates,
+                            key=lambda item: item[0],
+                        )
+                        points = frames[idx]
+                    else:
+                        flat = flat_seq[idx]
+                        if flat.shape[0] < 42:
+                            return None
+                        points = flat[:42].reshape(21, 2)
+                        trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+                        frames = flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
+                else:
+                    flat = flat_seq[idx]
+                    if flat.shape[0] < 42:
+                        return None
+                    points = flat[:42].reshape(21, 2)
+                    trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+                    frames = (
+                        flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
+                        if is_dynamic and flat_seq.shape[0] > 1
+                        else None
+                    )
             else:
                 return None
             if not np.isfinite(points).all() or np.all(np.abs(points) < 1e-6):
@@ -473,16 +505,9 @@ class GesturesView:
         width, height = 560, 300
         frames = np.asarray(seq, dtype=float)
         valid_frames = frames[valid_indices]
-        centered = valid_frames - valid_frames.mean(axis=1, keepdims=True)
-        local_points = centered.reshape(-1, 2)
-        local_min = local_points.min(axis=0)
-        local_max = local_points.max(axis=0)
-        local_span = np.maximum(local_max - local_min, 1e-4)
-        hand_scale = min((width * 0.36) / local_span[0], (height * 0.56) / local_span[1])
-        hand_w = float(local_span[0] * hand_scale)
-        hand_h = float(local_span[1] * hand_scale)
-
         path = None
+        origin_mode = "center"
+        path_is_camera = False
         if trail is not None:
             trail_arr = np.asarray(trail, dtype=float)
             if trail_arr.ndim == 2 and trail_arr.shape[0] >= frames.shape[0] and trail_arr.shape[1] >= 2:
@@ -490,6 +515,28 @@ class GesturesView:
                 finite = np.isfinite(trail_arr).all(axis=1)
                 if finite.any() and not np.all(np.abs(trail_arr[finite]) < 1e-6):
                     path = trail_arr
+                    origin_mode = "wrist"
+                    finite_path = trail_arr[finite]
+                    path_is_camera = bool(
+                        finite_path[:, 0].min() >= -0.08
+                        and finite_path[:, 1].min() >= -0.08
+                        and finite_path[:, 0].max() <= 1.08
+                        and finite_path[:, 1].max() <= 1.08
+                    )
+
+        origins = (
+            valid_frames[:, :1, :]
+            if origin_mode == "wrist"
+            else valid_frames.mean(axis=1, keepdims=True)
+        )
+        local_points = (valid_frames - origins).reshape(-1, 2)
+        local_points = local_points[np.isfinite(local_points).all(axis=1)]
+        if len(local_points) == 0:
+            local_points = np.zeros((1, 2), dtype=float)
+        local_min = local_points.min(axis=0)
+        local_max = local_points.max(axis=0)
+        local_span = np.maximum(local_max - local_min, 1e-4)
+        hand_scale = min((width * 0.26) / local_span[0], (height * 0.48) / local_span[1])
 
         if path is None:
             path = frames.mean(axis=1)
@@ -500,38 +547,71 @@ class GesturesView:
             center = np.array([[width / 2, (height - 20) / 2]], dtype=float)
             path_px = np.repeat(center, frames.shape[0], axis=0)
         else:
-            min_xy = finite_path.min(axis=0)
-            max_xy = finite_path.max(axis=0)
-            span_xy = np.maximum(max_xy - min_xy, 1e-4)
-            safe_x = 30 + hand_w / 2
-            safe_y = 28 + hand_h / 2
-            usable_w = max(1.0, width - safe_x * 2)
-            usable_h = max(1.0, height - 30 - safe_y * 2)
-            scalers = []
-            if span_xy[0] > 1e-4:
-                scalers.append(usable_w / span_xy[0])
-            if span_xy[1] > 1e-4:
-                scalers.append(usable_h / span_xy[1])
-            motion_scale = min(scalers) if scalers else 1.0
-            path_w = span_xy[0] * motion_scale
-            path_h = span_xy[1] * motion_scale
-            offset = np.array(
-                [
-                    (width - path_w) / 2 - min_xy[0] * motion_scale,
-                    (height - 30 - path_h) / 2 - min_xy[1] * motion_scale,
-                ],
-                dtype=float,
-            )
-            path_px = path * motion_scale + offset
+            content_min = np.array([22.0, 18.0], dtype=float)
+            content_max = np.array([width - 22.0, height - 32.0], dtype=float)
+            if path_is_camera:
+                path_px = np.column_stack(
+                    [
+                        content_min[0]
+                        + np.clip(path[:, 0], 0.0, 1.0) * (content_max[0] - content_min[0]),
+                        content_min[1]
+                        + np.clip(path[:, 1], 0.0, 1.0) * (content_max[1] - content_min[1]),
+                    ]
+                )
+            else:
+                min_xy = finite_path.min(axis=0)
+                max_xy = finite_path.max(axis=0)
+                span_xy = np.maximum(max_xy - min_xy, 1e-4)
+                path_w = min(width * 0.42, max(28.0, span_xy[0] * width * 0.9))
+                path_h = min(height * 0.42, max(20.0, span_xy[1] * height * 0.9))
+                path_scale = min(path_w / span_xy[0], path_h / span_xy[1])
+                offset = np.array(
+                    [
+                        (width - span_xy[0] * path_scale) / 2 - min_xy[0] * path_scale,
+                        (height - 30 - span_xy[1] * path_scale) / 2 - min_xy[1] * path_scale,
+                    ],
+                    dtype=float,
+                )
+                path_px = path * path_scale + offset
+
             if not np.isfinite(path_px).all():
                 center = np.array([[width / 2, (height - 20) / 2]], dtype=float)
                 path_px = np.repeat(center, frames.shape[0], axis=0)
+            else:
+                finite_px = path_px[np.isfinite(path_px).all(axis=1)]
+                if len(finite_px):
+                    content_min = np.array([22.0, 18.0], dtype=float)
+                    content_max = np.array([width - 22.0, height - 32.0], dtype=float)
+                    for _ in range(2):
+                        ext_min = finite_px.min(axis=0) + local_min * hand_scale
+                        ext_max = finite_px.max(axis=0) + local_max * hand_scale
+                        ext_span = np.maximum(ext_max - ext_min, 1e-4)
+                        content_span = np.maximum(content_max - content_min, 1e-4)
+                        overflow = max(
+                            float(ext_span[0] / content_span[0]),
+                            float(ext_span[1] / content_span[1]),
+                            1.0,
+                        )
+                        if overflow <= 1.0:
+                            break
+                        hand_scale /= overflow
+
+                    ext_min = finite_px.min(axis=0) + local_min * hand_scale
+                    ext_max = finite_px.max(axis=0) + local_max * hand_scale
+                    shift = np.zeros(2, dtype=float)
+                    for axis in (0, 1):
+                        if ext_min[axis] < content_min[axis]:
+                            shift[axis] += content_min[axis] - ext_min[axis]
+                        if ext_max[axis] + shift[axis] > content_max[axis]:
+                            shift[axis] += content_max[axis] - (ext_max[axis] + shift[axis])
+                    path_px = path_px + shift
 
         return {
             "width": width,
             "height": height,
             "hand_scale": float(hand_scale),
             "path_px": path_px,
+            "origin_mode": origin_mode,
         }
 
     def _sample_camera_motion_png_bytes(
@@ -601,7 +681,10 @@ class GesturesView:
 
         def map_hand(frame_points, anchor_point) -> list[tuple[float, float]]:
             frame = np.asarray(frame_points, dtype=float)
-            center_point = frame.mean(axis=0)
+            if str(layout.get("origin_mode") or "") == "wrist" and len(frame):
+                center_point = frame[0]
+            else:
+                center_point = frame.mean(axis=0)
             return [
                 (
                     float(anchor_point[0] + (point[0] - center_point[0]) * hand_scale),
