@@ -3781,3 +3781,53 @@ MLflow:
   `out=models/dynamic_sequence_mlp.pkl`.
 - Запустить live evaluation и проверить в MLflow run name:
   `live-<gesture>-auto-sequence_mlp-open_set_policy`.
+
+### H-074: `sequence_rocket` как более сильный time-series candidate
+
+Статус: `implemented-offline`, needs train/live A/B
+
+Дата: `2026-06-29`
+
+Проблема:
+- `sequence_mlp` получает 36 кадров как один длинный вектор. Это лучше KNN,
+  но модель не имеет явного механизма для локальных временных паттернов:
+  дуга, крючок, зигзаг, смена направления внутри жеста.
+- LSTM/GRU логически подходят, но в текущем `.venv` нет `torch`,
+  `tensorflow` или `keras`; добавлять тяжёлую зависимость перед live-итерацией
+  рискованно.
+
+Решение:
+- Добавлен `sequence_rocket` — ROCKET-style candidate для time-series
+  classification без новых зависимостей.
+- Вход: тот же `dynamic_sequence` (`36` кадров * per-frame landmarks/global
+  motion).
+- Механизм:
+  - случайные temporal convolution kernels по последовательности;
+  - признаки: maximum activation + proportion of positive values;
+  - classifier: `StandardScaler + LogisticRegression(class_weight=balanced)`.
+- Для dynamic samples с 44 признаками на руку регулярно включаются global
+  wrist `x/y` channels, чтобы модель не теряла направление движения.
+
+Почему это может помочь:
+- Temporal convolution features ловят локальную форму движения, а не только
+  итоговое положение.
+- Модель легче LSTM/GRU, быстро обучается на маленьком пользовательском
+  датасете и совместима с текущим `joblib`/`predict_proba` runtime.
+
+MLflow:
+- Training run логирует:
+  - `model_type=sequence_rocket`;
+  - `sequence_rocket_kernels`;
+  - `sequence_rocket_max_dilation`;
+  - `sequence_rocket_max_channels_per_kernel`.
+
+План проверки:
+- Сначала обучить `sequence_rocket` как research candidate, не заменяя
+  production `sequence_mlp`.
+- Сравнить offline и live:
+  - старые swipe classes;
+  - новый complex dynamic gesture;
+  - negative/partial/return/random movements.
+- Если live recall complex gesture выше, а false positive не хуже, тогда
+  переключить единственный production dynamic profile с `sequence_mlp` на
+  новый candidate.

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
+from cv.sequence_rocket import RandomConvolutionSequenceTransformer
 from cv.train_classifier import (
     _log_mlflow_run,
     build_classifier,
@@ -88,6 +89,57 @@ def test_build_classifier_supports_sequence_mlp_model():
     assert mlp.early_stopping is True
     assert mlp.validation_fraction == 0.20
     assert mlp.n_iter_no_change == 30
+
+
+def test_build_classifier_supports_sequence_rocket_model():
+    clf = build_classifier(
+        "sequence_rocket",
+        random_state=7,
+        sequence_rocket_kernels=16,
+        sequence_rocket_max_dilation=3,
+        sequence_rocket_max_channels_per_kernel=4,
+    )
+
+    assert clf.__class__.__name__ == "Pipeline"
+    assert clf.steps[0][1].__class__.__name__ == "RandomConvolutionSequenceTransformer"
+    assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
+
+
+def test_sequence_rocket_transformer_builds_deterministic_temporal_features():
+    x = np.arange(4 * 36 * 4, dtype=np.float32).reshape(4, 36 * 4)
+    transformer = RandomConvolutionSequenceTransformer(
+        n_kernels=8,
+        target_frames=36,
+        max_channels_per_kernel=3,
+        random_state=11,
+    )
+
+    features = transformer.fit_transform(x)
+    repeated = transformer.transform(x)
+
+    assert features.shape == (4, 16)
+    assert np.allclose(features, repeated)
+    assert transformer.n_features_in_ == 36 * 4
+    assert transformer.n_channels_ == 4
+
+
+def test_sequence_rocket_pipeline_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_rocket",
+        random_state=3,
+        sequence_rocket_kernels=12,
+        sequence_rocket_max_channels_per_kernel=3,
+    )
+
+    clf.fit(x, y)
+    proba = clf.predict_proba(x[:2])
+
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
 
 
 def test_build_classifier_allows_sequence_mlp_validation_overrides():

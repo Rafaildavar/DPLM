@@ -21,11 +21,13 @@ from cv.gesture_features import (
     feature_vector_size,
 )
 from cv.gesture_dataset_files import gesture_sample_paths
+from cv.sequence_rocket import RandomConvolutionSequenceTransformer
 
 SUPPORTED_MODEL_TYPES = (
     "knn",
     "sequence_knn",
     "sequence_mlp",
+    "sequence_rocket",
     "svm",
     "extra_trees",
     "rf",
@@ -39,6 +41,9 @@ DEFAULT_SEQUENCE_MLP_ALPHA = 1e-3
 DEFAULT_SEQUENCE_MLP_EARLY_STOPPING = True
 DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION = 0.20
 DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE = 30
+DEFAULT_SEQUENCE_ROCKET_KERNELS = 256
+DEFAULT_SEQUENCE_ROCKET_MAX_DILATION = 4
+DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL = 8
 
 
 # --------------------------------------------------
@@ -153,6 +158,11 @@ def build_classifier(
     sequence_mlp_early_stopping: bool = DEFAULT_SEQUENCE_MLP_EARLY_STOPPING,
     sequence_mlp_validation_fraction: float = DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION,
     sequence_mlp_n_iter_no_change: int = DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
+    sequence_rocket_kernels: int = DEFAULT_SEQUENCE_ROCKET_KERNELS,
+    sequence_rocket_max_dilation: int = DEFAULT_SEQUENCE_ROCKET_MAX_DILATION,
+    sequence_rocket_max_channels_per_kernel: int = (
+        DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL
+    ),
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -178,6 +188,24 @@ def build_classifier(
                 early_stopping=bool(sequence_mlp_early_stopping),
                 validation_fraction=validation_fraction,
                 n_iter_no_change=max(1, int(sequence_mlp_n_iter_no_change)),
+                random_state=int(random_state),
+            ),
+        )
+    if model == "sequence_rocket":
+        return make_pipeline(
+            RandomConvolutionSequenceTransformer(
+                n_kernels=max(1, int(sequence_rocket_kernels)),
+                max_dilation=max(1, int(sequence_rocket_max_dilation)),
+                max_channels_per_kernel=max(
+                    1,
+                    int(sequence_rocket_max_channels_per_kernel),
+                ),
+                random_state=int(random_state),
+            ),
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2000,
+                class_weight="balanced",
                 random_state=int(random_state),
             ),
         )
@@ -330,7 +358,7 @@ def parse_args() -> argparse.Namespace:
         "--model-type",
         choices=SUPPORTED_MODEL_TYPES,
         default="knn",
-        help="Тип классификатора: knn, sequence_knn, sequence_mlp, svm, extra_trees, rf или logreg",
+        help="Тип классификатора: knn, sequence_knn, sequence_mlp, sequence_rocket, svm, extra_trees, rf или logreg",
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
     p.add_argument(
@@ -362,6 +390,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
         help="Early-stopping patience for sequence_mlp validation score.",
+    )
+    p.add_argument(
+        "--sequence-rocket-kernels",
+        type=int,
+        default=DEFAULT_SEQUENCE_ROCKET_KERNELS,
+        help="Number of random temporal convolution kernels for sequence_rocket.",
+    )
+    p.add_argument(
+        "--sequence-rocket-max-dilation",
+        type=int,
+        default=DEFAULT_SEQUENCE_ROCKET_MAX_DILATION,
+        help="Maximum dilation for sequence_rocket temporal kernels.",
+    )
+    p.add_argument(
+        "--sequence-rocket-max-channels-per-kernel",
+        type=int,
+        default=DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL,
+        help="Maximum channel subset size per sequence_rocket kernel.",
     )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
@@ -463,6 +509,11 @@ def main() -> None:
         sequence_mlp_early_stopping=sequence_mlp_early_stopping,
         sequence_mlp_validation_fraction=sequence_mlp_validation_fraction,
         sequence_mlp_n_iter_no_change=int(args.sequence_mlp_n_iter_no_change),
+        sequence_rocket_kernels=int(args.sequence_rocket_kernels),
+        sequence_rocket_max_dilation=int(args.sequence_rocket_max_dilation),
+        sequence_rocket_max_channels_per_kernel=int(
+            args.sequence_rocket_max_channels_per_kernel
+        ),
     )
     clf.fit(X, y)
     train_accuracy = float(clf.score(X, y))
@@ -611,6 +662,27 @@ def _log_mlflow_run(
                 DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
             )
         )
+        sequence_rocket_kernels = int(
+            getattr(
+                args,
+                "sequence_rocket_kernels",
+                DEFAULT_SEQUENCE_ROCKET_KERNELS,
+            )
+        )
+        sequence_rocket_max_dilation = int(
+            getattr(
+                args,
+                "sequence_rocket_max_dilation",
+                DEFAULT_SEQUENCE_ROCKET_MAX_DILATION,
+            )
+        )
+        sequence_rocket_max_channels_per_kernel = int(
+            getattr(
+                args,
+                "sequence_rocket_max_channels_per_kernel",
+                DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL,
+            )
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -637,6 +709,11 @@ def _log_mlflow_run(
                         sequence_mlp_validation_fraction_effective
                     ),
                     "sequence_mlp_n_iter_no_change": sequence_mlp_n_iter_no_change,
+                    "sequence_rocket_kernels": sequence_rocket_kernels,
+                    "sequence_rocket_max_dilation": sequence_rocket_max_dilation,
+                    "sequence_rocket_max_channels_per_kernel": (
+                        sequence_rocket_max_channels_per_kernel
+                    ),
                     "expect_dim": (
                         int(args.expect_dim)
                         if args.expect_dim is not None
