@@ -2957,3 +2957,57 @@ Smoke result на текущих данных:
 - Текущий IPN subset не конфликтует с `swipe_up`, `swipe_down`, `swipe_left`.
 - При добавлении нового пользовательского жеста похожие external negatives
   будут автоматически исключаться из training scope, а не ломать распознавание.
+
+### H-058: Dynamic UI training должен обновлять prototype/rejection layer автоматически
+
+Статус: `implemented`, smoke validated
+
+Дата: `2026-06-29`
+
+Проблема:
+- Кнопка `Обучить dynamic модель` обновляла `dynamic_knn/svm/extra_trees`,
+  но не обновляла `models/dynamic_prototypes.json`.
+- Из-за этого conflict-aware external negative layer мог отставать от новых
+  пользовательских dynamic gestures.
+
+Решение:
+- В `AppController.start_training()` добавлен post-training step для
+  `training_scope=dynamic`.
+- После успешного `cv.train_classifier` запускается:
+  `scripts.dynamic_prototype_experiments`.
+- Параметры автоматического шага:
+  - `--include-external-negatives`;
+  - `--external-negative-root data/external`;
+  - `--methods prototype_distance`;
+  - `--write-production`;
+  - `--production-out models/dynamic_prototypes.json`.
+- Static training не затрагивается.
+
+Что теперь происходит при записи нового dynamic gesture:
+- пользователь записывает sample;
+- нажимает `Обучить dynamic модель`;
+- обновляется выбранный dynamic classifier;
+- затем обновляется prototype verifier;
+- external IPN negatives проходят conflict-aware filtering;
+- похожие на новый пользовательский жест negatives исключаются из training scope;
+- metrics/artifacts уходят в MLflow и markdown/json отчеты.
+
+Smoke result после подключения `frames04`:
+- external negatives: `440`;
+- safe external negatives: `440`;
+- conflicts removed: `0`;
+- conflict rate: `0.0000`;
+- overall success: `0.9935`;
+- positive recall: `0.9444`;
+- negative reject rate: `1.0000`;
+- negative false positive rate: `0.0000`.
+
+Production artifact:
+- `models/dynamic_prototypes.json`;
+- method: `prototype_distance`;
+- positive labels: `swipe_down`, `swipe_left`, `swipe_up`;
+- negative labels:
+  `negative_external_ipn_dynamic`, `no_gesture_static`, `partial_swipe`,
+  `random_motion`, `return_motion`, `wrong_axis_motion`;
+- prototype count: `72`;
+- training record count: `457`.

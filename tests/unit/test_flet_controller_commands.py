@@ -192,6 +192,42 @@ def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
     assert include_values == ["swipe_down", "swipe_left"]
 
 
+def test_build_dynamic_prototype_training_command_uses_external_negatives(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command()
+
+    assert cmd[1:4] == ["-u", "-m", "scripts.dynamic_prototype_experiments"]
+    assert cmd[cmd.index("--data-root") + 1] == str(tmp_path / "gestures")
+    assert cmd[cmd.index("--external-negative-root") + 1].endswith("data/external")
+    assert "--include-external-negatives" in cmd
+    assert cmd[cmd.index("--methods") + 1] == "prototype_distance"
+    assert "--write-production" in cmd
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_prototypes.json"
+    )
+    assert cmd[cmd.index("--mlflow-tracking-uri") + 1] == "sqlite:///tmp_mlflow.db"
+
+
+def test_dynamic_prototype_training_only_for_dynamic_scope():
+    controller = AppController.__new__(AppController)
+
+    assert controller._should_train_dynamic_prototypes("dynamic") is True
+    assert controller._should_train_dynamic_prototypes("static,negative") is False
+
+
 def test_build_training_command_filters_static_scope_with_negative(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
 

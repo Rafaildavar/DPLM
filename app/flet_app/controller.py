@@ -5025,6 +5025,7 @@ class AppController:
             on_line(f"[i] PID={proc.pid}: {' '.join(cmd)}")
 
         def reader() -> None:
+            final_code = 1
             try:
                 assert proc.stdout is not None
                 for line in proc.stdout:
@@ -5037,9 +5038,10 @@ class AppController:
                 pass
             finally:
                 code = proc.wait()
+                final_code = int(code)
                 # После успешного обучения синхронизируем словарь жестов в БД,
                 # чтобы экран «Привязки» сразу увидел новые/обновлённые классы.
-                if int(code) == 0:
+                if final_code == 0:
                     try:
                         summary = self.sync_dataset_to_db()
                         if on_line:
@@ -5053,14 +5055,78 @@ class AppController:
                     except Exception as e:
                         if on_line:
                             on_line(f"[w] sync_dataset_to_db: {e}")
+                if final_code == 0 and self._should_train_dynamic_prototypes(training_scope):
+                    final_code = self._run_dynamic_prototype_training(
+                        data_root=data_root,
+                        on_line=on_line,
+                    )
                 if on_done:
                     try:
-                        on_done(int(code))
+                        on_done(int(final_code))
                     except Exception:
                         pass
 
         Thread(target=reader, daemon=True).start()
         return True
+
+    def _should_train_dynamic_prototypes(self, training_scope: str = "") -> bool:
+        try:
+            return GESTURE_TYPE_DYNAMIC in parse_gesture_type_scope(training_scope)
+        except ValueError:
+            return False
+
+    def _run_dynamic_prototype_training(
+        self,
+        *,
+        data_root: str = "",
+        on_line: Optional[Callable[[str], None]] = None,
+    ) -> int:
+        project_root = Path(__file__).resolve().parents[2]
+        cmd = self._build_dynamic_prototype_training_command(data_root=data_root)
+        if on_line:
+            on_line(
+                "[i] Обучение dynamic prototype/rejection layer "
+                "(external negatives + conflict filter)"
+            )
+            on_line(f"[i] PID=pending: {' '.join(cmd)}")
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                text=True,
+            )
+        except Exception as e:
+            if on_line:
+                on_line(f"[!] Не удалось запустить dynamic prototype training: {e}")
+            return 1
+
+        self._training_proc = proc
+        if on_line:
+            on_line(f"[i] PID={proc.pid}: {' '.join(cmd)}")
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if on_line:
+                    try:
+                        on_line(line.rstrip())
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        code = int(proc.wait())
+        if code == 0:
+            try:
+                self._reset_embedded_infer_after_model_change()
+            except Exception:
+                pass
+            if on_line:
+                on_line("[✓] Dynamic prototype/rejection layer обновлен")
+        elif on_line:
+            on_line(f"[!] Dynamic prototype training завершился с кодом {code}")
+        return code
 
     def start_negative_generation(
         self,
@@ -5212,6 +5278,41 @@ class AppController:
         if expect_dim is not None:
             cmd += ["--expect-dim", str(int(expect_dim))]
         return cmd
+
+    def _build_dynamic_prototype_training_command(
+        self,
+        *,
+        data_root: str = "",
+    ) -> list[str]:
+        project_root = Path(__file__).resolve().parents[2]
+        actual_data_root = data_root or str(self._configured_data_dir())
+        external_root = project_root / "data" / "external"
+        return [
+            sys.executable,
+            "-u",
+            "-m",
+            "scripts.dynamic_prototype_experiments",
+            "--data-root",
+            actual_data_root,
+            "--external-negative-root",
+            str(external_root),
+            "--include-external-negatives",
+            "--methods",
+            "prototype_distance",
+            "--base-models-dir",
+            str(self._configured_models_dir()),
+            "--variant-root",
+            str(project_root / "models" / "experiments" / "dynamic_prototype"),
+            "--write-production",
+            "--production-out",
+            str(self._dynamic_prototypes_path()),
+            "--report-json",
+            str(project_root / "docs" / "experiments" / "dynamic_prototype_ui_training.json"),
+            "--report-md",
+            str(project_root / "docs" / "experiments" / "dynamic_prototype_ui_training.md"),
+            "--mlflow-tracking-uri",
+            self._live_evaluation_mlflow_tracking_uri(),
+        ]
 
     def cancel_training(self) -> None:
         """Прервать текущий тренировочный subprocess (если запущен)."""

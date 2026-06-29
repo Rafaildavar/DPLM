@@ -1,0 +1,111 @@
+{
+  "generated_at": 1782730929.351821,
+  "roots": [
+    {
+      "name": "existing",
+      "root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand",
+      "sample_count": 200,
+      "frame_count_mean": 49.335,
+      "detection_rate_mean": 0.894282,
+      "original_labels": {
+        "B0A": 54,
+        "B0B": 53,
+        "D0X": 19,
+        "G01": 10,
+        "G02": 11,
+        "G07": 11,
+        "G08": 11,
+        "G09": 10,
+        "G10": 10,
+        "G11": 11
+      },
+      "motion_directions": {
+        "diagonal_or_complex": 14,
+        "down": 66,
+        "left": 26,
+        "right": 48,
+        "up": 46
+      },
+      "model_metrics": {
+        "prototype_distance": {
+          "total": 200,
+          "negative_reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {
+            "far_from_prototype": 1,
+            "nearest_negative": 199
+          },
+          "nearest_labels": {
+            "negative_external_ipn_dynamic": 192,
+            "no_gesture_static": 2,
+            "partial_swipe": 3,
+            "swipe_left": 1,
+            "wrong_axis_motion": 2
+          },
+          "positive_distance_ratio_mean": 4.017592479197386,
+          "positive_distance_ratio_p95": 4.017592479197386
+        }
+      }
+    },
+    {
+      "name": "frames04",
+      "root": "/Users/remi/Developer/GUAP/DPLM/data/external/ipn_hand_frames04",
+      "sample_count": 240,
+      "frame_count_mean": 37.025,
+      "detection_rate_mean": 0.8159333333333334,
+      "original_labels": {
+        "B0A": 61,
+        "B0B": 67,
+        "D0X": 13,
+        "G01": 14,
+        "G02": 14,
+        "G07": 14,
+        "G08": 14,
+        "G09": 14,
+        "G10": 15,
+        "G11": 14
+      },
+      "motion_directions": {
+        "diagonal_or_complex": 20,
+        "down": 102,
+        "left": 22,
+        "right": 54,
+        "up": 42
+      },
+      "model_metrics": {
+        "prototype_distance": {
+          "total": 240,
+          "negative_reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_count": 0,
+          "near_positive_rate": 0.0,
+          "near_positive_count": 0,
+          "accepted_labels": {},
+          "reject_reasons": {
+            "far_from_prototype": 5,
+            "nearest_negative": 235
+          },
+          "nearest_labels": {
+            "negative_external_ipn_dynamic": 188,
+            "no_gesture_static": 42,
+            "partial_swipe": 4,
+            "swipe_down": 1,
+            "swipe_left": 2,
+            "swipe_up": 2,
+            "wrong_axis_motion": 1
+          },
+          "positive_distance_ratio_mean": 4.347771584233873,
+          "positive_distance_ratio_p95": 6.005296202053979
+        }
+      }
+    }
+  ],
+  "recommendation": "`existing` is safe as dynamic negative training/validation data for `prototype_distance`. `frames04` is safe as dynamic negative training/validation data for `prototype_distance`.",
+  "warnings": [
+    "prototype model not found: /private/tmp/missing_dynamic_prototypes.json"
+  ]
+}
