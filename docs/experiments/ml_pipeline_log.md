@@ -3686,3 +3686,58 @@ Offline результат:
 - Переобучить `sequence_mlp + intent_gate/prototype`.
 - Проверить, что настоящий жест проходит, а partial/random/return движения
   чаще уходят в reject/none.
+
+### H-072: Честный validation split для `sequence_mlp`
+
+Статус: `implemented`, needs retrain/live validation
+
+Дата: `2026-06-29`
+
+Проблема:
+- Первый `sequence_mlp` показывал `train_accuracy=1.0000`, но для маленького
+  персонального датасета это может означать не качество, а запоминание
+  обучающих примеров.
+- Для конкурса важно показать, что neural dynamic baseline контролируется не
+  только train-метрикой, но и отдельным validation-сигналом во время обучения.
+
+Решение:
+- Для `sequence_mlp` включён `early_stopping=True`.
+- `validation_fraction=0.20`: 20% train-набора удерживаются внутри sklearn как
+  validation split и не используются для обновления весов.
+- `n_iter_no_change=30`: обучение останавливается, если validation score долго
+  не улучшается.
+- `alpha=1e-3` оставлен как L2-регуляризация.
+- Если классов или сэмплов слишком мало для stratified validation split,
+  обучение не падает: early stopping временно отключается с предупреждением.
+
+MLflow:
+- В training run теперь логируются:
+  - `sequence_mlp_alpha`;
+  - `sequence_mlp_early_stopping`;
+  - `sequence_mlp_early_stopping_effective`;
+  - `sequence_mlp_validation_fraction`;
+  - `sequence_mlp_validation_fraction_effective`;
+  - `sequence_mlp_n_iter_no_change`;
+  - `random_state`.
+
+Что это даёт:
+- Можно сравнивать `sequence_mlp` runs честнее: если live-качество проседает,
+  мы видим, была ли модель обучена с validation split и какой patience/alpha
+  использовались.
+- Это пока не заменяет отдельный offline test split и live evaluation, но
+  закрывает первый слой защиты от переобучения.
+
+Следующая проверка:
+- Переобучить dynamic model с `sequence_mlp`.
+- В MLflow открыть новый run и проверить параметры `sequence_mlp_*`.
+- Прогнать live:
+  - `swipe_up`: 20;
+  - `swipe_left`: 20;
+  - новый complex dynamic gesture: 20;
+  - `partial_swipe`, `wrong_axis_motion`, `return_motion`, `random_motion`:
+    по 10.
+
+Критерий успеха:
+- Старые positive dynamic gestures остаются >= `90%`.
+- Новый complex gesture >= `80%`.
+- Negative/почти-жесты не становятся хуже по false positive rate.

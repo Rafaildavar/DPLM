@@ -8,6 +8,7 @@ from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
 from cv.train_classifier import (
     _log_mlflow_run,
     build_classifier,
+    can_use_sequence_mlp_validation_split,
     default_rejection_metadata_path,
     load_dataset,
 )
@@ -81,7 +82,42 @@ def test_build_classifier_supports_sequence_mlp_model():
     clf = build_classifier("sequence_mlp", random_state=7)
 
     assert clf.__class__.__name__ == "Pipeline"
-    assert clf.steps[-1][1].__class__.__name__ == "MLPClassifier"
+    mlp = clf.steps[-1][1]
+    assert mlp.__class__.__name__ == "MLPClassifier"
+    assert mlp.alpha == 1e-3
+    assert mlp.early_stopping is True
+    assert mlp.validation_fraction == 0.20
+    assert mlp.n_iter_no_change == 30
+
+
+def test_build_classifier_allows_sequence_mlp_validation_overrides():
+    clf = build_classifier(
+        "sequence_mlp",
+        random_state=7,
+        sequence_mlp_alpha=0.002,
+        sequence_mlp_early_stopping=False,
+        sequence_mlp_validation_fraction=0.25,
+        sequence_mlp_n_iter_no_change=12,
+    )
+
+    mlp = clf.steps[-1][1]
+    assert mlp.alpha == 0.002
+    assert mlp.early_stopping is False
+    assert mlp.validation_fraction == 0.25
+    assert mlp.n_iter_no_change == 12
+
+
+def test_sequence_mlp_validation_split_requires_enough_samples_per_class():
+    assert can_use_sequence_mlp_validation_split(
+        np.asarray([0, 0, 0, 1, 1, 1]),
+        class_count=2,
+        validation_fraction=0.33,
+    )
+    assert not can_use_sequence_mlp_validation_split(
+        np.asarray([0, 1, 1, 1]),
+        class_count=2,
+        validation_fraction=0.25,
+    )
 
 
 def test_default_rejection_metadata_path_keeps_dynamic_metadata_separate():
@@ -177,6 +213,9 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
     assert calls["experiment"] == "GestureFlow"
     assert calls["run_name"] == "dynamic-test"
     assert calls["params"]["include_labels"] == "swipe_up,no_gesture_static"
+    assert calls["params"]["sequence_mlp_early_stopping_effective"] is True
+    assert calls["params"]["sequence_mlp_validation_fraction_effective"] == 0.20
+    assert calls["params"]["sequence_mlp_alpha"] == 1e-3
     assert calls["metrics"]["train_accuracy"] == 0.95
     assert calls["artifacts"] == [
         "model.pkl",

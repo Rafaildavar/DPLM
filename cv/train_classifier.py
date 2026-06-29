@@ -35,6 +35,10 @@ DEFAULT_REJECT_NEGATIVE_CONFIDENCE_THRESHOLD = 0.65
 DEFAULT_REJECT_MIN_MARGIN = 0.10
 DEFAULT_REJECT_DISTANCE_MULTIPLIER = 2.50
 DEFAULT_PROTOTYPE_RADIUS_FLOOR_SCALE = 0.015
+DEFAULT_SEQUENCE_MLP_ALPHA = 1e-3
+DEFAULT_SEQUENCE_MLP_EARLY_STOPPING = True
+DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION = 0.20
+DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE = 30
 
 
 # --------------------------------------------------
@@ -145,6 +149,10 @@ def build_classifier(
     neighbors: int = 5,
     weights: str = "distance",
     random_state: int = 42,
+    sequence_mlp_alpha: float = DEFAULT_SEQUENCE_MLP_ALPHA,
+    sequence_mlp_early_stopping: bool = DEFAULT_SEQUENCE_MLP_EARLY_STOPPING,
+    sequence_mlp_validation_fraction: float = DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION,
+    sequence_mlp_n_iter_no_change: int = DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -154,16 +162,22 @@ def build_classifier(
             weights=weights,
         )
     if model == "sequence_mlp":
+        validation_fraction = max(
+            0.05,
+            min(0.50, float(sequence_mlp_validation_fraction)),
+        )
         return make_pipeline(
             StandardScaler(),
             MLPClassifier(
                 hidden_layer_sizes=(128, 64),
                 activation="relu",
                 solver="adam",
-                alpha=1e-3,
+                alpha=float(sequence_mlp_alpha),
                 learning_rate_init=1e-3,
                 max_iter=800,
-                n_iter_no_change=30,
+                early_stopping=bool(sequence_mlp_early_stopping),
+                validation_fraction=validation_fraction,
+                n_iter_no_change=max(1, int(sequence_mlp_n_iter_no_change)),
                 random_state=int(random_state),
             ),
         )
@@ -201,6 +215,22 @@ def build_classifier(
             ),
         )
     raise ValueError(f"unsupported model type: {model_type}")
+
+
+def can_use_sequence_mlp_validation_split(
+    y: np.ndarray,
+    class_count: int,
+    validation_fraction: float,
+) -> bool:
+    """Return whether sklearn can build a stratified validation split."""
+    if class_count <= 1 or y.size <= class_count:
+        return False
+    class_sample_counts = np.bincount(y.astype(np.int64), minlength=class_count)
+    if np.any(class_sample_counts < 2):
+        return False
+    validation_count = int(np.ceil(float(y.size) * float(validation_fraction)))
+    train_count = int(y.size) - validation_count
+    return validation_count >= class_count and train_count >= class_count
 
 
 def is_negative_label(label: str) -> bool:
@@ -309,6 +339,30 @@ def parse_args() -> argparse.Namespace:
         default="distance",
         help="Вес соседей KNN: distance устойчивее для маленьких несбалансированных наборов",
     )
+    p.add_argument(
+        "--sequence-mlp-alpha",
+        type=float,
+        default=DEFAULT_SEQUENCE_MLP_ALPHA,
+        help="L2 regularization strength for sequence_mlp.",
+    )
+    p.add_argument(
+        "--sequence-mlp-early-stopping",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_SEQUENCE_MLP_EARLY_STOPPING,
+        help="Use an internal validation split and stop sequence_mlp when validation score stops improving.",
+    )
+    p.add_argument(
+        "--sequence-mlp-validation-fraction",
+        type=float,
+        default=DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION,
+        help="Fraction of training samples held out internally for sequence_mlp early stopping.",
+    )
+    p.add_argument(
+        "--sequence-mlp-n-iter-no-change",
+        type=int,
+        default=DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
+        help="Early-stopping patience for sequence_mlp validation score.",
+    )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
         "--include-label",
@@ -376,11 +430,39 @@ def main() -> None:
         f"модель: {args.model_type}"
     )
 
+    sequence_mlp_validation_fraction = max(
+        0.05,
+        min(0.50, float(args.sequence_mlp_validation_fraction)),
+    )
+    sequence_mlp_early_stopping = bool(args.sequence_mlp_early_stopping)
+    if str(args.model_type).strip().lower() == "sequence_mlp":
+        if sequence_mlp_validation_fraction != float(args.sequence_mlp_validation_fraction):
+            print(
+                "[w] sequence_mlp validation_fraction скорректирован до "
+                f"{sequence_mlp_validation_fraction:.2f}"
+            )
+        if sequence_mlp_early_stopping and not can_use_sequence_mlp_validation_split(
+            y,
+            class_count=len(classes),
+            validation_fraction=sequence_mlp_validation_fraction,
+        ):
+            sequence_mlp_early_stopping = False
+            print(
+                "[w] sequence_mlp early_stopping отключен: слишком мало "
+                "сэмплов для stratified validation split."
+            )
+    args.sequence_mlp_validation_fraction_effective = sequence_mlp_validation_fraction
+    args.sequence_mlp_early_stopping_effective = sequence_mlp_early_stopping
+
     clf = build_classifier(
         str(args.model_type),
         neighbors=int(args.neighbors),
         weights=str(args.weights),
         random_state=int(args.random_state),
+        sequence_mlp_alpha=float(args.sequence_mlp_alpha),
+        sequence_mlp_early_stopping=sequence_mlp_early_stopping,
+        sequence_mlp_validation_fraction=sequence_mlp_validation_fraction,
+        sequence_mlp_n_iter_no_change=int(args.sequence_mlp_n_iter_no_change),
     )
     clf.fit(X, y)
     train_accuracy = float(clf.score(X, y))
@@ -491,6 +573,44 @@ def _log_mlflow_run(
                 DEFAULT_REJECT_DISTANCE_MULTIPLIER,
             )
         )
+        sequence_mlp_alpha = float(
+            getattr(args, "sequence_mlp_alpha", DEFAULT_SEQUENCE_MLP_ALPHA)
+        )
+        sequence_mlp_early_stopping = bool(
+            getattr(
+                args,
+                "sequence_mlp_early_stopping",
+                DEFAULT_SEQUENCE_MLP_EARLY_STOPPING,
+            )
+        )
+        sequence_mlp_early_stopping_effective = bool(
+            getattr(
+                args,
+                "sequence_mlp_early_stopping_effective",
+                sequence_mlp_early_stopping,
+            )
+        )
+        sequence_mlp_validation_fraction = float(
+            getattr(
+                args,
+                "sequence_mlp_validation_fraction",
+                DEFAULT_SEQUENCE_MLP_VALIDATION_FRACTION,
+            )
+        )
+        sequence_mlp_validation_fraction_effective = float(
+            getattr(
+                args,
+                "sequence_mlp_validation_fraction_effective",
+                sequence_mlp_validation_fraction,
+            )
+        )
+        sequence_mlp_n_iter_no_change = int(
+            getattr(
+                args,
+                "sequence_mlp_n_iter_no_change",
+                DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
+            )
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -504,6 +624,19 @@ def _log_mlflow_run(
                     "feature_mode": str(args.feature_mode),
                     "neighbors": int(args.neighbors),
                     "weights": str(args.weights),
+                    "random_state": int(getattr(args, "random_state", 42)),
+                    "sequence_mlp_alpha": sequence_mlp_alpha,
+                    "sequence_mlp_early_stopping": sequence_mlp_early_stopping,
+                    "sequence_mlp_early_stopping_effective": (
+                        sequence_mlp_early_stopping_effective
+                    ),
+                    "sequence_mlp_validation_fraction": (
+                        sequence_mlp_validation_fraction
+                    ),
+                    "sequence_mlp_validation_fraction_effective": (
+                        sequence_mlp_validation_fraction_effective
+                    ),
+                    "sequence_mlp_n_iter_no_change": sequence_mlp_n_iter_no_change,
                     "expect_dim": (
                         int(args.expect_dim)
                         if args.expect_dim is not None
