@@ -3,7 +3,8 @@
 
 Аналог QML ``GestureListScreen.qml``. Источник данных — таблица ``gestures``
 через ``AppController.get_db_gestures()``. Здесь показываем только активные
-и обученные жесты (model_class_id IS NOT NULL — это правило R3).
+и обученные жесты: static-классы из ``model_class_id`` и dynamic-классы из
+``models/dynamic_classes.json``.
 """
 from __future__ import annotations
 
@@ -16,12 +17,20 @@ import flet as ft
 from app.flet_app.controller import AppController
 from app.flet_app.theme import (
     COLOR_ACCENT,
+    COLOR_DANGER,
     COLOR_MUTED,
     COLOR_ON_SURFACE,
     COLOR_SUCCESS,
     COLOR_SURFACE_HIGH,
     COLOR_WARNING,
     surface_card,
+)
+from app.services.gesture_taxonomy import (
+    GESTURE_TYPE_DYNAMIC,
+    GESTURE_TYPE_NEGATIVE,
+    GESTURE_TYPE_QUASI_STATIC,
+    GESTURE_TYPE_STATIC,
+    load_gesture_taxonomy,
 )
 
 
@@ -43,10 +52,17 @@ class GesturesView:
         self._selected_id: int | None = None
         self._filter = "all"
         self._command_help_open = False
+        self._preview_cache: dict[str, str | None] = {}
+        self._gesture_type_cache: dict[str, str] = {}
+        try:
+            self._taxonomy = load_gesture_taxonomy()
+        except Exception:
+            self._taxonomy = None
 
         self._list_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
         self._info_text = ft.Text("", size=12, color=COLOR_MUTED)
         self._summary_total = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_ON_SURFACE)
+        self._summary_dynamic = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_ACCENT)
         self._summary_bound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_SUCCESS)
         self._summary_unbound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_WARNING)
         self._detail_body = ft.Column(spacing=12)
@@ -94,6 +110,8 @@ class GesturesView:
                 ft.DropdownOption(key="all", text="все"),
                 ft.DropdownOption(key="bound", text="привязанные"),
                 ft.DropdownOption(key="unbound", text="без команды"),
+                ft.DropdownOption(key="dynamic", text="динамические"),
+                ft.DropdownOption(key="static", text="статические"),
                 ft.DropdownOption(key="one_hand", text="одна рука"),
                 ft.DropdownOption(key="two_hands", text="две руки"),
             ],
@@ -140,7 +158,9 @@ class GesturesView:
 
         total = len(self._rows)
         bound = sum(1 for row in self._rows if self._bound_command(row))
+        dynamic = sum(1 for row in self._rows if self._gesture_type(row) == GESTURE_TYPE_DYNAMIC)
         self._summary_total.value = str(total)
+        self._summary_dynamic.value = str(dynamic)
         self._summary_bound.value = str(bound)
         self._summary_unbound.value = str(max(0, total - bound))
 
@@ -175,6 +195,15 @@ class GesturesView:
             rows = [row for row in rows if self._bound_command(row)]
         elif mode == "unbound":
             rows = [row for row in rows if not self._bound_command(row)]
+        elif mode == "dynamic":
+            rows = [row for row in rows if self._gesture_type(row) == GESTURE_TYPE_DYNAMIC]
+        elif mode == "static":
+            rows = [
+                row
+                for row in rows
+                if self._gesture_type(row)
+                in {GESTURE_TYPE_STATIC, GESTURE_TYPE_QUASI_STATIC}
+            ]
         elif mode == "one_hand":
             rows = [row for row in rows if not row.get("isTwoHands")]
         elif mode == "two_hands":
@@ -229,6 +258,86 @@ class GesturesView:
                 return value
         return None
 
+    def _gesture_type(self, row: dict) -> str:
+        raw = str(row.get("gestureType") or row.get("type") or "").strip().lower()
+        if raw in {
+            GESTURE_TYPE_STATIC,
+            GESTURE_TYPE_QUASI_STATIC,
+            GESTURE_TYPE_DYNAMIC,
+            GESTURE_TYPE_NEGATIVE,
+        }:
+            return raw
+
+        label = self._label(row)
+        if self._taxonomy is not None:
+            try:
+                gesture_type = self._taxonomy.gesture_type_for_label(label)
+                if gesture_type and gesture_type != GESTURE_TYPE_STATIC:
+                    return gesture_type
+            except Exception:
+                pass
+
+        sample_path = self._gesture_sample_path(row)
+        if sample_path is None:
+            return GESTURE_TYPE_STATIC
+        cache_key = str(sample_path)
+        cached = self._gesture_type_cache.get(cache_key)
+        if cached:
+            return cached
+
+        gesture_type = GESTURE_TYPE_STATIC
+        meta_path = sample_path.with_suffix(".meta.json")
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                scope = str(meta.get("source_scope") or meta.get("gesture_type") or "").lower()
+                if bool(meta.get("include_global_motion")) or scope == GESTURE_TYPE_DYNAMIC:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+                elif scope == GESTURE_TYPE_NEGATIVE:
+                    gesture_type = GESTURE_TYPE_NEGATIVE
+                elif int(meta.get("raw_feature_dim") or 0) >= 44:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+            except Exception:
+                pass
+
+        if gesture_type == GESTURE_TYPE_STATIC:
+            try:
+                import numpy as np
+
+                arr = np.load(sample_path, mmap_mode="r", allow_pickle=False)
+                shape = tuple(int(item) for item in arr.shape)
+                if len(shape) >= 2 and shape[-1] >= 44:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+            except Exception:
+                pass
+
+        self._gesture_type_cache[cache_key] = gesture_type
+        return gesture_type
+
+    def _gesture_type_label(self, gesture_type: str) -> str:
+        return {
+            GESTURE_TYPE_DYNAMIC: "динамический",
+            GESTURE_TYPE_QUASI_STATIC: "quasi-static",
+            GESTURE_TYPE_NEGATIVE: "отсев",
+            GESTURE_TYPE_STATIC: "статический",
+        }.get(gesture_type, "статический")
+
+    def _gesture_type_color(self, gesture_type: str) -> str:
+        return {
+            GESTURE_TYPE_DYNAMIC: COLOR_ACCENT,
+            GESTURE_TYPE_QUASI_STATIC: COLOR_WARNING,
+            GESTURE_TYPE_NEGATIVE: COLOR_DANGER,
+            GESTURE_TYPE_STATIC: COLOR_MUTED,
+        }.get(gesture_type, COLOR_MUTED)
+
+    def _gesture_type_icon(self, gesture_type: str) -> str:
+        return {
+            GESTURE_TYPE_DYNAMIC: ft.Icons.AUTO_AWESOME_MOTION,
+            GESTURE_TYPE_QUASI_STATIC: ft.Icons.TIMELINE,
+            GESTURE_TYPE_NEGATIVE: ft.Icons.RADAR,
+            GESTURE_TYPE_STATIC: ft.Icons.BACK_HAND,
+        }.get(gesture_type, ft.Icons.BACK_HAND)
+
     def _action_spec(self, row: dict) -> dict:
         raw = row.get("boundCommandActionSpec") or row.get("actionSpec") or {}
         if isinstance(raw, dict):
@@ -262,6 +371,12 @@ class GesturesView:
         if sample_path is None:
             return None
         try:
+            cache_key = f"{sample_path}:{sample_path.stat().st_mtime_ns}"
+        except OSError:
+            cache_key = str(sample_path)
+        if cache_key in self._preview_cache:
+            return self._preview_cache[cache_key]
+        try:
             import numpy as np
 
             arr = np.load(sample_path, allow_pickle=False)
@@ -271,7 +386,7 @@ class GesturesView:
                 if frame.shape[0] < 21 or frame.shape[1] < 2:
                     return None
                 points = frame[:21, :2]
-                trail = None
+                trail = seq[:, 0, :2] if seq.shape[0] > 1 else None
             elif seq.ndim == 2 and seq.shape[0] > 0:
                 flat_seq = seq.reshape(seq.shape[0], -1)
                 idx = min(flat_seq.shape[0] // 2, flat_seq.shape[0] - 1)
@@ -290,11 +405,18 @@ class GesturesView:
                 return None
             if not np.isfinite(points).all() or np.all(np.abs(points) < 1e-6):
                 return None
-            return self._sample_png_base64(points, trail=trail)
+            preview = self._sample_png_base64(
+                points,
+                trail=trail,
+                dynamic=self._gesture_type(row) == GESTURE_TYPE_DYNAMIC,
+            )
+            self._preview_cache[cache_key] = preview
+            return preview
         except Exception:
+            self._preview_cache[cache_key] = None
             return None
 
-    def _sample_png_base64(self, points, *, trail=None) -> str:
+    def _sample_png_base64(self, points, *, trail=None, dynamic: bool = False) -> str:
         import cv2
         import numpy as np
 
@@ -303,8 +425,8 @@ class GesturesView:
         max_x, max_y = pts.max(axis=0)
         span_x = max(max_x - min_x, 1e-4)
         span_y = max(max_y - min_y, 1e-4)
-        width, height = 420, 210
-        pad = 28
+        width, height = 560, 300
+        pad = 42
         scale = min((width - pad * 2) / span_x, (height - pad * 2) / span_y)
         offset_x = (width - span_x * scale) / 2
         offset_y = (height - span_y * scale) / 2
@@ -316,18 +438,12 @@ class GesturesView:
 
         mapped = [map_point(point) for point in pts]
         canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        canvas[:, :] = (22, 19, 16)
-        cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), (54, 47, 43), 2)
-        cv2.putText(
-            canvas,
-            "real sample",
-            (20, 31),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.46,
-            (161, 168, 165),
-            1,
-            cv2.LINE_AA,
-        )
+        canvas[:, :] = (18, 20, 22)
+        for x in range(48, width, 48):
+            cv2.line(canvas, (x, 0), (x, height), (28, 31, 35), 1, cv2.LINE_AA)
+        for y in range(48, height, 48):
+            cv2.line(canvas, (0, y), (width, y), (28, 31, 35), 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (1, 1), (width - 2, height - 2), (52, 57, 66), 2)
 
         if trail is not None:
             tr = np.asarray(trail, dtype=float)
@@ -341,11 +457,33 @@ class GesturesView:
                 t_span = np.maximum(t_max - t_min, 1e-4)
                 trail_points = []
                 for item in tr[:, :2]:
-                    x = width - 110 + ((item[0] - t_min[0]) / t_span[0]) * 76
-                    y = 32 + ((item[1] - t_min[1]) / t_span[1]) * 54
+                    x = width - 132 + ((item[0] - t_min[0]) / t_span[0]) * 84
+                    y = 42 + ((item[1] - t_min[1]) / t_span[1]) * 68
                     trail_points.append((int(round(x)), int(round(y))))
-                for p1, p2 in zip(trail_points, trail_points[1:]):
-                    cv2.line(canvas, p1, p2, (78, 168, 216), 3, cv2.LINE_AA)
+                for i, (p1, p2) in enumerate(zip(trail_points, trail_points[1:])):
+                    blend = i / max(1, len(trail_points) - 1)
+                    color = (
+                        int(78 + 80 * blend),
+                        int(168 + 28 * blend),
+                        int(216 - 70 * blend),
+                    )
+                    cv2.line(canvas, p1, p2, color, 5 if dynamic else 3, cv2.LINE_AA)
+                cv2.circle(canvas, trail_points[-1], 6, (216, 199, 82), -1, cv2.LINE_AA)
+
+        glow = canvas.copy()
+        for a, b in HAND_CONNECTIONS:
+            if a < len(mapped) and b < len(mapped):
+                x1, y1 = mapped[a]
+                x2, y2 = mapped[b]
+                cv2.line(
+                    glow,
+                    (int(round(x1)), int(round(y1))),
+                    (int(round(x2)), int(round(y2))),
+                    (82, 199, 216),
+                    11,
+                    cv2.LINE_AA,
+                )
+        canvas = cv2.addWeighted(glow, 0.22, canvas, 0.78, 0)
 
         for a, b in HAND_CONNECTIONS:
             if a < len(mapped) and b < len(mapped):
@@ -355,8 +493,8 @@ class GesturesView:
                     canvas,
                     (int(round(x1)), int(round(y1))),
                     (int(round(x2)), int(round(y2))),
-                    (216, 199, 82),
-                    5,
+                    (82, 199, 216),
+                    6,
                     cv2.LINE_AA,
                 )
 
@@ -364,8 +502,24 @@ class GesturesView:
             cv2.circle(
                 canvas,
                 (int(round(x)), int(round(y))),
-                6,
+                8,
+                (18, 20, 22),
+                -1,
+                cv2.LINE_AA,
+            )
+            cv2.circle(
+                canvas,
+                (int(round(x)), int(round(y))),
+                5,
                 (231, 238, 240),
+                -1,
+                cv2.LINE_AA,
+            )
+            cv2.circle(
+                canvas,
+                (int(round(x)), int(round(y))),
+                2,
+                (216, 199, 82) if dynamic else (82, 199, 216),
                 -1,
                 cv2.LINE_AA,
             )
@@ -399,30 +553,68 @@ class GesturesView:
 
     def _gesture_preview(self, row: dict) -> ft.Container:
         src = self._gesture_preview_src(row)
+        gesture_type = self._gesture_type(row)
+        gesture_color = self._gesture_type_color(gesture_type)
         if src:
-            content: ft.Control = ft.Image(
+            media: ft.Control = ft.Image(
                 src=src,
                 fit=ft.BoxFit.CONTAIN,
                 border_radius=8,
                 gapless_playback=True,
+                filter_quality=ft.FilterQuality.HIGH,
             )
         else:
-            content = ft.Column(
+            media = ft.Column(
                 spacing=8,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     ft.Icon(ft.Icons.BACK_HAND, size=42, color=COLOR_ACCENT),
-                    ft.Text("sample preview", size=12, color=COLOR_MUTED),
+                    ft.Text("Нет sample preview", size=12, color=COLOR_MUTED),
                 ],
             )
         return ft.Container(
-            height=176,
+            height=210,
             bgcolor="#101316",
             border=self._border(COLOR_SURFACE_HIGH),
             border_radius=8,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            content=content,
+            content=ft.Stack(
+                expand=True,
+                controls=[
+                    media,
+                    ft.Container(
+                        left=12,
+                        top=12,
+                        bgcolor="#101316",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+                        content=ft.Row(
+                            spacing=6,
+                            tight=True,
+                            controls=[
+                                ft.Icon(ft.Icons.CENTER_FOCUS_STRONG, size=14, color=COLOR_ACCENT),
+                                ft.Text("реальная запись", size=11, color=COLOR_ON_SURFACE),
+                            ],
+                        ),
+                    ),
+                    ft.Container(
+                        right=12,
+                        top=12,
+                        bgcolor="#101316",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+                        content=ft.Row(
+                            spacing=6,
+                            tight=True,
+                            controls=[
+                                ft.Icon(self._gesture_type_icon(gesture_type), size=14, color=gesture_color),
+                                ft.Text(self._gesture_type_label(gesture_type), size=11, color=gesture_color),
+                            ],
+                        ),
+                    ),
+                ],
+            ),
         )
 
     def _status_chip(self, bound: bool) -> ft.Container:
@@ -436,7 +628,7 @@ class GesturesView:
         return ft.Container(
             bgcolor="#171A1D",
             border_radius=8,
-            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=9),
             content=ft.Row(
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -460,6 +652,38 @@ class GesturesView:
             ),
         )
 
+    def _table_header(self) -> ft.Container:
+        return ft.Container(
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8,
+            bgcolor="#101316",
+            content=ft.Row(
+                spacing=12,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(expand=3, content=ft.Text("Жест", size=11, color=COLOR_MUTED)),
+                    ft.Container(width=118, content=ft.Text("Тип", size=11, color=COLOR_MUTED)),
+                    ft.Container(width=78, content=ft.Text("Samples", size=11, color=COLOR_MUTED)),
+                    ft.Container(expand=2, content=ft.Text("Команда", size=11, color=COLOR_MUTED)),
+                    ft.Container(width=112, content=ft.Text("Статус", size=11, color=COLOR_MUTED)),
+                ],
+            ),
+        )
+
+    def _mini_gesture_preview(self, row: dict) -> ft.Container:
+        gesture_type = self._gesture_type(row)
+        color = self._gesture_type_color(gesture_type)
+        return ft.Container(
+            width=56,
+            height=42,
+            border_radius=8,
+            bgcolor="#101316",
+            border=self._border(COLOR_SURFACE_HIGH),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            alignment=ft.Alignment.CENTER,
+            content=ft.Icon(self._gesture_type_icon(gesture_type), color=color, size=20),
+        )
+
     def _gesture_card(self, row: dict) -> ft.Container:
         label = self._label(row)
         bound = self._bound_command(row)
@@ -468,65 +692,72 @@ class GesturesView:
         hands = "две руки" if row.get("isTwoHands") else "одна рука"
         description = self._description(row)
         subtitle = description or hands
-        if description:
-            subtitle = f"{hands} · {description}"
+        gesture_type = self._gesture_type(row)
+        type_color = self._gesture_type_color(gesture_type)
 
         return ft.Container(
             bgcolor="#171A1D" if not selected else "#162A2E",
             border=self._border(COLOR_ACCENT if selected else COLOR_SURFACE_HIGH, 1.2 if selected else 1),
             border_radius=8,
-            padding=12,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             on_click=lambda _e, item=row: self._select_row(item),
             content=ft.Row(
                 spacing=12,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
                     ft.Container(
-                        width=42,
-                        height=42,
-                        border_radius=8,
-                        bgcolor="#101316",
-                        alignment=ft.Alignment.CENTER,
-                        content=ft.Icon(ft.Icons.BACK_HAND, color=COLOR_ACCENT, size=22),
+                        expand=3,
+                        content=ft.Row(
+                            spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                self._mini_gesture_preview(row),
+                                ft.Column(
+                                    spacing=3,
+                                    expand=True,
+                                    controls=[
+                                        ft.Text(
+                                            label,
+                                            size=14,
+                                            weight=ft.FontWeight.W_600,
+                                            color=COLOR_ON_SURFACE,
+                                            no_wrap=True,
+                                        ),
+                                        ft.Text(subtitle, size=11, color=COLOR_MUTED, no_wrap=True),
+                                    ],
+                                ),
+                            ],
+                        ),
                     ),
-                    ft.Column(
-                        spacing=6,
-                        expand=True,
-                        controls=[
-                            ft.Row(
-                                spacing=8,
-                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                controls=[
-                                    ft.Text(
-                                        label,
-                                        size=15,
-                                        weight=ft.FontWeight.W_600,
-                                        color=COLOR_ON_SURFACE,
-                                        expand=True,
-                                        no_wrap=True,
-                                    ),
-                                    self._status_chip(bool(bound)),
-                                ],
-                            ),
-                            ft.Text(subtitle, size=12, color=COLOR_MUTED, no_wrap=True),
-                            ft.Row(
-                                spacing=8,
-                                wrap=True,
-                                controls=[
-                                    self._chip(
-                                        f"{samples} samples" if samples is not None else "trained",
-                                        COLOR_ACCENT,
-                                        icon=ft.Icons.DATASET,
-                                    ),
-                                    self._chip(hands, COLOR_MUTED, icon=ft.Icons.PAN_TOOL_ALT),
-                                    self._chip(
-                                        bound or "команда не назначена",
-                                        COLOR_SUCCESS if bound else COLOR_MUTED,
-                                        icon=ft.Icons.TERMINAL,
-                                    ),
-                                ],
-                            ),
-                        ],
+                    ft.Container(
+                        width=118,
+                        content=self._chip(
+                            self._gesture_type_label(gesture_type),
+                            type_color,
+                            icon=self._gesture_type_icon(gesture_type),
+                        ),
+                    ),
+                    ft.Container(
+                        width=78,
+                        content=ft.Text(
+                            str(samples) if samples is not None else "trained",
+                            size=13,
+                            color=COLOR_ON_SURFACE,
+                            no_wrap=True,
+                        ),
+                    ),
+                    ft.Container(
+                        expand=2,
+                        content=ft.Text(
+                            bound or "не назначена",
+                            size=13,
+                            color=COLOR_SUCCESS if bound else COLOR_MUTED,
+                            no_wrap=True,
+                        ),
+                    ),
+                    ft.Container(
+                        width=112,
+                        content=self._status_chip(bool(bound)),
                     ),
                 ],
             ),
@@ -737,6 +968,7 @@ class GesturesView:
         bound = self._bound_command(row)
         hands = "две руки" if row.get("isTwoHands") else "одна рука"
         samples = self._sample_count(row)
+        gesture_type = self._gesture_type(row)
         description = self._description(row) or "Описание не задано"
         self._detail_body.controls = [
             self._gesture_preview(row),
@@ -755,6 +987,12 @@ class GesturesView:
             ),
             ft.Text(description, size=12, color=COLOR_MUTED),
             self._command_panel(row),
+            self._detail_line(
+                self._gesture_type_icon(gesture_type),
+                "Тип жеста",
+                self._gesture_type_label(gesture_type),
+                self._gesture_type_color(gesture_type),
+            ),
             self._detail_line(ft.Icons.PAN_TOOL_ALT, "Режим", hands, COLOR_ACCENT),
             self._detail_line(
                 ft.Icons.DATASET,
@@ -767,6 +1005,11 @@ class GesturesView:
                 wrap=True,
                 controls=[
                     self._status_chip(bool(bound)),
+                    self._chip(
+                        self._gesture_type_label(gesture_type),
+                        self._gesture_type_color(gesture_type),
+                        icon=self._gesture_type_icon(gesture_type),
+                    ),
                     self._chip("active", COLOR_SUCCESS, icon=ft.Icons.CHECK_CIRCLE),
                 ],
             )
@@ -812,13 +1055,12 @@ class GesturesView:
         )
 
         header = surface_card(
-            ft.ResponsiveRow(
-                spacing=12,
-                run_spacing=12,
+            ft.Row(
+                spacing=14,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
                     ft.Container(
-                        col={"xs": 12, "md": 4},
+                        expand=True,
                         content=ft.Row(
                             spacing=10,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -851,26 +1093,20 @@ class GesturesView:
                             ],
                         ),
                     ),
-                    ft.Container(
-                        col={"xs": 12, "md": 5},
-                        content=ft.Row(
-                            spacing=8,
-                            wrap=True,
-                            controls=[
-                                self._metric_tile("Всего", self._summary_total, ft.Icons.DATA_ARRAY, COLOR_ACCENT),
-                                self._metric_tile("Привязано", self._summary_bound, ft.Icons.LINK, COLOR_SUCCESS),
-                                self._metric_tile("Без команды", self._summary_unbound, ft.Icons.LINK_OFF, COLOR_WARNING),
-                            ],
-                        ),
+                    ft.Row(
+                        spacing=8,
+                        controls=[
+                            self._metric_tile("Всего", self._summary_total, ft.Icons.DATA_ARRAY, COLOR_ACCENT),
+                            self._metric_tile("Dynamic", self._summary_dynamic, ft.Icons.AUTO_AWESOME_MOTION, COLOR_ACCENT),
+                            self._metric_tile("Привязано", self._summary_bound, ft.Icons.LINK, COLOR_SUCCESS),
+                            self._metric_tile("Без команды", self._summary_unbound, ft.Icons.LINK_OFF, COLOR_WARNING),
+                        ],
                     ),
-                    ft.Container(
-                        col={"xs": 12, "md": 3},
-                        content=ft.Row(
-                            spacing=8,
-                            alignment=ft.MainAxisAlignment.END,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            controls=[import_btn, refresh_btn],
-                        ),
+                    ft.Row(
+                        spacing=8,
+                        alignment=ft.MainAxisAlignment.END,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[import_btn, refresh_btn],
                     ),
                 ],
             ),
@@ -895,12 +1131,23 @@ class GesturesView:
             controls=[
                 ft.Container(
                     col={"xs": 12, "lg": 8},
-                    content=ft.Container(
-                        content=ft.Stack(
-                            controls=[self._list_column, self._empty_state],
+                    content=surface_card(
+                        ft.Column(
+                            spacing=10,
                             expand=True,
+                            controls=[
+                                self._table_header(),
+                                ft.Container(
+                                    content=ft.Stack(
+                                        controls=[self._list_column, self._empty_state],
+                                        expand=True,
+                                    ),
+                                    expand=True,
+                                ),
+                            ],
                         ),
-                        expand=True,
+                        padding=12,
+                        radius=8,
                     ),
                 ),
                 ft.Container(

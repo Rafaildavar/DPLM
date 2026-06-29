@@ -4223,13 +4223,37 @@ class AppController:
             print(f"[!] get_db_gestures: {e}")
             return []
         try:
+            def _read_classes(path: Path) -> set[str]:
+                if not path.exists():
+                    return set()
+                try:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    return set()
+                if not isinstance(raw, list):
+                    return set()
+                return {
+                    str(item).strip().lower()
+                    for item in raw
+                    if str(item).strip()
+                }
+
+            static_classes = _read_classes(self._configured_classes_path())
+            dynamic_classes = _read_classes(self._dynamic_classes_path())
+            trained_classes = static_classes | dynamic_classes
             rows = (
                 session.query(DbGesture)
                 .filter(DbGesture.is_active.is_(True))
-                .filter(DbGesture.model_class_id.isnot(None))
                 .order_by(DbGesture.label)
                 .all()
             )
+            rows = [
+                row
+                for row in rows
+                if getattr(row, "model_class_id", None) is not None
+                or str(getattr(row, "label", "") or "").strip().lower()
+                in trained_classes
+            ]
             current = {
                 row.gesture_id: row
                 for row in session.query(DbCommand)
@@ -4263,6 +4287,11 @@ class AppController:
                         "description": str(g.description or ""),
                         "samplesPath": str(getattr(g, "samples_path", "") or ""),
                         "sampleCount": int(sample_count),
+                        "gestureType": (
+                            GESTURE_TYPE_DYNAMIC
+                            if str(g.label or "").strip().lower() in dynamic_classes
+                            else ""
+                        ),
                         "isTwoHands": bool(
                             getattr(g, "is_two_hands", False) or False
                         ),
