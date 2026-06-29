@@ -10,6 +10,7 @@ from cv.dynamic_prototype import (
 )
 from scripts.dynamic_prototype_experiments import (
     _copy_base_dynamic_artifacts,
+    _write_dynamic_prototype_artifact_bundle,
     filter_conflicting_external_negatives,
 )
 
@@ -295,3 +296,59 @@ def test_copy_base_dynamic_artifacts_skips_same_file(tmp_path):
     _copy_base_dynamic_artifacts(tmp_path, tmp_path)
 
     assert model_path.read_bytes() == b"model"
+
+
+def test_dynamic_prototype_artifact_bundle_contains_dashboard(tmp_path):
+    report = {
+        "method": "prototype_distance",
+        "metrics": {
+            "overall_success": 0.95,
+            "positive_recall": 0.90,
+            "negative_reject_rate": 1.0,
+            "negative_false_positive_rate": 0.0,
+            "positive_wrong_rate": 0.0,
+            "positive_reject_rate": 0.1,
+            "per_label": {
+                "swipe_left": {
+                    "total": 10,
+                    "correct": 9,
+                    "wrong": 0,
+                    "rejected": 1,
+                }
+            },
+        },
+        "thresholds": {
+            "swipe_left": {
+                "threshold": 0.12,
+                "positive_radius": 0.13,
+                "positive_distance_mean": 0.04,
+                "positive_distance_p95": 0.08,
+                "impostor_distance_p10": 0.20,
+            }
+        },
+        "negative_conflict_filter": {
+            "external_negative_total": 12,
+            "safe_external_negative_count": 11,
+            "conflict_count": 1,
+            "conflict_rate": 1 / 12,
+        },
+    }
+    payload = {
+        "positive_labels": ["swipe_left"],
+        "negative_labels": ["random_motion"],
+        "prototypes": [{"label": "swipe_left"}],
+    }
+
+    _write_dynamic_prototype_artifact_bundle(
+        tmp_path / "dynamic_prototype",
+        report=report,
+        payload=payload,
+    )
+
+    assert (tmp_path / "dynamic_prototype" / "index.html").exists()
+    assert (tmp_path / "dynamic_prototype" / "charts" / "quality.svg").exists()
+    assert (tmp_path / "dynamic_prototype" / "charts" / "per_class.svg").exists()
+    thresholds = (tmp_path / "dynamic_prototype" / "thresholds.csv").read_text(
+        encoding="utf-8"
+    )
+    assert "swipe_left" in thresholds

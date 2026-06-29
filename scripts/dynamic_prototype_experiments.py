@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import random
 import shutil
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -656,6 +658,7 @@ def _log_mlflow(
                 {
                     "run_kind": "dynamic_prototype_experiment",
                     "method": report["method"],
+                    "artifact_bundle": "dynamic_prototype/index.html",
                 }
             )
             mlflow.log_params(
@@ -687,8 +690,261 @@ def _log_mlflow(
             model_path = Path(report["model_path"])
             if model_path.exists():
                 mlflow.log_artifact(str(model_path), artifact_path="model")
+            with tempfile.TemporaryDirectory(prefix="gestureflow-prototype-") as tmp:
+                artifact_dir = Path(tmp) / "dynamic_prototype"
+                _write_dynamic_prototype_artifact_bundle(
+                    artifact_dir,
+                    report=report,
+                    payload=payload,
+                )
+                mlflow.log_artifacts(str(artifact_dir), artifact_path="dynamic_prototype")
     except Exception as exc:
         print(f"[w] MLflow dynamic prototype logging failed: {exc}", flush=True)
+
+
+def _write_dynamic_prototype_artifact_bundle(
+    artifact_dir: Path,
+    *,
+    report: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    charts_dir = artifact_dir / "charts"
+    charts_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
+    conflict = (
+        report.get("negative_conflict_filter")
+        if isinstance(report.get("negative_conflict_filter"), dict)
+        else {}
+    )
+    thresholds = report.get("thresholds") if isinstance(report.get("thresholds"), dict) else {}
+
+    (artifact_dir / "dynamic_prototype_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    (artifact_dir / "metrics.csv").write_text(
+        _metrics_csv(metrics),
+        encoding="utf-8",
+    )
+    (artifact_dir / "thresholds.csv").write_text(
+        _thresholds_csv(thresholds),
+        encoding="utf-8",
+    )
+
+    (charts_dir / "quality.svg").write_text(
+        _render_bar_svg(
+            "Prototype quality",
+            [
+                ("overall success", _metric(metrics, "overall_success"), "good"),
+                ("positive recall", _metric(metrics, "positive_recall"), "good"),
+                ("negative reject", _metric(metrics, "negative_reject_rate"), "good"),
+                ("negative false positive", _metric(metrics, "negative_false_positive_rate"), "bad"),
+                ("positive wrong", _metric(metrics, "positive_wrong_rate"), "bad"),
+                ("positive reject", _metric(metrics, "positive_reject_rate"), "warn"),
+            ],
+            max_value=1.0,
+        ),
+        encoding="utf-8",
+    )
+    (charts_dir / "per_class.svg").write_text(
+        _render_bar_svg(
+            "Positive recall by class",
+            _per_class_recall_items(metrics),
+            max_value=1.0,
+        ),
+        encoding="utf-8",
+    )
+    (charts_dir / "negative_conflict.svg").write_text(
+        _render_bar_svg(
+            "External negative conflict filter",
+            [
+                ("external negatives", _metric(conflict, "external_negative_total"), "warn"),
+                ("safe negatives", _metric(conflict, "safe_external_negative_count"), "good"),
+                ("conflicts removed", _metric(conflict, "conflict_count"), "bad"),
+                ("conflict rate", _metric(conflict, "conflict_rate"), "bad"),
+            ],
+        ),
+        encoding="utf-8",
+    )
+    (charts_dir / "thresholds.svg").write_text(
+        _render_bar_svg(
+            "Prototype thresholds",
+            _threshold_items(thresholds),
+        ),
+        encoding="utf-8",
+    )
+
+    (artifact_dir / "index.html").write_text(
+        _render_dynamic_prototype_html(
+            report=report,
+            payload=payload,
+            metrics=metrics,
+            conflict=conflict,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _metric(values: dict[str, Any], key: str) -> float:
+    try:
+        return float(values.get(key) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _metrics_csv(metrics: dict[str, Any]) -> str:
+    lines = ["metric,value"]
+    for key, value in sorted(metrics.items()):
+        if isinstance(value, (int, float)):
+            lines.append(f"{key},{float(value)}")
+    return "\n".join(lines) + "\n"
+
+
+def _thresholds_csv(thresholds: dict[str, Any]) -> str:
+    lines = [
+        "label,threshold,positive_radius,positive_distance_mean,positive_distance_p95,impostor_distance_p10"
+    ]
+    for label, raw in sorted(thresholds.items()):
+        item = raw if isinstance(raw, dict) else {}
+        lines.append(
+            ",".join(
+                [
+                    str(label),
+                    str(_metric(item, "threshold")),
+                    str(_metric(item, "positive_radius")),
+                    str(_metric(item, "positive_distance_mean")),
+                    str(_metric(item, "positive_distance_p95")),
+                    str(_metric(item, "impostor_distance_p10")),
+                ]
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _per_class_recall_items(metrics: dict[str, Any]) -> list[tuple[str, float, str]]:
+    per_label = metrics.get("per_label") if isinstance(metrics.get("per_label"), dict) else {}
+    items: list[tuple[str, float, str]] = []
+    for label, raw in sorted(per_label.items()):
+        stats = raw if isinstance(raw, dict) else {}
+        total = max(1.0, _metric(stats, "total"))
+        recall = _metric(stats, "correct") / total
+        items.append((str(label), recall, "good" if recall >= 0.80 else "warn"))
+    return items or [("no positive labels", 0.0, "warn")]
+
+
+def _threshold_items(thresholds: dict[str, Any]) -> list[tuple[str, float, str]]:
+    items: list[tuple[str, float, str]] = []
+    for label, raw in sorted(thresholds.items()):
+        item = raw if isinstance(raw, dict) else {}
+        items.append((str(label), _metric(item, "threshold"), "good"))
+    return items or [("no thresholds", 0.0, "warn")]
+
+
+def _render_bar_svg(
+    title: str,
+    items: list[tuple[str, float, str]],
+    *,
+    max_value: float | None = None,
+) -> str:
+    width = 980
+    row_height = 50
+    top = 78
+    height = max(210, top + row_height * max(1, len(items)) + 34)
+    max_item_value = max([abs(float(value)) for _label, value, _kind in items] + [1.0])
+    scale_max = max(float(max_value if max_value is not None else max_item_value), 1e-9)
+    colors = {
+        "good": "#18c7b8",
+        "bad": "#ff5b5f",
+        "warn": "#f7b955",
+    }
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" rx="20" fill="#0f1720"/>',
+        f'<text x="30" y="46" fill="#f5f7fb" font-size="26" font-family="Inter, Arial" font-weight="800">{html.escape(title)}</text>',
+    ]
+    label_x = 30
+    x0 = 260
+    bar_max = width - x0 - 130
+    for index, (label, value, kind) in enumerate(items):
+        y = top + index * row_height
+        width_px = max(0.0, min(1.0, float(value) / scale_max)) * bar_max
+        color = colors.get(kind, "#77a8ff")
+        parts.extend(
+            [
+                f'<text x="{label_x}" y="{y + 25}" fill="#aab7c4" font-size="17" font-family="Inter, Arial">{html.escape(str(label))}</text>',
+                f'<rect x="{x0}" y="{y}" width="{bar_max}" height="30" rx="9" fill="#1b2733"/>',
+                f'<rect x="{x0}" y="{y}" width="{width_px:.1f}" height="30" rx="9" fill="{color}"/>',
+                f'<text x="{x0 + bar_max + 18}" y="{y + 22}" fill="#f5f7fb" font-size="16" font-family="Inter, Arial" font-weight="800">{float(value):.3g}</text>',
+            ]
+        )
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def _render_dynamic_prototype_html(
+    *,
+    report: dict[str, Any],
+    payload: dict[str, Any],
+    metrics: dict[str, Any],
+    conflict: dict[str, Any],
+) -> str:
+    method = html.escape(str(report.get("method") or "unknown"))
+    positive_labels = payload.get("positive_labels") if isinstance(payload.get("positive_labels"), list) else []
+    negative_labels = payload.get("negative_labels") if isinstance(payload.get("negative_labels"), list) else []
+    prototype_count = len(payload.get("prototypes") or [])
+
+    def card(label: str, value: Any, key: str = "") -> str:
+        return (
+            '<div class="card">'
+            f'<div class="muted">{html.escape(label)}</div>'
+            f'<div class="value">{html.escape(str(value))}</div>'
+            f'<div class="key">{html.escape(key)}</div>'
+            '</div>'
+        )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GestureFlow dynamic prototype - {method}</title>
+  <style>
+    body {{ margin: 0; padding: 34px; background: #0d1218; color: #f5f7fb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    h1 {{ margin: 0 0 8px; font-size: 36px; }}
+    h2 {{ margin: 34px 0 16px; font-size: 24px; }}
+    .muted {{ color: #94a6b8; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 24px 0; }}
+    .card {{ background: #131d27; border: 1px solid #263746; border-radius: 14px; padding: 18px; }}
+    .value {{ margin-top: 8px; font-size: 31px; font-weight: 850; color: #18c7b8; }}
+    .key {{ margin-top: 8px; font-size: 12px; color: #6f8294; }}
+    img {{ width: 100%; max-width: 1080px; display: block; margin: 16px 0; }}
+    code {{ color: #9fcaef; }}
+  </style>
+</head>
+<body>
+  <h1>Dynamic prototype verifier</h1>
+  <div class="muted">Method <code>{method}</code> · open-set verifier for dynamic sequence gestures</div>
+  <div class="grid">
+    {card("Overall success", f"{_metric(metrics, 'overall_success'):.3f}", "overall_success")}
+    {card("Positive recall", f"{_metric(metrics, 'positive_recall'):.3f}", "positive_recall")}
+    {card("Negative reject", f"{_metric(metrics, 'negative_reject_rate'):.3f}", "negative_reject_rate")}
+    {card("Negative FP", f"{_metric(metrics, 'negative_false_positive_rate'):.3f}", "negative_false_positive_rate")}
+    {card("Positive labels", len(positive_labels), ", ".join(map(str, positive_labels)))}
+    {card("Negative labels", len(negative_labels), ", ".join(map(str, negative_labels[:4])))}
+    {card("Prototypes", prototype_count, "stored sequences")}
+    {card("Conflicts removed", int(_metric(conflict, "conflict_count")), "external negative filter")}
+  </div>
+  <h2>Charts</h2>
+  <img src="charts/quality.svg" alt="quality metrics">
+  <img src="charts/per_class.svg" alt="per class recall">
+  <img src="charts/negative_conflict.svg" alt="negative conflict filter">
+  <img src="charts/thresholds.svg" alt="prototype thresholds">
+  <h2>Files</h2>
+  <p class="muted">Raw data is stored next to this page: <code>dynamic_prototype_report.json</code>, <code>metrics.csv</code>, <code>thresholds.csv</code>.</p>
+</body>
+</html>
+"""
 
 
 def _parse_methods(raw: str) -> list[str]:

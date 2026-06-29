@@ -3414,3 +3414,48 @@ Live result:
 Следующая гипотеза:
 - Если sequence KNN + prototype verifier даст стабильный reject, сравнить
   модель временных рядов сильнее: LSTM/GRU или lightweight temporal CNN.
+
+### H-067: MLflow scalar charts недостаточны для защиты ML-пайплайна
+
+Статус: `implemented`
+
+Дата: `2026-06-29`
+
+Наблюдение:
+- Встроенные графики MLflow для одиночных scalar-метрик выглядят как простые
+  горизонтальные карточки. Для демонстрации проекта это плохо показывает ход
+  ML-решения: не видно классы, thresholds, negative conflicts и состав
+  artifact'ов.
+
+Гипотеза:
+- Для конкурсного MLOps-сценария лучше хранить в каждом run не только scalar
+  metrics, но и полноценный artifact bundle:
+  - HTML-dashboard;
+  - SVG-графики;
+  - CSV-таблицы;
+  - JSON-отчет для воспроизводимости.
+
+Реализация:
+- `scripts.dynamic_prototype_experiments` теперь логирует в MLflow
+  `dynamic_prototype/index.html`.
+- В artifact bundle добавлены:
+  - `charts/quality.svg`;
+  - `charts/per_class.svg`;
+  - `charts/negative_conflict.svg`;
+  - `charts/thresholds.svg`;
+  - `metrics.csv`;
+  - `thresholds.csv`;
+  - `dynamic_prototype_report.json`.
+
+Проверка:
+- Создан свежий MLflow run:
+  `022688808c284af0a6ec16749ac8ba3c`.
+- Artifact path:
+  `dynamic_prototype/index.html`.
+- Unit test:
+  `tests/unit/test_dynamic_prototype.py::test_dynamic_prototype_artifact_bundle_contains_dashboard`.
+
+Критерий успеха:
+- В MLflow метрики остаются машинно-сравнимыми через scalar charts.
+- Красивое объяснение run находится во вкладке `Artifacts`, а не теряется в
+  неудобных дефолтных карточках.
