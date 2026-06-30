@@ -220,6 +220,7 @@ class BindingAgentResult:
     intent: str = ""
     intent_block: str = ""
     telemetry: dict[str, Any] = field(default_factory=dict)
+    research: dict[str, Any] = field(default_factory=dict)
 
     def to_legacy_draft(self) -> dict[str, Any]:
         return {
@@ -235,6 +236,7 @@ class BindingAgentResult:
             "agentReply": self.response_text,
             "intent": self.intent,
             "intentBlock": self.intent_block,
+            "researchProposal": dict(self.research),
             "agentSkills": _skill_registry_cards(),
             "agentSkillPacks": _skill_pack_cards(),
             "agentTrace": [
@@ -2090,6 +2092,7 @@ from app.services.binding_agents import (
     MistralBindingAgent,
     PolicyAgent,
     RelevanceReviewerAgent,
+    ResearchAgent,
     ScenarioAgent,
     ValidationAgent,
 )
@@ -2102,10 +2105,12 @@ class BindingAgentOrchestrator:
         self,
         *,
         mistral_agent: MistralBindingAgent | None = None,
+        research_agent: ResearchAgent | None = None,
         mlflow_logger: BindingAgentMlflowLogger | None = None,
     ) -> None:
         self.intent_agent = IntentAgent()
         self.mistral_agent = mistral_agent or MistralBindingAgent()
+        self.research_agent = research_agent or ResearchAgent()
         self.mlflow_logger = mlflow_logger or BindingAgentMlflowLogger()
         self.gesture_agent = GestureAgent()
         self.action_agent = ActionAgent()
@@ -2316,10 +2321,20 @@ class BindingAgentOrchestrator:
             )
             steps.append(model_step)
             if model_draft is not None:
+                model_result = self._result_from_external_draft(
+                    context,
+                    model_draft,
+                    steps,
+                )
+                model_result = self._maybe_research_result(
+                    context,
+                    model_result,
+                    steps,
+                )
                 return self._finish_result(
                     self._review_result(
                         context,
-                        self._result_from_external_draft(context, model_draft, steps),
+                        model_result,
                         intent_step,
                     ),
                     context,
@@ -2348,6 +2363,13 @@ class BindingAgentOrchestrator:
             action_step = self.action_agent.run(context)
             steps.append(action_step)
             action_spec = dict(action_step.data.get("action_spec") or {})
+
+        research: dict[str, Any] = {}
+        if not action_spec:
+            research_step = self.research_agent.run(context)
+            steps.append(research_step)
+            action_spec = dict(research_step.data.get("action_spec") or {})
+            research = dict(research_step.data.get("research") or {})
 
         policy_step = self.policy_agent.run(gesture, action_spec)
         steps.append(policy_step)
@@ -2389,6 +2411,7 @@ class BindingAgentOrchestrator:
             missing=missing,
             gesture=gesture,
             action_spec=action_spec,
+            research=research,
         )
         result = BindingAgentResult(
             ok=ok,
@@ -2402,6 +2425,7 @@ class BindingAgentOrchestrator:
             summary=summary,
             response_text=response,
             steps=steps,
+            research=research,
         )
         return self._finish_result(
             self._review_result(context, result, intent_step),
@@ -2463,6 +2487,88 @@ class BindingAgentOrchestrator:
             model=getattr(self.mistral_agent, "model", ""),
         )
         return replace(result, telemetry=telemetry) if telemetry else result
+
+    def _maybe_research_result(
+        self,
+        context: BindingAgentContext,
+        result: BindingAgentResult,
+        steps: list[AgentStep],
+    ) -> BindingAgentResult:
+        needs_research = (
+            not result.action_spec
+            or "действие" in set(str(item) for item in result.missing)
+            or bool(result.error)
+        )
+        if not needs_research:
+            return result
+        research_step = self.research_agent.run(context)
+        steps.append(research_step)
+        action_spec = dict(research_step.data.get("action_spec") or {})
+        if not action_spec:
+            return result
+        research = dict(research_step.data.get("research") or {})
+        return self._result_from_researched_action(
+            context,
+            steps,
+            gesture=result.gesture_label,
+            action_spec=action_spec,
+            research=research,
+        )
+
+    def _result_from_researched_action(
+        self,
+        context: BindingAgentContext,
+        steps: list[AgentStep],
+        *,
+        gesture: str,
+        action_spec: dict[str, Any],
+        research: dict[str, Any],
+    ) -> BindingAgentResult:
+        policy_step = self.policy_agent.run(gesture, action_spec)
+        steps.append(policy_step)
+        missing = list(policy_step.data.get("missing") or [])
+
+        validation_step = self.validation_agent.run(gesture, action_spec)
+        steps.append(validation_step)
+        validation_error = (
+            validation_step.message
+            if action_spec and validation_step.status == "blocked"
+            else ""
+        )
+        command_name = (
+            ""
+            if validation_error
+            else str(validation_step.data.get("command_name") or "")
+        )
+        ok = not validation_error and not missing
+        can_apply = bool(action_spec and not missing and not validation_error)
+        summary = [
+            f"Жест: {gesture or 'не выбран'}",
+            f"Команда: {command_name or _action_title(action_spec)}",
+            f"Действие: {_action_title(action_spec)}",
+        ]
+        response = self._response_text(
+            ok=ok,
+            error=validation_error,
+            missing=missing,
+            gesture=gesture,
+            action_spec=action_spec,
+            research=research,
+        )
+        return BindingAgentResult(
+            ok=ok,
+            can_apply=can_apply,
+            error=validation_error,
+            missing=missing,
+            gesture_label=gesture,
+            command_name=command_name,
+            mode="sequence" if action_spec.get("action") == "sequence" else "single",
+            action_spec=action_spec,
+            summary=summary if action_spec else [],
+            response_text=response,
+            steps=steps,
+            research=research,
+        )
 
     def _result_from_external_draft(
         self,
@@ -2552,6 +2658,7 @@ class BindingAgentOrchestrator:
         missing: list[str],
         gesture: str,
         action_spec: dict[str, Any],
+        research: dict[str, Any] | None = None,
     ) -> str:
         if error:
             return f"Локальный агент: не смог разобрать запрос. {error}."
@@ -2565,6 +2672,18 @@ class BindingAgentOrchestrator:
                 "Локальный агент: действие понял, но нужно уточнить: "
                 + ", ".join(missing)
                 + "."
+            )
+        if research:
+            source = str(research.get("sourceTitle") or "проверенный источник")
+            action = research.get("actionTitle") or _action_title(action_spec)
+            if research.get("learned"):
+                return (
+                    f"Нашёл это в сохранённом skill: «{action}». "
+                    "Можно заполнить форму или сохранить привязку."
+                )
+            return (
+                f"Я нашёл проверенный рецепт: «{action}». Источник: {source}. "
+                "Если одобришь через «Заполнить» или «Сохранить», я запомню это как skill."
             )
         if ok:
             action = AGENT_ACTION_LABELS.get(

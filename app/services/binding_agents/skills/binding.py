@@ -21,6 +21,16 @@ BINDING_SKILLS: tuple[AgentSkill, ...] = (
         "Преобразует обычную фразу в actionSpec для macOS-команды.",
     ),
     AgentSkill(
+        "action.research",
+        "Action Research",
+        "Ищет проверенный macOS-рецепт, когда локальные навыки не знают команду.",
+    ),
+    AgentSkill(
+        "action.remember_research",
+        "Remember Research",
+        "Запоминает пользовательски одобренный рецепт как skill для будущих запросов.",
+    ),
+    AgentSkill(
         "scenario.compose",
         "Scenario Compose",
         "Собирает sequence из нескольких действий.",

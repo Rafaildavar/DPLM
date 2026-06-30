@@ -43,6 +43,7 @@ from app.services.binding_agent import (
     binding_agent_provider_label,
     build_agent_binding_draft as _multiagent_binding_draft,
 )
+from app.services.binding_agents.research import approve_research_proposal
 
 SEQUENCE_STEP_ACTIONS: list[dict[str, str]] = [
     {
@@ -2068,6 +2069,7 @@ class BindingsView:
                 }
             )
             return
+        self._remember_agent_research(draft)
         self._apply_agent_draft(draft)
         self._show_message(info="Предложение агента перенесено в форму")
         self._agent_status.value = "Форма заполнена"
@@ -2089,12 +2091,27 @@ class BindingsView:
         if draft.get("missing"):
             self._set_agent_draft(draft)
             return
+        self._remember_agent_research(draft)
         self._apply_agent_draft(draft)
         self._on_save_click(_e)
         if not self._error_text.visible:
             self._agent_status.value = "Сохранено"
             self._agent_status.color = COLOR_SUCCESS
             self._safe_agent_update()
+
+    def _remember_agent_research(self, draft: dict[str, Any]) -> None:
+        proposal = draft.get("researchProposal")
+        if not isinstance(proposal, dict) or not proposal:
+            return
+        try:
+            saved = approve_research_proposal(proposal)
+        except Exception as exc:
+            self._show_message(error=f"Не удалось сохранить research skill: {exc}")
+            return
+        if saved:
+            proposal["rememberOnApproval"] = False
+            proposal["approved"] = True
+            proposal["learned"] = True
 
     def _set_agent_draft(self, draft: dict[str, Any]) -> None:
         self._last_agent_draft = draft
@@ -2364,6 +2381,29 @@ class BindingsView:
                 proposal_rows,
             )
         ]
+        research = draft.get("researchProposal")
+        if isinstance(research, dict) and research:
+            source = str(research.get("sourceTitle") or "Проверенный источник")
+            url = str(research.get("sourceUrl") or "")
+            approval = (
+                "После «Заполнить» или «Сохранить» я запомню это как skill."
+                if research.get("rememberOnApproval")
+                else "Этот рецепт уже есть в сохранённых skills."
+            )
+            result.append(
+                self._agent_output_panel(
+                    "Исследование",
+                    ft.Icons.TRAVEL_EXPLORE,
+                    COLOR_ACCENT,
+                    [
+                        self._agent_markdown(
+                            f"**Источник:** {source}\n\n"
+                            + (f"`{url}`\n\n" if url else "")
+                            + approval
+                        )
+                    ],
+                )
+            )
         if missing:
             result.append(
                 self._agent_output_panel(

@@ -31,6 +31,7 @@ AGENT_DEFAULT_SKILLS: dict[str, list[str]] = {
     "Memory Agent": ["memory.dialog_lookup"],
     "Scenario Agent": ["scenario.compose"],
     "Action Agent": ["action.parse"],
+    "Research Agent": ["action.research", "action.remember_research"],
     "Policy Agent": ["policy.required_fields"],
     "Validation Agent": ["validation.contract"],
     "Reviewer Agent": ["review.relevance"],

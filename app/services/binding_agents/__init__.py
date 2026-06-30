@@ -18,6 +18,7 @@ __all__ = [
     "MistralBindingAgent",
     "PolicyAgent",
     "RelevanceReviewerAgent",
+    "ResearchAgent",
     "ScenarioAgent",
     "ValidationAgent",
 ]
@@ -65,4 +66,8 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.reviewer import RelevanceReviewerAgent
 
         return RelevanceReviewerAgent
+    if name == "ResearchAgent":
+        from app.services.binding_agents.research import ResearchAgent
+
+        return ResearchAgent
     raise AttributeError(name)

@@ -23,6 +23,12 @@ from app.services.binding_agents.tools import (
 )
 from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
 from app.services.binding_agent import BindingAgentContext
+from app.services.binding_agents.research import (
+    ResearchAgent,
+    ResearchMemoryStore,
+    ResearchRecipe,
+    approve_research_proposal,
+)
 
 
 os.environ.setdefault("DPLM_BINDING_AGENT_MLFLOW", "0")
@@ -943,6 +949,110 @@ def test_mistral_sequence_step_key_string_is_normalized_before_ui():
         "action": "key_combination",
         "keys": ["ctrl", "left"],
     }
+
+
+def test_binding_agent_researches_unknown_action_before_clarifying(tmp_path):
+    class FakeResearchProvider:
+        def research(self, context):
+            assert "mission control" in context.prompt.lower()
+            return ResearchRecipe(
+                title="Открыть Mission Control",
+                query=context.prompt,
+                platform="macos",
+                action_spec={
+                    "action": "key_combination",
+                    "platform": "macos",
+                    "keys": ["ctrl", "up"],
+                },
+                source_title="Apple Keyboard Shortcuts",
+                source_url="https://support.apple.com/",
+                source_excerpt="Mission Control can be opened with Control-Up.",
+                confidence=0.81,
+            )
+
+    memory = ResearchMemoryStore(
+        memory_path=tmp_path / "research.json",
+        skill_path=tmp_path / "SKILL.md",
+    )
+    orchestrator = BindingAgentOrchestrator(
+        research_agent=ResearchAgent(
+            memory=memory,
+            provider=FakeResearchProvider(),
+        )
+    )
+
+    result = orchestrator.run(
+        "привяжи жест palm к команде mission control",
+        GESTURES,
+        provider="local",
+    )
+    draft = result.to_legacy_draft()
+
+    assert result.ok is True
+    assert result.can_apply is True
+    assert result.action_spec == {
+        "action": "key_combination",
+        "platform": "macos",
+        "keys": ["ctrl", "up"],
+    }
+    assert "Research Agent" in [step.agent for step in result.steps]
+    assert draft["researchProposal"]["approvalRequired"] is True
+    assert draft["researchProposal"]["rememberOnApproval"] is True
+    assert "запомню это как skill" in draft["agentReply"]
+
+
+def test_research_approval_writes_skill_and_next_run_uses_memory(tmp_path):
+    memory_path = tmp_path / "research.json"
+    skill_path = tmp_path / "researched-actions" / "SKILL.md"
+    proposal = {
+        "id": "mission-control",
+        "title": "Открыть Mission Control",
+        "query": "привяжи жест palm к команде mission control",
+        "platform": "macos",
+        "actionSpec": {
+            "action": "key_combination",
+            "platform": "macos",
+            "keys": ["ctrl", "up"],
+        },
+        "sourceTitle": "Apple Keyboard Shortcuts",
+        "sourceUrl": "https://support.apple.com/",
+        "rememberOnApproval": True,
+    }
+
+    saved = approve_research_proposal(
+        proposal,
+        memory_path=memory_path,
+        skill_path=skill_path,
+    )
+
+    class EmptyResearchProvider:
+        def research(self, _context):
+            return None
+
+    orchestrator = BindingAgentOrchestrator(
+        research_agent=ResearchAgent(
+            memory=ResearchMemoryStore(
+                memory_path=memory_path,
+                skill_path=skill_path,
+            ),
+            provider=EmptyResearchProvider(),
+        )
+    )
+    result = orchestrator.run(
+        "привяжи жест palm к команде mission control",
+        GESTURES,
+        provider="local",
+    )
+    draft = result.to_legacy_draft()
+    research_step = next(step for step in result.steps if step.agent == "Research Agent")
+
+    assert saved is not None
+    assert result.can_apply is True
+    assert result.action_spec["keys"] == ["ctrl", "up"]
+    assert research_step.data["source"] == "user_skill_memory"
+    assert draft["researchProposal"]["learned"] is True
+    assert draft["researchProposal"]["approvalRequired"] is False
+    assert "Mission Control" in skill_path.read_text(encoding="utf-8")
 
 
 def test_binding_agent_semantic_router_detects_freeform_sequence():

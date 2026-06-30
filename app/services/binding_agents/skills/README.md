@@ -14,6 +14,6 @@ Files:
 - `guardrails.py` describes input/output safety skills.
 - `intent.py` describes routing skills.
 - `answer.py` describes project-answer and safe-redirect skills.
-- `binding.py` describes gesture, memory, action, scenario, policy, and validation skills.
+- `binding.py` describes gesture, memory, action, research, scenario, policy, and validation skills.
 - `review.py` describes reviewer skills.
 - `registry.py` exposes `AGENT_SKILLS`, `AGENT_DEFAULT_SKILLS`, and trace helpers.
