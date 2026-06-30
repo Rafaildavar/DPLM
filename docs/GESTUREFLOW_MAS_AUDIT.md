@@ -69,6 +69,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
   проходит как `decision=clarify`, prompt injection и секреты остаются block.
 - Reviewer пишет rubric scores, а MLflow логирует `reviewer_*` метрики и
   `intent_semantic_score`.
+- UI агента показывает человекочитаемые статусы: например, сценарий без жеста
+  отображается как `Выберите жест для сценария`, а не общий technical state.
 
 ## Главные проблемы перед улучшением
 

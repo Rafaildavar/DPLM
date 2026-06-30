@@ -1984,6 +1984,63 @@ class BindingsView:
             "Можно заполнить форму или сохранить."
         )
 
+    def _agent_status_for_draft(self, draft: dict[str, Any]) -> tuple[str, str]:
+        mode = str(draft.get("mode") or "")
+        if mode == "answer":
+            return "Ответ", COLOR_ACCENT
+        error = str(draft.get("error") or "")
+        if error:
+            return error, COLOR_DANGER
+        missing = set(str(item) for item in list(draft.get("missing") or []))
+        spec = dict(draft.get("actionSpec") or {})
+        if "жест" in missing and spec.get("action") == "sequence":
+            return "Выберите жест для сценария", COLOR_WARNING
+        if "жест" in missing:
+            return "Выберите жест", COLOR_WARNING
+        if "действие" in missing:
+            return "Уточните действие", COLOR_WARNING
+        if missing:
+            return "Нужно уточнение", COLOR_WARNING
+        if spec.get("action") == "sequence":
+            return "Сценарий готов", COLOR_SUCCESS
+        return "Готово к привязке", COLOR_SUCCESS
+
+    def _agent_missing_text(self, draft: dict[str, Any]) -> str:
+        missing = set(str(item) for item in list(draft.get("missing") or []))
+        spec = dict(draft.get("actionSpec") or {})
+        if "жест" in missing and spec.get("action") == "sequence":
+            return (
+                "**Осталось выбрать жест.**\n\n"
+                "Сценарий уже собран. Напишите, например: "
+                "`привяжи это к swipe_up` или выберите жест слева."
+            )
+        if "жест" in missing:
+            return (
+                "**Осталось выбрать жест.**\n\n"
+                "Напишите его в сообщении или выберите слева. Например: "
+                "`привяжи это к palm`."
+            )
+        if "действие" in missing:
+            return (
+                "**Осталось выбрать действие.**\n\n"
+                "Напишите, что должен сделать жест: `открыть Safari`, "
+                "`нажать command+z` или `показать уведомление`."
+            )
+        return (
+            "**Добавьте в запрос:** "
+            + ", ".join(str(x) for x in draft.get("missing") or [])
+        )
+
+    def _agent_next_text(self, draft: dict[str, Any]) -> str:
+        spec = dict(draft.get("actionSpec") or {})
+        if bool(draft.get("canApply")):
+            if spec.get("action") == "sequence":
+                return "Сценарий готов. Можно заполнить форму или сразу сохранить привязку."
+            return "Привязка готова. Можно заполнить форму или сразу сохранить."
+        if spec:
+            return "Черновик сохранён в диалоге. Уточните недостающую часть, и я продолжу."
+        return "Уточните действие, и я подготовлю новую привязку."
+
     def _on_agent_add_selected_gesture_click(self, _e) -> None:
         gesture = (self._gesture_dd.value or "").strip()
         if not gesture:
@@ -2049,18 +2106,9 @@ class BindingsView:
 
         self._agent_apply_btn.disabled = is_answer or not can_apply
         self._agent_save_btn.disabled = is_answer or (not can_apply) or bool(missing)
-        if is_answer:
-            self._agent_status.value = "Ответ"
-            self._agent_status.color = COLOR_ACCENT
-        elif error:
-            self._agent_status.value = error
-            self._agent_status.color = COLOR_DANGER
-        elif missing:
-            self._agent_status.value = "Нужно уточнение"
-            self._agent_status.color = COLOR_WARNING
-        else:
-            self._agent_status.value = "Готово к привязке"
-            self._agent_status.color = COLOR_SUCCESS
+        status_text, status_color = self._agent_status_for_draft(draft)
+        self._agent_status.value = status_text
+        self._agent_status.color = status_color
 
         if is_answer:
             controls: list[ft.Control] = []
@@ -2324,26 +2372,19 @@ class BindingsView:
                     COLOR_WARNING,
                     [
                         self._agent_markdown(
-                            "**Добавьте в запрос:** "
-                            + ", ".join(str(x) for x in missing)
-                            + "\n\nНапример: `жест sh3 привяжи к открытию Safari`."
+                            self._agent_missing_text(draft)
                         ),
                     ],
                 )
             )
         else:
-            next_text = (
-                "Можно заполнить форму или сразу сохранить привязку."
-                if can_apply
-                else "Уточните действие, и я подготовлю новую привязку."
-            )
             result.append(
                 self._agent_output_panel(
                     "Дальше",
                     ft.Icons.CHECK_CIRCLE_OUTLINE if can_apply else ft.Icons.INFO_OUTLINE,
                     COLOR_SUCCESS if can_apply else COLOR_MUTED,
                     [
-                        self._agent_markdown(next_text),
+                        self._agent_markdown(self._agent_next_text(draft)),
                     ],
                 )
             )

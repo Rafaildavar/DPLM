@@ -938,6 +938,52 @@ def test_binding_agent_submit_records_dialog_messages():
     assert view._last_agent_draft["gestureLabel"] == "palm"
 
 
+def test_binding_agent_ui_status_explains_missing_sequence_gesture():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return GESTURES
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def validate_action_spec_json(self, _spec_json):
+            return ""
+
+        def validate_command_name(self, _name):
+            return ""
+
+        def save_binding(self, *_args):
+            return ""
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    view = BindingsView(None, FakeController())
+    draft = build_agent_binding_draft(
+        (
+            "сделай сценарий под названием мое утро - "
+            "первый шаг открыть рамблер почту "
+            "второе открыть приложение джира, включить заметки"
+        ),
+        GESTURES,
+    )
+
+    status, color = view._agent_status_for_draft(draft)
+
+    assert status == "Выберите жест для сценария"
+    assert color
+    assert "привяжи это" in view._agent_missing_text(draft)
+
+
 def test_binding_agent_answer_mode_renders_visible_answer_panel():
     class FakeController:
         def get_action_categories(self):
