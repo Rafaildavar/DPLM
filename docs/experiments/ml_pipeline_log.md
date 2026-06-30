@@ -3883,3 +3883,60 @@ MLflow:
 - Если `sequence_rocket` ловит сложные жесты лучше, но чаще принимает
   partial/random движения, его оставляем research-кандидатом и усиливаем reject
   layer перед production-переключением.
+
+### H-076: `sequence_rocket` не распознавался в live из-за отсутствия артефактов
+
+Статус: `fixed`, needs live validation
+
+Дата: `2026-06-30`
+
+Наблюдение:
+- Home UI уже показывал профиль `sequence_rocket`.
+- На диске не было обученных файлов:
+  - `models/dynamic_sequence_rocket.pkl`;
+  - `models/dynamic_sequence_rocket_classes.json`;
+  - `models/dynamic_sequence_rocket_feature_dim.txt`;
+  - `models/dynamic_sequence_rocket_feature_mode.txt`;
+  - `models/dynamic_sequence_rocket_prototypes.json`.
+- Поэтому live мог выбрать профиль, но runtime не имел полноценного набора
+  rocket-артефактов для classifier + prototype/rejection layer.
+
+Что сделано:
+- Обучен `sequence_rocket` на том же наборе классов, что и production
+  `sequence_mlp`:
+  - `swipe_up`;
+  - `swipe_left`;
+  - `swipe_down`;
+  - `no_gesture_static`;
+  - `partial_swipe`;
+  - `random_motion`;
+  - `return_motion`;
+  - `wrong_axis_motion`.
+- Feature mode: `dynamic_sequence`.
+- Feature dim: `1584` (`36` кадров * `44` признака).
+- Собран отдельный prototype/rejection layer:
+  `models/dynamic_sequence_rocket_prototypes.json`.
+
+Offline sanity:
+- `GestureOnlineInfer` загружает `sequence_rocket` без `model_error`.
+- Быстрый predict на сохранённых samples:
+  - `swipe_up -> swipe_up`;
+  - `swipe_left -> swipe_left`;
+  - `swipe_down -> swipe_down`;
+  - `partial_swipe -> partial_swipe`;
+  - `random_motion -> random_motion`.
+- Prototype report:
+  - overall: `0.9935`;
+  - positive recall: `0.9444`;
+  - negative false positive: `0.0000`.
+
+Следующая проверка:
+- На Home выбрать `Dynamic = sequence_rocket`.
+- Остановить и заново запустить камеру, чтобы embedded inference перезагрузил
+  модель.
+- Прогнать live evaluation:
+  - `swipe_up`: 20;
+  - `swipe_left`: 20;
+  - `swipe_down`: 20;
+  - `partial_swipe`, `random_motion`, `return_motion`, `wrong_axis_motion`:
+    по 10.
