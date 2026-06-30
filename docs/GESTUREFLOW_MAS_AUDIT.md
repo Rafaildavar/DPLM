@@ -6,6 +6,9 @@
 привязок GestureFlow. Он нужен, чтобы каждый следующий шаг улучшения можно
 было сверять с планом, тестами и пользовательскими сценариями.
 
+Правила развития MAS и добавления новых skills/tools вынесены в
+`docs/GESTUREFLOW_MAS_ARCHITECTURE.md`.
+
 ## Текущий pipeline
 
 Публичный вход остается в `app.services.binding_agent.BindingAgentOrchestrator`.
