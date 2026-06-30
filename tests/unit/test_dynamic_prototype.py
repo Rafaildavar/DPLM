@@ -47,6 +47,16 @@ class _ComplexSequenceClassifier:
         return np.asarray([[0.14, 0.78, 0.08]])
 
 
+class _ConfidentSwipeClassifier:
+    classes_ = np.asarray([0, 1, 2])
+
+    def predict(self, _features):
+        return np.asarray([0])
+
+    def predict_proba(self, _features):
+        return np.asarray([[0.94, 0.03, 0.03]])
+
+
 def test_prototype_distance_accepts_positive_and_rejects_negative():
     train = [
         DynamicSequenceRecord("swipe_left", _left_sequence(14)),
@@ -185,6 +195,41 @@ def test_online_dynamic_motion_does_not_override_nearest_negative_reject():
     assert confidence == 0.0
     assert infer._last_dynamic_decision["source"] == "prototype_rejected"
     assert infer._last_dynamic_decision["prototype_reason"] == "nearest_negative"
+
+
+def test_online_dynamic_model_can_override_far_positive_prototype_reject():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_left", "swipe_up", "random_motion"]
+    infer._clf = _ConfidentSwipeClassifier()
+    infer._dynamic_prototypes = {"positive_labels": ["swipe_left"]}
+    infer._gesture_taxonomy = None
+    infer._dynamic_prototype_decision = lambda _sequence: {
+        "accepted": False,
+        "reason": "far_from_prototype",
+        "nearest_type": "positive",
+        "nearest_label": "swipe_left",
+        "label": "",
+        "confidence": 0.0,
+    }
+
+    label, confidence = infer._dynamic_prediction(
+        np.zeros((1, 1584), dtype=np.float32),
+        {
+            "dx": -0.20,
+            "dy": 0.19,
+            "path_length": 0.55,
+            "displacement": 0.28,
+            "direction_cos": -0.72,
+            "direction_sin": 0.69,
+        },
+        sequence=_left_sequence(18),
+    )
+
+    assert label == "swipe_left"
+    assert confidence == 0.94
+    assert infer._last_dynamic_decision["source"] == "model_over_prototype_reject"
+    assert infer._last_dynamic_decision["prototype_reason"] == "far_from_prototype"
+    assert infer._last_dynamic_decision["model_override_margin"] > 0.80
 
 
 def test_online_dynamic_complex_model_can_override_swipe_motion():

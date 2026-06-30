@@ -3940,3 +3940,54 @@ Offline sanity:
   - `swipe_down`: 20;
   - `partial_swipe`, `random_motion`, `return_motion`, `wrong_axis_motion`:
     по 10.
+
+### H-077: Live `sequence_rocket` гасился слишком строгим prototype layer
+
+Статус: `fixed`, needs live validation
+
+Дата: `2026-06-30`
+
+Наблюдение:
+- Runtime logs показывали `recognition_model_mode=auto` и
+  `dynamic_model_profile=sequence_rocket`, то есть UI/runtime профиль был
+  выбран правильно.
+- Live evaluation для `sequence_rocket` завершалась с `total=0`: система не
+  принимала ни одной попытки, а не просто путала классы.
+- Это указывает на пустой `dynamic_out.label`: событие гасилось до router
+  acceptance.
+
+Причина:
+- Dynamic pipeline сначала завершает motion segment, затем вызывает classifier
+  и prototype/rejection layer.
+- Если prototype layer возвращал `far_from_prototype`, старый код разрешал
+  override только rule-based motion detector (`motion_over_prototype_reject`).
+- Для live-показов, отличающихся от записанных samples, `sequence_rocket`
+  мог быть уверен в классе, но prototype threshold был слишком узким, поэтому
+  prediction превращался в пустой label.
+
+Решение:
+- Добавлен ML override для случая `far_from_prototype`:
+  `model_over_prototype_reject`.
+- Override разрешён только если:
+  - prototype nearest type положительный;
+  - nearest positive label совпадает с top-1 ML label;
+  - top-1 label не negative;
+  - ML confidence >= `0.88`;
+  - top1/top2 margin >= `0.18`;
+  - negative probability ниже `0.72`;
+  - если rule-based motion уже уверен в другом направлении, ML override не
+    применяется.
+- `nearest_negative` по-прежнему блокирует gesture.
+
+Проверка:
+- `tests/unit/test_dynamic_prototype.py`
+- `tests/unit/test_gesture_online_infer_no_hand.py`
+- `tests/unit/test_recognition_router.py`
+- Результат: `47 passed`.
+
+Следующий live-тест:
+- Перезапустить камеру.
+- Выбрать `Dynamic = sequence_rocket`.
+- Запустить live evaluation с threshold `0.60` для диагностики.
+- Если события снова начали приниматься, поднять threshold до `0.90` и
+  проверить quality/reject.

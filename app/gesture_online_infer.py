@@ -62,6 +62,8 @@ DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
 DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE = 0.60
 DYNAMIC_COMPLEX_MODEL_MIN_MARGIN = 0.08
 DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.68
+DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.88
+DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_MARGIN = 0.18
 DYNAMIC_SEGMENT_PRE_ROLL_FRAMES = 3
 DYNAMIC_SEGMENT_ONSET_PATH = 0.015
 DYNAMIC_SEGMENT_ONSET_DISPLACEMENT = 0.012
@@ -531,6 +533,17 @@ class GestureOnlineInfer:
         prototype_decision = self._dynamic_prototype_decision(sequence)
         prototype_fields = self._dynamic_prototype_fields(prototype_decision)
         if prototype_decision and not bool(prototype_decision.get("accepted")):
+            (
+                model_override_label,
+                model_override_confidence,
+                model_override_margin,
+            ) = self._best_model_prototype_override(
+                ranked,
+                prototype_decision,
+                motion_decision_label=motion_decision.label
+                if motion_decision.accepted
+                else "",
+            )
             if (
                 motion_decision.accepted
                 and float(motion_decision.confidence) >= DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE
@@ -553,6 +566,30 @@ class GestureOnlineInfer:
                     **motion_decision.as_dict(),
                 }
                 return motion_decision.label, float(motion_decision.confidence)
+            if (
+                model_override_label
+                and negative_confidence < DYNAMIC_NEGATIVE_REJECT_THRESHOLD
+            ):
+                self._last_dynamic_decision = {
+                    "source": "model_over_prototype_reject",
+                    "motion_label": motion_decision.label
+                    if motion_decision.accepted
+                    else "",
+                    "motion_confidence": float(motion_decision.confidence)
+                    if motion_decision.accepted
+                    else 0.0,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "model_override_label": model_override_label,
+                    "model_override_confidence": model_override_confidence,
+                    "model_override_margin": model_override_margin,
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return model_override_label, model_override_confidence
             self._last_dynamic_decision = {
                 "source": "prototype_rejected",
                 "motion_label": motion_decision.label if motion_decision.accepted else "",
@@ -800,6 +837,57 @@ class GestureOnlineInfer:
             float(top_confidence),
             float(top_confidence - second_confidence),
         )
+
+    def _best_model_prototype_override(
+        self,
+        ranked: list[tuple[float, str]],
+        prototype_decision: dict[str, Any],
+        *,
+        motion_decision_label: str = "",
+    ) -> tuple[str, float, float]:
+        reason = str(prototype_decision.get("reason") or "").strip().lower()
+        if reason != "far_from_prototype":
+            return "", 0.0, 0.0
+
+        nearest_type = str(prototype_decision.get("nearest_type") or "").strip().lower()
+        if nearest_type and nearest_type != "positive":
+            return "", 0.0, 0.0
+
+        ordered = sorted(ranked, key=lambda item: item[0], reverse=True)
+        if not ordered:
+            return "", 0.0, 0.0
+
+        confidence, label = ordered[0]
+        clean = str(label or "").strip().lower()
+        if not clean or self._is_negative_label(clean):
+            return "", 0.0, 0.0
+
+        motion_label = str(motion_decision_label or "").strip().lower()
+        if motion_label and motion_label != clean:
+            return "", 0.0, 0.0
+
+        nearest_label = str(
+            prototype_decision.get("nearest_label")
+            or prototype_decision.get("label")
+            or ""
+        ).strip().lower()
+        positive_labels = {
+            str(item or "").strip().lower()
+            for item in (self._dynamic_prototypes or {}).get("positive_labels", [])
+            if str(item or "").strip()
+        }
+        if nearest_label and nearest_label != clean:
+            return "", 0.0, 0.0
+        if positive_labels and clean not in positive_labels:
+            return "", 0.0, 0.0
+
+        second_confidence = float(ordered[1][0]) if len(ordered) > 1 else 0.0
+        margin = float(confidence - second_confidence)
+        if confidence < DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE:
+            return "", 0.0, 0.0
+        if margin < DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_MARGIN:
+            return "", 0.0, 0.0
+        return str(label), float(confidence), margin
 
     @staticmethod
     def _complex_model_prediction_confident(
@@ -1361,7 +1449,7 @@ class GestureOnlineInfer:
 
     def reset_temporal_state(self) -> None:
         self._window.clear()
-        self._intent_window.clear()
+        self._ensure_intent_window().clear()
         self._finger_count_window.clear()
         segmenter = getattr(self, "_dynamic_segmenter", None)
         if segmenter is not None:
@@ -1375,7 +1463,7 @@ class GestureOnlineInfer:
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
         self._window.clear()
-        self._intent_window.clear()
+        self._ensure_intent_window().clear()
         self._finger_count_window.clear()
         self._pending_dynamic_prediction = None
         self._pending_dynamic_repeats = 0
@@ -1418,15 +1506,27 @@ class GestureOnlineInfer:
             "end_reason": str(getattr(update, "end_reason", "") or ""),
         }
 
+    def _ensure_intent_window(self) -> Deque[np.ndarray]:
+        window = getattr(self, "_intent_window", None)
+        if window is None:
+            maxlen = max(
+                DYNAMIC_SEQUENCE_TARGET_FRAMES,
+                int(getattr(getattr(self, "_window", None), "maxlen", 0) or 0),
+            )
+            window = deque(maxlen=maxlen)
+            self._intent_window = window
+        return window
+
     def _intent_feature_payload(
         self,
         sequence: np.ndarray | None = None,
     ) -> list[float]:
         try:
             if sequence is None:
-                if not self._intent_window:
+                intent_window = self._ensure_intent_window()
+                if not intent_window:
                     return []
-                sequence = np.stack(tuple(self._intent_window), axis=0)
+                sequence = np.stack(tuple(intent_window), axis=0)
             feature = build_intent_feature_vector(
                 sequence,
                 target_dim=DEFAULT_INTENT_TARGET_DIM,
@@ -1814,7 +1914,7 @@ class GestureOnlineInfer:
                 feat = np.concatenate([feat, pad], axis=0)
 
         if self._uses_global_dynamic_motion():
-            self._intent_window.append(feat.astype(np.float32, copy=False))
+            self._ensure_intent_window().append(feat.astype(np.float32, copy=False))
             hand_scales = []
             for hand in hands:
                 points = np.asarray(hand.landmarks, dtype=np.float32)
