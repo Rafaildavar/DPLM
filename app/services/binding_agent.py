@@ -1523,11 +1523,19 @@ class BindingAgentMlflowLogger:
         )
         statuses = [str(step.status or "") for step in result.steps]
         reviewer_steps = [step for step in result.steps if step.agent == "Reviewer Agent"]
+        intent_steps = [step for step in result.steps if step.agent == "Intent Agent"]
+        intent_data = dict(intent_steps[-1].data) if intent_steps else {}
+        reviewer_data = dict(reviewer_steps[-1].data) if reviewer_steps else {}
+        reviewer_scores = {
+            str(key): float(value)
+            for key, value in dict(reviewer_data.get("scores") or {}).items()
+        }
         reviewer_relevance = (
-            float(reviewer_steps[-1].data.get("relevance") or 0.0)
+            float(reviewer_data.get("relevance") or 0.0)
             if reviewer_steps
             else 1.0
         )
+        semantic_score = float(intent_data.get("semanticScore") or 0.0)
         status_counts = {
             "ok": statuses.count("ok"),
             "need_input": statuses.count("need_input"),
@@ -1596,6 +1604,12 @@ class BindingAgentMlflowLogger:
                         "action": action,
                         "intent": result.intent,
                         "intent_block": result.intent_block,
+                        "intent_route_method": str(
+                            intent_data.get("routeMethod") or ""
+                        ),
+                        "semantic_intent": str(
+                            intent_data.get("semanticIntent") or ""
+                        ),
                         "known_gestures_count": len(context.gestures),
                     }
                 )
@@ -1608,6 +1622,11 @@ class BindingAgentMlflowLogger:
                         "summary_lines": float(len(result.summary)),
                         "prompt_chars": float(len(context.prompt)),
                         "reviewer_relevance": reviewer_relevance,
+                        "intent_semantic_score": semantic_score,
+                        **{
+                            f"reviewer_{name}": value
+                            for name, value in reviewer_scores.items()
+                        },
                         **{
                             f"steps_{status}": float(count)
                             for status, count in status_counts.items()

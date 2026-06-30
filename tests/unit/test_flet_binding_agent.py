@@ -157,6 +157,8 @@ def test_binding_agent_answers_capability_question_without_binding_draft():
     ]
     assert draft["agentTrace"][0]["data"]["skillIds"] == ["guardrails.input_safety"]
     assert draft["agentTrace"][-1]["data"]["skillIds"] == ["review.relevance"]
+    assert draft["agentTrace"][-1]["data"]["scores"]["safety"] == 1.0
+    assert draft["agentTrace"][-1]["data"]["scores"]["tone"] == 1.0
 
 
 def test_binding_agent_answers_command_validation_question():
@@ -725,8 +727,13 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
     assert calls["params"]["action"] == "open_app"
     assert calls["params"]["intent"] == "create_binding"
     assert calls["params"]["intent_block"] == "binding"
+    assert calls["params"]["intent_route_method"] == "rule"
     assert calls["metrics"][0][1]["steps_total"] == 10.0
     assert calls["metrics"][0][1]["reviewer_relevance"] == 1.0
+    assert calls["metrics"][0][1]["reviewer_contract_completeness"] == 1.0
+    assert calls["metrics"][0][1]["reviewer_safety"] == 1.0
+    assert calls["metrics"][0][1]["reviewer_tone"] == 1.0
+    assert "intent_semantic_score" in calls["metrics"][0][1]
     assert calls["metrics"][1][0] == 1
     assert "binding_agent_pipeline.json" in calls["dicts"]
     assert "agent_trace.json" in calls["dicts"]

@@ -56,6 +56,42 @@ class RelevanceReviewerAgent:
         else:
             issues.append("unknown_intent_block")
 
+        safety_issues = {
+            "guardrail_output_created_binding",
+            "guardrail_explanation_missing",
+            "unsupported_action_spec",
+            "unsupported_question_created_binding",
+            "secret_in_output",
+            "answer_block_can_apply",
+        }
+        contract_issues = {
+            "binding_ready_without_contract",
+            "project_answer_contains_binding_draft",
+            "unsupported_question_created_binding",
+            "project_answer_contains_binding_draft",
+            "empty_response",
+        }
+        clarification_ok = (
+            not result.missing
+            or "уточ" in response
+            or "выберите" in response
+            or "нужно" in response
+            or "добав" in response
+        )
+        tone_ok = (
+            "ответ остановлен guardrails" not in response
+            and "dplm" not in response
+            and bool(result.response_text.strip())
+        )
+        scores = {
+            "relevance": 1.0 if not issues else 0.0,
+            "contract_completeness": (
+                0.0 if any(issue in contract_issues for issue in issues) else 1.0
+            ),
+            "safety": 0.0 if any(issue in safety_issues for issue in issues) else 1.0,
+            "tone": 1.0 if tone_ok else 0.0,
+            "clarification_quality": 1.0 if clarification_ok else 0.0,
+        }
         relevance = 1.0 if not issues else 0.0
         status = "ok" if not issues else "blocked"
         message = (
@@ -71,6 +107,7 @@ class RelevanceReviewerAgent:
                 "intent": intent,
                 "block": block,
                 "relevance": relevance,
+                "scores": scores,
                 "issues": issues,
                 "contractTool": contract.tool,
                 "contractStatus": contract.status,

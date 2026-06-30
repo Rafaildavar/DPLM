@@ -41,9 +41,12 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 5. `Guardrails Agent` проверяет выход. Output guardrails v2 возвращают
    `decision=allow/clarify/block`; неполная привязка является уточнением,
    а не отказом.
-6. `Reviewer Agent` оценивает соответствие ответа intent-блоку.
+6. `Reviewer Agent` оценивает соответствие ответа intent-блоку и пишет
+   rubric scores: relevance, contract completeness, safety, tone,
+   clarification quality.
 7. `BindingAgentMlflowLogger` пишет trace, параметры, метрики, artifacts и
-   optional GenAI eval.
+   optional GenAI eval. В MLflow уходят route method, semantic score и
+   reviewer rubric metrics.
 
 ## Что уже работает
 
@@ -64,6 +67,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
   черновик, например `привяжи это к swipe_up` после собранного сценария.
 - Guardrails v2 разделяет блокировки и уточнения: missing gesture/action
   проходит как `decision=clarify`, prompt injection и секреты остаются block.
+- Reviewer пишет rubric scores, а MLflow логирует `reviewer_*` метрики и
+  `intent_semantic_score`.
 
 ## Главные проблемы перед улучшением
 
@@ -78,10 +83,10 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    сделать полноценный state manager с несколькими черновиками и TTL.
 5. Guardrails v2 уже разделяет allow/clarify/block. Следующий этап -
    расширить политику опасных действий и explainability для UI.
-6. Reviewer проверяет релевантность, но ему нужны более строгие рубрики:
-   contract completeness, safety, tone, UI usefulness.
-7. MLflow логирует pipeline, но еще не отражает semantic scores, rule hits и
-   reviewer-rubric metrics.
+6. Reviewer получил базовые рубрики. Следующий этап - добавить eval dataset
+   и regression dashboard по этим score.
+7. MLflow отражает semantic score и reviewer metrics. Следующий этап -
+   связать это с полноценными GenAI scorers/datasets.
 
 ## Базовые сценарии для проверки
 
