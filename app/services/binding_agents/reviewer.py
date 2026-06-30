@@ -8,6 +8,7 @@ from app.services.binding_agent import (
     _norm,
     _short_text,
 )
+from app.services.binding_agents.tools import review_answer_contract
 
 class RelevanceReviewerAgent:
     name = "Reviewer Agent"
@@ -21,10 +22,13 @@ class RelevanceReviewerAgent:
         intent = str(intent_step.data.get("intent") or result.intent or "")
         block = str(intent_step.data.get("block") or result.intent_block or "")
         response = _norm(result.response_text)
-        issues: list[str] = []
-
-        if not result.response_text.strip():
-            issues.append("empty_response")
+        contract = review_answer_contract(
+            intent_block=block,
+            response_text=result.response_text,
+            can_apply=result.can_apply,
+            action_spec=result.action_spec,
+        )
+        issues: list[str] = list(contract.payload.get("issues") or [])
 
         if block == "project_question":
             if result.can_apply or result.action_spec:
@@ -68,6 +72,8 @@ class RelevanceReviewerAgent:
                 "block": block,
                 "relevance": relevance,
                 "issues": issues,
+                "contractTool": contract.tool,
+                "contractStatus": contract.status,
                 "prompt_preview": _short_text(context.prompt, 160),
             },
         )

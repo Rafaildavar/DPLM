@@ -11,7 +11,14 @@ from app.services.binding_agents.skill_packs import (
     skill_pack_cards,
 )
 from app.services.binding_agents.skills import AGENT_SKILLS, skill_registry_cards
+from app.services.binding_agents.tools import (
+    build_sequence_action,
+    parse_macos_action,
+    resolve_gesture,
+    validate_binding_contract,
+)
 from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
+from app.services.binding_agent import BindingAgentContext
 
 
 os.environ.setdefault("DPLM_BINDING_AGENT_MLFLOW", "0")
@@ -46,6 +53,37 @@ def test_binding_agent_skill_packs_are_discoverable_from_filesystem():
     assert all(pack.path.endswith("SKILL.md") for pack in packs)
     assert all(pack.content.startswith("# ") for pack in packs)
     assert any(card["id"] == "scenario-planning" for card in cards)
+
+
+def test_binding_agent_tools_expose_stable_contracts():
+    context = BindingAgentContext(
+        (
+            "собери рабочий старт: открыть рамблер почту, "
+            "открыть приложение джира, включить заметки"
+        ),
+        gestures=GESTURES,
+        current_gesture="palm",
+    )
+
+    gesture = resolve_gesture(context)
+    action = parse_macos_action(context)
+    sequence = build_sequence_action(context)
+    policy = validate_binding_contract(
+        gesture.payload["gesture"],
+        sequence.payload["action_spec"],
+    )
+
+    assert gesture.tool == "resolve_gesture"
+    assert gesture.status == "ok"
+    assert gesture.payload["gesture"] == "palm"
+    assert action.tool == "parse_macos_action"
+    assert action.payload["action_spec"]["action"] == "open_url"
+    assert sequence.tool == "build_sequence"
+    assert sequence.status == "ok"
+    assert sequence.payload["action_spec"]["action"] == "sequence"
+    assert sequence.payload["steps_count"] == 3
+    assert policy.tool == "validate_binding_contract"
+    assert policy.status == "ok"
 
 
 def test_binding_agent_builds_open_app_draft():

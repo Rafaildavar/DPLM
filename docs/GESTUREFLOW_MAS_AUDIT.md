@@ -32,6 +32,9 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    - `Scenario Agent` или `Action Agent`;
    - `Policy Agent`;
    - `Validation Agent`.
+   Начиная с шага 4, concrete agents используют явные tool contracts:
+   `resolve_gesture`, `parse_macos_action`, `build_sequence`,
+   `validate_binding_contract`, `review_answer_contract`.
 5. `Guardrails Agent` проверяет выход.
 6. `Reviewer Agent` оценивает соответствие ответа intent-блоку.
 7. `BindingAgentMlflowLogger` пишет trace, параметры, метрики, artifacts и
@@ -50,6 +53,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 - Intent routing стал гибридным: rule-based проверки остаются первыми, а
   свободные формулировки может подхватить локальный semantic-router без
   внешних зависимостей.
+- Появился отдельный слой tools/contracts: агенты теперь тонко оборачивают
+  tool-result в trace step, а не держат всю бизнес-логику внутри `run`.
 
 ## Главные проблемы перед улучшением
 
@@ -58,8 +63,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    следующий этап - заменить/дополнить его настоящими embeddings.
 2. Skills сейчас существуют как Python-каталог для trace, но еще не оформлены
    как самостоятельные skill packs с `SKILL.md`.
-3. Tools не имеют отдельного contract-слоя: parser helpers используются
-   напрямую из orchestrator/pipeline.
+3. Tools получили базовый contract-слой. Следующий этап - расширить его
+   typed-схемами для LLM/function calling и MLflow eval.
 4. Memory хранит диалог, но еще не держит полноценный draft-state для
    продолжения сценария через уточнения.
 5. Guardrails уже разделены на input/output, но политика отказов и уточнений
