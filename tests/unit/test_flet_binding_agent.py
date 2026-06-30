@@ -763,6 +763,37 @@ def test_binding_agent_named_sequence_without_gesture_asks_for_gesture_not_guard
     assert output_guardrail["status"] == "ok"
 
 
+def test_binding_agent_semantic_router_detects_freeform_sequence():
+    draft = build_agent_binding_draft(
+        (
+            "собери рабочий старт: открыть рамблер почту, "
+            "открыть приложение джира, включить заметки"
+        ),
+        GESTURES,
+        current_gesture="palm",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["intent"] == "build_sequence"
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "steps": [
+            {"action": "open_url", "url": "https://mail.rambler.ru"},
+            {"action": "open_app", "app": "Jira"},
+            {"action": "open_app", "app": "Notes"},
+        ],
+    }
+    intent_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Intent Agent"
+    )
+    assert intent_step["data"]["routeMethod"] == "semantic"
+    assert intent_step["data"]["semanticIntent"] == "build_sequence"
+    assert intent_step["data"]["semanticScore"] > 0.2
+
+
 def test_binding_agent_submit_records_dialog_messages():
     class FakeController:
         def get_action_categories(self):

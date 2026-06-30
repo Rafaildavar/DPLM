@@ -23,6 +23,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    - `project_question`;
    - `unsupported_general_question`;
    - `guardrail_block`.
+   Начиная с шага 3, intent trace содержит `routeMethod`,
+   `semanticIntent`, `semanticScore` и, если применимо, `semanticExample`.
 3. Для вопросов по проекту и unsupported-вопросов отвечает conversation block.
 4. Для binding-route идет цепочка:
    - `Gesture Agent`;
@@ -45,11 +47,15 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 - UI хранит историю диалога и показывает ответ агента без технической плашки.
 - Неполная привязка больше не превращается в guardrails refusal: если есть
   действие, но нет жеста, агент просит уточнить жест.
+- Intent routing стал гибридным: rule-based проверки остаются первыми, а
+  свободные формулировки может подхватить локальный semantic-router без
+  внешних зависимостей.
 
 ## Главные проблемы перед улучшением
 
 1. Intent routing пока в основном rule-based. Он быстрый, но плохо понимает
-   свободные формулировки.
+   свободные формулировки. Базовый локальный semantic-router уже добавлен,
+   следующий этап - заменить/дополнить его настоящими embeddings.
 2. Skills сейчас существуют как Python-каталог для trace, но еще не оформлены
    как самостоятельные skill packs с `SKILL.md`.
 3. Tools не имеют отдельного contract-слоя: parser helpers используются
@@ -85,4 +91,3 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 - сохранять `tests/unit/test_flet_binding_agent.py`;
 - не коммитить посторонние изменения из рабочей директории;
 - обновлять этот audit или отдельный architecture doc, если меняется контракт.
-
