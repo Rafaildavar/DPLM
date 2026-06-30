@@ -47,6 +47,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 7. `BindingAgentMlflowLogger` пишет trace, параметры, метрики, artifacts и
    optional GenAI eval. В MLflow уходят route method, semantic score и
    reviewer rubric metrics.
+8. `binding_agents/eval_cases.py` хранит regression/eval набор реальных фраз
+   для pytest и будущего MLflow GenAI evaluation.
 
 ## Что уже работает
 
@@ -71,6 +73,9 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
   `intent_semantic_score`.
 - UI агента показывает человекочитаемые статусы: например, сценарий без жеста
   отображается как `Выберите жест для сценария`, а не общий technical state.
+- Добавлен eval-набор core-сценариев: binding, hotkey, missing action,
+  project question, unsupported redirect, validation, sequence, semantic route,
+  prompt injection.
 
 ## Главные проблемы перед улучшением
 
@@ -85,8 +90,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    сделать полноценный state manager с несколькими черновиками и TTL.
 5. Guardrails v2 уже разделяет allow/clarify/block. Следующий этап -
    расширить политику опасных действий и explainability для UI.
-6. Reviewer получил базовые рубрики. Следующий этап - добавить eval dataset
-   и regression dashboard по этим score.
+6. Reviewer получил базовые рубрики и eval dataset. Следующий этап -
+   regression dashboard по этим score.
 7. MLflow отражает semantic score и reviewer metrics. Следующий этап -
    связать это с полноценными GenAI scorers/datasets.
 

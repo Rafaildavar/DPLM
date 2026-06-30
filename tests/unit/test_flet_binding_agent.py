@@ -5,6 +5,10 @@ import sys
 
 from app.flet_app.views.bindings import BindingsView, build_agent_binding_draft
 from app.services.binding_agents import GuardrailsAgent, IntentAgent, RelevanceReviewerAgent
+from app.services.binding_agents.eval_cases import (
+    BINDING_AGENT_EVAL_CASES,
+    binding_agent_eval_dataset,
+)
 from app.services.binding_agents.skill_packs import (
     EXPECTED_SKILL_PACKS,
     list_skill_packs,
@@ -84,6 +88,27 @@ def test_binding_agent_tools_expose_stable_contracts():
     assert sequence.payload["steps_count"] == 3
     assert policy.tool == "validate_binding_contract"
     assert policy.status == "ok"
+
+
+def test_binding_agent_eval_cases_cover_core_scenarios():
+    dataset = binding_agent_eval_dataset()
+
+    assert len(dataset) == len(BINDING_AGENT_EVAL_CASES)
+    assert len(BINDING_AGENT_EVAL_CASES) >= 8
+
+    for case in BINDING_AGENT_EVAL_CASES:
+        draft = build_agent_binding_draft(
+            case.prompt,
+            list(case.gestures),
+            current_gesture=case.current_gesture,
+        )
+        assert draft["intent"] == case.expected_intent, case.case_id
+        assert draft["intentBlock"] == case.expected_block, case.case_id
+        assert draft["mode"] == case.expected_mode, case.case_id
+        assert draft["canApply"] is case.expected_can_apply, case.case_id
+        assert tuple(draft["missing"]) == case.expected_missing, case.case_id
+        if case.expected_action:
+            assert draft["actionSpec"]["action"] == case.expected_action, case.case_id
 
 
 def test_binding_agent_builds_open_app_draft():
