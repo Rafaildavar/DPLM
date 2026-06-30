@@ -763,6 +763,13 @@ class AppController:
         fallback = self._production_models_dir() / production_filename
         return fallback if fallback.exists() else configured
 
+    def _configured_dynamic_artifact_path(self, filename: str) -> Path:
+        configured = self._configured_models_dir() / filename
+        if configured.exists():
+            return configured
+        fallback = self._production_models_dir() / filename
+        return fallback if fallback.exists() else configured
+
     def _configured_data_dir(self) -> Path:
         return self._configured_path(self._config.paths.data_dir)
 
@@ -847,26 +854,26 @@ class AppController:
             self.dynamic_model_profile,
             DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION],
         )
-        return self._configured_models_dir() / filename
+        return self._configured_dynamic_artifact_path(filename)
 
     def _dynamic_classes_path(self) -> Path:
         prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_models_dir() / f"{prefix}_classes.json"
+        return self._configured_dynamic_artifact_path(f"{prefix}_classes.json")
 
     def _dynamic_feature_dim_path(self) -> Path:
         prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_models_dir() / f"{prefix}_feature_dim.txt"
+        return self._configured_dynamic_artifact_path(f"{prefix}_feature_dim.txt")
 
     def _dynamic_feature_mode_path(self) -> Path:
         prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_models_dir() / f"{prefix}_feature_mode.txt"
+        return self._configured_dynamic_artifact_path(f"{prefix}_feature_mode.txt")
 
     def _dynamic_prototypes_path(self) -> Path:
         filename = DYNAMIC_PROTOTYPE_FILENAMES.get(
             self.dynamic_model_profile,
             "dynamic_prototypes.json",
         )
-        return self._configured_models_dir() / filename
+        return self._configured_dynamic_artifact_path(filename)
 
     def _intent_gate_model_path(self) -> Path:
         configured = self._configured_models_dir() / INTENT_GATE_MODEL_FILENAME
@@ -2920,6 +2927,20 @@ class AppController:
                 from app.services.recognition_router import GestureRecognitionRouter
 
                 print("[ctrl.embedded] creating GestureRecognitionRouter in camera thread…")
+                dynamic_model_path = self._dynamic_model_path()
+                dynamic_classes_path = self._dynamic_classes_path()
+                dynamic_feature_dim_path = self._dynamic_feature_dim_path()
+                dynamic_feature_mode_path = self._dynamic_feature_mode_path()
+                dynamic_prototypes_path = self._dynamic_prototypes_path()
+                print(
+                    "[ctrl.embedded] dynamic profile="
+                    f"{self.dynamic_model_profile} model={dynamic_model_path} "
+                    f"classes={dynamic_classes_path} "
+                    f"feature_dim={dynamic_feature_dim_path} "
+                    f"feature_mode={dynamic_feature_mode_path} "
+                    f"prototypes={dynamic_prototypes_path}",
+                    flush=True,
+                )
                 static_infer = GestureOnlineInfer(
                     model_path=self._configured_model_path(),
                     classes_path=self._configured_classes_path(),
@@ -2931,11 +2952,11 @@ class AppController:
                     two_hands=self._two_hands_mode,
                 )
                 dynamic_infer = GestureOnlineInfer(
-                    model_path=self._dynamic_model_path(),
-                    classes_path=self._dynamic_classes_path(),
-                    feature_dim_path=self._dynamic_feature_dim_path(),
-                    feature_mode_path=self._dynamic_feature_mode_path(),
-                    dynamic_prototypes_path=self._dynamic_prototypes_path(),
+                    model_path=dynamic_model_path,
+                    classes_path=dynamic_classes_path,
+                    feature_dim_path=dynamic_feature_dim_path,
+                    feature_mode_path=dynamic_feature_mode_path,
+                    dynamic_prototypes_path=dynamic_prototypes_path,
                     window=DYNAMIC_RECOGNITION_WINDOW,
                     two_hands=self._two_hands_mode,
                     initialize_detector=False,

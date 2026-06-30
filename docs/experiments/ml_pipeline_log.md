@@ -3991,3 +3991,71 @@ Offline sanity:
 - Запустить live evaluation с threshold `0.60` для диагностики.
 - Если события снова начали приниматься, поднять threshold до `0.90` и
   проверить quality/reject.
+
+### H-078: `sequence_rocket` не работал из UI из-за dynamic model variant paths
+
+Статус: `fixed`, needs live validation
+
+Дата: `2026-06-30`
+
+Наблюдение:
+- В `~/.dplm/config.json` был выбран `models_dir`:
+  `models/experiments/dynamic_prototype/prototype_distance`.
+- В этом experiment-наборе есть `dynamic_sequence_rocket_prototypes.json`, но
+  нет `dynamic_sequence_rocket.pkl`, `*_classes.json`, `*_feature_dim.txt`,
+  `*_feature_mode.txt`.
+- Live logs для `sequence_rocket` показывали:
+  - `route=static`;
+  - `selected_reason=static_fallback`;
+  - `dynamic_phase=""`;
+  - `dynamic_segment_frames=0`;
+  - `intent_gate_reason=no_features`;
+  - `dynamic_confidence=0.55`.
+- Это означает, что dynamic infer не запускал temporal sequence pipeline.
+
+Причина:
+- UI-dropdown `Dynamic=sequence_rocket` выбирал правильный профиль.
+- Но controller строил пути к dynamic classifier/meta внутри текущего
+  `models_dir`.
+- Для experiment-наборов это неверно: experiment может хранить только
+  prototype/rejection layer, а classifier/meta должны браться из production
+  `models/`.
+
+Решение:
+- Добавлен production fallback для dynamic classifier artifacts:
+  - `dynamic_sequence_rocket.pkl`;
+  - `dynamic_sequence_rocket_classes.json`;
+  - `dynamic_sequence_rocket_feature_dim.txt`;
+  - `dynamic_sequence_rocket_feature_mode.txt`.
+- Prototype artifact по-прежнему берётся из experiment-набора, если он там
+  есть.
+- Добавлен runtime log:
+  `[ctrl.embedded] dynamic profile=... model=... feature_mode=... prototypes=...`.
+- В `GestureOnlineInfer` добавлен guard: если загружен
+  `dynamic_sequence_*.pkl` с sequence-размерностью, feature mode принудительно
+  нормализуется в `dynamic_sequence`.
+
+Проверка без камеры на текущем конфиге:
+- `model=/models/dynamic_sequence_rocket.pkl`;
+- `feature_mode=/models/dynamic_sequence_rocket_feature_mode.txt`;
+- `prototypes=/models/experiments/dynamic_prototype/prototype_distance/dynamic_sequence_rocket_prototypes.json`;
+- `GestureOnlineInfer`:
+  - `model_error=''`;
+  - `feature_mode=dynamic_sequence`;
+  - `raw_feature_dim=44`;
+  - `uses_temporal=True`;
+  - `uses_global_motion=True`;
+  - `segmenter=DynamicMotionSegmenter`;
+  - classes: `no_gesture_static`, `partial_swipe`, `random_motion`,
+    `return_motion`, `swipe_down`, `swipe_left`, `swipe_up`,
+    `wrong_axis_motion`.
+
+Следующий live-тест:
+- Полностью перезапустить приложение или хотя бы остановить/запустить камеру.
+- `Model Set` можно оставить `prototype_distance`.
+- `Mode=auto`, `Dynamic=sequence_rocket`, `Reject=open_set_policy`.
+- Прогнать:
+  - `swipe_up`: 10 попыток, threshold `0.60`;
+  - `swipe_left`: 10 попыток, threshold `0.60`;
+  - если динамика пошла через route `dynamic`, поднять threshold до `0.90`;
+  - отдельно проверить `partial_swipe` и `random_motion` как negative.

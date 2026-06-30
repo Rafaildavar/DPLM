@@ -227,6 +227,7 @@ class GestureOnlineInfer:
             self._clf = None
             if not self._model_error:
                 self._model_error = "Нет models/knn.pkl"
+        self._ensure_dynamic_sequence_feature_mode(model_path)
         self._raw_feature_dim = self._infer_raw_feature_dim()
         self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
         if self._uses_global_dynamic_motion():
@@ -260,6 +261,21 @@ class GestureOnlineInfer:
             except Exception as e:
                 self._init_error = str(e)
                 self._detector = None
+
+    def _ensure_dynamic_sequence_feature_mode(self, model_path: Path) -> None:
+        model_name = str(getattr(model_path, "name", "") or "").lower()
+        if not model_name.startswith("dynamic_sequence"):
+            return
+        if int(getattr(self, "_feature_dim", 0) or 0) < DYNAMIC_SEQUENCE_TARGET_FRAMES * 42:
+            return
+        if str(getattr(self, "_feature_mode", "") or "") == FEATURE_DYNAMIC_SEQUENCE:
+            return
+        print(
+            "[w] dynamic sequence artifact loaded with non-sequence feature_mode: "
+            f"{self._feature_mode!r} -> {FEATURE_DYNAMIC_SEQUENCE}",
+            flush=True,
+        )
+        self._feature_mode = FEATURE_DYNAMIC_SEQUENCE
 
     def _normalize_static_rejection_method(self, method: str) -> str:
         clean = str(method or "").strip().lower()
