@@ -6,7 +6,9 @@ from app.flet_app.controller import (
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
     MODEL_VARIANT_DIRS,
     MODEL_VARIANT_PRODUCTION,
@@ -205,6 +207,56 @@ def test_sequence_sprocket_dynamic_profile_uses_own_metadata_files(tmp_path):
     assert (
         controller._dynamic_prototypes_path().name
         == "dynamic_sequence_sprocket_prototypes.json"
+    )
+
+
+def test_sequence_shapelet_dynamic_profile_uses_own_metadata_files(tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = str(tmp_path / "models")
+
+    assert controller._dynamic_model_path().name == "dynamic_sequence_shapelet.pkl"
+    assert (
+        controller._dynamic_classes_path().name
+        == "dynamic_sequence_shapelet_classes.json"
+    )
+    assert (
+        controller._dynamic_feature_dim_path().name
+        == "dynamic_sequence_shapelet_feature_dim.txt"
+    )
+    assert (
+        controller._dynamic_feature_mode_path().name
+        == "dynamic_sequence_shapelet_feature_mode.txt"
+    )
+    assert (
+        controller._dynamic_prototypes_path().name
+        == "dynamic_sequence_shapelet_prototypes.json"
+    )
+
+
+def test_sequence_phase_hmm_dynamic_profile_uses_own_metadata_files(tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = str(tmp_path / "models")
+
+    assert controller._dynamic_model_path().name == "dynamic_sequence_phase_hmm.pkl"
+    assert (
+        controller._dynamic_classes_path().name
+        == "dynamic_sequence_phase_hmm_classes.json"
+    )
+    assert (
+        controller._dynamic_feature_dim_path().name
+        == "dynamic_sequence_phase_hmm_feature_dim.txt"
+    )
+    assert (
+        controller._dynamic_feature_mode_path().name
+        == "dynamic_sequence_phase_hmm_feature_mode.txt"
+    )
+    assert (
+        controller._dynamic_prototypes_path().name
+        == "dynamic_sequence_phase_hmm_prototypes.json"
     )
 
 

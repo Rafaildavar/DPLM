@@ -6,7 +6,9 @@ import numpy as np
 
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
+from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
+from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
 from cv.train_classifier import (
     _log_mlflow_run,
@@ -136,6 +138,33 @@ def test_build_classifier_supports_sequence_sprocket_model():
     assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
 
 
+def test_build_classifier_supports_sequence_shapelet_model():
+    clf = build_classifier(
+        "sequence_shapelet",
+        random_state=7,
+        sequence_shapelets_per_class=6,
+        sequence_shapelet_max_channels=4,
+    )
+
+    assert clf.__class__.__name__ == "Pipeline"
+    assert clf.steps[0][1].__class__.__name__ == "ShapeletSequenceTransformer"
+    assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
+
+
+def test_build_classifier_supports_sequence_phase_hmm_model():
+    clf = build_classifier(
+        "sequence_phase_hmm",
+        sequence_phase_hmm_states=4,
+        sequence_phase_hmm_max_channels=5,
+        sequence_phase_hmm_variance_regularization=0.3,
+    )
+
+    assert isinstance(clf, PhaseHMMSequenceClassifier)
+    assert clf.n_states == 4
+    assert clf.max_channels == 5
+    assert clf.variance_regularization == 0.3
+
+
 def test_sequence_rocket_transformer_builds_deterministic_temporal_features():
     x = np.arange(4 * 36 * 4, dtype=np.float32).reshape(4, 36 * 4)
     transformer = RandomConvolutionSequenceTransformer(
@@ -169,6 +198,24 @@ def test_sequence_multirocket_transformer_builds_difference_features():
     assert features.shape == (4, 40)
     assert np.allclose(features, repeated)
     assert any(kernel.use_difference for kernel in transformer.kernels_)
+
+
+def test_sequence_shapelet_transformer_builds_match_features():
+    x = np.arange(6 * 36 * 4, dtype=np.float32).reshape(6, 36 * 4)
+    y = np.asarray([0, 0, 0, 1, 1, 1])
+    transformer = ShapeletSequenceTransformer(
+        shapelets_per_class=4,
+        target_frames=36,
+        max_channels_per_shapelet=3,
+        random_state=11,
+    )
+
+    features = transformer.fit_transform(x, y)
+    repeated = transformer.transform(x)
+
+    assert features.shape == (6, 16)
+    assert np.allclose(features, repeated)
+    assert len(transformer.shapelets_) == 8
 
 
 def test_sequence_rocket_pipeline_supports_predict_proba():
@@ -228,6 +275,47 @@ def test_sequence_sprocket_pipeline_supports_predict_proba():
 
     assert isinstance(transformer, SprocketSequenceTransformer)
     assert transformer.prototypes_.shape[0] == 4
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
+
+
+def test_sequence_shapelet_pipeline_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_shapelet",
+        random_state=3,
+        sequence_shapelets_per_class=4,
+        sequence_shapelet_max_channels=3,
+    )
+
+    clf.fit(x, y)
+    transformer = clf.steps[0][1]
+    proba = clf.predict_proba(x[:2])
+
+    assert isinstance(transformer, ShapeletSequenceTransformer)
+    assert len(transformer.shapelets_) == 8
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
+
+
+def test_sequence_phase_hmm_classifier_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_phase_hmm",
+        sequence_phase_hmm_states=4,
+        sequence_phase_hmm_max_channels=3,
+    )
+
+    clf.fit(x, y)
+    proba = clf.predict_proba(x[:2])
+
+    assert isinstance(clf, PhaseHMMSequenceClassifier)
     assert proba.shape == (2, 2)
     assert np.allclose(proba.sum(axis=1), 1.0)
 

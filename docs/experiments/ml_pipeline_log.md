@@ -4163,3 +4163,173 @@ Live A/B protocol:
   - route counts;
   - confidence distribution;
   - latency/runtime performance.
+
+### H-080: `sequence_multirocket` и `sequence_sprocket` live выглядят точнее и плавнее
+
+Статус: `observed`, needs log analysis
+
+Дата: `2026-06-30`
+
+Live-наблюдение:
+- Пользователь отметил, что `sequence_multirocket` и `sequence_sprocket`
+  распознают динамические жесты заметно лучше предыдущей `sequence_rocket`.
+- Также субъективно камера стала меньше лагать.
+
+Предварительная интерпретация:
+- Улучшение качества ожидаемо: новые модели используют first-order differences
+  и/или prototype-distance features, поэтому лучше различают намеренный жест,
+  неполный жест и возвратное движение.
+- Снижение лагов, вероятно, связано не с тем, что модель математически
+  "дешевле", а с поведением всего live pipeline:
+  - меньше неопределённых/пустых решений;
+  - меньше повторных fallback-переходов в static route;
+  - динамический сегмент быстрее завершается уверенным решением;
+  - меньше визуального/логического дрожания между static и dynamic ветками.
+- Важная проверка: сравнить `runtime_performance.jsonl` по профилям:
+  - `inference_ms_avg`;
+  - `inference_ms_p95`;
+  - `samples`;
+  - `dynamic_model_profile`;
+  - `shared_detection_rate`.
+
+Следующий шаг:
+- После live-прогона собрать последние runtime logs и live evaluation logs.
+- Сравнить `sequence_rocket`, `sequence_multirocket`, `sequence_sprocket`
+  по latency и route behavior.
+
+### H-081: Shapelet и phase-HMM как следующая серия dynamic time-series моделей
+
+Статус: `ready for live A/B`
+
+Дата: `2026-06-30`
+
+Проблема:
+- `sequence_multirocket` и `sequence_sprocket` live выглядят сильнее
+  `sequence_rocket`, но пользователь заметил, что они могут быть более
+  подвержены случайным negative-жестам.
+- В текущем live pipeline negative-классы обрабатываются:
+  - classifier обучается на `dynamic,negative`;
+  - `no_gesture_static`, `partial_swipe`, `random_motion`, `return_motion`,
+    `wrong_axis_motion` входят в `predict_proba`;
+  - prototype layer содержит external IPN negatives;
+  - labels типа `negative` не должны исполняться как команды.
+- Найден риск для следующего эксперимента: если prototype layer возвращает
+  `far_from_prototype`, live-код может принять сильную эвристику движения через
+  `motion_over_prototype_reject`/`model_over_prototype_reject`. Это полезно как
+  fallback для настоящих свайпов, но может пропускать случайные движения.
+
+Гипотеза:
+- `sequence_shapelet` лучше распознает сложные пользовательские жесты, потому
+  что ищет ключевые поддвижения внутри 36-кадровой последовательности.
+- `sequence_phase_hmm` лучше отвергает `partial_swipe`/`return_motion`/
+  `wrong_axis_motion`, потому что проверяет порядок фаз жеста:
+  старт -> середина -> конец.
+
+Реализация:
+- Добавлен `cv/sequence_shapelet.py`:
+  - строит training-derived shapelets по каждому классу;
+  - считает min-distance и позицию лучшего совпадения;
+  - классификатор: `ShapeletSequenceTransformer + StandardScaler +
+    LogisticRegression(class_weight='balanced')`.
+- Добавлен `cv/sequence_phase_hmm.py`:
+  - фиксированная phase-HMM-style модель с `6` фазами;
+  - использует phase mean/delta/velocity/path features;
+  - generative diagonal Gaussian classifier с uniform prior.
+- Обе модели подключены к:
+  - `cv.train_classifier --model-type`;
+  - Flet training UI;
+  - Home dynamic model dropdown;
+  - model-specific metadata/prototype paths.
+
+Артефакты:
+- `models/dynamic_sequence_shapelet.pkl`;
+- `models/dynamic_sequence_shapelet_classes.json`;
+- `models/dynamic_sequence_shapelet_feature_dim.txt`;
+- `models/dynamic_sequence_shapelet_feature_mode.txt`;
+- `models/dynamic_sequence_shapelet_rejection.json`;
+- `models/dynamic_sequence_shapelet_prototypes.json`;
+- `models/dynamic_sequence_phase_hmm.pkl`;
+- `models/dynamic_sequence_phase_hmm_classes.json`;
+- `models/dynamic_sequence_phase_hmm_feature_dim.txt`;
+- `models/dynamic_sequence_phase_hmm_feature_mode.txt`;
+- `models/dynamic_sequence_phase_hmm_rejection.json`;
+- `models/dynamic_sequence_phase_hmm_prototypes.json`.
+
+Training setup:
+- `data_root=data/gestures`;
+- `feature_mode=dynamic_sequence`;
+- `feature_dim=1584` (`36 * 44`);
+- samples: `170`;
+- classes:
+  - `no_gesture_static`;
+  - `partial_swipe`;
+  - `random_motion`;
+  - `return_motion`;
+  - `swipe_down`;
+  - `swipe_left`;
+  - `swipe_up`;
+  - `wrong_axis_motion`;
+- `sequence_shapelet` train accuracy: `1.0000`;
+- `sequence_phase_hmm` initial train accuracy: `0.8353`;
+- after quick tuning:
+  - `sequence_phase_hmm_states=6`;
+  - `sequence_phase_hmm_max_channels=44`;
+  - `sequence_phase_hmm_variance_regularization=0.02`;
+  - train accuracy: `0.9294`.
+- MLflow runs:
+  - `train-sequence-shapelet`;
+  - `train-sequence-phase-hmm`;
+  - `train-sequence-phase-hmm-tuned`.
+
+Runtime sanity:
+- `dynamic_sequence_shapelet`:
+  - `model_error=''`;
+  - `init_error=''`;
+  - `feature_mode=dynamic_sequence`;
+  - `feature_dim=1584`;
+  - `raw_feature_dim=44`;
+  - prototype method: `prototype_distance`.
+- `dynamic_sequence_phase_hmm`:
+  - `model_error=''`;
+  - `init_error=''`;
+  - `feature_mode=dynamic_sequence`;
+  - `feature_dim=1584`;
+  - `raw_feature_dim=44`;
+  - prototype method: `prototype_distance`.
+
+Validation:
+- `pytest --no-cov tests/unit/test_train_classifier.py
+  tests/unit/test_flet_static_model_paths.py
+  tests/unit/test_flet_training_view.py
+  tests/unit/test_flet_controller_commands.py -q`
+  -> `107 passed`.
+
+Live A/B protocol:
+- Перезапустить приложение или Stop/Start камеры.
+- `Model Set=prototype_distance`;
+- `Mode=auto`;
+- `Reject=open_set_policy`;
+- Сначала `Dynamic=sequence_shapelet`;
+- Потом `Dynamic=sequence_phase_hmm`;
+- Для каждой модели:
+  - `swipe_up`: 20 попыток, threshold `0.90`;
+  - `swipe_left`: 20 попыток, threshold `0.90`;
+  - `swipe_down`: 20 попыток, threshold `0.90`;
+  - `partial_swipe`: 10 попыток как expected negative;
+  - `random_motion`: 10 попыток как expected negative;
+  - `return_motion`: 10 попыток как expected negative;
+  - `wrong_axis_motion`: 10 попыток как expected negative.
+
+Критерий успеха:
+- dynamic gesture accuracy >= `90%` на основных жестах;
+- negative false positive rate <= `10%`;
+- static fallback на dynamic tests не растет;
+- live latency не хуже текущих `sequence_multirocket`/`sequence_sprocket`
+  по `inference_ms_avg` и `inference_ms_p95`.
+
+Следующий шаг:
+- Если Shapelet/phase-HMM по live negative лучше текущих моделей, оставить
+  сильнейшую из них в UI как recommended dynamic profile.
+- Если false positives сохранятся, включить отдельный strict prototype gate:
+  `far_from_prototype` не может быть override-нут motion/model fallback в
+  negative-testing режиме.

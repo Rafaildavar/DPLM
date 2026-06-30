@@ -264,3 +264,25 @@ def test_sequence_sprocket_uses_own_sequence_model_and_metadata_paths():
         "models/dynamic_sequence_sprocket_feature_dim.txt",
         "models/dynamic_sequence_sprocket_feature_mode.txt",
     )
+
+
+def test_sequence_shapelet_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_shapelet") == (
+        "models/dynamic_sequence_shapelet.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_shapelet") == (
+        "models/dynamic_sequence_shapelet_classes.json",
+        "models/dynamic_sequence_shapelet_feature_dim.txt",
+        "models/dynamic_sequence_shapelet_feature_mode.txt",
+    )
+
+
+def test_sequence_phase_hmm_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_phase_hmm") == (
+        "models/dynamic_sequence_phase_hmm.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_phase_hmm") == (
+        "models/dynamic_sequence_phase_hmm_classes.json",
+        "models/dynamic_sequence_phase_hmm_feature_dim.txt",
+        "models/dynamic_sequence_phase_hmm_feature_mode.txt",
+    )

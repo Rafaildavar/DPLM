@@ -22,7 +22,9 @@ from cv.gesture_features import (
 )
 from cv.gesture_dataset_files import gesture_sample_paths
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
+from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
+from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
 
 SUPPORTED_MODEL_TYPES = (
@@ -32,6 +34,8 @@ SUPPORTED_MODEL_TYPES = (
     "sequence_rocket",
     "sequence_multirocket",
     "sequence_sprocket",
+    "sequence_shapelet",
+    "sequence_phase_hmm",
     "svm",
     "extra_trees",
     "rf",
@@ -55,6 +59,11 @@ DEFAULT_SEQUENCE_SPROCKET_KERNELS = 192
 DEFAULT_SEQUENCE_SPROCKET_PROTOTYPES_PER_CLASS = 3
 DEFAULT_SEQUENCE_SPROCKET_MAX_DILATION = 6
 DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL = 8
+DEFAULT_SEQUENCE_SHAPELETS_PER_CLASS = 18
+DEFAULT_SEQUENCE_SHAPELET_MAX_CHANNELS = 12
+DEFAULT_SEQUENCE_PHASE_HMM_STATES = 6
+DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS = 44
+DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION = 0.02
 
 
 # --------------------------------------------------
@@ -187,6 +196,13 @@ def build_classifier(
     sequence_sprocket_max_channels_per_kernel: int = (
         DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL
     ),
+    sequence_shapelets_per_class: int = DEFAULT_SEQUENCE_SHAPELETS_PER_CLASS,
+    sequence_shapelet_max_channels: int = DEFAULT_SEQUENCE_SHAPELET_MAX_CHANNELS,
+    sequence_phase_hmm_states: int = DEFAULT_SEQUENCE_PHASE_HMM_STATES,
+    sequence_phase_hmm_max_channels: int = DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS,
+    sequence_phase_hmm_variance_regularization: float = (
+        DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION
+    ),
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -254,6 +270,30 @@ def build_classifier(
                 class_weight="balanced",
                 random_state=int(random_state),
             ),
+        )
+    if model == "sequence_shapelet":
+        return make_pipeline(
+            ShapeletSequenceTransformer(
+                shapelets_per_class=max(1, int(sequence_shapelets_per_class)),
+                max_channels_per_shapelet=max(
+                    1,
+                    int(sequence_shapelet_max_channels),
+                ),
+                random_state=int(random_state),
+            ),
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2500,
+                class_weight="balanced",
+                random_state=int(random_state),
+            ),
+        )
+    if model == "sequence_phase_hmm":
+        return PhaseHMMSequenceClassifier(
+            n_states=max(2, int(sequence_phase_hmm_states)),
+            max_channels=max(1, int(sequence_phase_hmm_max_channels)),
+            variance_regularization=float(sequence_phase_hmm_variance_regularization),
+            use_uniform_prior=True,
         )
     if model == "sequence_rocket":
         return make_pipeline(
@@ -425,7 +465,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Тип классификатора: knn, sequence_knn, sequence_mlp, "
             "sequence_rocket, sequence_multirocket, sequence_sprocket, "
-            "svm, extra_trees, rf или logreg"
+            "sequence_shapelet, sequence_phase_hmm, svm, extra_trees, "
+            "rf или logreg"
         ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
@@ -518,6 +559,36 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL,
         help="Maximum channel subset size per sequence_sprocket kernel.",
+    )
+    p.add_argument(
+        "--sequence-shapelets-per-class",
+        type=int,
+        default=DEFAULT_SEQUENCE_SHAPELETS_PER_CLASS,
+        help="Number of training-derived shapelets per class.",
+    )
+    p.add_argument(
+        "--sequence-shapelet-max-channels",
+        type=int,
+        default=DEFAULT_SEQUENCE_SHAPELET_MAX_CHANNELS,
+        help="Maximum channel subset size per shapelet.",
+    )
+    p.add_argument(
+        "--sequence-phase-hmm-states",
+        type=int,
+        default=DEFAULT_SEQUENCE_PHASE_HMM_STATES,
+        help="Number of ordered phases for sequence_phase_hmm.",
+    )
+    p.add_argument(
+        "--sequence-phase-hmm-max-channels",
+        type=int,
+        default=DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS,
+        help="Maximum landmark channels used by sequence_phase_hmm.",
+    )
+    p.add_argument(
+        "--sequence-phase-hmm-variance-regularization",
+        type=float,
+        default=DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION,
+        help="Blend factor between per-class and global variance.",
     )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
@@ -636,6 +707,13 @@ def main() -> None:
         sequence_sprocket_max_dilation=int(args.sequence_sprocket_max_dilation),
         sequence_sprocket_max_channels_per_kernel=int(
             args.sequence_sprocket_max_channels_per_kernel
+        ),
+        sequence_shapelets_per_class=int(args.sequence_shapelets_per_class),
+        sequence_shapelet_max_channels=int(args.sequence_shapelet_max_channels),
+        sequence_phase_hmm_states=int(args.sequence_phase_hmm_states),
+        sequence_phase_hmm_max_channels=int(args.sequence_phase_hmm_max_channels),
+        sequence_phase_hmm_variance_regularization=float(
+            args.sequence_phase_hmm_variance_regularization
         ),
     )
     clf.fit(X, y)
@@ -855,6 +933,41 @@ def _log_mlflow_run(
                 DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL,
             )
         )
+        sequence_shapelets_per_class = int(
+            getattr(
+                args,
+                "sequence_shapelets_per_class",
+                DEFAULT_SEQUENCE_SHAPELETS_PER_CLASS,
+            )
+        )
+        sequence_shapelet_max_channels = int(
+            getattr(
+                args,
+                "sequence_shapelet_max_channels",
+                DEFAULT_SEQUENCE_SHAPELET_MAX_CHANNELS,
+            )
+        )
+        sequence_phase_hmm_states = int(
+            getattr(
+                args,
+                "sequence_phase_hmm_states",
+                DEFAULT_SEQUENCE_PHASE_HMM_STATES,
+            )
+        )
+        sequence_phase_hmm_max_channels = int(
+            getattr(
+                args,
+                "sequence_phase_hmm_max_channels",
+                DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS,
+            )
+        )
+        sequence_phase_hmm_variance_regularization = float(
+            getattr(
+                args,
+                "sequence_phase_hmm_variance_regularization",
+                DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION,
+            )
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -900,6 +1013,13 @@ def _log_mlflow_run(
                     "sequence_sprocket_max_dilation": sequence_sprocket_max_dilation,
                     "sequence_sprocket_max_channels_per_kernel": (
                         sequence_sprocket_max_channels_per_kernel
+                    ),
+                    "sequence_shapelets_per_class": sequence_shapelets_per_class,
+                    "sequence_shapelet_max_channels": sequence_shapelet_max_channels,
+                    "sequence_phase_hmm_states": sequence_phase_hmm_states,
+                    "sequence_phase_hmm_max_channels": sequence_phase_hmm_max_channels,
+                    "sequence_phase_hmm_variance_regularization": (
+                        sequence_phase_hmm_variance_regularization
                     ),
                     "expect_dim": (
                         int(args.expect_dim)

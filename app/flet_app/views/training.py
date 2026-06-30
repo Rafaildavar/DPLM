@@ -45,6 +45,8 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_rocket": "models/dynamic_sequence_rocket.pkl",
     "sequence_multirocket": "models/dynamic_sequence_multirocket.pkl",
     "sequence_sprocket": "models/dynamic_sequence_sprocket.pkl",
+    "sequence_shapelet": "models/dynamic_sequence_shapelet.pkl",
+    "sequence_phase_hmm": "models/dynamic_sequence_phase_hmm.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 36
@@ -96,6 +98,18 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_sprocket_classes.json",
             "models/dynamic_sequence_sprocket_feature_dim.txt",
             "models/dynamic_sequence_sprocket_feature_mode.txt",
+        )
+    if clean == "sequence_shapelet":
+        return (
+            "models/dynamic_sequence_shapelet_classes.json",
+            "models/dynamic_sequence_shapelet_feature_dim.txt",
+            "models/dynamic_sequence_shapelet_feature_mode.txt",
+        )
+    if clean == "sequence_phase_hmm":
+        return (
+            "models/dynamic_sequence_phase_hmm_classes.json",
+            "models/dynamic_sequence_phase_hmm_feature_dim.txt",
+            "models/dynamic_sequence_phase_hmm_feature_mode.txt",
         )
     return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
 
@@ -229,6 +243,11 @@ class TrainingView:
                     text="sequence_multirocket",
                 ),
                 ft.DropdownOption(key="sequence_sprocket", text="sequence_sprocket"),
+                ft.DropdownOption(key="sequence_shapelet", text="sequence_shapelet"),
+                ft.DropdownOption(
+                    key="sequence_phase_hmm",
+                    text="sequence_phase_hmm",
+                ),
             ],
             editable=False,
             on_select=self._on_dynamic_model_type_changed,
