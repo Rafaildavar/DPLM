@@ -832,6 +832,46 @@ def test_binding_agent_semantic_router_detects_freeform_sequence():
     assert intent_step["data"]["semanticScore"] > 0.2
 
 
+def test_binding_agent_continues_previous_draft_when_user_adds_gesture():
+    first = build_agent_binding_draft(
+        (
+            "сделай сценарий под названием мое утро - "
+            "первый шаг открыть рамблер почту "
+            "второе открыть приложение джира, включить заметки"
+        ),
+        GESTURES,
+    )
+
+    second = build_agent_binding_draft(
+        "привяжи это к swipe_up",
+        GESTURES,
+        conversation_history=[
+            {
+                "role": "user",
+                "text": (
+                    "сделай сценарий под названием мое утро - "
+                    "первый шаг открыть рамблер почту "
+                    "второе открыть приложение джира, включить заметки"
+                ),
+            },
+            {"role": "agent", "text": first["agentReply"]},
+        ],
+        draft_state=first,
+    )
+
+    assert first["canApply"] is False
+    assert first["missing"] == ["жест"]
+    assert second["ok"] is True
+    assert second["canApply"] is True
+    assert second["gestureLabel"] == "swipe_up"
+    assert second["mode"] == "sequence"
+    assert second["actionSpec"] == first["actionSpec"]
+    action_step = next(
+        item for item in second["agentTrace"] if item["agent"] == "Action Agent"
+    )
+    assert action_step["data"]["source"] == "draft_state"
+
+
 def test_binding_agent_submit_records_dialog_messages():
     class FakeController:
         def get_action_categories(self):

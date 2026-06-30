@@ -11,6 +11,8 @@
 Публичный вход остается в `app.services.binding_agent.BindingAgentOrchestrator`.
 UI вызывает совместимый wrapper `build_agent_binding_draft`, а результат
 возвращается в legacy-формате для Flet-экрана привязок.
+Контекст агента включает текущий prompt, список жестов, выбранный жест,
+диалоговую историю и `draft_state` последнего черновика.
 
 Порядок обработки:
 
@@ -55,6 +57,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
   внешних зависимостей.
 - Появился отдельный слой tools/contracts: агенты теперь тонко оборачивают
   tool-result в trace step, а не держат всю бизнес-логику внутри `run`.
+- Контекст агента получил `draft_state`: уточнения могут продолжать прошлый
+  черновик, например `привяжи это к swipe_up` после собранного сценария.
 
 ## Главные проблемы перед улучшением
 
@@ -65,8 +69,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    как самостоятельные skill packs с `SKILL.md`.
 3. Tools получили базовый contract-слой. Следующий этап - расширить его
    typed-схемами для LLM/function calling и MLflow eval.
-4. Memory хранит диалог, но еще не держит полноценный draft-state для
-   продолжения сценария через уточнения.
+4. Memory теперь получает draft-state для базовых уточнений. Следующий этап -
+   сделать полноценный state manager с несколькими черновиками и TTL.
 5. Guardrails уже разделены на input/output, но политика отказов и уточнений
    требует явной v2-модели.
 6. Reviewer проверяет релевантность, но ему нужны более строгие рубрики:
@@ -85,6 +89,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 - `разве command+z закрывает Telegram?` -> validation answer.
 - `сделай сценарий под названием мое утро ...` -> named sequence,
   missing gesture, no guardrails refusal.
+- `привяжи это к swipe_up` после named sequence -> использует прошлый
+  `actionSpec` из draft-state и добавляет жест.
 - prompt injection marker -> guardrails block.
 
 ## Definition of done для следующих шагов

@@ -314,6 +314,8 @@ class MistralBindingAgent:
             f"Известные жесты: {gestures_text}\n"
             f"Выбранный жест в UI: {context.current_gesture or 'нет'}\n"
             f"Диалоговая память:\n{_history_text(context.conversation_history) or 'нет'}\n"
+            "Текущий черновик JSON:\n"
+            f"{json.dumps(context.draft_state or {}, ensure_ascii=False)}\n"
             f"Фраза пользователя: {context.prompt}"
         )
         return {
@@ -416,6 +418,8 @@ class MistralBindingAgent:
             f"Локальная задача для LLM: {task}\n\n"
             f"Фраза пользователя:\n{context.prompt}\n\n"
             f"Диалоговая память:\n{_history_text(context.conversation_history) or 'нет'}\n\n"
+            "Текущий черновик JSON:\n"
+            f"{json.dumps(context.draft_state or {}, ensure_ascii=False)}\n\n"
             f"Локальный черновик ответа, который нужно только перефразировать:\n{base_answer}"
         )
 

@@ -184,6 +184,7 @@ class BindingAgentContext:
     gestures: list[dict[str, Any]] = field(default_factory=list)
     current_gesture: str = ""
     conversation_history: list[dict[str, str]] = field(default_factory=list)
+    draft_state: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1983,6 +1984,7 @@ class BindingAgentOrchestrator:
         *,
         current_gesture: str = "",
         conversation_history: list[dict[str, str]] | None = None,
+        draft_state: dict[str, Any] | None = None,
         provider: str | None = None,
     ) -> BindingAgentResult:
         context = BindingAgentContext(
@@ -1990,6 +1992,7 @@ class BindingAgentOrchestrator:
             gestures=gestures,
             current_gesture=current_gesture,
             conversation_history=list(conversation_history or []),
+            draft_state=dict(draft_state or {}),
         )
         steps: list[AgentStep] = []
         provider_name = _provider_name(provider)
@@ -2415,6 +2418,7 @@ def build_agent_binding_draft(
     *,
     current_gesture: str = "",
     conversation_history: list[dict[str, str]] | None = None,
+    draft_state: dict[str, Any] | None = None,
     provider: str | None = None,
 ) -> dict[str, Any]:
     """Compatibility wrapper returning the UI-facing draft dict."""
@@ -2423,5 +2427,6 @@ def build_agent_binding_draft(
         gestures,
         current_gesture=current_gesture,
         conversation_history=conversation_history,
+        draft_state=draft_state,
         provider=provider,
     ).to_legacy_draft()

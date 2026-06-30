@@ -18,6 +18,51 @@ from app.services.binding_agent import (
 )
 
 
+def _draft_action_spec(context: BindingAgentContext) -> dict[str, Any]:
+    draft_spec = context.draft_state.get("actionSpec")
+    if isinstance(draft_spec, dict) and draft_spec.get("action"):
+        return dict(draft_spec)
+    return {}
+
+
+def _is_draft_action_reference(text: str) -> bool:
+    lower = (text or "").lower().replace("ё", "е")
+    reference = any(
+        marker in lower
+        for marker in (
+            "это",
+            "этот",
+            "эту",
+            "текущ",
+            "черновик",
+            "предыдущ",
+            "тот сценар",
+            "этот сценар",
+        )
+    )
+    action_marker = any(
+        marker in lower
+        for marker in (
+            "откр",
+            "запуст",
+            "нажм",
+            "command",
+            "cmd",
+            "ctrl",
+            "уведом",
+            "подожд",
+            "сайт",
+            "url",
+            "файл",
+            "папк",
+            "скрин",
+            "ярк",
+            "громк",
+        )
+    )
+    return reference and not action_marker
+
+
 @dataclass(frozen=True)
 class AgentToolResult:
     tool: str
@@ -79,6 +124,16 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
                 {"gesture": gesture, "source": "memory", "known": known},
             )
 
+    draft_gesture = str(context.draft_state.get("gestureLabel") or "").strip()
+    if draft_gesture:
+        known = draft_gesture.lower() in known_labels
+        return AgentToolResult(
+            "resolve_gesture",
+            "ok",
+            f"Взял жест из текущего черновика: {draft_gesture}.",
+            {"gesture": draft_gesture, "source": "draft_state", "known": known},
+        )
+
     current = (context.current_gesture or "").strip()
     if current and current.lower() in known_labels:
         label = next(label for label in labels if label.lower() == current.lower())
@@ -98,7 +153,25 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
 
 
 def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
+    draft_spec = _draft_action_spec(context)
+    if draft_spec and _is_draft_action_reference(context.prompt):
+        return AgentToolResult(
+            "parse_macos_action",
+            "ok",
+            f"Взял действие из текущего черновика: {_action_title(draft_spec)}.",
+            {"action_spec": draft_spec, "source": "draft_state"},
+        )
+
     spec = _parse_action(context.prompt)
+    if spec is None:
+        if draft_spec:
+            spec = draft_spec
+            return AgentToolResult(
+                "parse_macos_action",
+                "ok",
+                f"Взял действие из текущего черновика: {_action_title(spec)}.",
+                {"action_spec": spec, "source": "draft_state"},
+            )
     if spec is None:
         for item in reversed(_history_items(context.conversation_history)):
             if item.get("role") != "user":
@@ -199,4 +272,3 @@ def review_answer_contract(
         "Контракт ответа проверен." if not issues else "Контракт ответа нарушен.",
         {"issues": issues},
     )
-

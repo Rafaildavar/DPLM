@@ -594,6 +594,7 @@ def build_agent_binding_draft(
     *,
     current_gesture: str = "",
     conversation_history: list[dict[str, str]] | None = None,
+    draft_state: dict[str, Any] | None = None,
     provider: str | None = None,
 ) -> dict[str, Any]:
     """Compatibility wrapper around the multi-agent pipeline."""
@@ -602,6 +603,7 @@ def build_agent_binding_draft(
         gestures,
         current_gesture=current_gesture,
         conversation_history=conversation_history,
+        draft_state=draft_state,
         provider=provider,
     )
 
@@ -1716,6 +1718,7 @@ class BindingsView:
     def _on_agent_parse_click(self, _e) -> None:
         prompt = (self._agent_input.value or "").strip()
         history = list(self._agent_dialog_messages)
+        draft_state = dict(self._last_agent_draft or {})
         if prompt:
             self._agent_request_id += 1
             request_id = self._agent_request_id
@@ -1724,7 +1727,7 @@ class BindingsView:
             if animate:
                 threading.Thread(
                     target=self._run_agent_request,
-                    args=(request_id, prompt, history),
+                    args=(request_id, prompt, history, draft_state),
                     daemon=True,
                 ).start()
                 return
@@ -1736,6 +1739,7 @@ class BindingsView:
             self._gestures,
             current_gesture=self._gesture_dd.value or "",
             conversation_history=history,
+            draft_state=draft_state,
         )
         self._complete_agent_request(request_id, prompt, draft, animate=False)
 
@@ -1777,6 +1781,7 @@ class BindingsView:
         request_id: int,
         prompt: str,
         history: list[dict[str, str]],
+        draft_state: dict[str, Any],
     ) -> None:
         try:
             draft = build_agent_binding_draft(
@@ -1784,6 +1789,7 @@ class BindingsView:
                 self._gestures,
                 current_gesture=self._gesture_dd.value or "",
                 conversation_history=history,
+                draft_state=draft_state,
             )
         except Exception as exc:
             draft = {
