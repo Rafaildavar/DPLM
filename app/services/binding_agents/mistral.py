@@ -25,6 +25,7 @@ from app.services.binding_agent import (
     _extract_json_object,
     _history_text,
     _load_project_dotenv,
+    _norm,
     _normalize_missing,
     _normalize_model_action_spec,
     _normalize_summary,
@@ -465,6 +466,16 @@ class MistralBindingAgent:
             missing.append("жест")
         if not action_spec:
             missing.append("действие")
+        if gesture:
+            missing = [
+                item for item in missing if _norm(item) not in {"жест", "gesture"}
+            ]
+        if action_spec:
+            missing = [
+                item
+                for item in missing
+                if _norm(item) not in {"действие", "команда", "action"}
+            ]
         command_name = str(data.get("commandName") or data.get("command_name") or "")
         if not command_name and action_spec:
             command_name = (

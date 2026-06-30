@@ -78,6 +78,10 @@ COMMON_APP_NAMES = (
 )
 
 APP_ALIASES: dict[str, str] = {
+    "сафари": "Safari",
+    "safari": "Safari",
+    "телеграм": "Telegram",
+    "telegram": "Telegram",
     "джира": "Jira",
     "jira": "Jira",
     "заметки": "Notes",
@@ -92,6 +96,8 @@ APP_ALIASES: dict[str, str] = {
 SITE_ALIASES: dict[str, str] = {
     "chat gpt": "https://chatgpt.com",
     "chatgpt": "https://chatgpt.com",
+    "почта рамблер": "https://mail.rambler.ru",
+    "почту рамблер": "https://mail.rambler.ru",
     "рамблер почта": "https://mail.rambler.ru",
     "рамблер почту": "https://mail.rambler.ru",
     "rambler mail": "https://mail.rambler.ru",
@@ -171,6 +177,9 @@ GESTURE_WORD_ALIASES: dict[str, str] = {
     "palm": "palm",
     "кулак": "fist",
     "fist": "fist",
+    "ган": "gun",
+    "пистолет": "gun",
+    "gun": "gun",
     "щипок": "pinch",
     "pinch": "pinch",
     "ок": "ok",
@@ -539,6 +548,34 @@ def _parse_action(text: str) -> dict[str, Any] | None:
 
 def _split_sequence(text: str) -> list[str]:
     body = text or ""
+    body = re.sub(
+        (
+            r"^\s*(?:привяжи|привязать|назначь|сохрани|сделай|создай|добавь)?\s*"
+            r"(?:жест(?:ом|а)?|gesture)\s*[:=]?\s+"
+            r"[A-Za-zА-Яа-я0-9_.-]+\s+(?:к|на|для)\s+"
+        ),
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    series_prefix = re.match(
+        r"\s*(?:сер(?:и[яию]|ии)|последовательност[ьи])\s+команд\w*",
+        body,
+        re.IGNORECASE,
+    )
+    if series_prefix:
+        body = body[series_prefix.end() :]
+        body = re.sub(
+            (
+                r"^\s*(?:которая|который|которые)?\s*(?:будет|будут)?\s*"
+                r"(?:называться|назваться|назови|назвать)\s+"
+                r"[^-—:;,\n]+\s*[-:—]?\s*"
+            ),
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(r"^\s*[-:—]\s*", "", body)
     scenario_marker = re.search(r"\bсценар\w*\s*:", body, re.IGNORECASE)
     if scenario_marker:
         body = body[scenario_marker.end() :]
@@ -628,6 +665,15 @@ def _split_sequence(text: str) -> list[str]:
         body,
         flags=re.IGNORECASE,
     )
+    body = re.sub(
+        (
+            r"\s+(?=(?:откр|запуст|включ|покаж|уведом|подожд|нажм|"
+            r"сделай|увелич|уменьш|заблок|скрин)\w*)"
+        ),
+        ";",
+        body,
+        flags=re.IGNORECASE,
+    )
     return [
         _clean_value(part)
         for part in re.split(r"[;\n]+", body)
@@ -636,19 +682,27 @@ def _split_sequence(text: str) -> list[str]:
 
 
 def _extract_scenario_name(text: str) -> str:
-    match = re.search(
+    patterns = (
         (
             r"\bсценар\w*\s+(?:под\s+названи(?:ем|е)|с\s+названи(?:ем|е)|"
             r"назови)\s+[«\"']?(?P<value>.+?)[»\"']?\s*"
             r"(?=(?:[-—:;,]|\bперв(?:ый|ым|ое)?\b|\b1\s*[-.]?\s*шаг\b|"
             r"\bсначала\b|\bоткр|\bзапуст|\bвключ|\bнажм|\bподожд|\bпокаж|$))"
         ),
-        text or "",
-        re.IGNORECASE,
+        (
+            r"\b(?:сер(?:и[яию]|ии)|последовательност[ьи])\s+команд\w*"
+            r"(?:\s+(?:которая|который|которые)\s+буд(?:ет|ут))?\s+"
+            r"(?:называться|назваться|назови|назвать)\s+"
+            r"[«\"']?(?P<value>.+?)[»\"']?\s*"
+            r"(?=(?:[-—:;,]|\bперв(?:ый|ым|ое)?\b|\b1\s*[-.]?\s*шаг\b|"
+            r"\bсначала\b|\bоткр|\bзапуст|\bвключ|\bнажм|\bподожд|\bпокаж|$))"
+        ),
     )
-    if not match:
-        return ""
-    return _clean_value(match.group("value"))
+    for pattern in patterns:
+        match = re.search(pattern, text or "", re.IGNORECASE)
+        if match:
+            return _clean_value(match.group("value"))
+    return ""
 
 
 def _action_title(spec: dict[str, Any]) -> str:
@@ -2352,6 +2406,16 @@ class BindingAgentOrchestrator:
         missing = _unique_missing(
             model_missing + list(policy_step.data.get("missing") or [])
         )
+        if gesture:
+            missing = [
+                item for item in missing if _norm(item) not in {"жест", "gesture"}
+            ]
+        if action_spec:
+            missing = [
+                item
+                for item in missing
+                if _norm(item) not in {"действие", "команда", "action"}
+            ]
         validation_step = self.validation_agent.run(gesture, action_spec)
         steps.append(validation_step)
 

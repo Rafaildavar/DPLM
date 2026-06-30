@@ -35,6 +35,8 @@ GESTURES = [
     {"label": "ctrlz"},
 ]
 
+GESTURES_WITH_GUN = [*GESTURES, {"label": "gun"}]
+
 
 def test_binding_agents_are_importable_from_dedicated_package():
     assert GuardrailsAgent.__module__.endswith(".guardrails")
@@ -835,6 +837,62 @@ def test_binding_agent_named_sequence_without_gesture_asks_for_gesture_not_guard
     assert output_guardrail["status"] == "need_clarification"
     assert output_guardrail["data"]["decision"] == "clarify"
     assert output_guardrail["data"]["clarifications"] == ["жест"]
+
+
+def test_binding_agent_builds_named_command_series_with_transliterated_gesture():
+    draft = build_agent_binding_draft(
+        (
+            "привяжи жест ган к серии команд которая будет называться старт - "
+            "открыть сафари открыть почту рамблер открыть телеграм"
+        ),
+        GESTURES_WITH_GUN,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["missing"] == []
+    assert draft["gestureLabel"] == "gun"
+    assert draft["commandName"] == "gun: Сценарий «старт» из 3 шагов"
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "name": "старт",
+        "steps": [
+            {"action": "open_app", "app": "Safari"},
+            {"action": "open_url", "url": "https://mail.rambler.ru"},
+            {"action": "open_app", "app": "Telegram"},
+        ],
+    }
+
+
+def test_mistral_draft_drops_stale_missing_when_contract_fields_exist():
+    agent = MistralBindingAgent(api_key="")
+    draft = agent._draft_from_content(
+        json.dumps(
+            {
+                "gestureLabel": "gun",
+                "commandName": "старт",
+                "mode": "sequence",
+                "missing": ["жест"],
+                "actionSpec": {
+                    "action": "sequence",
+                    "platform": "macos",
+                    "name": "старт",
+                    "steps": [{"action": "open_app", "app": "Safari"}],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        BindingAgentContext(
+            "привяжи жест ган к серии команд которая будет называться старт",
+            gestures=GESTURES_WITH_GUN,
+        ),
+    )
+
+    assert draft["gestureLabel"] == "gun"
+    assert draft["missing"] == []
 
 
 def test_binding_agent_semantic_router_detects_freeform_sequence():
