@@ -1,6 +1,6 @@
 # GestureFlow ML System Design
 
-Last updated: `2026-06-29`
+Last updated: `2026-06-30`
 
 Purpose: единый living-документ по ML-системе GestureFlow для JMLC. Здесь
 фиксируется не только текущая архитектура, но и путь разработки: что уже
@@ -26,6 +26,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | live A/B against `sequence_knn` |
 | Intent gate `static/dynamic/none` | Added | H-070: MLP gate offline accuracy `0.9672`, macro F1 `0.9480` | live matrix: static, dynamic, random/no-command |
+| MediaPipe quality A/B | Added | H-085: timestamp, thresholds, smoothing, hand-lost grace logged to MLflow | compare profiles on live 20-attempt matrix |
 
 Status legend:
 
@@ -101,6 +102,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Live rejection protocol | `docs/experiments/live_rejection_test_protocol.md` | step-by-step live A/B test plan | Added |
 | Live eval logs | `~/.dplm/logs/live_evaluation.jsonl` | attempt-level real-camera results | Stable |
 | Runtime logs | `~/.dplm/logs/runtime_performance.jsonl` | latency/FPS diagnostics | Stable |
+| MediaPipe A/B protocol | `docs/experiments/mediapipe_ab_experiment.md` | landmark quality and threshold profile testing | Added |
 | MLflow backend | `mlflow.db` | training/live experiment history | Stable |
 | HTML dashboard | `docs/mlops_dashboard/` | local snapshot for demo | Stable |
 
@@ -125,6 +127,23 @@ Current properties:
   `confidence_threshold`, `one_class_svm`, `isolation_forest`,
   `local_outlier_factor`, `metric_nca_centroid`, `mlp_negative_classes`;
 - participates in auto routing only when dynamic route is not active.
+
+### MediaPipe Quality Layer
+
+MediaPipe is treated as a measurable CV feature extractor, not as an invisible
+black box. The live pipeline now logs:
+
+- profile and thresholds: `baseline_06`, `recall_05`, `strict_tracking`,
+  `redetect_presence`;
+- real camera timestamp usage;
+- optional EMA landmark smoothing;
+- `z/world landmarks` availability and depth ranges;
+- hand bbox size, wrist step, hand detected rate and hand-lost streak.
+
+The current 3D data is diagnostic only: existing training samples are still
+mostly 2D landmarks plus global motion. A future `dynamic_sequence_world_72`
+experiment should be trained only after new samples are recorded with
+image-space `z` or world landmarks.
 
 ### Intent Gate
 

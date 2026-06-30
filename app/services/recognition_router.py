@@ -178,7 +178,11 @@ class GestureRecognitionRouter:
         if callable(acknowledger):
             acknowledger()
 
-    def process_frame_rgb(self, frame_rgb: Any) -> dict[str, Any]:
+    def process_frame_rgb(
+        self,
+        frame_rgb: Any,
+        timestamp_ms: int | float | None = None,
+    ) -> dict[str, Any]:
         started = perf_counter()
         shared_detection = self._supports_shared_detection()
         detection_ms = 0.0
@@ -186,7 +190,11 @@ class GestureRecognitionRouter:
         if shared_detection:
             detection_started = perf_counter()
             try:
-                hands = self._static_infer.detect_hands(frame_rgb)
+                hands = self._call_detect_hands(
+                    self._static_infer,
+                    frame_rgb,
+                    timestamp_ms=timestamp_ms,
+                )
             except Exception as exc:
                 print(f"[w] shared hand detection failed: {exc}", flush=True)
                 hands = []
@@ -194,15 +202,29 @@ class GestureRecognitionRouter:
             static_out = self._process_detected(self._static_infer, hands)
             dynamic_out = self._process_detected(self._dynamic_infer, hands)
         else:
-            static_out = self._process(self._static_infer, frame_rgb)
-            dynamic_out = self._process(self._dynamic_infer, frame_rgb)
+            static_out = self._process(
+                self._static_infer,
+                frame_rgb,
+                timestamp_ms=timestamp_ms,
+            )
+            dynamic_out = self._process(
+                self._dynamic_infer,
+                frame_rgb,
+                timestamp_ms=timestamp_ms,
+            )
 
         out = self._choose(static_out, dynamic_out)
+        hand_tracking = self._hand_tracking_from_outputs(
+            static_out,
+            dynamic_out,
+            out,
+        )
         performance = {
             "shared_detection": shared_detection,
             "detection_ms": round(detection_ms, 3),
             "total_inference_ms": round((perf_counter() - started) * 1000.0, 3),
         }
+        performance.update(hand_tracking)
         out["performance"] = performance
         router_payload = out.get("router")
         if isinstance(router_payload, dict):
@@ -219,17 +241,46 @@ class GestureRecognitionRouter:
             )
         )
 
-    def _process(self, infer: Any | None, frame_rgb: Any) -> dict[str, Any]:
+    def _process(
+        self,
+        infer: Any | None,
+        frame_rgb: Any,
+        timestamp_ms: int | float | None = None,
+    ) -> dict[str, Any]:
         if infer is None:
             return self._empty()
         try:
-            out = infer.process_frame_rgb(frame_rgb)
+            if timestamp_ms is None:
+                out = infer.process_frame_rgb(frame_rgb)
+            else:
+                try:
+                    out = infer.process_frame_rgb(frame_rgb, timestamp_ms=timestamp_ms)
+                except TypeError as exc:
+                    if "timestamp" not in str(exc):
+                        raise
+                    out = infer.process_frame_rgb(frame_rgb)
         except Exception as exc:
             print(f"[w] recognition route failed: {exc}", flush=True)
             return self._empty()
         if not isinstance(out, dict):
             return self._empty()
         return out
+
+    def _call_detect_hands(
+        self,
+        infer: Any,
+        frame_rgb: Any,
+        *,
+        timestamp_ms: int | float | None,
+    ) -> Any:
+        if timestamp_ms is None:
+            return infer.detect_hands(frame_rgb)
+        try:
+            return infer.detect_hands(frame_rgb, timestamp_ms=timestamp_ms)
+        except TypeError as exc:
+            if "timestamp" not in str(exc):
+                raise
+            return infer.detect_hands(frame_rgb)
 
     def _process_detected(
         self,
@@ -354,6 +405,7 @@ class GestureRecognitionRouter:
         return str(temporal.get("phase") or "") in {
             "active",
             "cooldown",
+            "hand_lost_grace",
         }
 
     def _without_candidate(
@@ -628,6 +680,7 @@ class GestureRecognitionRouter:
         static_runtime_reject_reason = str(
             static_decision.get("rejection_reason") or ""
         )
+        hand_tracking = self._hand_tracking_from_outputs(static_out, dynamic_out)
 
         def _decision_float(decision: dict[str, Any], key: str) -> float:
             try:
@@ -784,7 +837,49 @@ class GestureRecognitionRouter:
             "dynamic_straightness": float(
                 dynamic_decision.get("straightness") or 0.0
             ),
+            **hand_tracking,
         }
 
     def _empty(self) -> dict[str, Any]:
         return {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
+
+    def _hand_tracking_from_outputs(
+        self,
+        *outputs: dict[str, Any],
+    ) -> dict[str, Any]:
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            payload = output.get("hand_tracking")
+            if isinstance(payload, dict) and payload:
+                return self._flatten_hand_tracking(payload)
+        infer = getattr(self, "_static_infer", None)
+        payload = getattr(infer, "last_hand_tracking_metrics", {})
+        if isinstance(payload, dict) and payload:
+            return self._flatten_hand_tracking(payload)
+        return {}
+
+    @staticmethod
+    def _flatten_hand_tracking(payload: dict[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "mediapipe_profile",
+            "mediapipe_min_detection_confidence",
+            "mediapipe_min_presence_confidence",
+            "mediapipe_min_tracking_confidence",
+            "mediapipe_smoothing_alpha",
+            "mediapipe_timestamp_source",
+            "mediapipe_detection_ms",
+            "hand_detected",
+            "hand_count",
+            "handedness_score_max",
+            "landmark_z_available",
+            "world_landmarks_available",
+            "landmark_z_range",
+            "world_z_range",
+            "hand_bbox_area",
+            "hand_bbox_diag",
+            "primary_wrist_step",
+            "hand_lost_streak",
+            "hand_lost_grace_frames",
+        }
+        return {key: payload.get(key) for key in allowed if key in payload}

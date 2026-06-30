@@ -233,7 +233,11 @@ def test_no_hand_frame_clears_window_and_does_not_predict() -> None:
 
     out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
-    assert out == {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
+    assert out["label"] == ""
+    assert out["confidence"] == 0.0
+    assert out["landmarks_json"] == "[]"
+    assert out["hand_tracking"]["hand_detected"] is False
+    assert out["hand_tracking"]["hand_lost_streak"] == 1
     assert len(infer._window) == 0
     assert len(infer._finger_count_window) == 0
     assert clf.predict_calls == 0

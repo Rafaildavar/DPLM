@@ -70,6 +70,17 @@ class _SharedFakeInfer(_FakeInfer):
         return {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
 
 
+class _TimestampSharedFakeInfer(_SharedFakeInfer):
+    def __init__(self, outputs):
+        super().__init__(outputs)
+        self.timestamp_ms = None
+
+    def detect_hands(self, _frame_rgb, timestamp_ms=None):
+        self.detect_calls += 1
+        self.timestamp_ms = timestamp_ms
+        return ["shared-hand"]
+
+
 class _FakeIntentGate:
     def __init__(self, label: str, confidence: float = 0.90):
         self.label = label
@@ -258,6 +269,42 @@ def test_router_runs_one_shared_detection_for_both_models() -> None:
     assert static.calls == 0
     assert dynamic.calls == 0
     assert out["performance"]["shared_detection"] is True
+
+
+def test_router_passes_timestamp_and_logs_shared_hand_metrics() -> None:
+    static = _TimestampSharedFakeInfer(
+        [
+            {
+                "label": "palm",
+                "confidence": 0.90,
+                "landmarks_json": "[shared]",
+                "hand_tracking": {
+                    "mediapipe_profile": "recall_05",
+                    "mediapipe_timestamp_source": "real_monotonic",
+                    "hand_detected": True,
+                    "hand_count": 1,
+                },
+            }
+        ]
+    )
+    dynamic = _SharedFakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[shared]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(
+        np.zeros((8, 8, 3), dtype=np.uint8),
+        timestamp_ms=1234,
+    )
+
+    assert static.timestamp_ms == 1234
+    assert out["performance"]["mediapipe_profile"] == "recall_05"
+    assert out["performance"]["mediapipe_timestamp_source"] == "real_monotonic"
+    assert out["router"]["mediapipe_profile"] == "recall_05"
     assert out["router"]["shared_detection"] is True
     assert out["router"]["dynamic_phase"] == ""
     assert out["router"]["dynamic_motion_scale"] == 0.0

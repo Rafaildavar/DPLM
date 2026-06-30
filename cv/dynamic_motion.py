@@ -151,6 +151,10 @@ class DynamicMotionSegmenter:
             return "warming_up"
         return "idle"
 
+    @property
+    def active_frames(self) -> int:
+        return len(self._active)
+
     def reset(self) -> None:
         self._pre_roll.clear()
         self._pre_roll_scales.clear()

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
@@ -73,6 +74,8 @@ DYNAMIC_SEGMENT_PRE_ROLL_FRAMES = 3
 DYNAMIC_SEGMENT_ONSET_PATH = 0.015
 DYNAMIC_SEGMENT_ONSET_DISPLACEMENT = 0.012
 DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES = 3
+HAND_LOST_GRACE_ENV = "DPLM_HAND_LOST_GRACE_FRAMES"
+DEFAULT_HAND_LOST_GRACE_FRAMES = 2
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
 STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
@@ -120,6 +123,7 @@ class GestureOnlineInfer:
         window: int = 30,
         two_hands: bool = False,
         initialize_detector: bool = True,
+        hand_lost_grace_frames: int | None = None,
     ) -> None:
         self._init_error = ""
         self._model_error = ""
@@ -155,6 +159,17 @@ class GestureOnlineInfer:
         self._last_dynamic_decision: dict[str, Any] = {}
         self._last_static_decision: dict[str, Any] = {}
         self._gesture_taxonomy: GestureTaxonomy | None = None
+        self._hand_lost_grace_frames = self._coerce_hand_lost_grace_frames(
+            hand_lost_grace_frames,
+        )
+        self._hand_lost_streak = 0
+        self._last_hand_tracking_metrics: dict[str, Any] = {
+            "hand_detected": False,
+            "hand_count": 0,
+            "hand_lost_streak": 0,
+            "hand_lost_grace_frames": self._hand_lost_grace_frames,
+        }
+        self._previous_primary_wrist: np.ndarray | None = None
 
         model_path = model_path or (PROJECT_ROOT / "models" / "knn.pkl")
         classes_path = classes_path or (PROJECT_ROOT / "models" / "classes.json")
@@ -271,6 +286,15 @@ class GestureOnlineInfer:
             except Exception as e:
                 self._init_error = str(e)
                 self._detector = None
+
+    @staticmethod
+    def _coerce_hand_lost_grace_frames(value: int | None) -> int:
+        if value is None:
+            try:
+                value = int(os.environ.get(HAND_LOST_GRACE_ENV, ""))
+            except (TypeError, ValueError):
+                value = DEFAULT_HAND_LOST_GRACE_FRAMES
+        return max(0, min(5, int(value)))
 
     def _ensure_dynamic_sequence_feature_mode(self, model_path: Path) -> None:
         model_name = str(getattr(model_path, "name", "") or "").lower()
@@ -1601,6 +1625,8 @@ class GestureOnlineInfer:
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision = {}
         self._last_static_decision = {}
+        self._hand_lost_streak = 0
+        self._previous_primary_wrist = None
 
     def acknowledge_dynamic_event(self) -> None:
         """Clear emitted prediction while preserving return-motion cooldown."""
@@ -1612,6 +1638,8 @@ class GestureOnlineInfer:
         self._pending_dynamic_motion_scale = 0.0
         self._last_dynamic_decision = {}
         self._last_static_decision = {}
+        self._hand_lost_streak = 0
+        self._previous_primary_wrist = None
 
     def _segmenter(self) -> DynamicMotionSegmenter:
         segmenter = getattr(self, "_dynamic_segmenter", None)
@@ -1646,6 +1674,10 @@ class GestureOnlineInfer:
             "required_frames": int(self._window.maxlen or 36),
             "motion_scale": float(motion_scale),
             "end_reason": str(getattr(update, "end_reason", "") or ""),
+            "hand_lost_streak": int(getattr(self, "_hand_lost_streak", 0) or 0),
+            "hand_lost_grace_frames": int(
+                getattr(self, "_hand_lost_grace_frames", DEFAULT_HAND_LOST_GRACE_FRAMES)
+            ),
         }
 
     def _ensure_intent_window(self) -> Deque[np.ndarray]:
@@ -1689,19 +1721,19 @@ class GestureOnlineInfer:
             motion_scale=motion_scale,
         )
         if update.completed_sequence is None:
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
                 "intent_features": self._intent_feature_payload(),
-            }
+            })
 
         self._window.clear()
         self._window.extend(update.completed_sequence)
         motion_ok, motion = self._dynamic_motion_gate()
         if not motion_ok or not self._classes:
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
@@ -1709,7 +1741,7 @@ class GestureOnlineInfer:
                 "intent_features": self._intent_feature_payload(
                     update.completed_sequence
                 ),
-            }
+            })
 
         try:
             model_feat = (
@@ -1725,7 +1757,7 @@ class GestureOnlineInfer:
         except Exception as exc:
             print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
             self.reset_temporal_state()
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
@@ -1733,13 +1765,13 @@ class GestureOnlineInfer:
                 "intent_features": self._intent_feature_payload(
                     update.completed_sequence
                 ),
-            }
+            })
 
         if label:
             self._pending_dynamic_prediction = (label, confidence)
             self._pending_dynamic_repeats = 1
             self._pending_dynamic_motion_scale = float(motion_scale)
-        return {
+        return self._with_hand_tracking({
             "label": label,
             "confidence": confidence,
             "landmarks_json": landmarks_json,
@@ -1748,7 +1780,7 @@ class GestureOnlineInfer:
             ),
             "temporal": temporal_state,
             "intent_features": self._intent_feature_payload(update.completed_sequence),
-        }
+        })
 
     def _process_segmented_dynamic_frame(
         self,
@@ -1761,7 +1793,7 @@ class GestureOnlineInfer:
         repeats = int(getattr(self, "_pending_dynamic_repeats", 0) or 0)
         if pending is not None and repeats > 0:
             self._pending_dynamic_repeats = repeats - 1
-            return {
+            return self._with_hand_tracking({
                 "label": pending[0],
                 "confidence": pending[1],
                 "landmarks_json": landmarks_json,
@@ -1779,11 +1811,11 @@ class GestureOnlineInfer:
                     "end_reason": "pending_repeat",
                 },
                 "intent_features": self._intent_feature_payload(),
-            }
+            })
 
         update = self._segmenter().update(feat, motion_scale=motion_scale)
         if update.completed_sequence is None:
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
@@ -1792,7 +1824,7 @@ class GestureOnlineInfer:
                     motion_scale=motion_scale,
                 ),
                 "intent_features": self._intent_feature_payload(),
-            }
+            })
 
         return self._classify_completed_dynamic_update(
             update,
@@ -1936,6 +1968,50 @@ class GestureOnlineInfer:
             payload.append([[float(x), float(y)] for (x, y) in h.landmarks])
         return json.dumps(payload, separators=(",", ":"))
 
+    @property
+    def last_hand_tracking_metrics(self) -> dict[str, Any]:
+        return dict(getattr(self, "_last_hand_tracking_metrics", {}) or {})
+
+    def _with_hand_tracking(self, payload: dict[str, Any]) -> dict[str, Any]:
+        payload["hand_tracking"] = self.last_hand_tracking_metrics
+        return payload
+
+    def _update_hand_tracking_metrics(self, hands: List[DetectedHand]) -> None:
+        base: dict[str, Any] = {}
+        detector = getattr(self, "_detector", None)
+        if detector is not None:
+            try:
+                base.update(getattr(detector, "last_metrics", {}) or {})
+            except Exception:
+                base = {}
+
+        metrics = dict(base)
+        metrics.setdefault("hand_detected", bool(hands))
+        metrics.setdefault("hand_count", len(hands))
+        metrics["hand_lost_streak"] = int(getattr(self, "_hand_lost_streak", 0) or 0)
+        metrics["hand_lost_grace_frames"] = int(
+            getattr(self, "_hand_lost_grace_frames", DEFAULT_HAND_LOST_GRACE_FRAMES)
+        )
+
+        if hands:
+            primary = hands[0]
+            points = np.asarray(primary.landmarks, dtype=np.float32)
+            if points.shape == (21, 2):
+                wrist = points[0].astype(np.float32, copy=True)
+                previous = getattr(self, "_previous_primary_wrist", None)
+                if previous is not None:
+                    metrics["primary_wrist_step"] = round(
+                        float(np.linalg.norm(wrist - previous)),
+                        6,
+                    )
+                else:
+                    metrics["primary_wrist_step"] = 0.0
+                self._previous_primary_wrist = wrist
+        else:
+            metrics["primary_wrist_step"] = 0.0
+            self._previous_primary_wrist = None
+        self._last_hand_tracking_metrics = metrics
+
     def _ordered_hands(self, hands: List[DetectedHand]) -> List[DetectedHand]:
         def sort_key(hand: DetectedHand) -> tuple[int, float]:
             handedness = (hand.handedness or "").strip().lower()
@@ -1949,11 +2025,30 @@ class GestureOnlineInfer:
 
         return sorted(hands, key=sort_key)
 
-    def detect_hands(self, frame_rgb: np.ndarray) -> List[DetectedHand]:
+    def detect_hands(
+        self,
+        frame_rgb: np.ndarray,
+        timestamp_ms: int | float | None = None,
+    ) -> List[DetectedHand]:
         """Run MediaPipe once and return hands in stable classifier order."""
         if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
+            self._update_hand_tracking_metrics([])
             return []
-        return self._ordered_hands(self._detector.detect_for_video_rgb(frame_rgb))
+        if timestamp_ms is None:
+            detected = self._detector.detect_for_video_rgb(frame_rgb)
+        else:
+            try:
+                detected = self._detector.detect_for_video_rgb(
+                    frame_rgb,
+                    timestamp_ms=timestamp_ms,
+                )
+            except TypeError as exc:
+                if "timestamp" not in str(exc):
+                    raise
+                detected = self._detector.detect_for_video_rgb(frame_rgb)
+        hands = self._ordered_hands(detected)
+        self._update_hand_tracking_metrics(hands)
+        return hands
 
     def process_detected_hands(
         self,
@@ -1961,11 +2056,44 @@ class GestureOnlineInfer:
     ) -> Dict[str, Any]:
         """Build model features from hands detected by this or a shared detector."""
         hands = self._ordered_hands(list(hands or []))
+        if hands:
+            self._hand_lost_streak = 0
+        self._update_hand_tracking_metrics(hands)
         landmarks_json = self._build_overlay_payload(hands)
 
         if not hands:
+            self._hand_lost_streak = int(getattr(self, "_hand_lost_streak", 0) or 0) + 1
+            self._update_hand_tracking_metrics([])
             if self._uses_global_dynamic_motion():
-                update = self._segmenter().finish_due_to_hand_lost()
+                segmenter = self._segmenter()
+                grace_frames = int(
+                    getattr(
+                        self,
+                        "_hand_lost_grace_frames",
+                        DEFAULT_HAND_LOST_GRACE_FRAMES,
+                    )
+                )
+                if (
+                    str(segmenter.phase) == "active"
+                    and self._hand_lost_streak <= grace_frames
+                ):
+                    return self._with_hand_tracking({
+                        "label": "",
+                        "confidence": 0.0,
+                        "landmarks_json": landmarks_json,
+                        "temporal": {
+                            "enabled": True,
+                            "phase": "hand_lost_grace",
+                            "frames": int(getattr(segmenter, "active_frames", 0) or 0),
+                            "required_frames": int(self._window.maxlen or 36),
+                            "motion_scale": 0.0,
+                            "end_reason": "",
+                            "hand_lost_streak": int(self._hand_lost_streak),
+                            "hand_lost_grace_frames": grace_frames,
+                        },
+                        "intent_features": self._intent_feature_payload(),
+                    })
+                update = segmenter.finish_due_to_hand_lost()
                 if update.completed_sequence is not None:
                     return self._classify_completed_dynamic_update(
                         update,
@@ -1973,7 +2101,7 @@ class GestureOnlineInfer:
                         motion_scale=0.0,
                     )
                 if update.phase == "cooldown":
-                    return {
+                    return self._with_hand_tracking({
                         "label": "",
                         "confidence": 0.0,
                         "landmarks_json": landmarks_json,
@@ -1981,13 +2109,13 @@ class GestureOnlineInfer:
                             update,
                             motion_scale=0.0,
                         ),
-                    }
+                    })
             self.reset_temporal_state()
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
-            }
+            })
 
         # Нормализуем точки рук для классификатора.
         normalized: List[np.ndarray] = []
@@ -2002,11 +2130,11 @@ class GestureOnlineInfer:
         hands = normalized_hands
         if not normalized:
             self.reset_temporal_state()
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
-            }
+            })
 
         current_finger_count = self._stable_non_thumb_count(hands)
 
@@ -2088,13 +2216,13 @@ class GestureOnlineInfer:
         ):
             motion_ok, motion = self._dynamic_motion_gate()
             if not motion_ok:
-                return {
+                return self._with_hand_tracking({
                     "label": "",
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
                     "temporal": temporal_state,
                     "intent_features": self._intent_feature_payload(),
-                }
+                })
             model_feat = self._build_model_feature().reshape(1, -1)
             try:
                 if self._uses_global_dynamic_motion():
@@ -2111,12 +2239,12 @@ class GestureOnlineInfer:
             except Exception as e:
                 print(f"[!] classifier prediction failed: {e}", flush=True)
                 self._window.clear()
-                return {
+                return self._with_hand_tracking({
                     "label": "",
                     "confidence": 0.0,
                     "landmarks_json": landmarks_json,
                     "intent_features": self._intent_feature_payload(),
-                }
+                })
         elif normalized and not self._uses_temporal_features():
             confidence = min(0.35 + 0.02 * len(self._window), 0.55)
 
@@ -2129,23 +2257,27 @@ class GestureOnlineInfer:
             static_decision["source"] = "finger_count_rejected"
             static_decision["rejection_reason"] = "finger_count_mismatch"
             self._window.clear()
-            return {
+            return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "static_decision": static_decision,
-            }
+            })
 
-        return {
+        return self._with_hand_tracking({
             "label": label,
             "confidence": confidence,
             "landmarks_json": landmarks_json,
             "temporal": temporal_state,
             "static_decision": static_decision,
             "intent_features": self._intent_feature_payload(),
-        }
+        })
 
-    def process_frame_rgb(self, frame_rgb: np.ndarray) -> Dict[str, Any]:
+    def process_frame_rgb(
+        self,
+        frame_rgb: np.ndarray,
+        timestamp_ms: int | float | None = None,
+    ) -> Dict[str, Any]:
         """
         Args:
             frame_rgb: uint8 RGB, произвольный размер (как после cv2.flip + cvtColor).
@@ -2159,6 +2291,8 @@ class GestureOnlineInfer:
             "landmarks_json": "[]",
         }
         if self._detector is None or frame_rgb is None or frame_rgb.size == 0:
-            return empty
+            return self._with_hand_tracking(empty)
 
-        return self.process_detected_hands(self.detect_hands(frame_rgb))
+        return self.process_detected_hands(
+            self.detect_hands(frame_rgb, timestamp_ms=timestamp_ms)
+        )

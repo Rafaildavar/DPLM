@@ -1760,6 +1760,37 @@ class AppController:
             "system_runtime_shared_detection_rate_avg": _weighted_mean(
                 "shared_detection_rate"
             ),
+            "system_mediapipe_detection_ms_avg": _weighted_mean(
+                "mediapipe_detection_ms_avg"
+            ),
+            "system_mediapipe_real_timestamp_rate_avg": _weighted_mean(
+                "mediapipe_real_timestamp_rate"
+            ),
+            "system_hand_detected_rate_avg": _weighted_mean("hand_detected_rate"),
+            "system_hand_count_avg": _weighted_mean("hand_count_avg"),
+            "system_handedness_score_avg": _weighted_mean(
+                "handedness_score_max_avg"
+            ),
+            "system_landmark_z_available_rate_avg": _weighted_mean(
+                "landmark_z_available_rate"
+            ),
+            "system_world_landmarks_available_rate_avg": _weighted_mean(
+                "world_landmarks_available_rate"
+            ),
+            "system_landmark_z_range_avg": _weighted_mean("landmark_z_range_avg"),
+            "system_world_z_range_avg": _weighted_mean("world_z_range_avg"),
+            "system_hand_bbox_area_avg": _weighted_mean("hand_bbox_area_avg"),
+            "system_hand_bbox_diag_avg": _weighted_mean("hand_bbox_diag_avg"),
+            "system_primary_wrist_step_avg": _weighted_mean(
+                "primary_wrist_step_avg"
+            ),
+            "system_hand_lost_streak_max": max(
+                (
+                    float(row.get("hand_lost_streak_max") or 0.0)
+                    for row in rows
+                ),
+                default=0.0,
+            ),
         }
 
     def _live_evaluation_attempt_metrics(
@@ -1820,6 +1851,29 @@ class AppController:
             "attempt_dynamic_prototype_distance": "dynamic_prototype_distance",
             "attempt_dynamic_prototype_threshold": "dynamic_prototype_threshold",
             "attempt_dynamic_prototype_margin": "dynamic_prototype_margin",
+            "attempt_mediapipe_min_detection_confidence": (
+                "mediapipe_min_detection_confidence"
+            ),
+            "attempt_mediapipe_min_presence_confidence": (
+                "mediapipe_min_presence_confidence"
+            ),
+            "attempt_mediapipe_min_tracking_confidence": (
+                "mediapipe_min_tracking_confidence"
+            ),
+            "attempt_mediapipe_smoothing_alpha": "mediapipe_smoothing_alpha",
+            "attempt_mediapipe_detection_ms": "mediapipe_detection_ms",
+            "attempt_hand_detected": "hand_detected",
+            "attempt_hand_count": "hand_count",
+            "attempt_handedness_score_max": "handedness_score_max",
+            "attempt_landmark_z_available": "landmark_z_available",
+            "attempt_world_landmarks_available": "world_landmarks_available",
+            "attempt_landmark_z_range": "landmark_z_range",
+            "attempt_world_z_range": "world_z_range",
+            "attempt_hand_bbox_area": "hand_bbox_area",
+            "attempt_hand_bbox_diag": "hand_bbox_diag",
+            "attempt_primary_wrist_step": "primary_wrist_step",
+            "attempt_hand_lost_streak": "hand_lost_streak",
+            "attempt_hand_lost_grace_frames": "hand_lost_grace_frames",
         }
         for metric_name, field_name in optional_fields.items():
             value = _float(attempt.get(field_name))
@@ -2010,6 +2064,50 @@ class AppController:
             self._render_live_bar_svg("Runtime system metrics", runtime_items),
             encoding="utf-8",
         )
+        mediapipe_items = [
+            (
+                "real timestamp rate",
+                metrics.get("system_mediapipe_real_timestamp_rate_avg", 0.0),
+                "good",
+            ),
+            (
+                "hand detected rate",
+                metrics.get("system_hand_detected_rate_avg", 0.0),
+                "good",
+            ),
+            (
+                "world landmarks rate",
+                metrics.get("system_world_landmarks_available_rate_avg", 0.0),
+                "good",
+            ),
+            (
+                "z landmarks rate",
+                metrics.get("system_landmark_z_available_rate_avg", 0.0),
+                "good",
+            ),
+            (
+                "hand lost streak max",
+                metrics.get("system_hand_lost_streak_max", 0.0),
+                "warn",
+            ),
+            (
+                "wrist step avg",
+                metrics.get("system_primary_wrist_step_avg", 0.0),
+                "warn",
+            ),
+            (
+                "bbox diag avg",
+                metrics.get("system_hand_bbox_diag_avg", 0.0),
+                "good",
+            ),
+        ]
+        (charts_dir / "mediapipe_quality.svg").write_text(
+            self._render_live_bar_svg(
+                "MediaPipe landmark quality",
+                mediapipe_items,
+            ),
+            encoding="utf-8",
+        )
         (artifact_dir / "index.html").write_text(
             self._render_live_evaluation_artifact_html(
                 payload=payload,
@@ -2189,6 +2287,9 @@ class AppController:
                 f"<td>{html.escape(str(attempt.get('dynamic_axis') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('dynamic_direction') or ''))}</td>"
                 f"<td>{html.escape(str(attempt.get('dynamic_straightness') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('mediapipe_profile') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('mediapipe_timestamp_source') or ''))}</td>"
+                f"<td>{html.escape(str(attempt.get('hand_lost_streak') or ''))}</td>"
                 "</tr>"
             )
 
@@ -2229,6 +2330,9 @@ class AppController:
     {metric_card("live_static_reject_rate", "Static reject")}
     {metric_card("live_latency_avg_s", "Avg latency, s")}
     {metric_card("system_runtime_inference_ms_avg", "Runtime inference, ms")}
+    {metric_card("system_hand_detected_rate_avg", "Hand detected")}
+    {metric_card("system_world_landmarks_available_rate_avg", "World landmarks")}
+    {metric_card("system_hand_lost_streak_max", "Hand lost streak")}
   </div>
 	  <h2>Charts</h2>
 	  <img src="charts/quality.svg" alt="quality metrics">
@@ -2238,9 +2342,10 @@ class AppController:
 	  <img src="charts/static_verifier_signals.svg" alt="static verifier signals">
 	  <img src="charts/end_reasons.svg" alt="end reasons">
 	  <img src="charts/runtime.svg" alt="runtime metrics">
+	  <img src="charts/mediapipe_quality.svg" alt="mediapipe quality">
 	  <h2>Attempts</h2>
 	  <table>
-	    <thead><tr><th>#</th><th>Result</th><th>Predicted</th><th>Route</th><th>Static method</th><th>Static reject</th><th>Verifier signal</th><th>End</th><th>Axis</th><th>Direction</th><th>Straightness</th></tr></thead>
+	    <thead><tr><th>#</th><th>Result</th><th>Predicted</th><th>Route</th><th>Static method</th><th>Static reject</th><th>Verifier signal</th><th>End</th><th>Axis</th><th>Direction</th><th>Straightness</th><th>MP profile</th><th>Timestamp</th><th>Lost</th></tr></thead>
 	    <tbody>{''.join(attempts_rows)}</tbody>
 	  </table>
 </body>
@@ -2543,6 +2648,55 @@ class AppController:
             ),
             "dynamic_straightness": _float_or_none(
                 route_metadata.get("dynamic_straightness")
+            ),
+            "mediapipe_profile": str(route_metadata.get("mediapipe_profile") or ""),
+            "mediapipe_timestamp_source": str(
+                route_metadata.get("mediapipe_timestamp_source") or ""
+            ),
+            "mediapipe_min_detection_confidence": _float_or_none(
+                route_metadata.get("mediapipe_min_detection_confidence")
+            ),
+            "mediapipe_min_presence_confidence": _float_or_none(
+                route_metadata.get("mediapipe_min_presence_confidence")
+            ),
+            "mediapipe_min_tracking_confidence": _float_or_none(
+                route_metadata.get("mediapipe_min_tracking_confidence")
+            ),
+            "mediapipe_smoothing_alpha": _float_or_none(
+                route_metadata.get("mediapipe_smoothing_alpha")
+            ),
+            "mediapipe_detection_ms": _float_or_none(
+                route_metadata.get("mediapipe_detection_ms")
+            ),
+            "hand_detected": (
+                1.0 if bool(route_metadata.get("hand_detected")) else 0.0
+            ),
+            "hand_count": _float_or_none(route_metadata.get("hand_count")),
+            "handedness_score_max": _float_or_none(
+                route_metadata.get("handedness_score_max")
+            ),
+            "landmark_z_available": (
+                1.0 if bool(route_metadata.get("landmark_z_available")) else 0.0
+            ),
+            "world_landmarks_available": (
+                1.0
+                if bool(route_metadata.get("world_landmarks_available"))
+                else 0.0
+            ),
+            "landmark_z_range": _float_or_none(
+                route_metadata.get("landmark_z_range")
+            ),
+            "world_z_range": _float_or_none(route_metadata.get("world_z_range")),
+            "hand_bbox_area": _float_or_none(route_metadata.get("hand_bbox_area")),
+            "hand_bbox_diag": _float_or_none(route_metadata.get("hand_bbox_diag")),
+            "primary_wrist_step": _float_or_none(
+                route_metadata.get("primary_wrist_step")
+            ),
+            "hand_lost_streak": _float_or_none(
+                route_metadata.get("hand_lost_streak")
+            ),
+            "hand_lost_grace_frames": _float_or_none(
+                route_metadata.get("hand_lost_grace_frames")
             ),
         }
 
@@ -3220,7 +3374,16 @@ class AppController:
             )
             rgb = np.ascontiguousarray(rgb)
             inference_started_at = time.monotonic()
-            out = self._embedded_infer.process_frame_rgb(rgb)
+            timestamp_ms = int(round(float(frame.captured_at) * 1000.0))
+            try:
+                out = self._embedded_infer.process_frame_rgb(
+                    rgb,
+                    timestamp_ms=timestamp_ms,
+                )
+            except TypeError as exc:
+                if "timestamp" not in str(exc):
+                    raise
+                out = self._embedded_infer.process_frame_rgb(rgb)
             if out is None:
                 return
             perf = out.get("performance")
@@ -4007,6 +4170,49 @@ class AppController:
                     performance.get("dynamic_window_frames")
                     or DYNAMIC_RECOGNITION_WINDOW
                 ),
+                "mediapipe_profile": str(performance.get("mediapipe_profile") or ""),
+                "mediapipe_min_detection_confidence": float(
+                    performance.get("mediapipe_min_detection_confidence") or 0.0
+                ),
+                "mediapipe_min_presence_confidence": float(
+                    performance.get("mediapipe_min_presence_confidence") or 0.0
+                ),
+                "mediapipe_min_tracking_confidence": float(
+                    performance.get("mediapipe_min_tracking_confidence") or 0.0
+                ),
+                "mediapipe_smoothing_alpha": float(
+                    performance.get("mediapipe_smoothing_alpha") or 0.0
+                ),
+                "mediapipe_timestamp_source": str(
+                    performance.get("mediapipe_timestamp_source") or ""
+                ),
+                "mediapipe_detection_ms": float(
+                    performance.get("mediapipe_detection_ms") or 0.0
+                ),
+                "hand_detected": bool(performance.get("hand_detected", False)),
+                "hand_count": int(performance.get("hand_count") or 0),
+                "handedness_score_max": float(
+                    performance.get("handedness_score_max") or 0.0
+                ),
+                "landmark_z_available": bool(
+                    performance.get("landmark_z_available", False)
+                ),
+                "world_landmarks_available": bool(
+                    performance.get("world_landmarks_available", False)
+                ),
+                "landmark_z_range": float(
+                    performance.get("landmark_z_range") or 0.0
+                ),
+                "world_z_range": float(performance.get("world_z_range") or 0.0),
+                "hand_bbox_area": float(performance.get("hand_bbox_area") or 0.0),
+                "hand_bbox_diag": float(performance.get("hand_bbox_diag") or 0.0),
+                "primary_wrist_step": float(
+                    performance.get("primary_wrist_step") or 0.0
+                ),
+                "hand_lost_streak": int(performance.get("hand_lost_streak") or 0),
+                "hand_lost_grace_frames": int(
+                    performance.get("hand_lost_grace_frames") or 0
+                ),
             }
         )
         if len(samples) > 300:
@@ -4029,6 +4235,18 @@ class AppController:
         )
         average_ms = sum(total_values) / len(total_values)
         last_sample = samples[-1]
+
+        def _mean(key: str) -> float:
+            values = [float(item.get(key) or 0.0) for item in samples]
+            return sum(values) / len(values) if values else 0.0
+
+        def _rate(key: str) -> float:
+            return (
+                sum(1 for item in samples if bool(item.get(key))) / len(samples)
+                if samples
+                else 0.0
+            )
+
         row = {
             "recorded_at": time.time(),
             "recognition_model_mode": self.recognition_model_mode,
@@ -4042,6 +4260,37 @@ class AppController:
             ),
             "dynamic_window_frames": int(
                 last_sample.get("dynamic_window_frames") or DYNAMIC_RECOGNITION_WINDOW
+            ),
+            "mediapipe_profile": str(last_sample.get("mediapipe_profile") or ""),
+            "mediapipe_min_detection_confidence": round(
+                float(last_sample.get("mediapipe_min_detection_confidence") or 0.0),
+                3,
+            ),
+            "mediapipe_min_presence_confidence": round(
+                float(last_sample.get("mediapipe_min_presence_confidence") or 0.0),
+                3,
+            ),
+            "mediapipe_min_tracking_confidence": round(
+                float(last_sample.get("mediapipe_min_tracking_confidence") or 0.0),
+                3,
+            ),
+            "mediapipe_smoothing_alpha": round(
+                float(last_sample.get("mediapipe_smoothing_alpha") or 0.0),
+                3,
+            ),
+            "mediapipe_timestamp_source": str(
+                last_sample.get("mediapipe_timestamp_source") or ""
+            ),
+            "mediapipe_real_timestamp_rate": round(
+                sum(
+                    1
+                    for item in samples
+                    if str(item.get("mediapipe_timestamp_source") or "").startswith(
+                        "real_"
+                    )
+                )
+                / len(samples),
+                4,
             ),
             "camera_frame_width": int(last_sample.get("camera_frame_width") or 0),
             "camera_frame_height": int(last_sample.get("camera_frame_height") or 0),
@@ -4072,6 +4321,29 @@ class AppController:
             "detection_ms_avg": round(
                 sum(detection_values) / len(detection_values),
                 3,
+            ),
+            "mediapipe_detection_ms_avg": round(
+                _mean("mediapipe_detection_ms"),
+                3,
+            ),
+            "hand_detected_rate": round(_rate("hand_detected"), 4),
+            "hand_count_avg": round(_mean("hand_count"), 3),
+            "handedness_score_max_avg": round(_mean("handedness_score_max"), 4),
+            "landmark_z_available_rate": round(_rate("landmark_z_available"), 4),
+            "world_landmarks_available_rate": round(
+                _rate("world_landmarks_available"),
+                4,
+            ),
+            "landmark_z_range_avg": round(_mean("landmark_z_range"), 6),
+            "world_z_range_avg": round(_mean("world_z_range"), 6),
+            "hand_bbox_area_avg": round(_mean("hand_bbox_area"), 6),
+            "hand_bbox_diag_avg": round(_mean("hand_bbox_diag"), 6),
+            "primary_wrist_step_avg": round(_mean("primary_wrist_step"), 6),
+            "hand_lost_streak_max": int(
+                max(int(item.get("hand_lost_streak") or 0) for item in samples)
+            ),
+            "hand_lost_grace_frames": int(
+                last_sample.get("hand_lost_grace_frames") or 0
             ),
             "inference_fps_capacity": round(1000.0 / average_ms, 2),
         }

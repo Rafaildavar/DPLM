@@ -4486,3 +4486,54 @@ Offline result:
 - Если confidence низкий, временно тестировать threshold `0.60-0.70`, затем
   поднимать до `0.85-0.90`.
 - Ложные `swipe_up/swipe_left` при custom gesture должны снизиться.
+
+### H-085: Качество live может ограничиваться MediaPipe/landmark layer
+
+Статус: `implemented`, ждет live A/B
+
+Дата: `2026-06-30`
+
+Наблюдение:
+- Офлайн-метрики sequence-моделей могут быть высокими, но live качество
+  падает из-за камеры, трекинга руки, потери руки, jitter landmarks и
+  нестабильного FPS.
+- Для сложных dynamic-жестов важно понять, ошибка в модели или во входном
+  потоке `camera -> MediaPipe -> landmarks`.
+
+Гипотеза:
+- Реальный timestamp кадра, A/B thresholds MediaPipe, мягкое EMA-сглаживание
+  и short hand-lost grace должны повысить стабильность segmenter/inference.
+- `z/world landmarks` пока нельзя честно использовать как признаки без новой
+  записи датасета, но их можно логировать как диагностику.
+
+Решение:
+- `HandLandmarkerVideo` получил A/B-профили:
+  `baseline_06`, `recall_05`, `strict_tracking`, `redetect_presence`.
+- В MediaPipe передается real monotonic timestamp из camera capture loop.
+- Добавлено optional EMA landmarks:
+  `DPLM_MEDIAPIPE_SMOOTHING_ALPHA=0.25..0.40`.
+- Добавлен `DPLM_HAND_LOST_GRACE_FRAMES`: short hand loss не завершает
+  dynamic-сегмент мгновенно.
+- В runtime logs и MLflow live evaluation добавлены MediaPipe metrics:
+  `system_hand_detected_rate_avg`,
+  `system_world_landmarks_available_rate_avg`,
+  `system_landmark_z_available_rate_avg`,
+  `system_primary_wrist_step_avg`,
+  `system_hand_lost_streak_max`.
+- Создан протокол:
+  `docs/experiments/mediapipe_ab_experiment.md`.
+
+Что тестировать:
+- Для каждого MediaPipe profile:
+  - `upandleft`: 20 попыток;
+  - `swipe_up`: 20 попыток;
+  - `swipe_left`: 20 попыток;
+  - `partial_swipe`: 10 попыток;
+  - `random_motion`: 10 попыток.
+- Сравнивать MLflow runs по live quality и system/MediaPipe metrics.
+
+Критерий успеха:
+- Live recall/accuracy не ниже baseline.
+- `live_miss_rate` и `hand_lost_streak_max` ниже.
+- `negative_false_positive_rate` не растет.
+- Runtime latency остается в интерактивном диапазоне.
