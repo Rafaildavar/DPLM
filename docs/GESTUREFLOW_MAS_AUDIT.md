@@ -17,6 +17,7 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 Порядок обработки:
 
 1. `Guardrails Agent` проверяет вход: длина, секреты, prompt injection.
+   Input guardrails v2 возвращают `decision=allow/block`.
 2. `Intent Agent` выбирает route:
    - `create_binding`;
    - `update_binding`;
@@ -37,7 +38,9 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    Начиная с шага 4, concrete agents используют явные tool contracts:
    `resolve_gesture`, `parse_macos_action`, `build_sequence`,
    `validate_binding_contract`, `review_answer_contract`.
-5. `Guardrails Agent` проверяет выход.
+5. `Guardrails Agent` проверяет выход. Output guardrails v2 возвращают
+   `decision=allow/clarify/block`; неполная привязка является уточнением,
+   а не отказом.
 6. `Reviewer Agent` оценивает соответствие ответа intent-блоку.
 7. `BindingAgentMlflowLogger` пишет trace, параметры, метрики, artifacts и
    optional GenAI eval.
@@ -59,6 +62,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
   tool-result в trace step, а не держат всю бизнес-логику внутри `run`.
 - Контекст агента получил `draft_state`: уточнения могут продолжать прошлый
   черновик, например `привяжи это к swipe_up` после собранного сценария.
+- Guardrails v2 разделяет блокировки и уточнения: missing gesture/action
+  проходит как `decision=clarify`, prompt injection и секреты остаются block.
 
 ## Главные проблемы перед улучшением
 
@@ -71,8 +76,8 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
    typed-схемами для LLM/function calling и MLflow eval.
 4. Memory теперь получает draft-state для базовых уточнений. Следующий этап -
    сделать полноценный state manager с несколькими черновиками и TTL.
-5. Guardrails уже разделены на input/output, но политика отказов и уточнений
-   требует явной v2-модели.
+5. Guardrails v2 уже разделяет allow/clarify/block. Следующий этап -
+   расширить политику опасных действий и explainability для UI.
 6. Reviewer проверяет релевантность, но ему нужны более строгие рубрики:
    contract completeness, safety, tone, UI usefulness.
 7. MLflow логирует pipeline, но еще не отражает semantic scores, rule hits и

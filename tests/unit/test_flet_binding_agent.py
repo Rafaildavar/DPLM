@@ -230,6 +230,8 @@ def test_binding_agent_blocks_instruction_override_prompt():
     assert draft["actionSpec"] == {}
     assert "GestureFlow" in draft["agentReply"]
     assert "Guardrails" in draft["agentReply"]
+    assert draft["agentTrace"][0]["status"] == "blocked"
+    assert draft["agentTrace"][0]["data"]["decision"] == "block"
 
 
 def test_binding_agent_maps_russian_swipe_up_without_gesture_keyword():
@@ -798,7 +800,9 @@ def test_binding_agent_named_sequence_without_gesture_asks_for_gesture_not_guard
         if item["agent"] == "Guardrails Agent"
         and item["data"].get("stage") == "output"
     ][0]
-    assert output_guardrail["status"] == "ok"
+    assert output_guardrail["status"] == "need_clarification"
+    assert output_guardrail["data"]["decision"] == "clarify"
+    assert output_guardrail["data"]["clarifications"] == ["жест"]
 
 
 def test_binding_agent_semantic_router_detects_freeform_sequence():

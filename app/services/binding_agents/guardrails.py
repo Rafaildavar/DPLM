@@ -34,6 +34,8 @@ class GuardrailsAgent:
                         "issues": issues,
                         "prompt_chars": len(context.prompt),
                         "blocked": True,
+                        "decision": "block",
+                        "guardrailVersion": "v2",
                     },
                     "guardrails.input_safety",
                 ),
@@ -48,6 +50,8 @@ class GuardrailsAgent:
                     "issues": [],
                     "prompt_chars": len(context.prompt),
                     "blocked": False,
+                    "decision": "allow",
+                    "guardrailVersion": "v2",
                 },
                 "guardrails.input_safety",
             ),
@@ -60,6 +64,7 @@ class GuardrailsAgent:
     ) -> AgentStep:
         _ = context
         issues: list[str] = []
+        clarifications: list[str] = []
         if not result.response_text.strip():
             issues.append("empty_response")
         if _contains_secret_like(result.response_text):
@@ -68,9 +73,11 @@ class GuardrailsAgent:
             issues.append("unsupported_binding_output")
         if result.intent_block == "project_question" and result.can_apply:
             issues.append("project_answer_can_apply")
-        if result.intent_block == "binding" and result.can_apply:
-            if not result.gesture_label or not result.action_spec:
+        if result.intent_block == "binding":
+            if result.can_apply and (not result.gesture_label or not result.action_spec):
                 issues.append("binding_contract_incomplete")
+            elif not result.can_apply and result.missing:
+                clarifications.extend(str(item) for item in result.missing if str(item))
 
         if issues:
             return AgentStep(
@@ -82,6 +89,27 @@ class GuardrailsAgent:
                         "stage": "output",
                         "issues": issues,
                         "blocked": True,
+                        "decision": "block",
+                        "guardrailVersion": "v2",
+                    },
+                    "guardrails.output_safety",
+                ),
+            )
+        if clarifications:
+            return AgentStep(
+                self.name,
+                "need_clarification",
+                "Output guardrails разрешили уточнение: "
+                + ", ".join(clarifications)
+                + ".",
+                with_skills(
+                    {
+                        "stage": "output",
+                        "issues": [],
+                        "clarifications": clarifications,
+                        "blocked": False,
+                        "decision": "clarify",
+                        "guardrailVersion": "v2",
                     },
                     "guardrails.output_safety",
                 ),
@@ -95,6 +123,8 @@ class GuardrailsAgent:
                     "stage": "output",
                     "issues": [],
                     "blocked": False,
+                    "decision": "allow",
+                    "guardrailVersion": "v2",
                 },
                 "guardrails.output_safety",
             ),
