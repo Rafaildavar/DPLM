@@ -202,6 +202,7 @@ DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET = "sequence_rocket"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET = "sequence_multirocket"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET = "sequence_sprocket"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET = "sequence_shapelet"
+DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72 = "sequence_shapelet_72"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM = "sequence_phase_hmm"
 DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP
 DYNAMIC_MODEL_PROFILES = (
@@ -210,6 +211,7 @@ DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
 )
 DYNAMIC_MODEL_FILENAMES = {
@@ -218,6 +220,7 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET: "dynamic_sequence_multirocket.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET: "dynamic_sequence_sprocket.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET: "dynamic_sequence_shapelet.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72: "dynamic_sequence_shapelet_72.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM: "dynamic_sequence_phase_hmm.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
@@ -226,6 +229,7 @@ DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET: "dynamic_sequence_multirocket",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET: "dynamic_sequence_sprocket",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET: "dynamic_sequence_shapelet",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72: "dynamic_sequence_shapelet_72",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM: "dynamic_sequence_phase_hmm",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
@@ -239,6 +243,9 @@ DYNAMIC_PROTOTYPE_FILENAMES = {
     ),
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET: (
         "dynamic_sequence_shapelet_prototypes.json"
+    ),
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72: (
+        "dynamic_sequence_shapelet_72_prototypes.json"
     ),
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM: (
         "dynamic_sequence_phase_hmm_prototypes.json"
@@ -287,6 +294,7 @@ STATIC_REJECTION_METHODS = (
     STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
 )
 DYNAMIC_RECOGNITION_WINDOW = 36
+DYNAMIC_RECOGNITION_LONG_WINDOW = 72
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
 LIVE_EVAL_NO_COMMAND_LABEL = "no_command"
 DYNAMIC_POST_EVENT_SUPPRESS_SECONDS = 0.35
@@ -927,8 +935,13 @@ class AppController:
 
     def _embedded_recognition_window(self) -> int:
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
-            return DYNAMIC_RECOGNITION_WINDOW
+            return self._dynamic_recognition_window()
         return 30
+
+    def _dynamic_recognition_window(self) -> int:
+        if self.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72:
+            return DYNAMIC_RECOGNITION_LONG_WINDOW
+        return DYNAMIC_RECOGNITION_WINDOW
 
     def _mask_database_url(self, url: str) -> str:
         if "://" not in url or "@" not in url:
@@ -2985,7 +2998,7 @@ class AppController:
                     feature_dim_path=dynamic_feature_dim_path,
                     feature_mode_path=dynamic_feature_mode_path,
                     dynamic_prototypes_path=dynamic_prototypes_path,
-                    window=DYNAMIC_RECOGNITION_WINDOW,
+                    window=self._dynamic_recognition_window(),
                     two_hands=self._two_hands_mode,
                     initialize_detector=False,
                 )
@@ -3231,7 +3244,7 @@ class AppController:
                             max(0.0, inference_started_at - frame.captured_at) * 1000.0,
                             3,
                         ),
-                        "dynamic_window_frames": int(DYNAMIC_RECOGNITION_WINDOW),
+                        "dynamic_window_frames": int(self._dynamic_recognition_window()),
                     }
                 )
             self._dispatch_infer_result(out)
@@ -5752,7 +5765,7 @@ class AppController:
             "--samples-per-label",
             str(max(1, int(samples_per_label))),
             "--target-frames",
-            str(DYNAMIC_RECOGNITION_WINDOW),
+            str(self._dynamic_recognition_window()),
             "--seed",
             str(int(seed)),
             "--manifest-out",
@@ -5825,6 +5838,12 @@ class AppController:
             )
         dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
         production_prototypes = dynamic_model_dir / "dynamic_prototypes.json"
+        target_frames = (
+            DYNAMIC_RECOGNITION_LONG_WINDOW
+            if dynamic_model_path.name
+            == DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72]
+            else self._dynamic_recognition_window()
+        )
         for profile, filename in DYNAMIC_MODEL_FILENAMES.items():
             if dynamic_model_path.name == filename:
                 production_prototypes = dynamic_model_dir / DYNAMIC_PROTOTYPE_FILENAMES.get(
@@ -5850,6 +5869,8 @@ class AppController:
             "--include-external-negatives",
             "--methods",
             "prototype_distance",
+            "--target-frames",
+            str(target_frames),
             "--base-models-dir",
             str(dynamic_model_dir),
             "--variant-root",

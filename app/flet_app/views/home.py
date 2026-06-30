@@ -24,6 +24,7 @@ from app.flet_app.controller import (
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
@@ -253,6 +254,10 @@ class HomeView:
                 ft.DropdownOption(
                     key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
                     text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
+                ),
+                ft.DropdownOption(
+                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
+                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
                 ),
                 ft.DropdownOption(
                     key=DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,

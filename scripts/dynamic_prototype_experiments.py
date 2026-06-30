@@ -500,6 +500,11 @@ def _copy_base_dynamic_artifacts(base_dir: Path, target_dir: Path) -> None:
         "dynamic_sequence_mlp_feature_dim.txt",
         "dynamic_sequence_mlp_feature_mode.txt",
         "dynamic_sequence_mlp_rejection.json",
+        "dynamic_sequence_shapelet_72.pkl",
+        "dynamic_sequence_shapelet_72_classes.json",
+        "dynamic_sequence_shapelet_72_feature_dim.txt",
+        "dynamic_sequence_shapelet_72_feature_mode.txt",
+        "dynamic_sequence_shapelet_72_rejection.json",
     ):
         source = base_dir / name
         if source.exists():

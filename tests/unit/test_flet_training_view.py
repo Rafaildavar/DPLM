@@ -188,6 +188,13 @@ def test_dynamic_model_type_keeps_production_sequence_mlp_output_path():
     assert view._dyn_model_out.value == "models/dynamic_sequence_rocket.pkl"
     assert view._dyn_feature_mode.value == "dynamic_sequence"
 
+    view._dyn_model_type.value = "sequence_shapelet_72"
+    view._dyn_model_out.value = "models/dynamic_sequence_rocket.pkl"
+    view._on_dynamic_model_type_changed(None)
+
+    assert view._dyn_model_out.value == "models/dynamic_sequence_shapelet_72.pkl"
+    assert view._dyn_feature_mode.value == "dynamic_sequence_72"
+
 
 def test_developer_dynamic_flow_can_train_sequence_rocket_candidate():
     controller = _DummyController()
@@ -274,6 +281,45 @@ def test_sequence_shapelet_uses_own_sequence_model_and_metadata_paths():
         "models/dynamic_sequence_shapelet_classes.json",
         "models/dynamic_sequence_shapelet_feature_dim.txt",
         "models/dynamic_sequence_shapelet_feature_mode.txt",
+    )
+
+
+def test_sequence_shapelet_72_uses_long_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_shapelet_72") == (
+        "models/dynamic_sequence_shapelet_72.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_shapelet_72") == (
+        "models/dynamic_sequence_shapelet_72_classes.json",
+        "models/dynamic_sequence_shapelet_72_feature_dim.txt",
+        "models/dynamic_sequence_shapelet_72_feature_mode.txt",
+    )
+
+
+def test_developer_dynamic_flow_can_train_sequence_shapelet_72_candidate():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+    view._dyn_model_type.value = "sequence_shapelet_72"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
+    view._dyn_tr_neighbors.value = ""
+
+    view._on_train_start(None, mode="dynamic")
+
+    training_call = controller.training_calls[-1]
+    assert training_call["out_path"] == "models/dynamic_sequence_shapelet_72.pkl"
+    assert training_call["model_type"] == "sequence_shapelet"
+    assert training_call["feature_mode"] == "dynamic_sequence_72"
+    assert (
+        training_call["classes_out_path"]
+        == "models/dynamic_sequence_shapelet_72_classes.json"
+    )
+    assert (
+        training_call["feature_dim_out_path"]
+        == "models/dynamic_sequence_shapelet_72_feature_dim.txt"
+    )
+    assert (
+        training_call["feature_mode_out_path"]
+        == "models/dynamic_sequence_shapelet_72_feature_mode.txt"
     )
 
 

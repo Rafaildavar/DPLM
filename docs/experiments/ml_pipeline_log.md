@@ -4378,7 +4378,7 @@ Live A/B protocol:
 
 ### H-083: Compound dynamic gestures дробятся на простые swipe-классы
 
-Статус: `implemented`, ждет live A/B
+Статус: `trained`, ждет live A/B
 
 Дата: `2026-06-30`
 
@@ -4419,3 +4419,70 @@ Live A/B protocol:
 Критерий успеха:
 - `upandleft` не должен массово распадаться на `swipe_up/swipe_left`.
 - Простые `swipe_up/swipe_left` не должны массово превращаться в `upandleft`.
+
+### H-084: Сложный dynamic gesture теряет фазы при сжатии 72 -> 36
+
+Статус: `implemented`, ждет live A/B
+
+Дата: `2026-06-30`
+
+Наблюдение:
+- После записи 20 примеров `upAndLeft` жест все еще не определяется стабильно.
+- Вероятная причина: raw-запись уже увеличена до `72` кадров, но
+  `dynamic_sequence` при обучении и inference сжимает любой жест до `36`
+  временных точек.
+
+Решение:
+- Добавлен отдельный feature mode `dynamic_sequence_72`.
+- Добавлен UI/runtime профиль `sequence_shapelet_72`:
+  - модель: `models/dynamic_sequence_shapelet_72.pkl`;
+  - classes: `models/dynamic_sequence_shapelet_72_classes.json`;
+  - feature_dim: `models/dynamic_sequence_shapelet_72_feature_dim.txt`;
+  - feature_mode: `models/dynamic_sequence_shapelet_72_feature_mode.txt`;
+  - prototypes: `models/dynamic_sequence_shapelet_72_prototypes.json`.
+- Live window для этого профиля увеличен до `72` кадров.
+- Prototype/rejection training для этого профиля получает
+  `--target-frames 72`.
+- `motion_first` больше не является универсальным решением:
+  если в dynamic-модели есть custom/complex labels, простой direction fallback
+  не выдает `swipe_*` без поддержки sequence-модели или prototype layer.
+
+Offline result:
+- Обучена модель `dynamic_sequence_shapelet_72`.
+- Training set для classifier: `190` samples, `9` classes, feature_dim `3168`.
+- Classes:
+  `upandleft`, `no_gesture_static`, `partial_swipe`, `random_motion`,
+  `return_motion`, `swipe_down`, `swipe_left`, `swipe_up`,
+  `wrong_axis_motion`.
+- Prototype/rejection report:
+  `docs/experiments/dynamic_prototype_shapelet_72.md`.
+- Prototype target frames: `72`.
+- Prototype test split:
+  - overall success: `0.9810`;
+  - positive recall: `0.9130`;
+  - negative reject rate: `0.9926`;
+  - negative false positive rate: `0.0074`;
+  - `UpAndLeft`: `5/5` correct offline.
+
+Почему не LSTM прямо сейчас:
+- На ~20 примерах нового класса LSTM будет выглядеть “сложнее”, но почти
+  наверняка переобучится.
+- `shapelet_72` лучше соответствует текущему размеру данных: он ищет
+  характерные фрагменты временного ряда и сохраняет больше фаз сложного жеста.
+
+Что тестировать:
+- В Training выбрать модель `sequence_shapelet_72`.
+- Переобучить dynamic model после записи `upAndLeft`.
+- На Главной выбрать dynamic profile `sequence_shapelet_72`.
+- Live evaluation:
+  - `upandleft`: 20 попыток;
+  - `swipe_up`: 20 попыток;
+  - `swipe_left`: 20 попыток;
+  - `partial_swipe`: 10 попыток;
+  - `random_motion`: 10 попыток.
+
+Критерий успеха:
+- `upandleft` должен начать появляться как отдельный label.
+- Если confidence низкий, временно тестировать threshold `0.60-0.70`, затем
+  поднимать до `0.85-0.90`.
+- Ложные `swipe_up/swipe_left` при custom gesture должны снизиться.

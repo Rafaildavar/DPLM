@@ -4,6 +4,7 @@ import numpy as np
 
 from cv.gesture_features import (
     FEATURE_DYNAMIC_SEQUENCE,
+    FEATURE_DYNAMIC_SEQUENCE_72,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
     FEATURE_STATIC_MEAN,
@@ -11,6 +12,7 @@ from cv.gesture_features import (
     DYNAMIC_TRAJECTORY_FEATURE_DIM,
     DYNAMIC_TRAJECTORY_WEIGHT,
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,
     MOTION_DYNAMIC_LIKE,
     MOTION_STATIC_LIKE,
     align_sequence,
@@ -65,15 +67,25 @@ def test_feature_modes_have_expected_sizes_and_motion_signal():
         FEATURE_DYNAMIC_SEQUENCE,
         target_dim=4,
     )
+    dynamic_sequence_72 = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_SEQUENCE_72,
+        target_dim=4,
+    )
 
     assert static_mean.shape == (4,)
     assert static_stats.shape == (16,)
     assert dynamic_stats.shape == (24 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
     assert hybrid_stats.shape == (40 + DYNAMIC_TRAJECTORY_FEATURE_DIM,)
     assert dynamic_sequence.shape == (4 * DYNAMIC_SEQUENCE_TARGET_FRAMES,)
+    assert dynamic_sequence_72.shape == (4 * DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,)
     assert infer_raw_dim_from_feature_size(
         FEATURE_DYNAMIC_SEQUENCE,
         dynamic_sequence.shape[0],
+    ) == 4
+    assert infer_raw_dim_from_feature_size(
+        FEATURE_DYNAMIC_SEQUENCE_72,
+        dynamic_sequence_72.shape[0],
     ) == 4
     assert np.allclose(dynamic_stats[:4], 3.0)
     assert sequence_motion_energy(sequence) > 0

@@ -19,11 +19,13 @@ FEATURE_STATIC_STATS = "static_stats"
 FEATURE_DYNAMIC_STATS = "dynamic_stats"
 FEATURE_HYBRID_STATS = "hybrid_stats"
 FEATURE_DYNAMIC_SEQUENCE = "dynamic_sequence"
+FEATURE_DYNAMIC_SEQUENCE_72 = "dynamic_sequence_72"
 
 DYNAMIC_STATS_BASE_MULTIPLIER = 6
 DYNAMIC_TRAJECTORY_FEATURE_DIM = 7
 DYNAMIC_TRAJECTORY_WEIGHT = 8.0
 DYNAMIC_SEQUENCE_TARGET_FRAMES = 36
+DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES = 72
 
 SUPPORTED_FEATURE_MODES = (
     FEATURE_STATIC_MEAN,
@@ -31,6 +33,7 @@ SUPPORTED_FEATURE_MODES = (
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
     FEATURE_DYNAMIC_SEQUENCE,
+    FEATURE_DYNAMIC_SEQUENCE_72,
 )
 
 MOTION_STATIC_LIKE = "static_like"
@@ -237,11 +240,16 @@ def hybrid_stats_features(sequence: np.ndarray, target_dim: int | None = None) -
     ).astype(np.float32, copy=False)
 
 
-def dynamic_sequence_features(sequence: np.ndarray, target_dim: int | None = None) -> np.ndarray:
+def dynamic_sequence_features(
+    sequence: np.ndarray,
+    target_dim: int | None = None,
+    *,
+    target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+) -> np.ndarray:
     seq = _as_aligned(sequence, target_dim)
     from cv.dynamic_motion import canonical_dynamic_sequence
 
-    seq = canonical_dynamic_sequence(seq, target_frames=DYNAMIC_SEQUENCE_TARGET_FRAMES)
+    seq = canonical_dynamic_sequence(seq, target_frames=target_frames)
     return seq.reshape(-1).astype(np.float32, copy=False)
 
 
@@ -259,6 +267,8 @@ def feature_vector_size(mode: str, target_dim: int) -> int:
         return raw_dim * 10 + DYNAMIC_TRAJECTORY_FEATURE_DIM
     if mode == FEATURE_DYNAMIC_SEQUENCE:
         return raw_dim * DYNAMIC_SEQUENCE_TARGET_FRAMES
+    if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+        return raw_dim * DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES
     raise ValueError(f"unsupported feature mode: {mode}")
 
 
@@ -294,6 +304,10 @@ def infer_raw_dim_from_feature_size(mode: str, feature_dim: int) -> int:
         if size % DYNAMIC_SEQUENCE_TARGET_FRAMES == 0:
             return size // DYNAMIC_SEQUENCE_TARGET_FRAMES
         return size
+    if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+        if size % DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES == 0:
+            return size // DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES
+        return size
     return size
 
 
@@ -312,6 +326,12 @@ def build_feature_vector(
         return hybrid_stats_features(sequence, target_dim=target_dim)
     if mode == FEATURE_DYNAMIC_SEQUENCE:
         return dynamic_sequence_features(sequence, target_dim=target_dim)
+    if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+        return dynamic_sequence_features(
+            sequence,
+            target_dim=target_dim,
+            target_frames=DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,
+        )
     raise ValueError(f"unsupported feature mode: {mode}")
 
 

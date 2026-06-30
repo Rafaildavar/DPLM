@@ -46,6 +46,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_multirocket": "models/dynamic_sequence_multirocket.pkl",
     "sequence_sprocket": "models/dynamic_sequence_sprocket.pkl",
     "sequence_shapelet": "models/dynamic_sequence_shapelet.pkl",
+    "sequence_shapelet_72": "models/dynamic_sequence_shapelet_72.pkl",
     "sequence_phase_hmm": "models/dynamic_sequence_phase_hmm.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
@@ -104,6 +105,12 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_shapelet_classes.json",
             "models/dynamic_sequence_shapelet_feature_dim.txt",
             "models/dynamic_sequence_shapelet_feature_mode.txt",
+        )
+    if clean == "sequence_shapelet_72":
+        return (
+            "models/dynamic_sequence_shapelet_72_classes.json",
+            "models/dynamic_sequence_shapelet_72_feature_dim.txt",
+            "models/dynamic_sequence_shapelet_72_feature_mode.txt",
         )
     if clean == "sequence_phase_hmm":
         return (
@@ -227,6 +234,10 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
             options=[
                 ft.DropdownOption(key="dynamic_sequence", text="dynamic_sequence"),
+                ft.DropdownOption(
+                    key="dynamic_sequence_72",
+                    text="dynamic_sequence_72",
+                ),
             ],
             disabled=True,
             editable=False,
@@ -244,6 +255,10 @@ class TrainingView:
                 ),
                 ft.DropdownOption(key="sequence_sprocket", text="sequence_sprocket"),
                 ft.DropdownOption(key="sequence_shapelet", text="sequence_shapelet"),
+                ft.DropdownOption(
+                    key="sequence_shapelet_72",
+                    text="sequence_shapelet_72",
+                ),
                 ft.DropdownOption(
                     key="sequence_phase_hmm",
                     text="sequence_phase_hmm",
@@ -749,6 +764,8 @@ class TrainingView:
             except Exception:
                 pass
         self._dyn_feature_mode.value = "dynamic_sequence"
+        if model_type == "sequence_shapelet_72":
+            self._dyn_feature_mode.value = "dynamic_sequence_72"
         try:
             self._dyn_feature_mode.update()
         except Exception:
@@ -870,13 +887,23 @@ class TrainingView:
                 1,
                 self._parse_int(self._dyn_tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
             )
-            feature_mode = _DEFAULT_DYNAMIC_FEATURE_MODE
+            feature_mode = (
+                "dynamic_sequence_72"
+                if str(self._dyn_model_type.value or "").strip().lower()
+                == "sequence_shapelet_72"
+                else _DEFAULT_DYNAMIC_FEATURE_MODE
+            )
             expect_dim = None
             model_type = str(
                 self._dyn_model_type.value or _DEFAULT_DYNAMIC_MODEL_TYPE
             ).strip()
             if model_type not in _DYNAMIC_MODEL_OUT_BY_TYPE:
                 model_type = _DEFAULT_DYNAMIC_MODEL_TYPE
+            train_model_type = (
+                "sequence_shapelet"
+                if model_type == "sequence_shapelet_72"
+                else model_type
+            )
             out_path = _dynamic_model_out_for_type(model_type)
             (
                 classes_out_path,
@@ -886,8 +913,10 @@ class TrainingView:
             training_scope = _DYNAMIC_TRAINING_SCOPE
             self._append_log(
                 f"[i] Обучение отдельной dynamic-модели: "
-                f"model={model_type}, feature_mode={feature_mode}, scope={training_scope}"
+                f"model={train_model_type}, profile={model_type}, "
+                f"feature_mode={feature_mode}, scope={training_scope}"
             )
+            model_type = train_model_type
         else:
             data_root = (self._tr_data_root.value or _DEFAULT_DATA_ROOT).strip()
             out_path = (self._tr_out_path.value or _DEFAULT_MODEL_OUT).strip()

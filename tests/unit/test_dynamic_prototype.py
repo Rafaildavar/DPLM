@@ -301,6 +301,35 @@ def test_online_dynamic_compound_model_can_override_near_top_swipe_motion():
     assert infer._last_dynamic_decision["motion_label"] == "swipe_up"
 
 
+def test_online_dynamic_motion_first_is_suppressed_when_custom_labels_exist():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_up", "upandleft", "random_motion"]
+    infer._clf = None
+    infer._dynamic_prototypes = {}
+    infer._gesture_taxonomy = None
+
+    label, confidence = infer._dynamic_prediction(
+        np.empty((1, 0), dtype=np.float32),
+        {
+            "dx": 0.0,
+            "dy": -0.5,
+            "path_length": 0.5,
+            "displacement": 0.5,
+            "direction_cos": 0.0,
+            "direction_sin": -1.0,
+        },
+        sequence=_up_sequence(18),
+    )
+
+    assert label == ""
+    assert confidence == 0.0
+    assert (
+        infer._last_dynamic_decision["source"]
+        == "motion_fallback_suppressed_for_custom_labels"
+    )
+    assert infer._last_dynamic_decision["motion_label"] == "swipe_up"
+
+
 def test_online_dynamic_complex_prototype_does_not_conflict_with_swipe_motion():
     infer = object.__new__(GestureOnlineInfer)
     infer._classes = ["swipe_left", "circle_clockwise", "random_motion"]

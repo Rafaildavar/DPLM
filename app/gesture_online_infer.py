@@ -15,7 +15,9 @@ import numpy as np
 
 from cv.gesture_features import (
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,
     FEATURE_DYNAMIC_SEQUENCE,
+    FEATURE_DYNAMIC_SEQUENCE_72,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
     FEATURE_STATIC_MEAN,
@@ -136,7 +138,7 @@ class GestureOnlineInfer:
         self._detector_two_hands = True
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
         self._intent_window: Deque[np.ndarray] = deque(
-            maxlen=max(DYNAMIC_SEQUENCE_TARGET_FRAMES, int(window))
+            maxlen=max(self._dynamic_sequence_target_frames(), int(window))
         )
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
@@ -232,10 +234,15 @@ class GestureOnlineInfer:
                 self._model_error = "Нет models/knn.pkl"
         self._ensure_dynamic_sequence_feature_mode(model_path)
         self._raw_feature_dim = self._infer_raw_feature_dim()
+        target_frames = self._dynamic_sequence_target_frames()
+        if self._uses_temporal_features() and int(self._window.maxlen or 0) < target_frames:
+            self._window = deque(self._window, maxlen=target_frames)
+        if int(self._intent_window.maxlen or 0) < target_frames:
+            self._intent_window = deque(self._intent_window, maxlen=target_frames)
         self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
         if self._uses_global_dynamic_motion():
             self._dynamic_segmenter = self._create_dynamic_segmenter(
-                target_frames=max(2, int(window)),
+                target_frames=max(2, int(self._window.maxlen or window)),
             )
         self._detector_two_hands = True
         self._gesture_signatures = self._load_gesture_signatures(gesture_signatures_path)
@@ -269,20 +276,33 @@ class GestureOnlineInfer:
         model_name = str(getattr(model_path, "name", "") or "").lower()
         if not model_name.startswith("dynamic_sequence"):
             return
-        if int(getattr(self, "_feature_dim", 0) or 0) < DYNAMIC_SEQUENCE_TARGET_FRAMES * 42:
+        feature_dim = int(getattr(self, "_feature_dim", 0) or 0)
+        if feature_dim >= DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES * 42:
+            expected_mode = FEATURE_DYNAMIC_SEQUENCE_72
+        elif feature_dim >= DYNAMIC_SEQUENCE_TARGET_FRAMES * 42:
+            expected_mode = FEATURE_DYNAMIC_SEQUENCE
+        else:
             return
-        if str(getattr(self, "_feature_mode", "") or "") == FEATURE_DYNAMIC_SEQUENCE:
+        if str(getattr(self, "_feature_mode", "") or "") == expected_mode:
             return
         print(
             "[w] dynamic sequence artifact loaded with non-sequence feature_mode: "
-            f"{self._feature_mode!r} -> {FEATURE_DYNAMIC_SEQUENCE}",
+            f"{self._feature_mode!r} -> {expected_mode}",
             flush=True,
         )
-        self._feature_mode = FEATURE_DYNAMIC_SEQUENCE
+        self._feature_mode = expected_mode
 
     def _normalize_static_rejection_method(self, method: str) -> str:
         clean = str(method or "").strip().lower()
         return clean if clean in STATIC_REJECTION_METHODS else DEFAULT_STATIC_REJECTION_METHOD
+
+    def _dynamic_sequence_target_frames(self) -> int:
+        mode = str(
+            getattr(self, "_feature_mode", FEATURE_STATIC_MEAN) or FEATURE_STATIC_MEAN
+        )
+        if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+            return DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES
+        return DYNAMIC_SEQUENCE_TARGET_FRAMES
 
     @property
     def static_rejection_method(self) -> str:
@@ -374,6 +394,7 @@ class GestureOnlineInfer:
         mode = getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
         return mode in {
             FEATURE_DYNAMIC_SEQUENCE,
+            FEATURE_DYNAMIC_SEQUENCE_72,
             FEATURE_DYNAMIC_STATS,
             FEATURE_HYBRID_STATS,
         }
@@ -779,13 +800,39 @@ class GestureOnlineInfer:
                 }
                 return "", 0.0
             source = "motion_first"
-            if model_label == motion_decision.label or compatible_label == motion_decision.label:
+            motion_supported_by_model = (
+                model_label == motion_decision.label
+                or compatible_label == motion_decision.label
+            )
+            motion_supported_by_prototype = prototype_label == motion_decision.label
+            if motion_supported_by_model:
                 source = "motion_and_model_agree"
-            if prototype_label == motion_decision.label:
+            if motion_supported_by_prototype:
                 source = "motion_and_prototype_agree"
             if negative_confidence >= DYNAMIC_NEGATIVE_REJECT_THRESHOLD:
                 self._last_dynamic_decision = {
                     "source": "negative_rejected",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return "", 0.0
+            if (
+                self._has_custom_dynamic_labels()
+                and not motion_supported_by_model
+                and not motion_supported_by_prototype
+            ):
+                self._last_dynamic_decision = {
+                    "source": "motion_fallback_suppressed_for_custom_labels",
                     "motion_label": motion_decision.label,
                     "motion_confidence": motion_confidence,
                     "model_label": model_label,
@@ -998,6 +1045,9 @@ class GestureOnlineInfer:
         if clean.startswith("swipe_") or self._is_negative_label(clean):
             return False
         return True
+
+    def _has_custom_dynamic_labels(self) -> bool:
+        return any(self._is_complex_dynamic_label(label) for label in self._classes)
 
     def _dynamic_motion_can_override_prototype_reject(
         self,
@@ -1602,7 +1652,7 @@ class GestureOnlineInfer:
         window = getattr(self, "_intent_window", None)
         if window is None:
             maxlen = max(
-                DYNAMIC_SEQUENCE_TARGET_FRAMES,
+                self._dynamic_sequence_target_frames(),
                 int(getattr(getattr(self, "_window", None), "maxlen", 0) or 0),
             )
             window = deque(maxlen=maxlen)

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from app.gesture_online_infer import GestureOnlineInfer
-from cv.gesture_features import FEATURE_DYNAMIC_SEQUENCE
+from cv.gesture_features import FEATURE_DYNAMIC_SEQUENCE, FEATURE_DYNAMIC_SEQUENCE_72
 
 
 class _NoHandsDetector:
@@ -32,6 +32,18 @@ def test_dynamic_sequence_artifact_forces_sequence_feature_mode():
     infer._ensure_dynamic_sequence_feature_mode(Path("dynamic_sequence_rocket.pkl"))
 
     assert infer._feature_mode == FEATURE_DYNAMIC_SEQUENCE
+
+
+def test_long_dynamic_sequence_artifact_forces_long_sequence_feature_mode():
+    infer = GestureOnlineInfer.__new__(GestureOnlineInfer)
+    infer._feature_dim = 3168
+    infer._feature_mode = "static_mean"
+
+    infer._ensure_dynamic_sequence_feature_mode(
+        Path("dynamic_sequence_shapelet_72.pkl")
+    )
+
+    assert infer._feature_mode == FEATURE_DYNAMIC_SEQUENCE_72
 
 
 def _open_hand_landmarks(x: float = 0.5, wrist_y: float = 0.82):
