@@ -30,9 +30,10 @@ Map natural language to a safe macOS action specification.
 - For hotkeys, normalize keys to lowercase canonical names.
 - For common products, normalize aliases such as Jira, Notes, ChatGPT, and
   Rambler Mail.
+- For switching macOS Spaces/desktops/screens, use `key_combination`:
+  `["ctrl", "left"]` for previous/left and `["ctrl", "right"]` for next/right.
 - If action is ambiguous, ask a clarification instead of guessing.
 
 ## Output Contract
 
 Return `action_spec` with only fields required by the action executor.
-

@@ -106,6 +106,16 @@ class ValidationAgent:
                 "blocked",
                 "Нельзя подготовить привязку без действия.",
             )
+        from app.services.user_command_sync import validate_action_spec
+
+        validation_error = validate_action_spec(action_spec)
+        if validation_error:
+            return AgentStep(
+                self.name,
+                "blocked",
+                validation_error,
+                {"error": validation_error},
+            )
         command_name = (
             f"{gesture}: {_action_title(action_spec)}"
             if gesture

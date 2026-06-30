@@ -304,6 +304,8 @@ class MistralBindingAgent:
             f"{actions_text}. Для открытия приложения используй open_app/app; "
             "для сайта open_url/url; для hotkey key_combination/keys; "
             "для сценария sequence/steps. platform всегда macos. "
+            "Для macOS перехода между рабочими столами/Spaces: "
+            "налево=['ctrl','left'], направо=['ctrl','right']; не используй fn+arrow. "
             "Если пользователь указал только жест без команды, верни empty "
             "actionSpec и missing=['действие']; не выдумывай action вроде "
             "explain_capabilities. Понимай русские жесты: "

@@ -36,6 +36,7 @@ GESTURES = [
 ]
 
 GESTURES_WITH_GUN = [*GESTURES, {"label": "gun"}]
+GESTURES_WITH_SWIPE_LEFT = [*GESTURES, {"label": "swipe_left"}]
 
 
 def test_binding_agents_are_importable_from_dedicated_package():
@@ -893,6 +894,55 @@ def test_mistral_draft_drops_stale_missing_when_contract_fields_exist():
 
     assert draft["gestureLabel"] == "gun"
     assert draft["missing"] == []
+
+
+def test_binding_agent_maps_macos_space_left_navigation():
+    draft = build_agent_binding_draft(
+        "привяжи жест свайп влево к команде на мак ос перелистнуть экран",
+        GESTURES_WITH_SWIPE_LEFT,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "swipe_left"
+    assert draft["mode"] == "single"
+    assert draft["missing"] == []
+    assert draft["actionSpec"] == {
+        "action": "key_combination",
+        "platform": "macos",
+        "keys": ["ctrl", "left"],
+    }
+
+
+def test_mistral_sequence_step_key_string_is_normalized_before_ui():
+    agent = MistralBindingAgent(api_key="")
+    draft = agent._draft_from_content(
+        json.dumps(
+            {
+                "gestureLabel": "swipe_left",
+                "mode": "sequence",
+                "actionSpec": {
+                    "action": "sequence",
+                    "platform": "macos",
+                    "steps": [
+                        {"action": "key_combination", "keys": "ctrl + left"},
+                        {"action": "wait", "seconds": 0.2},
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        BindingAgentContext(
+            "привяжи жест свайп влево к команде перелистнуть экран",
+            gestures=GESTURES_WITH_SWIPE_LEFT,
+        ),
+    )
+
+    assert draft["actionSpec"]["steps"][0] == {
+        "action": "key_combination",
+        "keys": ["ctrl", "left"],
+    }
 
 
 def test_binding_agent_semantic_router_detects_freeform_sequence():

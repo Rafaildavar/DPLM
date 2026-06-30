@@ -392,6 +392,68 @@ def _hotkey_from_text(text: str) -> list[str]:
     return []
 
 
+def _macos_navigation_action(text: str) -> dict[str, Any] | None:
+    lower = _norm(text)
+    navigation_marker = any(
+        marker in lower
+        for marker in (
+            "перелист",
+            "переключ",
+            "перейти",
+            "сменить",
+            "switch",
+            "move",
+        )
+    )
+    target_marker = any(
+        marker in lower
+        for marker in (
+            "экран",
+            "рабочий стол",
+            "desktop",
+            "space",
+            "spaces",
+            "пространств",
+        )
+    )
+    if not (navigation_marker and target_marker):
+        return None
+
+    direction = ""
+    if any(
+        marker in lower
+        for marker in (
+            "влево",
+            "налево",
+            "левый",
+            "предыдущ",
+            "swipe_left",
+            "left",
+        )
+    ):
+        direction = "left"
+    elif any(
+        marker in lower
+        for marker in (
+            "вправо",
+            "направо",
+            "правый",
+            "следующ",
+            "swipe_right",
+            "right",
+        )
+    ):
+        direction = "right"
+
+    if direction:
+        return {
+            "action": "key_combination",
+            "platform": "macos",
+            "keys": ["ctrl", direction],
+        }
+    return None
+
+
 def _number(text: str, default: float) -> float:
     match = re.search(r"(\d+(?:[,.]\d+)?)", text or "")
     if not match:
@@ -434,6 +496,10 @@ def _extract_app_name(text: str) -> str:
 
 def _parse_action(text: str) -> dict[str, Any] | None:
     lower = _norm(text)
+
+    navigation_action = _macos_navigation_action(text)
+    if navigation_action:
+        return navigation_action
 
     url = _find_url(text)
     if url:
@@ -811,9 +877,9 @@ def _normalize_model_action_spec(value: Any) -> dict[str, Any]:
         if isinstance(steps, list):
             normalized_steps: list[dict[str, Any]] = []
             for item in steps:
-                if not isinstance(item, dict):
+                step = _normalize_model_action_spec(item)
+                if not step:
                     continue
-                step = dict(item)
                 step.pop("platform", None)
                 if step.get("action"):
                     normalized_steps.append(step)
@@ -2289,8 +2355,16 @@ class BindingAgentOrchestrator:
 
         validation_step = self.validation_agent.run(gesture, action_spec)
         steps.append(validation_step)
+        validation_error = (
+            validation_step.message
+            if action_spec and validation_step.status == "blocked"
+            else ""
+        )
 
-        if not action_spec and "действие" not in missing:
+        if validation_error:
+            error = validation_error
+            command_name = ""
+        elif not action_spec and "действие" not in missing:
             error = "Не удалось понять действие"
             command_name = ""
         elif not action_spec:
@@ -2418,15 +2492,24 @@ class BindingAgentOrchestrator:
             ]
         validation_step = self.validation_agent.run(gesture, action_spec)
         steps.append(validation_step)
+        validation_error = (
+            validation_step.message
+            if action_spec and validation_step.status == "blocked"
+            else ""
+        )
 
         command_name = str(draft.get("commandName") or "").strip()
         if not command_name:
             command_name = str(validation_step.data.get("command_name") or "")
-        error = (
-            ""
-            if action_spec or "действие" in missing
-            else "Не удалось понять действие"
-        )
+        if validation_error:
+            error = validation_error
+            command_name = ""
+        else:
+            error = (
+                ""
+                if action_spec or "действие" in missing
+                else "Не удалось понять действие"
+            )
         ok = not error and not missing
         mode = str(draft.get("mode") or "").strip().lower()
         if mode not in {"single", "sequence"}:
