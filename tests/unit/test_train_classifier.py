@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
+from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
+from cv.sequence_sprocket import SprocketSequenceTransformer
 from cv.train_classifier import (
     _log_mlflow_run,
     build_classifier,
@@ -105,6 +107,35 @@ def test_build_classifier_supports_sequence_rocket_model():
     assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
 
 
+def test_build_classifier_supports_sequence_multirocket_model():
+    clf = build_classifier(
+        "sequence_multirocket",
+        random_state=7,
+        sequence_multirocket_kernels=16,
+        sequence_multirocket_max_dilation=3,
+        sequence_multirocket_max_channels_per_kernel=4,
+    )
+
+    assert clf.__class__.__name__ == "Pipeline"
+    assert clf.steps[0][1].__class__.__name__ == "RandomMultiRocketSequenceTransformer"
+    assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
+
+
+def test_build_classifier_supports_sequence_sprocket_model():
+    clf = build_classifier(
+        "sequence_sprocket",
+        random_state=7,
+        sequence_sprocket_kernels=12,
+        sequence_sprocket_prototypes_per_class=2,
+        sequence_sprocket_max_dilation=3,
+        sequence_sprocket_max_channels_per_kernel=4,
+    )
+
+    assert clf.__class__.__name__ == "Pipeline"
+    assert clf.steps[0][1].__class__.__name__ == "SprocketSequenceTransformer"
+    assert clf.steps[-1][1].__class__.__name__ == "LogisticRegression"
+
+
 def test_sequence_rocket_transformer_builds_deterministic_temporal_features():
     x = np.arange(4 * 36 * 4, dtype=np.float32).reshape(4, 36 * 4)
     transformer = RandomConvolutionSequenceTransformer(
@@ -123,6 +154,23 @@ def test_sequence_rocket_transformer_builds_deterministic_temporal_features():
     assert transformer.n_channels_ == 4
 
 
+def test_sequence_multirocket_transformer_builds_difference_features():
+    x = np.arange(4 * 36 * 4, dtype=np.float32).reshape(4, 36 * 4)
+    transformer = RandomMultiRocketSequenceTransformer(
+        n_kernels=8,
+        target_frames=36,
+        max_channels_per_kernel=3,
+        random_state=11,
+    )
+
+    features = transformer.fit_transform(x)
+    repeated = transformer.transform(x)
+
+    assert features.shape == (4, 40)
+    assert np.allclose(features, repeated)
+    assert any(kernel.use_difference for kernel in transformer.kernels_)
+
+
 def test_sequence_rocket_pipeline_supports_predict_proba():
     rng = np.random.default_rng(123)
     x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
@@ -138,6 +186,48 @@ def test_sequence_rocket_pipeline_supports_predict_proba():
     clf.fit(x, y)
     proba = clf.predict_proba(x[:2])
 
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
+
+
+def test_sequence_multirocket_pipeline_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_multirocket",
+        random_state=3,
+        sequence_multirocket_kernels=12,
+        sequence_multirocket_max_channels_per_kernel=3,
+    )
+
+    clf.fit(x, y)
+    proba = clf.predict_proba(x[:2])
+
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
+
+
+def test_sequence_sprocket_pipeline_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_sprocket",
+        random_state=3,
+        sequence_sprocket_kernels=8,
+        sequence_sprocket_prototypes_per_class=2,
+        sequence_sprocket_max_channels_per_kernel=3,
+    )
+
+    clf.fit(x, y)
+    transformer = clf.steps[0][1]
+    proba = clf.predict_proba(x[:2])
+
+    assert isinstance(transformer, SprocketSequenceTransformer)
+    assert transformer.prototypes_.shape[0] == 4
     assert proba.shape == (2, 2)
     assert np.allclose(proba.sum(axis=1), 1.0)
 

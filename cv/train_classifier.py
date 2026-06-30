@@ -21,13 +21,17 @@ from cv.gesture_features import (
     feature_vector_size,
 )
 from cv.gesture_dataset_files import gesture_sample_paths
+from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
+from cv.sequence_sprocket import SprocketSequenceTransformer
 
 SUPPORTED_MODEL_TYPES = (
     "knn",
     "sequence_knn",
     "sequence_mlp",
     "sequence_rocket",
+    "sequence_multirocket",
+    "sequence_sprocket",
     "svm",
     "extra_trees",
     "rf",
@@ -44,6 +48,13 @@ DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE = 30
 DEFAULT_SEQUENCE_ROCKET_KERNELS = 256
 DEFAULT_SEQUENCE_ROCKET_MAX_DILATION = 4
 DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL = 8
+DEFAULT_SEQUENCE_MULTIROCKET_KERNELS = 320
+DEFAULT_SEQUENCE_MULTIROCKET_MAX_DILATION = 6
+DEFAULT_SEQUENCE_MULTIROCKET_MAX_CHANNELS_PER_KERNEL = 8
+DEFAULT_SEQUENCE_SPROCKET_KERNELS = 192
+DEFAULT_SEQUENCE_SPROCKET_PROTOTYPES_PER_CLASS = 3
+DEFAULT_SEQUENCE_SPROCKET_MAX_DILATION = 6
+DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL = 8
 
 
 # --------------------------------------------------
@@ -163,6 +174,19 @@ def build_classifier(
     sequence_rocket_max_channels_per_kernel: int = (
         DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL
     ),
+    sequence_multirocket_kernels: int = DEFAULT_SEQUENCE_MULTIROCKET_KERNELS,
+    sequence_multirocket_max_dilation: int = DEFAULT_SEQUENCE_MULTIROCKET_MAX_DILATION,
+    sequence_multirocket_max_channels_per_kernel: int = (
+        DEFAULT_SEQUENCE_MULTIROCKET_MAX_CHANNELS_PER_KERNEL
+    ),
+    sequence_sprocket_kernels: int = DEFAULT_SEQUENCE_SPROCKET_KERNELS,
+    sequence_sprocket_prototypes_per_class: int = (
+        DEFAULT_SEQUENCE_SPROCKET_PROTOTYPES_PER_CLASS
+    ),
+    sequence_sprocket_max_dilation: int = DEFAULT_SEQUENCE_SPROCKET_MAX_DILATION,
+    sequence_sprocket_max_channels_per_kernel: int = (
+        DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL
+    ),
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -188,6 +212,46 @@ def build_classifier(
                 early_stopping=bool(sequence_mlp_early_stopping),
                 validation_fraction=validation_fraction,
                 n_iter_no_change=max(1, int(sequence_mlp_n_iter_no_change)),
+                random_state=int(random_state),
+            ),
+        )
+    if model == "sequence_multirocket":
+        return make_pipeline(
+            RandomMultiRocketSequenceTransformer(
+                n_kernels=max(1, int(sequence_multirocket_kernels)),
+                max_dilation=max(1, int(sequence_multirocket_max_dilation)),
+                max_channels_per_kernel=max(
+                    1,
+                    int(sequence_multirocket_max_channels_per_kernel),
+                ),
+                random_state=int(random_state),
+            ),
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2500,
+                class_weight="balanced",
+                random_state=int(random_state),
+            ),
+        )
+    if model == "sequence_sprocket":
+        return make_pipeline(
+            SprocketSequenceTransformer(
+                n_kernels=max(1, int(sequence_sprocket_kernels)),
+                prototypes_per_class=max(
+                    1,
+                    int(sequence_sprocket_prototypes_per_class),
+                ),
+                max_dilation=max(1, int(sequence_sprocket_max_dilation)),
+                max_channels_per_kernel=max(
+                    1,
+                    int(sequence_sprocket_max_channels_per_kernel),
+                ),
+                random_state=int(random_state),
+            ),
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2500,
+                class_weight="balanced",
                 random_state=int(random_state),
             ),
         )
@@ -358,7 +422,11 @@ def parse_args() -> argparse.Namespace:
         "--model-type",
         choices=SUPPORTED_MODEL_TYPES,
         default="knn",
-        help="Тип классификатора: knn, sequence_knn, sequence_mlp, sequence_rocket, svm, extra_trees, rf или logreg",
+        help=(
+            "Тип классификатора: knn, sequence_knn, sequence_mlp, "
+            "sequence_rocket, sequence_multirocket, sequence_sprocket, "
+            "svm, extra_trees, rf или logreg"
+        ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
     p.add_argument(
@@ -408,6 +476,48 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL,
         help="Maximum channel subset size per sequence_rocket kernel.",
+    )
+    p.add_argument(
+        "--sequence-multirocket-kernels",
+        type=int,
+        default=DEFAULT_SEQUENCE_MULTIROCKET_KERNELS,
+        help="Number of random temporal convolution kernels for sequence_multirocket.",
+    )
+    p.add_argument(
+        "--sequence-multirocket-max-dilation",
+        type=int,
+        default=DEFAULT_SEQUENCE_MULTIROCKET_MAX_DILATION,
+        help="Maximum dilation for sequence_multirocket temporal kernels.",
+    )
+    p.add_argument(
+        "--sequence-multirocket-max-channels-per-kernel",
+        type=int,
+        default=DEFAULT_SEQUENCE_MULTIROCKET_MAX_CHANNELS_PER_KERNEL,
+        help="Maximum channel subset size per sequence_multirocket kernel.",
+    )
+    p.add_argument(
+        "--sequence-sprocket-kernels",
+        type=int,
+        default=DEFAULT_SEQUENCE_SPROCKET_KERNELS,
+        help="Number of random temporal convolution kernels for sequence_sprocket.",
+    )
+    p.add_argument(
+        "--sequence-sprocket-prototypes-per-class",
+        type=int,
+        default=DEFAULT_SEQUENCE_SPROCKET_PROTOTYPES_PER_CLASS,
+        help="Number of representative prototypes per class for sequence_sprocket.",
+    )
+    p.add_argument(
+        "--sequence-sprocket-max-dilation",
+        type=int,
+        default=DEFAULT_SEQUENCE_SPROCKET_MAX_DILATION,
+        help="Maximum dilation for sequence_sprocket temporal kernels.",
+    )
+    p.add_argument(
+        "--sequence-sprocket-max-channels-per-kernel",
+        type=int,
+        default=DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL,
+        help="Maximum channel subset size per sequence_sprocket kernel.",
     )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
@@ -513,6 +623,19 @@ def main() -> None:
         sequence_rocket_max_dilation=int(args.sequence_rocket_max_dilation),
         sequence_rocket_max_channels_per_kernel=int(
             args.sequence_rocket_max_channels_per_kernel
+        ),
+        sequence_multirocket_kernels=int(args.sequence_multirocket_kernels),
+        sequence_multirocket_max_dilation=int(args.sequence_multirocket_max_dilation),
+        sequence_multirocket_max_channels_per_kernel=int(
+            args.sequence_multirocket_max_channels_per_kernel
+        ),
+        sequence_sprocket_kernels=int(args.sequence_sprocket_kernels),
+        sequence_sprocket_prototypes_per_class=int(
+            args.sequence_sprocket_prototypes_per_class
+        ),
+        sequence_sprocket_max_dilation=int(args.sequence_sprocket_max_dilation),
+        sequence_sprocket_max_channels_per_kernel=int(
+            args.sequence_sprocket_max_channels_per_kernel
         ),
     )
     clf.fit(X, y)
@@ -683,6 +806,55 @@ def _log_mlflow_run(
                 DEFAULT_SEQUENCE_ROCKET_MAX_CHANNELS_PER_KERNEL,
             )
         )
+        sequence_multirocket_kernels = int(
+            getattr(
+                args,
+                "sequence_multirocket_kernels",
+                DEFAULT_SEQUENCE_MULTIROCKET_KERNELS,
+            )
+        )
+        sequence_multirocket_max_dilation = int(
+            getattr(
+                args,
+                "sequence_multirocket_max_dilation",
+                DEFAULT_SEQUENCE_MULTIROCKET_MAX_DILATION,
+            )
+        )
+        sequence_multirocket_max_channels_per_kernel = int(
+            getattr(
+                args,
+                "sequence_multirocket_max_channels_per_kernel",
+                DEFAULT_SEQUENCE_MULTIROCKET_MAX_CHANNELS_PER_KERNEL,
+            )
+        )
+        sequence_sprocket_kernels = int(
+            getattr(
+                args,
+                "sequence_sprocket_kernels",
+                DEFAULT_SEQUENCE_SPROCKET_KERNELS,
+            )
+        )
+        sequence_sprocket_prototypes_per_class = int(
+            getattr(
+                args,
+                "sequence_sprocket_prototypes_per_class",
+                DEFAULT_SEQUENCE_SPROCKET_PROTOTYPES_PER_CLASS,
+            )
+        )
+        sequence_sprocket_max_dilation = int(
+            getattr(
+                args,
+                "sequence_sprocket_max_dilation",
+                DEFAULT_SEQUENCE_SPROCKET_MAX_DILATION,
+            )
+        )
+        sequence_sprocket_max_channels_per_kernel = int(
+            getattr(
+                args,
+                "sequence_sprocket_max_channels_per_kernel",
+                DEFAULT_SEQUENCE_SPROCKET_MAX_CHANNELS_PER_KERNEL,
+            )
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -713,6 +885,21 @@ def _log_mlflow_run(
                     "sequence_rocket_max_dilation": sequence_rocket_max_dilation,
                     "sequence_rocket_max_channels_per_kernel": (
                         sequence_rocket_max_channels_per_kernel
+                    ),
+                    "sequence_multirocket_kernels": sequence_multirocket_kernels,
+                    "sequence_multirocket_max_dilation": (
+                        sequence_multirocket_max_dilation
+                    ),
+                    "sequence_multirocket_max_channels_per_kernel": (
+                        sequence_multirocket_max_channels_per_kernel
+                    ),
+                    "sequence_sprocket_kernels": sequence_sprocket_kernels,
+                    "sequence_sprocket_prototypes_per_class": (
+                        sequence_sprocket_prototypes_per_class
+                    ),
+                    "sequence_sprocket_max_dilation": sequence_sprocket_max_dilation,
+                    "sequence_sprocket_max_channels_per_kernel": (
+                        sequence_sprocket_max_channels_per_kernel
                     ),
                     "expect_dim": (
                         int(args.expect_dim)

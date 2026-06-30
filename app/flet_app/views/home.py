@@ -20,7 +20,9 @@ import flet as ft
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
 )
@@ -237,6 +239,14 @@ class HomeView:
                 ft.DropdownOption(
                     key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
                     text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
+                ),
+                ft.DropdownOption(
+                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
+                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
+                ),
+                ft.DropdownOption(
+                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
+                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
                 ),
             ],
             on_select=self._on_dynamic_profile_changed,

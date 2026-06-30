@@ -4065,3 +4065,101 @@ Offline sanity:
   - `swipe_left`: 10 попыток, threshold `0.60`;
   - если динамика пошла через route `dynamic`, поднять threshold до `0.90`;
   - отдельно проверить `partial_swipe` и `random_motion` как negative.
+
+### H-079: Добавлены `sequence_multirocket` и `sequence_sprocket`
+
+Статус: `ready for live A/B`
+
+Дата: `2026-06-30`
+
+Цель:
+- Проверить две более сильные time-series модели для динамических жестов без
+  fallback на KNN/MLP/Rocket.
+- Сохранить честный A/B: каждая модель имеет отдельный `.pkl`, отдельные
+  metadata и отдельный prototype layer.
+
+Модели:
+- `sequence_multirocket`:
+  - MultiRocket-style random temporal convolutions;
+  - применяет kernels к исходной sequence и к first-order differences;
+  - pooling features: max, min, positive proportion, mean positive activation,
+    longest positive stretch;
+  - ожидаемый плюс: лучше ловит изменение движения и относительную скорость
+    внутри жеста.
+- `sequence_sprocket`:
+  - SPROCKET-style representation;
+  - добавляет к MultiRocket-style convolution features расстояния и cosine
+    similarities до class prototypes;
+  - ожидаемый плюс: лучше подходит к пользовательским few-shot жестам, потому
+    что модель получает признаки похожести на реальные записанные эталоны.
+
+Артефакты:
+- `models/dynamic_sequence_multirocket.pkl`;
+- `models/dynamic_sequence_multirocket_classes.json`;
+- `models/dynamic_sequence_multirocket_feature_dim.txt`;
+- `models/dynamic_sequence_multirocket_feature_mode.txt`;
+- `models/dynamic_sequence_multirocket_rejection.json`;
+- `models/dynamic_sequence_multirocket_prototypes.json`;
+- `models/dynamic_sequence_sprocket.pkl`;
+- `models/dynamic_sequence_sprocket_classes.json`;
+- `models/dynamic_sequence_sprocket_feature_dim.txt`;
+- `models/dynamic_sequence_sprocket_feature_mode.txt`;
+- `models/dynamic_sequence_sprocket_rejection.json`;
+- `models/dynamic_sequence_sprocket_prototypes.json`.
+
+Training setup:
+- `data_root=data/gestures`;
+- `feature_mode=dynamic_sequence`;
+- `feature_dim=1584` (`36 * 44`);
+- classes:
+  - `no_gesture_static`;
+  - `partial_swipe`;
+  - `random_motion`;
+  - `return_motion`;
+  - `swipe_down`;
+  - `swipe_left`;
+  - `swipe_up`;
+  - `wrong_axis_motion`;
+- samples: `170`;
+- `sequence_multirocket` train accuracy: `1.0000`;
+- `sequence_sprocket` train accuracy: `1.0000`;
+- MLflow runs:
+  - `train-sequence-multirocket`;
+  - `train-sequence-sprocket`.
+
+Runtime sanity:
+- Current `Model Set=prototype_distance` resolves:
+  - classifier from production `models/`;
+  - model-specific prototype from
+    `models/experiments/dynamic_prototype/prototype_distance/`.
+- `sequence_multirocket`:
+  - `model_error=''`;
+  - `feature_mode=dynamic_sequence`;
+  - `raw_feature_dim=44`;
+  - `segmenter=DynamicMotionSegmenter`.
+- `sequence_sprocket`:
+  - `model_error=''`;
+  - `feature_mode=dynamic_sequence`;
+  - `raw_feature_dim=44`;
+  - `segmenter=DynamicMotionSegmenter`.
+
+Live A/B protocol:
+- Перезапустить приложение или Stop/Start камеры.
+- `Model Set=prototype_distance`;
+- `Mode=auto`;
+- `Reject=open_set_policy`;
+- Сначала `Dynamic=sequence_multirocket`:
+  - `swipe_up`: 10 попыток, threshold `0.60`, затем `0.90`;
+  - `swipe_left`: 10 попыток, threshold `0.60`, затем `0.90`;
+  - `swipe_down`: 10 попыток, threshold `0.60`, затем `0.90`;
+  - `partial_swipe`, `random_motion`, `return_motion`, `wrong_axis_motion`:
+    по 5-10 попыток как negative.
+- Потом тот же протокол для `Dynamic=sequence_sprocket`.
+- Ключевые метрики:
+  - dynamic accuracy;
+  - missed rate;
+  - false positive on negative gestures;
+  - static fallback rate;
+  - route counts;
+  - confidence distribution;
+  - latency/runtime performance.

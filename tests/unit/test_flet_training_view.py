@@ -242,3 +242,25 @@ def test_sequence_rocket_uses_own_sequence_model_and_metadata_paths():
         "models/dynamic_sequence_rocket_feature_dim.txt",
         "models/dynamic_sequence_rocket_feature_mode.txt",
     )
+
+
+def test_sequence_multirocket_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_multirocket") == (
+        "models/dynamic_sequence_multirocket.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_multirocket") == (
+        "models/dynamic_sequence_multirocket_classes.json",
+        "models/dynamic_sequence_multirocket_feature_dim.txt",
+        "models/dynamic_sequence_multirocket_feature_mode.txt",
+    )
+
+
+def test_sequence_sprocket_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_sprocket") == (
+        "models/dynamic_sequence_sprocket.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_sprocket") == (
+        "models/dynamic_sequence_sprocket_classes.json",
+        "models/dynamic_sequence_sprocket_feature_dim.txt",
+        "models/dynamic_sequence_sprocket_feature_mode.txt",
+    )

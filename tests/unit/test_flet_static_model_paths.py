@@ -5,7 +5,9 @@ from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
     MODEL_VARIANT_DIRS,
     MODEL_VARIANT_PRODUCTION,
 )
@@ -153,6 +155,56 @@ def test_sequence_rocket_dynamic_profile_uses_own_metadata_files(tmp_path):
     assert (
         controller._dynamic_prototypes_path().name
         == "dynamic_sequence_rocket_prototypes.json"
+    )
+
+
+def test_sequence_multirocket_dynamic_profile_uses_own_metadata_files(tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = str(tmp_path / "models")
+
+    assert controller._dynamic_model_path().name == "dynamic_sequence_multirocket.pkl"
+    assert (
+        controller._dynamic_classes_path().name
+        == "dynamic_sequence_multirocket_classes.json"
+    )
+    assert (
+        controller._dynamic_feature_dim_path().name
+        == "dynamic_sequence_multirocket_feature_dim.txt"
+    )
+    assert (
+        controller._dynamic_feature_mode_path().name
+        == "dynamic_sequence_multirocket_feature_mode.txt"
+    )
+    assert (
+        controller._dynamic_prototypes_path().name
+        == "dynamic_sequence_multirocket_prototypes.json"
+    )
+
+
+def test_sequence_sprocket_dynamic_profile_uses_own_metadata_files(tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = str(tmp_path / "models")
+
+    assert controller._dynamic_model_path().name == "dynamic_sequence_sprocket.pkl"
+    assert (
+        controller._dynamic_classes_path().name
+        == "dynamic_sequence_sprocket_classes.json"
+    )
+    assert (
+        controller._dynamic_feature_dim_path().name
+        == "dynamic_sequence_sprocket_feature_dim.txt"
+    )
+    assert (
+        controller._dynamic_feature_mode_path().name
+        == "dynamic_sequence_sprocket_feature_mode.txt"
+    )
+    assert (
+        controller._dynamic_prototypes_path().name
+        == "dynamic_sequence_sprocket_prototypes.json"
     )
 
 
