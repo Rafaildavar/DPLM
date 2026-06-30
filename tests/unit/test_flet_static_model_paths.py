@@ -202,3 +202,34 @@ def test_dynamic_profile_falls_back_to_production_classifier_for_experiment_vari
     assert controller._dynamic_prototypes_path() == (
         variant_dir / "dynamic_sequence_rocket_prototypes.json"
     )
+
+
+def test_dynamic_profile_does_not_substitute_another_model_when_artifact_missing(
+    monkeypatch,
+    tmp_path,
+):
+    def resolve_under_tmp(value):
+        path = Path(value)
+        return path if path.is_absolute() else tmp_path / path
+
+    monkeypatch.setattr(controller_module, "resolve_config_path", resolve_under_tmp)
+    production_dir = tmp_path / MODEL_VARIANT_DIRS[MODEL_VARIANT_PRODUCTION]
+    production_dir.mkdir(parents=True)
+    for name in (
+        "dynamic_sequence_mlp.pkl",
+        "dynamic_sequence_knn.pkl",
+    ):
+        (production_dir / name).write_text("x", encoding="utf-8")
+
+    variant_rel = "models/experiments/dynamic_prototype/prototype_distance"
+    variant_dir = tmp_path / variant_rel
+    variant_dir.mkdir(parents=True)
+
+    controller = AppController.__new__(AppController)
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET
+    controller._config = AppConfig()
+    controller._config.paths.models_dir = variant_rel
+
+    expected = variant_dir / "dynamic_sequence_rocket.pkl"
+    assert not expected.exists()
+    assert controller._dynamic_model_path() == expected

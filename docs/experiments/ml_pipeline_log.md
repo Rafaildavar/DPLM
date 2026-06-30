@@ -4034,6 +4034,12 @@ Offline sanity:
 - В `GestureOnlineInfer` добавлен guard: если загружен
   `dynamic_sequence_*.pkl` с sequence-размерностью, feature mode принудительно
   нормализуется в `dynamic_sequence`.
+- Важно: это artifact-path fallback, а не model fallback. Если выбран
+  `sequence_rocket`, система может взять только файл
+  `dynamic_sequence_rocket.pkl` из production `models/`. Она не должна
+  подменять Rocket на `sequence_knn`, `sequence_mlp` или другую модель. Если
+  нужного Rocket artifact нет, тестовый запуск должен fail closed через
+  `model_error`, чтобы A/B-тест был честным.
 
 Проверка без камеры на текущем конфиге:
 - `model=/models/dynamic_sequence_rocket.pkl`;
