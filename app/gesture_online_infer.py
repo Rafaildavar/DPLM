@@ -61,6 +61,9 @@ DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.15
 DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
 DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE = 0.60
 DYNAMIC_COMPLEX_MODEL_MIN_MARGIN = 0.08
+DYNAMIC_COMPLEX_MODEL_NEAR_TOP_MIN_CONFIDENCE = 0.48
+DYNAMIC_COMPLEX_MODEL_NEAR_TOP_MAX_GAP = 0.12
+DYNAMIC_COMPOUND_DIRECTION_MAX_AXIS_RATIO = 3.0
 DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.68
 DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.88
 DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_MARGIN = 0.18
@@ -474,24 +477,46 @@ class GestureOnlineInfer:
         dy = float(motion.get("dy") or 0.0)
         horizontal = abs(dx)
         vertical = abs(dy)
+        wants_left = "left" in clean
+        wants_right = "right" in clean
+        wants_up = "up" in clean
+        wants_down = "down" in clean
+        wants_horizontal = wants_left or wants_right
+        wants_vertical = wants_up or wants_down
+        horizontal_ok = (
+            (wants_left and dx <= -DYNAMIC_GATE_DIRECTION_THRESHOLD)
+            or (wants_right and dx >= DYNAMIC_GATE_DIRECTION_THRESHOLD)
+        )
+        vertical_ok = (
+            (wants_up and dy <= -DYNAMIC_GATE_DIRECTION_THRESHOLD)
+            or (wants_down and dy >= DYNAMIC_GATE_DIRECTION_THRESHOLD)
+        )
+
+        if wants_horizontal and wants_vertical:
+            axis_ratio = max(horizontal, vertical) / max(min(horizontal, vertical), 1e-6)
+            return (
+                horizontal_ok
+                and vertical_ok
+                and axis_ratio <= DYNAMIC_COMPOUND_DIRECTION_MAX_AXIS_RATIO
+            )
         if "left" in clean:
             return (
-                dx <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+                horizontal_ok
                 and horizontal >= vertical * DYNAMIC_DIRECTION_DOMINANCE_RATIO
             )
         if "right" in clean:
             return (
-                dx >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+                horizontal_ok
                 and horizontal >= vertical * DYNAMIC_DIRECTION_DOMINANCE_RATIO
             )
         if "up" in clean:
             return (
-                dy <= -DYNAMIC_GATE_DIRECTION_THRESHOLD
+                vertical_ok
                 and vertical >= horizontal * DYNAMIC_DIRECTION_DOMINANCE_RATIO
             )
         if "down" in clean:
             return (
-                dy >= DYNAMIC_GATE_DIRECTION_THRESHOLD
+                vertical_ok
                 and vertical >= horizontal * DYNAMIC_DIRECTION_DOMINANCE_RATIO
             )
         return True
@@ -707,6 +732,35 @@ class GestureOnlineInfer:
                     **motion_decision.as_dict(),
                 }
                 return complex_model_label, complex_model_confidence
+            if (
+                complex_model_label
+                and complex_model_label != motion_decision.label
+                and negative_confidence < DYNAMIC_NEGATIVE_REJECT_THRESHOLD
+                and self._dynamic_label_matches_motion(complex_model_label, motion)
+                and self._complex_model_prediction_near_top(
+                    complex_model_confidence,
+                    complex_model_margin,
+                )
+            ):
+                self._last_dynamic_decision = {
+                    "source": "complex_model_near_top_over_motion",
+                    "motion_label": motion_decision.label,
+                    "motion_confidence": motion_confidence,
+                    "model_label": model_label,
+                    "model_confidence": model_confidence,
+                    "negative_label": negative_label,
+                    "negative_confidence": negative_confidence,
+                    "negative_threshold": DYNAMIC_NEGATIVE_REJECT_THRESHOLD,
+                    "compatible_model_label": compatible_label,
+                    "compatible_model_confidence": compatible_confidence,
+                    "complex_model_label": complex_model_label,
+                    "complex_model_confidence": complex_model_confidence,
+                    "complex_model_margin": complex_model_margin,
+                    "model_confidence_for_motion": float(model_for_motion),
+                    **prototype_fields,
+                    **motion_decision.as_dict(),
+                }
+                return complex_model_label, complex_model_confidence
             if prototype_label and prototype_label != motion_decision.label:
                 self._last_dynamic_decision = {
                     "source": "prototype_motion_conflict",
@@ -843,15 +897,27 @@ class GestureOnlineInfer:
         if not ordered:
             return "", 0.0, 0.0
 
-        top_confidence, top_label = ordered[0]
-        if not self._is_complex_dynamic_label(top_label):
+        complex_candidates = [
+            (float(confidence), str(label))
+            for confidence, label in ordered
+            if self._is_complex_dynamic_label(label)
+        ]
+        if not complex_candidates:
             return "", 0.0, 0.0
 
-        second_confidence = float(ordered[1][0]) if len(ordered) > 1 else 0.0
+        top_confidence, top_label = complex_candidates[0]
+        competing_confidence = max(
+            (
+                float(confidence)
+                for confidence, label in ordered
+                if str(label) != str(top_label)
+            ),
+            default=0.0,
+        )
         return (
             str(top_label),
             float(top_confidence),
-            float(top_confidence - second_confidence),
+            float(top_confidence - competing_confidence),
         )
 
     def _best_model_prototype_override(
@@ -913,6 +979,16 @@ class GestureOnlineInfer:
         return (
             float(confidence) >= DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE
             and float(margin) >= DYNAMIC_COMPLEX_MODEL_MIN_MARGIN
+        )
+
+    @staticmethod
+    def _complex_model_prediction_near_top(
+        confidence: float,
+        margin: float,
+    ) -> bool:
+        return (
+            float(confidence) >= DYNAMIC_COMPLEX_MODEL_NEAR_TOP_MIN_CONFIDENCE
+            and float(margin) >= -DYNAMIC_COMPLEX_MODEL_NEAR_TOP_MAX_GAP
         )
 
     def _is_complex_dynamic_label(self, label: str) -> bool:

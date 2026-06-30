@@ -47,6 +47,16 @@ class _ComplexSequenceClassifier:
         return np.asarray([[0.14, 0.78, 0.08]])
 
 
+class _NearTopCompoundClassifier:
+    classes_ = np.asarray([0, 1, 2])
+
+    def predict(self, _features):
+        return np.asarray([0])
+
+    def predict_proba(self, _features):
+        return np.asarray([[0.54, 0.50, 0.02]])
+
+
 class _ConfidentSwipeClassifier:
     classes_ = np.asarray([0, 1, 2])
 
@@ -257,6 +267,38 @@ def test_online_dynamic_complex_model_can_override_swipe_motion():
     assert infer._last_dynamic_decision["source"] == "complex_model_over_motion"
     assert infer._last_dynamic_decision["motion_label"] == "swipe_left"
     assert infer._last_dynamic_decision["complex_model_margin"] > 0.50
+
+
+def test_online_dynamic_compound_model_can_override_near_top_swipe_motion():
+    infer = object.__new__(GestureOnlineInfer)
+    infer._classes = ["swipe_up", "upandleft", "random_motion"]
+    infer._clf = _NearTopCompoundClassifier()
+    infer._dynamic_prototypes = {}
+    infer._gesture_taxonomy = None
+
+    label, confidence = infer._dynamic_prediction(
+        np.zeros((1, 1584), dtype=np.float32),
+        {
+            "dx": -0.20,
+            "dy": -0.32,
+            "path_length": 0.48,
+            "displacement": 0.38,
+            "direction_cos": -0.52,
+            "direction_sin": -0.85,
+        },
+        sequence=_sequence(
+            np.linspace(0.65, 0.45, 18),
+            np.linspace(0.75, 0.43, 18),
+        ),
+    )
+
+    assert label == "upandleft"
+    assert confidence == 0.50
+    assert (
+        infer._last_dynamic_decision["source"]
+        == "complex_model_near_top_over_motion"
+    )
+    assert infer._last_dynamic_decision["motion_label"] == "swipe_up"
 
 
 def test_online_dynamic_complex_prototype_does_not_conflict_with_swipe_motion():
