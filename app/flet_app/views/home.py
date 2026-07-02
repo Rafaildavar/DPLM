@@ -1,5 +1,5 @@
 """
-Главный экран DPLM: превью камеры + жесты + последняя команда.
+Главный экран GestureFlow: превью камеры + жесты + последняя команда.
 
 В отличие от старой версии (где главная только показывала список команд, а
 распознавание жило на отдельной вкладке/в subprocess), здесь главная — это
@@ -63,6 +63,10 @@ class HomeView:
         self._frame_update_pending = False
         self._gesture_clear_lock = threading.Lock()
         self._gesture_clear_token = 0
+        self._gesture_state_phase = "idle"
+        self._recognition_inspector_paused = False
+        self._recognition_inspector_snapshot: list[dict] = []
+        self._recognition_inspector_last_seen_sequence = 0
 
         self._camera_image = ft.Image(
             src=_PLACEHOLDER_DATA_URL,
@@ -79,6 +83,12 @@ class HomeView:
             color=COLOR_ON_SURFACE,
         )
         self._confidence_text = ft.Text("0%", size=14, color=COLOR_MUTED)
+        self._gesture_state_text = ft.Text(
+            "ожидание",
+            size=12,
+            color=COLOR_MUTED,
+            no_wrap=True,
+        )
         self._confidence_bar = ft.ProgressBar(
             value=0.0,
             color=COLOR_ACCENT,
@@ -94,6 +104,53 @@ class HomeView:
             spacing=6,
             scroll=ft.ScrollMode.AUTO,
             controls=[ft.Text("Пока нет событий", size=12, color=COLOR_MUTED)],
+        )
+        self._recognition_inspector_list = ft.Column(
+            spacing=5,
+            scroll=ft.ScrollMode.AUTO,
+            controls=[ft.Text("—", size=12, color=COLOR_MUTED)],
+        )
+        self._recognition_inspector_status_text = ft.Text(
+            "live",
+            size=11,
+            color=COLOR_MUTED,
+            no_wrap=True,
+        )
+        self._recognition_inspector_pause_btn = ft.IconButton(
+            icon=ft.Icons.PAUSE,
+            icon_size=17,
+            icon_color=COLOR_MUTED,
+            tooltip="Pause inspector",
+            on_click=self._on_recognition_inspector_pause_toggle,
+        )
+        self._recognition_inspector_step_btn = ft.IconButton(
+            icon=ft.Icons.SKIP_NEXT,
+            icon_size=17,
+            icon_color=COLOR_MUTED,
+            tooltip="Step next inspector event",
+            disabled=True,
+            on_click=self._on_recognition_inspector_step,
+        )
+        self._recognition_inspector_clear_btn = ft.IconButton(
+            icon=ft.Icons.CLEAR_ALL,
+            icon_size=17,
+            icon_color=COLOR_MUTED,
+            tooltip="Clear inspector history",
+            on_click=self._on_recognition_inspector_clear,
+        )
+        self._recognition_inspector_export_jsonl_btn = ft.IconButton(
+            icon=ft.Icons.ARTICLE,
+            icon_size=17,
+            icon_color=COLOR_MUTED,
+            tooltip="Export inspector JSONL",
+            on_click=lambda _e: self._on_recognition_inspector_export("jsonl"),
+        )
+        self._recognition_inspector_export_csv_btn = ft.IconButton(
+            icon=ft.Icons.FILE_DOWNLOAD,
+            icon_size=17,
+            icon_color=COLOR_MUTED,
+            tooltip="Export inspector CSV",
+            on_click=lambda _e: self._on_recognition_inspector_export("csv"),
         )
         eval_labels = self._recognition_label_options()
         default_eval_label = "swipe_down" if "swipe_down" in eval_labels else (
@@ -329,6 +386,7 @@ class HomeView:
         controller.command_executed.connect(self._on_command)
         controller.recognition_event_recorded.connect(self._on_activity_changed)
         controller.confidence_changed.connect(self._on_confidence)
+        controller.gesture_state_changed.connect(self._on_gesture_state)
         controller.status_changed.connect(self._on_status)
         controller.recognizing_changed.connect(self._on_recognizing)
         controller.camera_active_changed.connect(self._on_camera_active)
@@ -351,6 +409,7 @@ class HomeView:
         self._apply_model_variant(self._controller.model_variant)
         self._refresh_eval_labels()
         self._refresh_activity()
+        self._refresh_recognition_inspector()
         self._apply_live_evaluation(self._controller.current_live_evaluation())
 
     def on_hide(self) -> None:
@@ -642,6 +701,233 @@ class HomeView:
         except Exception:
             pass
 
+    def _current_recognition_inspector_rows(self) -> list[dict]:
+        try:
+            rows = self._controller.get_live_gesture_inspector_history()
+        except Exception:
+            rows = []
+        return [dict(row) for row in rows if isinstance(row, dict)]
+
+    def _recognition_inspector_max_sequence(self, rows: list[dict]) -> int:
+        out = 0
+        for row in rows:
+            try:
+                out = max(out, int(row.get("sequence") or 0))
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    def _recognition_inspector_unseen_rows(self) -> list[dict]:
+        last_seen = int(getattr(self, "_recognition_inspector_last_seen_sequence", 0))
+        out: list[dict] = []
+        for row in self._current_recognition_inspector_rows():
+            try:
+                sequence = int(row.get("sequence") or 0)
+            except (TypeError, ValueError):
+                sequence = 0
+            if sequence > last_seen:
+                out.append(row)
+        return sorted(out, key=lambda item: int(item.get("sequence") or 0))
+
+    def _safe_update_control(self, control: ft.Control) -> None:
+        try:
+            control.update()
+        except Exception:
+            pass
+
+    def _apply_recognition_inspector_controls(self) -> None:
+        paused = bool(getattr(self, "_recognition_inspector_paused", False))
+        rows = (
+            list(getattr(self, "_recognition_inspector_snapshot", []))
+            if paused
+            else self._current_recognition_inspector_rows()
+        )
+        unseen_count = len(self._recognition_inspector_unseen_rows()) if paused else 0
+        self._recognition_inspector_status_text.value = (
+            f"paused +{unseen_count}" if paused and unseen_count else (
+                "paused" if paused else "live"
+            )
+        )
+        self._recognition_inspector_status_text.color = (
+            COLOR_WARNING if paused else COLOR_MUTED
+        )
+        self._recognition_inspector_pause_btn.icon = (
+            ft.Icons.PLAY_ARROW if paused else ft.Icons.PAUSE
+        )
+        self._recognition_inspector_pause_btn.tooltip = (
+            "Resume inspector" if paused else "Pause inspector"
+        )
+        self._recognition_inspector_step_btn.disabled = not paused or unseen_count <= 0
+        has_rows = bool(rows) or bool(self._current_recognition_inspector_rows())
+        self._recognition_inspector_clear_btn.disabled = not has_rows
+        self._recognition_inspector_export_jsonl_btn.disabled = not has_rows
+        self._recognition_inspector_export_csv_btn.disabled = not has_rows
+        for control in (
+            self._recognition_inspector_status_text,
+            self._recognition_inspector_pause_btn,
+            self._recognition_inspector_step_btn,
+            self._recognition_inspector_clear_btn,
+            self._recognition_inspector_export_jsonl_btn,
+            self._recognition_inspector_export_csv_btn,
+        ):
+            self._safe_update_control(control)
+
+    def _refresh_recognition_inspector(self) -> None:
+        if bool(getattr(self, "_recognition_inspector_paused", False)):
+            rows = list(getattr(self, "_recognition_inspector_snapshot", []))
+        else:
+            rows = self._current_recognition_inspector_rows()
+            self._recognition_inspector_last_seen_sequence = (
+                self._recognition_inspector_max_sequence(rows)
+            )
+        if not rows:
+            self._recognition_inspector_list.controls = [
+                ft.Text("—", size=12, color=COLOR_MUTED)
+            ]
+        else:
+            self._recognition_inspector_list.controls = [
+                self._recognition_inspector_row(row)
+                for row in rows[:6]
+            ]
+        try:
+            self._recognition_inspector_list.update()
+        except Exception:
+            pass
+        self._apply_recognition_inspector_controls()
+
+    def _on_recognition_inspector_pause_toggle(self, _e) -> None:
+        paused = not bool(getattr(self, "_recognition_inspector_paused", False))
+        self._recognition_inspector_paused = paused
+        if paused:
+            self._recognition_inspector_snapshot = (
+                self._current_recognition_inspector_rows()
+            )
+            self._recognition_inspector_last_seen_sequence = (
+                self._recognition_inspector_max_sequence(
+                    self._recognition_inspector_snapshot
+                )
+            )
+        else:
+            self._recognition_inspector_snapshot = []
+        self._refresh_recognition_inspector()
+
+    def _on_recognition_inspector_step(self, _e) -> None:
+        if not bool(getattr(self, "_recognition_inspector_paused", False)):
+            self._on_recognition_inspector_pause_toggle(_e)
+            return
+        unseen = self._recognition_inspector_unseen_rows()
+        if not unseen:
+            self._refresh_recognition_inspector()
+            return
+        next_row = dict(unseen[0])
+        self._recognition_inspector_snapshot.insert(0, next_row)
+        del self._recognition_inspector_snapshot[6:]
+        try:
+            self._recognition_inspector_last_seen_sequence = int(
+                next_row.get("sequence") or self._recognition_inspector_last_seen_sequence
+            )
+        except (TypeError, ValueError):
+            pass
+        self._refresh_recognition_inspector()
+
+    def _on_recognition_inspector_clear(self, _e) -> None:
+        try:
+            self._controller.clear_live_gesture_inspector_history()
+        except Exception as e:
+            self._recognition_inspector_status_text.value = f"clear failed: {e}"
+            self._safe_update_control(self._recognition_inspector_status_text)
+            return
+        self._recognition_inspector_snapshot = []
+        self._recognition_inspector_last_seen_sequence = 0
+        self._refresh_recognition_inspector()
+
+    def _on_recognition_inspector_export(self, fmt: str) -> None:
+        try:
+            path = self._controller.export_live_gesture_inspector_history(fmt)
+        except Exception as e:
+            self._recognition_inspector_status_text.value = f"export failed: {e}"
+            self._recognition_inspector_status_text.color = COLOR_DANGER
+        else:
+            self._recognition_inspector_status_text.value = f"exported {path.name}"
+            self._recognition_inspector_status_text.color = COLOR_SUCCESS
+        self._safe_update_control(self._recognition_inspector_status_text)
+
+    def _recognition_inspector_phase_color(self, phase: str) -> str:
+        clean = str(phase or "").strip().lower()
+        if clean == "confirmed":
+            return COLOR_SUCCESS
+        if clean in {"pending", "suppressed", "cooldown"}:
+            return COLOR_WARNING
+        if clean == "rejected":
+            return COLOR_DANGER
+        return COLOR_MUTED
+
+    def _recognition_inspector_row(self, row: dict) -> ft.Control:
+        data = row if isinstance(row, dict) else {}
+        phase = str(data.get("phase") or "idle").strip()
+        label = str(data.get("label") or "—").strip() or "—"
+        route = str(data.get("route") or "—").strip() or "—"
+        mode = str(data.get("mode") or "—").strip() or "—"
+        model = str(data.get("model") or "—").strip() or "—"
+        reason = str(data.get("reason") or "").strip()
+        confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
+        frames = int(data.get("frames") or 0)
+        required = int(data.get("requiredFrames") or 0)
+        frame_text = f"{frames}/{max(1, required)}" if frames or required else "—"
+        details = [f"{mode}:{route}", model, frame_text]
+        if reason:
+            details.append(reason)
+        color = self._recognition_inspector_phase_color(phase)
+        return ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=9, vertical=7),
+            content=ft.Row(
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Text(
+                        phase,
+                        width=72,
+                        size=11,
+                        weight=ft.FontWeight.W_700,
+                        color=color,
+                        no_wrap=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Column(
+                        spacing=1,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                label,
+                                size=12,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                                no_wrap=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.Text(
+                                " · ".join(details),
+                                size=10,
+                                color=COLOR_MUTED,
+                                no_wrap=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                    ),
+                    ft.Text(
+                        f"{int(round(confidence * 100))}%",
+                        width=38,
+                        size=11,
+                        color=COLOR_MUTED,
+                        text_align=ft.TextAlign.RIGHT,
+                        no_wrap=True,
+                    ),
+                ],
+            ),
+        )
+
     def _activity_row(self, row: dict) -> ft.Control:
         executed = bool(row.get("executed"))
         label = str(row.get("label") or "—")
@@ -689,13 +975,84 @@ class HomeView:
         self._page.run_thread(self._apply_confidence, value)
 
     def _apply_confidence(self, value: float) -> None:
-        self._confidence_bar.value = max(0.0, min(1.0, float(value)))
-        self._confidence_text.value = f"{int(round(value * 100))}%"
+        safe_value = max(0.0, min(1.0, float(value)))
+        if self._gesture_state_phase != "idle" and safe_value <= 0.0:
+            return
+        self._confidence_bar.value = safe_value
+        self._confidence_bar.color = COLOR_ACCENT
+        self._confidence_text.value = f"{int(round(safe_value * 100))}%"
         try:
             self._confidence_bar.update()
             self._confidence_text.update()
         except Exception:
             pass
+
+    def _on_gesture_state(self, payload: dict) -> None:
+        self._page.run_thread(self._apply_gesture_state, payload)
+
+    def _apply_gesture_state(self, payload: dict) -> None:
+        data = payload if isinstance(payload, dict) else {}
+        phase = str(data.get("phase") or "idle")
+        self._gesture_state_phase = phase
+        label = str(data.get("label") or "").strip()
+        reason = str(data.get("reason") or "").strip()
+        confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
+        progress = max(0.0, min(1.0, float(data.get("progress") or 0.0)))
+        frames = int(data.get("frames") or 0)
+        required = int(data.get("requiredFrames") or 0)
+
+        if phase == "pending":
+            self._gesture_text.value = label or "—"
+            self._confidence_bar.value = progress
+            self._confidence_bar.color = COLOR_WARNING
+            self._confidence_text.value = f"{frames}/{max(1, required)} · {int(round(confidence * 100))}%"
+            self._gesture_state_text.value = "подтверждение"
+            self._gesture_state_text.color = COLOR_WARNING
+            self._safe_update_gesture_text()
+        elif phase == "confirmed":
+            self._confidence_bar.value = confidence
+            self._confidence_bar.color = COLOR_SUCCESS
+            self._confidence_text.value = f"{int(round(confidence * 100))}% · готово"
+            self._gesture_state_text.value = "готово"
+            self._gesture_state_text.color = COLOR_SUCCESS
+        elif phase == "rejected":
+            self._gesture_text.value = label or "—"
+            self._confidence_bar.value = 1.0
+            self._confidence_bar.color = COLOR_DANGER
+            self._confidence_text.value = f"{int(round(confidence * 100))}%"
+            self._gesture_state_text.value = reason or "отклонено"
+            self._gesture_state_text.color = COLOR_DANGER
+            self._safe_update_gesture_text()
+        elif phase == "suppressed":
+            self._gesture_text.value = label or "—"
+            self._confidence_bar.value = 1.0
+            self._confidence_bar.color = COLOR_WARNING
+            self._confidence_text.value = f"{int(round(confidence * 100))}%"
+            self._gesture_state_text.value = reason or "подавлено"
+            self._gesture_state_text.color = COLOR_WARNING
+            self._safe_update_gesture_text()
+        elif phase == "cooldown":
+            self._gesture_text.value = label or "—"
+            self._confidence_bar.value = 1.0
+            self._confidence_bar.color = COLOR_WARNING
+            self._confidence_text.value = "cooldown"
+            self._gesture_state_text.value = reason or "cooldown"
+            self._gesture_state_text.color = COLOR_WARNING
+            self._safe_update_gesture_text()
+        else:
+            self._confidence_bar.value = 0.0
+            self._confidence_bar.color = COLOR_ACCENT
+            self._confidence_text.value = "0%"
+            self._gesture_state_text.value = "ожидание"
+            self._gesture_state_text.color = COLOR_MUTED
+
+        try:
+            self._confidence_bar.update()
+            self._confidence_text.update()
+            self._gesture_state_text.update()
+        except Exception:
+            pass
+        self._refresh_recognition_inspector()
 
     def _on_status(self, value: str) -> None:
         self._page.run_thread(self._apply_status, value)
@@ -1139,6 +1496,7 @@ class HomeView:
                         "Live Recognition",
                         trailing=self._confidence_text,
                     ),
+                    self._gesture_state_text,
                     self._gesture_text,
                     self._confidence_bar,
                     ft.Container(
@@ -1167,6 +1525,40 @@ class HomeView:
             radius=8,
         )
         live_panel.width = float("inf")
+
+        inspector_panel = surface_card(
+            ft.Column(
+                spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.QUERY_STATS,
+                        "Recognition Inspector",
+                        color=COLOR_ACCENT,
+                        trailing=ft.Row(
+                            spacing=0,
+                            tight=True,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                self._recognition_inspector_status_text,
+                                self._recognition_inspector_pause_btn,
+                                self._recognition_inspector_step_btn,
+                                self._recognition_inspector_clear_btn,
+                                self._recognition_inspector_export_jsonl_btn,
+                                self._recognition_inspector_export_csv_btn,
+                            ],
+                        ),
+                    ),
+                    ft.Container(
+                        content=self._recognition_inspector_list,
+                        height=162,
+                    ),
+                ],
+            ),
+            padding=10,
+            radius=8,
+        )
+        inspector_panel.width = float("inf")
 
         command_panel = surface_card(
             ft.Column(
@@ -1263,6 +1655,7 @@ class HomeView:
                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                         controls=[
                             live_panel,
+                            inspector_panel,
                             quick_panel,
                             command_panel,
                         ],

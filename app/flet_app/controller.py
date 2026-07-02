@@ -1,5 +1,5 @@
 """
-GUI-агностичный контроллер для Flet-версии DPLM.
+GUI-агностичный контроллер для Flet-версии GestureFlow.
 
 Делает то же, что прежний :class:`app.main.AppController` (PySide6), но без
 зависимостей от Qt: вместо ``Signal/Slot`` — обычные списки коллбэков.
@@ -46,6 +46,10 @@ from app.services.gesture_taxonomy import (
     labels_for_gesture_types,
     load_gesture_taxonomy,
     parse_gesture_type_scope,
+)
+from app.services.live_gesture_state import (
+    LiveGestureSnapshot,
+    LiveGestureState,
 )
 from cv.gesture_dataset_files import (
     augmented_sample_paths,
@@ -304,6 +308,26 @@ DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_RECOGNITION_LONG_WINDOW = 72
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
 LIVE_EVAL_NO_COMMAND_LABEL = "no_command"
+LIVE_GESTURE_IDLE_HOLD_SECONDS = 1.15
+LIVE_GESTURE_INSPECTOR_LIMIT = 64
+LIVE_GESTURE_INSPECTOR_EXPORT_FIELDS = [
+    "sequence",
+    "recordedAt",
+    "phase",
+    "label",
+    "confidence",
+    "progress",
+    "frames",
+    "requiredFrames",
+    "mode",
+    "route",
+    "model",
+    "staticReject",
+    "reason",
+    "displayText",
+]
+SYSTEM_REFERENCE_GESTURE_LABELS: set[str] = set()
+USER_RECORDED_SAMPLE_SOURCES = {"camera", "user", "recording"}
 DYNAMIC_POST_EVENT_SUPPRESS_SECONDS = 0.35
 DYNAMIC_RETURN_SUPPRESS_SECONDS = 1.15
 DYNAMIC_OPPOSITE_LABELS = {
@@ -379,6 +403,7 @@ class AppController:
         command_executed(str)
         recognition_event_recorded()
         confidence_changed(float)
+        gesture_state_changed(dict)  # pending/confirmed/rejected/cooldown UI state
         landmarks_changed(str)       # JSON со списком ландмарок
         gesture_mode_changed(bool)
         pointer_mode_changed(bool)
@@ -421,6 +446,13 @@ class AppController:
         self._pending_label: str = ""
         self._pending_frames: int = 0
         self._pending_confidence_total: float = 0.0
+        self._live_gesture_state = LiveGestureState()
+        self._last_live_gesture_state_payload: dict[str, Any] | None = None
+        self._live_gesture_idle_token: int = 0
+        self._live_gesture_idle_timer: threading.Timer | None = None
+        self._live_gesture_inspector_history: list[dict[str, Any]] = []
+        self._live_gesture_inspector_sequence: int = 0
+        self._last_execute_info: str = ""
         self._dynamic_return_guard: dict[str, Any] = {}
         self._live_evaluation: dict[str, Any] | None = None
         self._last_live_evaluation_snapshot: dict[str, Any] | None = None
@@ -436,6 +468,7 @@ class AppController:
         self.command_executed = _Event()
         self.recognition_event_recorded = _Event()
         self.confidence_changed = _Event()
+        self.gesture_state_changed = _Event()
         self.landmarks_changed = _Event()
         self.gesture_mode_changed = _Event()
         self.pointer_mode_changed = _Event()
@@ -559,6 +592,50 @@ class AppController:
     @property
     def gesture_mode(self) -> bool:
         return self._gesture_mode
+
+    def get_live_gesture_inspector_history(self) -> list[dict[str, Any]]:
+        history = getattr(self, "_live_gesture_inspector_history", [])
+        return [dict(item) for item in list(history)]
+
+    def clear_live_gesture_inspector_history(self) -> None:
+        self._live_gesture_inspector_history = []
+        self._live_gesture_inspector_sequence = 0
+        self._last_live_gesture_state_payload = None
+
+    def export_live_gesture_inspector_history(
+        self,
+        fmt: str = "jsonl",
+        path: str | Path | None = None,
+    ) -> Path:
+        clean_format = str(fmt or "jsonl").strip().lower()
+        if clean_format not in {"jsonl", "csv"}:
+            raise ValueError("fmt must be 'jsonl' or 'csv'")
+
+        target = (
+            Path(path).expanduser()
+            if path is not None
+            else self._configured_log_dir() / f"live_gesture_inspector.{clean_format}"
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        rows = list(reversed(self.get_live_gesture_inspector_history()))
+
+        if clean_format == "jsonl":
+            with target.open("w", encoding="utf-8") as fh:
+                for row in rows:
+                    fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                    fh.write("\n")
+            return target
+
+        with target.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(
+                fh,
+                fieldnames=LIVE_GESTURE_INSPECTOR_EXPORT_FIELDS,
+                extrasaction="ignore",
+            )
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        return target
 
     @property
     def show_landmark_overlay(self) -> bool:
@@ -871,7 +948,7 @@ class AppController:
 
     def _reset_embedded_infer_after_model_change(self) -> None:
         try:
-            self._reset_gesture_confirmation()
+            self._reset_gesture_confirmation(immediate_ui=True)
         except Exception:
             pass
         self._set_confidence(0.0)
@@ -989,10 +1066,141 @@ class AppController:
             self._landmarks_json = value
             self.landmarks_changed.emit(value)
 
-    def _reset_gesture_confirmation(self) -> None:
-        self._pending_label = ""
-        self._pending_frames = 0
-        self._pending_confidence_total = 0.0
+    def _reset_gesture_confirmation(self, *, immediate_ui: bool = False) -> None:
+        snapshot = self._ensure_live_gesture_state().reset()
+        self._sync_live_gesture_pending_fields()
+        self._emit_live_gesture_state(snapshot, immediate_idle=immediate_ui)
+
+    def _ensure_live_gesture_state(self) -> LiveGestureState:
+        state = getattr(self, "_live_gesture_state", None)
+        if state is None:
+            state = LiveGestureState()
+            self._live_gesture_state = state
+        return state
+
+    def _sync_live_gesture_pending_fields(self) -> None:
+        state = self._ensure_live_gesture_state()
+        self._pending_label = state.pending_label
+        self._pending_frames = state.pending_frames
+        self._pending_confidence_total = state.pending_confidence_total
+
+    def _cancel_live_gesture_idle_timer(self) -> None:
+        self._live_gesture_idle_token = int(
+            getattr(self, "_live_gesture_idle_token", 0)
+        ) + 1
+        timer = getattr(self, "_live_gesture_idle_timer", None)
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+        self._live_gesture_idle_timer = None
+
+    def _live_gesture_route_fallback(self) -> str:
+        mode = self.recognition_model_mode
+        if mode == RECOGNITION_MODEL_DYNAMIC:
+            return "dynamic"
+        if mode == RECOGNITION_MODEL_STATIC:
+            return "static"
+        return "auto"
+
+    def _live_gesture_model_label(self, route: str) -> str:
+        clean_route = str(route or "").strip().lower()
+        if clean_route == "dynamic":
+            return self.dynamic_model_profile
+        if clean_route == "static":
+            return f"static:{self.static_rejection_method}"
+        if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
+            return self.dynamic_model_profile
+        if self.recognition_model_mode == RECOGNITION_MODEL_STATIC:
+            return f"static:{self.static_rejection_method}"
+        return self.dynamic_model_profile
+
+    def _enrich_live_gesture_state_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        enriched = dict(payload)
+        route = str(enriched.get("route") or "").strip().lower()
+        if not route:
+            route = self._live_gesture_route_fallback()
+        enriched["route"] = route
+        enriched["mode"] = self.recognition_model_mode
+        enriched["model"] = self._live_gesture_model_label(route)
+        enriched["staticReject"] = self.static_rejection_method
+        return enriched
+
+    def _record_live_gesture_inspector_entry(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        history = getattr(self, "_live_gesture_inspector_history", None)
+        if history is None:
+            history = []
+            self._live_gesture_inspector_history = history
+        sequence = int(getattr(self, "_live_gesture_inspector_sequence", 0)) + 1
+        self._live_gesture_inspector_sequence = sequence
+        entry = dict(payload)
+        entry["sequence"] = sequence
+        entry["recordedAt"] = time.time()
+        history.insert(0, entry)
+        del history[LIVE_GESTURE_INSPECTOR_LIMIT:]
+        return entry
+
+    def _publish_live_gesture_state_payload(self, payload: dict[str, Any]) -> None:
+        if payload == getattr(self, "_last_live_gesture_state_payload", None):
+            return
+        self._last_live_gesture_state_payload = payload
+        event_payload = self._record_live_gesture_inspector_entry(payload)
+        event = getattr(self, "gesture_state_changed", None)
+        if event is not None:
+            try:
+                event.emit(event_payload)
+            except Exception:
+                pass
+
+    def _schedule_live_gesture_idle(self, payload: dict[str, Any]) -> None:
+        self._cancel_live_gesture_idle_timer()
+        token = int(getattr(self, "_live_gesture_idle_token", 0))
+
+        def publish_later() -> None:
+            if int(getattr(self, "_live_gesture_idle_token", 0)) != token:
+                return
+            self._live_gesture_idle_timer = None
+            self._publish_live_gesture_state_payload(payload)
+
+        timer = threading.Timer(LIVE_GESTURE_IDLE_HOLD_SECONDS, publish_later)
+        timer.daemon = True
+        self._live_gesture_idle_timer = timer
+        timer.start()
+
+    def _emit_live_gesture_state(
+        self,
+        snapshot: LiveGestureSnapshot,
+        *,
+        immediate_idle: bool = False,
+    ) -> None:
+        self._sync_live_gesture_pending_fields()
+        payload = self._enrich_live_gesture_state_payload(snapshot.as_dict())
+        phase = str(payload.get("phase") or "")
+        if phase != "idle":
+            self._cancel_live_gesture_idle_timer()
+            self._publish_live_gesture_state_payload(payload)
+            return
+
+        previous = getattr(self, "_last_live_gesture_state_payload", None) or {}
+        previous_phase = str(previous.get("phase") or "")
+        if (
+            not immediate_idle
+            and previous_phase
+            and previous_phase != "idle"
+            and LIVE_GESTURE_IDLE_HOLD_SECONDS > 0
+        ):
+            self._schedule_live_gesture_idle(payload)
+            return
+
+        self._cancel_live_gesture_idle_timer()
+        self._publish_live_gesture_state_payload(payload)
 
     def _is_no_command_label(self, label: str) -> bool:
         return str(label or "").strip().lower() == LIVE_EVAL_NO_COMMAND_LABEL
@@ -1026,24 +1234,30 @@ class AppController:
                 print(f"[w] dynamic confirmation taxonomy: {e}", flush=True)
         return GESTURE_CONFIRM_FRAMES
 
-    def _update_gesture_confirmation(self, label: str, confidence: float) -> tuple[bool, float]:
+    def _update_gesture_confirmation(
+        self,
+        label: str,
+        confidence: float,
+        route_metadata: dict[str, Any] | None = None,
+    ) -> tuple[bool, float]:
         clean = (label or "").strip()
         if not clean:
             self._reset_gesture_confirmation()
             return False, 0.0
 
-        if clean != getattr(self, "_pending_label", ""):
-            self._pending_label = clean
-            self._pending_frames = 1
-            self._pending_confidence_total = float(confidence)
-        else:
-            self._pending_frames = int(getattr(self, "_pending_frames", 0)) + 1
-            self._pending_confidence_total = float(
-                getattr(self, "_pending_confidence_total", 0.0)
-            ) + float(confidence)
-
-        avg_conf = self._pending_confidence_total / max(1, self._pending_frames)
-        return self._pending_frames >= self._gesture_confirm_frames(clean), avg_conf
+        metadata = route_metadata or {}
+        route = str(metadata.get("route") or "")
+        reason = str(metadata.get("selected_reason") or "")
+        state = self._ensure_live_gesture_state()
+        confirmed, avg_conf, snapshot = state.observe(
+            clean,
+            confidence,
+            required_frames=self._gesture_confirm_frames(clean),
+            route=route,
+            reason=reason,
+        )
+        self._emit_live_gesture_state(snapshot)
+        return confirmed, avg_conf
 
     def _dynamic_return_guard_active(
         self,
@@ -1276,7 +1490,7 @@ class AppController:
 
         if self._auto_execute_on_gesture:
             self._auto_execute_on_gesture = False
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._last_label = ""
         self._emit_live_evaluation_changed(session, message=session["message"])
         self._set_status(f"Live eval: {clean} 1/{target_attempts}")
@@ -4060,11 +4274,16 @@ class AppController:
                 self._last_label = ""
                 self.gesture_detected.emit("")
             return
-        confirmed, stable_conf = self._update_gesture_confirmation(label, conf)
+        confirmed, stable_conf = self._update_gesture_confirmation(
+            label,
+            conf,
+            route_metadata=route_metadata,
+        )
         if not confirmed:
             return
         if label and label != self._last_label:
             evaluation_active = self.live_evaluation_active()
+            route = str(route_metadata.get("route") or "")
             if self._is_negative_label(label):
                 self._consume_live_evaluation_prediction(
                     label,
@@ -4072,6 +4291,14 @@ class AppController:
                     route_metadata=route_metadata,
                 )
                 self._last_label = label
+                self._emit_live_gesture_state(
+                    self._ensure_live_gesture_state().mark_rejected(
+                        label,
+                        stable_conf,
+                        reason="negative_label",
+                        route=route,
+                    )
+                )
                 self._set_status(f"Rejected gesture evidence: {label}")
                 self._record_recognition_event(label, stable_conf, False)
                 return
@@ -4083,6 +4310,14 @@ class AppController:
             if suppressed_reason:
                 self._last_label = label
                 self._reset_gesture_confirmation()
+                self._emit_live_gesture_state(
+                    self._ensure_live_gesture_state().mark_suppressed(
+                        label,
+                        stable_conf,
+                        reason=suppressed_reason,
+                        route=route,
+                    )
+                )
                 print(
                     f"[ctrl.gesture] suppressed={label!r} "
                     f"reason={suppressed_reason}",
@@ -4118,6 +4353,21 @@ class AppController:
             # диплома.
             if self._auto_execute_on_gesture and not evaluation_active:
                 executed = self.execute_for_gesture(label, stable_conf)
+                if not executed:
+                    info = str(getattr(self, "_last_execute_info", "") or "")
+                    marker = (
+                        self._ensure_live_gesture_state().mark_cooldown
+                        if info == "cooldown"
+                        else self._ensure_live_gesture_state().mark_rejected
+                    )
+                    self._emit_live_gesture_state(
+                        marker(
+                            label,
+                            stable_conf,
+                            reason=info or "command_not_executed",
+                            route=route,
+                        )
+                    )
             else:
                 executed = False
                 reason = (
@@ -4377,7 +4627,7 @@ class AppController:
         self._embedded_infer = None
         self._embedded_active = True
         self._last_label = ""
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._set_confidence(0.0)
         self._set_landmarks("[]")
         if not self._is_camera_active:
@@ -4391,7 +4641,7 @@ class AppController:
             return
         self._embedded_active = False
         self._last_label = ""
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._reset_pointer_control()
         self._set_confidence(0.0)
         self._set_landmarks("[]")
@@ -4532,7 +4782,7 @@ class AppController:
             return
 
         self._recognition_model_mode = target
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._set_confidence(0.0)
         if self._last_label:
             self._last_label = ""
@@ -4560,7 +4810,7 @@ class AppController:
             return
 
         self._dynamic_model_profile = target
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._set_confidence(0.0)
         if self._last_label:
             self._last_label = ""
@@ -4588,7 +4838,7 @@ class AppController:
             return
 
         self._static_rejection_method = target
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         self._set_confidence(0.0)
         if self._last_label:
             self._last_label = ""
@@ -4622,7 +4872,7 @@ class AppController:
         if target == self._gesture_mode:
             return
         self._gesture_mode = target
-        self._reset_gesture_confirmation()
+        self._reset_gesture_confirmation(immediate_ui=True)
         if not target:
             self._set_confidence(0.0)
             if self._last_label:
@@ -4860,6 +5110,7 @@ class AppController:
         bridge = self._ensure_db_bridge()
         if bridge is None:
             print(f"[ctrl.exec] {gesture_label!r}: BRIDGE_UNAVAILABLE", flush=True)
+            self._last_execute_info = "bridge_unavailable"
             return False
         try:
             ok, info = bridge.execute(
@@ -4870,7 +5121,9 @@ class AppController:
             )
         except Exception as e:
             print(f"[!] execute_for_gesture {gesture_label!r}: {e}", flush=True)
+            self._last_execute_info = str(e)
             return False
+        self._last_execute_info = str(info or "")
         print(
             f"[ctrl.exec] {gesture_label!r} conf={confidence:.3f} -> ok={ok} info={info!r}",
             flush=True,
@@ -4966,7 +5219,6 @@ class AppController:
 
             static_classes = _read_classes(self._configured_classes_path())
             dynamic_classes = _read_classes(self._dynamic_classes_path())
-            trained_classes = static_classes | dynamic_classes
             rows = (
                 session.query(DbGesture)
                 .filter(DbGesture.is_active.is_(True))
@@ -4981,24 +5233,39 @@ class AppController:
             }
             out: list[dict[str, Any]] = []
             for g in rows:
+                samples = list(getattr(g, "samples", []) or [])
+                user_samples = [
+                    sample
+                    for sample in samples
+                    if self._db_sample_is_user_recorded(sample)
+                ]
                 try:
-                    sample_count = len(getattr(g, "samples", []) or [])
+                    sample_count = len(user_samples)
                 except Exception:
                     sample_count = 0
-                clean_label = str(getattr(g, "label", "") or "").strip().lower()
                 samples_path = str(getattr(g, "samples_path", "") or "").strip()
-                has_dataset_path = False
+                preview_path = ""
+                if user_samples:
+                    preview_path = str(
+                        getattr(user_samples[0], "features_path", "") or ""
+                    )
+                legacy_user_samples: list[Path] = []
                 if samples_path:
                     try:
-                        has_dataset_path = self._configured_path(samples_path).exists()
+                        sample_dir = self._configured_path(samples_path)
+                        if sample_count <= 0:
+                            legacy_user_samples = (
+                                self._legacy_user_sample_paths_for_gesture(
+                                    g,
+                                    sample_dir,
+                                )
+                            )
+                            sample_count = len(legacy_user_samples)
+                        if not preview_path and legacy_user_samples:
+                            preview_path = str(legacy_user_samples[0])
                     except Exception:
-                        has_dataset_path = bool(samples_path)
-                if (
-                    getattr(g, "model_class_id", None) is None
-                    and clean_label not in trained_classes
-                    and sample_count <= 0
-                    and not has_dataset_path
-                ):
+                        pass
+                if sample_count <= 0:
                     continue
                 command = current.get(g.id)
                 action_spec: dict[str, Any] = {}
@@ -5020,6 +5287,7 @@ class AppController:
                         "label": str(g.label or ""),
                         "description": str(g.description or ""),
                         "samplesPath": str(getattr(g, "samples_path", "") or ""),
+                        "samplePreviewPath": preview_path,
                         "sampleCount": int(sample_count),
                         "gestureType": (
                             GESTURE_TYPE_DYNAMIC
@@ -5045,6 +5313,102 @@ class AppController:
             return out
         finally:
             session.close()
+
+    def _is_auto_imported_gesture(self, gesture: Any) -> bool:
+        description = str(getattr(gesture, "description", "") or "").strip()
+        return description.startswith("Auto-imported from ")
+
+    def _is_system_internal_gesture_label(self, label: str) -> bool:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return True
+        if clean in SYSTEM_REFERENCE_GESTURE_LABELS:
+            return True
+        if self._is_no_command_label(clean):
+            return True
+        try:
+            if self._is_negative_label(clean):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _db_sample_path(self, sample: Any) -> Path | None:
+        raw = str(getattr(sample, "features_path", "") or "").strip()
+        if not raw:
+            return None
+        try:
+            return self._configured_path(raw)
+        except Exception:
+            path = Path(raw).expanduser()
+            if path.is_absolute():
+                return path
+            return Path.cwd() / path
+
+    def _sample_metadata(self, sample_path: Path) -> dict[str, Any]:
+        meta_path = sample_path.with_suffix(".meta.json")
+        if not meta_path.exists():
+            return {}
+        try:
+            raw = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _sample_source_for_db(self, sample_path: Path) -> str:
+        metadata = self._sample_metadata(sample_path)
+        source = str(metadata.get("source") or "").strip().lower()
+        if source:
+            return source[:32]
+        return sample_source_from_path(sample_path)
+
+    def _sample_path_is_legacy_user_recorded(self, sample_path: Path) -> bool:
+        if sample_path.name.startswith("sample_auto_"):
+            return False
+        metadata = self._sample_metadata(sample_path)
+        if str(metadata.get("generated_by") or "").strip():
+            return False
+        source = str(metadata.get("source") or "").strip().lower()
+        if source and source not in USER_RECORDED_SAMPLE_SOURCES:
+            return False
+        return True
+
+    def _user_recorded_sample_paths_for_label(
+        self,
+        label: str,
+        sample_dir: Path,
+    ) -> list[Path]:
+        if self._is_system_internal_gesture_label(label):
+            return []
+        return [
+            path
+            for path in real_sample_paths(sample_dir)
+            if self._sample_path_is_legacy_user_recorded(path)
+        ]
+
+    def _legacy_user_sample_paths_for_gesture(
+        self,
+        gesture: Any,
+        sample_dir: Path,
+    ) -> list[Path]:
+        label = str(getattr(gesture, "label", "") or "")
+        return self._user_recorded_sample_paths_for_label(label, sample_dir)
+
+    def _db_sample_is_user_recorded(self, sample: Any) -> bool:
+        source = str(getattr(sample, "source", "") or "").strip().lower()
+        if source in USER_RECORDED_SAMPLE_SOURCES:
+            return True
+        sample_path = self._db_sample_path(sample)
+        if sample_path is None:
+            return False
+        metadata = self._sample_metadata(sample_path)
+        metadata_source = str(metadata.get("source") or "").strip().lower()
+        kind = str(metadata.get("kind") or "real").strip().lower()
+        if metadata_source in USER_RECORDED_SAMPLE_SOURCES and kind in {"", "real"}:
+            return True
+        if not source and self._sample_path_is_legacy_user_recorded(sample_path):
+            return True
+        return False
 
     def get_action_categories(self) -> list[dict[str, str]]:
         if not BINDING_SERVICES_AVAILABLE:
@@ -5358,6 +5722,21 @@ class AppController:
 
                 _, first_hand_count = sample_shape_metadata(samples[0])
                 is_two_hands = first_hand_count >= 2 if first_hand_count is not None else None
+                is_system_label = self._is_system_internal_gesture_label(label)
+                sample_sources: list[str] = []
+                for sample_path in samples:
+                    source = self._sample_source_for_db(sample_path)
+                    if (
+                        source == "dataset"
+                        and not is_system_label
+                        and self._sample_path_is_legacy_user_recorded(sample_path)
+                    ):
+                        source = "user"
+                    sample_sources.append(source)
+                has_user_recorded_samples = any(
+                    source in {"camera", "user", "recording"}
+                    for source in sample_sources
+                )
                 gesture = ensure_gesture(
                     session,
                     label=label,
@@ -5366,12 +5745,18 @@ class AppController:
                     is_two_hands=is_two_hands,
                     commit=False,
                 )
-                gesture.description = gesture.description or f"Auto-imported from {label_dir}"
+                if has_user_recorded_samples:
+                    if self._is_auto_imported_gesture(gesture):
+                        gesture.description = ""
+                else:
+                    gesture.description = (
+                        gesture.description or f"Auto-imported from {label_dir}"
+                    )
                 if classes_path.exists():
                     gesture.model_class_id = model_class_id
                 gesture.is_active = True
 
-                for sample_path in samples:
+                for sample_path, sample_source in zip(samples, sample_sources):
                     frames, hand_count = sample_shape_metadata(sample_path)
                     record_gesture_sample(
                         session,
@@ -5380,7 +5765,7 @@ class AppController:
                         features_path=sample_path,
                         frames=frames,
                         hand_count=hand_count,
-                        source=sample_source_from_path(sample_path),
+                        source=sample_source,
                         samples_path=label_dir,
                         is_two_hands=is_two_hands,
                         commit=False,
@@ -5411,12 +5796,26 @@ class AppController:
             augmented_samples = augmented_sample_paths(label_dir)
             if not real_samples:
                 continue
+            user_recorded_samples = self._user_recorded_sample_paths_for_label(
+                label_dir.name,
+                label_dir,
+            )
+            can_delete = bool(user_recorded_samples)
+            delete_reason = (
+                ""
+                if can_delete
+                else "Можно удалять только классы, записанные пользователем"
+            )
             out.append(
                 {
                     "label": label_dir.name,
                     "samples": len(real_samples),
                     "realSamples": len(real_samples),
                     "augmentedSamples": len(augmented_samples),
+                    "userRecordedSamples": len(user_recorded_samples),
+                    "canDelete": can_delete,
+                    "deleteReason": delete_reason,
+                    "systemClass": self._is_system_internal_gesture_label(label_dir.name),
                 }
             )
         return out
@@ -5469,7 +5868,11 @@ class AppController:
 
         data_root = self._configured_data_dir()
         label_dir = self._label_dir_for_dataset_label(raw_label)
-        file_paths: set[Path] = set(gesture_sample_paths(label_dir)) if label_dir else set()
+        file_paths: set[Path] = (
+            set(self._user_recorded_sample_paths_for_label(raw_label, label_dir))
+            if label_dir
+            else set()
+        )
 
         try:
             if not self._db_initialized:
@@ -5491,37 +5894,34 @@ class AppController:
                 )
 
             sample_rows: list[Any] = []
+            user_sample_rows: list[Any] = []
             if gesture is not None:
                 sample_rows = (
                     session.query(DbGestureSample)
                     .filter(DbGestureSample.gesture_id == gesture.id)
                     .all()
                 )
+                if not self._is_system_internal_gesture_label(str(gesture.label or "")):
+                    user_sample_rows = [
+                        sample
+                        for sample in sample_rows
+                        if self._db_sample_is_user_recorded(sample)
+                    ]
                 if resolve_project_path is not None:
-                    for sample in sample_rows:
+                    for sample in user_sample_rows:
                         stored_path = (sample.features_path or "").strip()
                         if stored_path:
                             file_paths.add(resolve_project_path(stored_path))
 
-                for sample in sample_rows:
+                for sample in user_sample_rows:
                     session.delete(sample)
 
-                commands = (
-                    session.query(DbCommand)
-                    .filter(DbCommand.gesture_id == gesture.id)
-                    .all()
-                )
-                for command in commands:
-                    command.gesture_id = None
+                summary["sampleRowsDeleted"] = len(user_sample_rows)
 
-                gesture.model_class_id = None
-                gesture.accuracy = None
-                gesture.is_active = False
-                if label_dir is not None:
-                    gesture.samples_path = str(label_dir)
-
-                summary["sampleRowsDeleted"] = len(sample_rows)
-                summary["commandsUnbound"] = len(commands)
+            if not file_paths and not user_sample_rows:
+                summary["error"] = "Можно удалять только классы, записанные пользователем"
+                session.rollback()
+                return summary
 
             deleted_files = 0
             for sample_file in sorted(file_paths):
@@ -5537,6 +5937,31 @@ class AppController:
                     session.rollback()
                     summary["error"] = f"Не удалось удалить файл {sample_file}: {e}"
                     return summary
+
+            if gesture is not None:
+                user_sample_set = set(user_sample_rows)
+                protected_rows = [
+                    sample for sample in sample_rows if sample not in user_sample_set
+                ]
+                protected_files = set()
+                if label_dir is not None:
+                    protected_files = set(gesture_sample_paths(label_dir)) - file_paths
+                if not protected_rows and not protected_files:
+                    commands = (
+                        session.query(DbCommand)
+                        .filter(DbCommand.gesture_id == gesture.id)
+                        .all()
+                    )
+                    for command in commands:
+                        command.gesture_id = None
+
+                    gesture.model_class_id = None
+                    gesture.accuracy = None
+                    gesture.is_active = False
+                    if label_dir is not None:
+                        gesture.samples_path = str(label_dir)
+
+                    summary["commandsUnbound"] = len(commands)
 
             if label_dir is not None:
                 try:

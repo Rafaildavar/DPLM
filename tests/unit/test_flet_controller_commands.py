@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import csv
 import json
 import os
 import sys
@@ -26,6 +27,7 @@ from app.flet_app.controller import (
 )
 from app.models.database import Base, Command, Gesture, GestureHistory, GestureSample
 from app.services.app_config import AppConfig, ConfigStore
+from app.services.live_gesture_state import LiveGestureState
 
 
 def _dispatch_controller():
@@ -36,6 +38,11 @@ def _dispatch_controller():
     controller._pending_label = ""
     controller._pending_frames = 0
     controller._pending_confidence_total = 0.0
+    controller._live_gesture_state = LiveGestureState()
+    controller._last_live_gesture_state_payload = None
+    controller._live_gesture_inspector_history = []
+    controller._live_gesture_inspector_sequence = 0
+    controller._last_execute_info = ""
     controller._dynamic_return_guard = {}
     controller._live_evaluation = None
     controller._last_live_evaluation_snapshot = None
@@ -48,6 +55,7 @@ def _dispatch_controller():
     controller._auto_execute_on_gesture = True
     controller._status = "Idle"
     controller.confidence_changed = _Event()
+    controller.gesture_state_changed = _Event()
     controller.landmarks_changed = _Event()
     controller.gesture_detected = _Event()
     controller.gesture_mode_changed = _Event()
@@ -683,7 +691,10 @@ def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp
         gesture = session.query(Gesture).filter_by(label="ctrlz").one()
         assert gesture.model_class_id is None
         assert gesture.samples_path.endswith("CTRLZ")
-        assert session.query(GestureSample).filter_by(gesture_id=gesture.id).count() == 3
+        samples = session.query(GestureSample).filter_by(gesture_id=gesture.id).all()
+        assert len(samples) == 3
+        assert {sample.source for sample in samples} == {"user"}
+        assert gesture.description in {None, ""}
 
     classes_path.write_text(json.dumps(["ctrlz"]))
 
@@ -747,6 +758,216 @@ def test_get_db_gestures_shows_recorded_untrained_samples(monkeypatch, tmp_path)
     assert rows[0]["sampleCount"] == 1
 
 
+def test_get_db_gestures_hides_auto_imported_negative_dataset_classes(
+    monkeypatch,
+    tmp_path,
+):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "wrong_axis_motion"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 44), dtype=np.float32))
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps(["wrong_axis_motion"]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps(["wrong_axis_motion"]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label="wrong_axis_motion",
+            description=f"Auto-imported from {label_dir}",
+            samples_path=str(label_dir),
+            model_class_id=0,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+                source="dataset",
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    assert controller.get_db_gestures() == []
+
+
+def test_get_db_gestures_shows_legacy_auto_imported_user_recordings(
+    monkeypatch,
+    tmp_path,
+):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "CTRLZ"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 21, 2), dtype=np.float32))
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps(["ctrlz"]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps([]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label="ctrlz",
+            description=f"Auto-imported from {label_dir}",
+            samples_path=str(label_dir),
+            model_class_id=0,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+                source="dataset",
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    rows = controller.get_db_gestures()
+
+    assert [row["label"] for row in rows] == ["ctrlz"]
+    assert rows[0]["sampleCount"] == 1
+    assert rows[0]["samplePreviewPath"].endswith("sample_0000.npy")
+
+
+def test_get_db_gestures_shows_legacy_auto_imported_dynamic_recordings(
+    monkeypatch,
+    tmp_path,
+):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "swipe_up"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 44), dtype=np.float32))
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps(["swipe_up"]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps(["swipe_up"]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label="swipe_up",
+            description=f"Auto-imported from {label_dir}",
+            samples_path=str(label_dir),
+            model_class_id=0,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+                source="dataset",
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    rows = controller.get_db_gestures()
+
+    assert [row["label"] for row in rows] == ["swipe_up"]
+    assert rows[0]["sampleCount"] == 1
+    assert rows[0]["gestureType"] == "dynamic"
+    assert rows[0]["samplePreviewPath"].endswith("sample_0000.npy")
+
+
+def test_sync_dataset_to_db_keeps_camera_source_from_metadata(monkeypatch, tmp_path):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "Wave"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 21, 2), dtype=np.float32))
+    sample_path.with_suffix(".meta.json").write_text(
+        json.dumps({"source": "camera", "kind": "real"}),
+        encoding="utf-8",
+    )
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps([]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps([]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    controller.sync_dataset_to_db()
+
+    with SessionLocal() as session:
+        gesture = session.query(Gesture).filter_by(label="wave").one()
+        sample = session.query(GestureSample).filter_by(gesture_id=gesture.id).one()
+        assert sample.source == "camera"
+        assert gesture.description in {None, ""}
+
+    rows = controller.get_db_gestures()
+
+    assert [row["label"] for row in rows] == ["wave"]
+    assert rows[0]["sampleCount"] == 1
+    assert rows[0]["samplePreviewPath"].endswith("sample_0000.npy")
+
+
 def test_list_recorded_gestures_hides_empty_folders(monkeypatch, tmp_path):
     data_root = tmp_path / "gestures"
     empty_dir = data_root / "EMPTY"
@@ -765,8 +986,53 @@ def test_list_recorded_gestures_hides_empty_folders(monkeypatch, tmp_path):
             "samples": 1,
             "realSamples": 1,
             "augmentedSamples": 0,
+            "userRecordedSamples": 1,
+            "canDelete": True,
+            "deleteReason": "",
+            "systemClass": False,
         }
     ]
+
+
+def test_list_recorded_gestures_marks_only_user_classes_deletable(monkeypatch, tmp_path):
+    data_root = tmp_path / "gestures"
+    user_dir = data_root / "USER_WAVE"
+    system_dir = data_root / LIVE_EVAL_NO_COMMAND_LABEL
+    imported_dir = data_root / "IMPORTED"
+    user_dir.mkdir(parents=True)
+    system_dir.mkdir(parents=True)
+    imported_dir.mkdir(parents=True)
+
+    user_sample = user_dir / "sample_0000.npy"
+    system_sample = system_dir / "sample_0000.npy"
+    imported_sample = imported_dir / "sample_0000.npy"
+    np.save(user_sample, np.zeros((30, 21, 2), dtype=np.float32))
+    np.save(system_sample, np.zeros((30, 21, 2), dtype=np.float32))
+    np.save(imported_sample, np.zeros((30, 21, 2), dtype=np.float32))
+    user_sample.with_suffix(".meta.json").write_text(
+        json.dumps({"source": "camera", "kind": "real"}),
+        encoding="utf-8",
+    )
+    system_sample.with_suffix(".meta.json").write_text(
+        json.dumps({"source": "camera", "kind": "real"}),
+        encoding="utf-8",
+    )
+    imported_sample.with_suffix(".meta.json").write_text(
+        json.dumps({"source": "dataset", "kind": "real"}),
+        encoding="utf-8",
+    )
+
+    controller = AppController.__new__(AppController)
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
+
+    rows = {row["label"]: row for row in controller.list_recorded_gestures()}
+
+    assert rows["USER_WAVE"]["canDelete"] is True
+    assert rows["USER_WAVE"]["userRecordedSamples"] == 1
+    assert rows[LIVE_EVAL_NO_COMMAND_LABEL]["canDelete"] is False
+    assert rows[LIVE_EVAL_NO_COMMAND_LABEL]["systemClass"] is True
+    assert rows["IMPORTED"]["canDelete"] is False
+    assert rows["IMPORTED"]["userRecordedSamples"] == 0
 
 
 def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
@@ -1150,6 +1416,59 @@ def test_delete_recorded_samples_removes_files_and_deactivates_gesture(monkeypat
         assert session.query(Command).filter_by(name="Undo").one().gesture_id is None
 
 
+def test_delete_recorded_samples_rejects_system_classes(monkeypatch, tmp_path):
+    import app.flet_app.controller as controller_module
+
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / LIVE_EVAL_NO_COMMAND_LABEL
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 21, 2), dtype=np.float32))
+    sample_path.with_suffix(".meta.json").write_text(
+        json.dumps({"source": "camera", "kind": "real"}),
+        encoding="utf-8",
+    )
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label=LIVE_EVAL_NO_COMMAND_LABEL,
+            samples_path=str(label_dir),
+            model_class_id=0,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+                source="camera",
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    summary = controller.delete_recorded_samples(LIVE_EVAL_NO_COMMAND_LABEL)
+
+    assert summary["ok"] is False
+    assert "записанные пользователем" in summary["error"]
+    assert sample_path.exists()
+    with SessionLocal() as session:
+        gesture = session.query(Gesture).filter_by(label=LIVE_EVAL_NO_COMMAND_LABEL).one()
+        assert gesture.is_active is True
+        assert session.query(GestureSample).count() == 1
+
+
 def test_delete_db_command_removes_history_and_executor_entry(monkeypatch):
     import app.flet_app.controller as controller_module
 
@@ -1257,7 +1576,9 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
     emitted = []
     executed = []
     recorded = []
+    states = []
     controller.gesture_detected.connect(emitted.append)
+    controller.gesture_state_changed.connect(states.append)
     controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
     controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
 
@@ -1269,6 +1590,9 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
     assert emitted == []
     assert executed == []
     assert recorded == []
+    assert states[-1]["phase"] == "pending"
+    assert states[-1]["frames"] == GESTURE_CONFIRM_FRAMES - 1
+    assert states[-1]["progress"] < 1.0
 
     controller._dispatch_infer_result(
         {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
@@ -1277,6 +1601,9 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
     assert emitted == ["new"]
     assert executed == [("new", pytest.approx(0.8))]
     assert recorded == [("new", pytest.approx(0.8), True)]
+    assert states[-1]["phase"] == "confirmed"
+    assert states[-1]["label"] == "new"
+    assert states[-1]["progress"] == 1.0
 
     controller._dispatch_infer_result(
         {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
@@ -1364,7 +1691,9 @@ def test_dispatch_treats_negative_label_as_rejection_not_command():
     emitted = []
     executed = []
     recorded = []
+    states = []
     controller.gesture_detected.connect(emitted.append)
+    controller.gesture_state_changed.connect(states.append)
     controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
     controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
 
@@ -1381,6 +1710,172 @@ def test_dispatch_treats_negative_label_as_rejection_not_command():
     assert executed == []
     assert recorded == [("random_motion", pytest.approx(0.95), False)]
     assert controller._status == "Rejected gesture evidence: random_motion"
+    assert states[-1]["phase"] == "rejected"
+    assert states[-1]["reason"] == "negative_label"
+
+
+def test_dispatch_emits_cooldown_state_when_binding_policy_rejects():
+    controller = _dispatch_controller()
+    states = []
+    controller.gesture_state_changed.connect(states.append)
+
+    def reject_for_cooldown(_label, _conf):
+        controller._last_execute_info = "cooldown"
+        return False
+
+    controller.execute_for_gesture = reject_for_cooldown
+    controller._record_recognition_event = lambda *_args: None
+
+    for _ in range(GESTURE_CONFIRM_FRAMES):
+        controller._dispatch_infer_result(
+            {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
+        )
+
+    assert states[-1]["phase"] == "cooldown"
+    assert states[-1]["label"] == "new"
+    assert states[-1]["reason"] == "cooldown"
+
+
+def test_dispatch_holds_live_state_when_prediction_briefly_disappears(monkeypatch):
+    from app.flet_app import controller as controller_module
+
+    timers = []
+
+    class FakeTimer:
+        def __init__(self, delay, callback):
+            self.delay = delay
+            self.callback = callback
+            self.cancelled = False
+            self.started = False
+            self.daemon = False
+            timers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr(controller_module.threading, "Timer", FakeTimer)
+
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    states = []
+    controller.gesture_state_changed.connect(states.append)
+    controller.execute_for_gesture = lambda *_args: True
+    controller._record_recognition_event = lambda *_args: None
+
+    controller._dispatch_infer_result(
+        {"label": "hand_left", "confidence": 0.9, "landmarks_json": "[]"}
+    )
+
+    assert states[-1]["phase"] == "confirmed"
+
+    controller._dispatch_infer_result(
+        {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
+    )
+
+    assert states[-1]["phase"] == "confirmed"
+    assert timers[-1].delay == pytest.approx(
+        controller_module.LIVE_GESTURE_IDLE_HOLD_SECONDS
+    )
+    assert timers[-1].started is True
+
+    timers[-1].callback()
+
+    assert states[-1]["phase"] == "idle"
+
+
+def test_dispatch_populates_live_recognition_inspector_history():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    states = []
+    controller.gesture_state_changed.connect(states.append)
+    controller.execute_for_gesture = lambda *_args: True
+    controller._record_recognition_event = lambda *_args: None
+
+    controller._dispatch_infer_result(
+        {
+            "label": "hand_left",
+            "confidence": 0.9,
+            "landmarks_json": "[]",
+            "router": {
+                "route": "dynamic",
+                "selected_reason": "dynamic_accepted",
+            },
+        }
+    )
+
+    assert states[-1]["phase"] == "confirmed"
+    assert states[-1]["mode"] == "dynamic"
+    assert states[-1]["route"] == "dynamic"
+    assert states[-1]["model"] == DYNAMIC_MODEL_PROFILE_PRODUCTION
+    assert states[-1]["reason"] == "dynamic_accepted"
+    assert states[-1]["sequence"] == 1
+
+    history = controller.get_live_gesture_inspector_history()
+
+    assert len(history) == 1
+    assert history[0]["label"] == "hand_left"
+    assert history[0]["model"] == DYNAMIC_MODEL_PROFILE_PRODUCTION
+    assert history[0]["recordedAt"] > 0
+
+
+def test_live_recognition_inspector_history_exports_jsonl_and_csv(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._live_gesture_inspector_history = [
+        {
+            "sequence": 2,
+            "recordedAt": 2.0,
+            "phase": "confirmed",
+            "label": "swipe_down",
+            "confidence": 0.9,
+            "progress": 1.0,
+            "frames": 1,
+            "requiredFrames": 1,
+            "mode": "auto",
+            "route": "dynamic",
+            "model": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+            "staticReject": "open_set_policy",
+            "reason": "dynamic_accepted",
+            "displayText": "swipe_down",
+        },
+        {
+            "sequence": 1,
+            "recordedAt": 1.0,
+            "phase": "pending",
+            "label": "swipe_down",
+            "confidence": 0.7,
+            "progress": 0.5,
+            "frames": 1,
+            "requiredFrames": 2,
+            "mode": "auto",
+            "route": "dynamic",
+            "model": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+            "staticReject": "open_set_policy",
+            "reason": "dynamic_pending",
+            "displayText": "swipe_down 1/2",
+        },
+    ]
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    jsonl_path = controller.export_live_gesture_inspector_history("jsonl")
+    csv_path = controller.export_live_gesture_inspector_history("csv")
+
+    json_rows = [
+        json.loads(line)
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+    ]
+    with csv_path.open(encoding="utf-8", newline="") as fh:
+        csv_rows = list(csv.DictReader(fh))
+
+    assert [row["sequence"] for row in json_rows] == [1, 2]
+    assert [int(row["sequence"]) for row in csv_rows] == [1, 2]
+    assert csv_rows[-1]["model"] == DYNAMIC_MODEL_PROFILE_PRODUCTION
+
+    controller.clear_live_gesture_inspector_history()
+
+    assert controller.get_live_gesture_inspector_history() == []
 
 
 def test_confirmed_dynamic_event_is_acknowledged_without_full_reset():
