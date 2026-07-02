@@ -11,6 +11,7 @@ from cv.dynamic_prototype import (
 from scripts.dynamic_prototype_experiments import (
     _copy_base_dynamic_artifacts,
     _write_dynamic_prototype_artifact_bundle,
+    evaluate_model,
     filter_conflicting_external_negatives,
 )
 
@@ -86,6 +87,46 @@ def test_prototype_distance_accepts_positive_and_rejects_negative():
     assert accepted["label"] == "swipe_left"
     assert rejected["accepted"] is False
     assert rejected["reason"] in {"nearest_negative", "far_from_prototype"}
+
+
+def test_prototype_labels_are_normalized_for_lowercase_dynamic_models():
+    payload = fit_dynamic_prototype_model(
+        [
+            DynamicSequenceRecord("UpAndLeft", _left_sequence(14)),
+            DynamicSequenceRecord("UpAndLeft", _left_sequence(22)),
+            DynamicSequenceRecord("random_motion", _right_sequence(), is_negative=True),
+        ],
+        method=METHOD_PROTOTYPE_DISTANCE,
+        threshold_floor=0.001,
+    )
+
+    decision = predict_dynamic_prototype(payload, _left_sequence(18))
+
+    assert payload["positive_labels"] == ["upandleft"]
+    assert decision["accepted"] is True
+    assert decision["label"] == "upandleft"
+
+
+def test_dynamic_prototype_evaluation_compares_labels_case_insensitively():
+    payload = fit_dynamic_prototype_model(
+        [
+            DynamicSequenceRecord("UpAndLeft", _left_sequence(14)),
+            DynamicSequenceRecord("UpAndLeft", _left_sequence(22)),
+            DynamicSequenceRecord("random_motion", _right_sequence(), is_negative=True),
+        ],
+        method=METHOD_PROTOTYPE_DISTANCE,
+        threshold_floor=0.001,
+    )
+
+    metrics, attempts = evaluate_model(
+        payload,
+        [DynamicSequenceRecord("UpAndLeft", _left_sequence(18))],
+    )
+
+    assert metrics["positive_recall"] == 1.0
+    assert metrics["per_label"]["upandleft"]["correct"] == 1
+    assert attempts[0].expected == "upandleft"
+    assert attempts[0].predicted == "upandleft"
 
 
 def test_prototype_dtw_tolerates_timing_variation():

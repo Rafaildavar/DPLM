@@ -165,6 +165,28 @@ def test_build_classifier_supports_sequence_phase_hmm_model():
     assert clf.variance_regularization == 0.3
 
 
+def test_build_classifier_supports_sequence_ensemble_model():
+    clf = build_classifier(
+        "sequence_ensemble",
+        random_state=7,
+        sequence_multirocket_kernels=8,
+        sequence_sprocket_kernels=6,
+        sequence_sprocket_prototypes_per_class=2,
+        sequence_shapelets_per_class=3,
+        sequence_phase_hmm_states=3,
+        sequence_phase_hmm_max_channels=4,
+    )
+
+    assert clf.__class__.__name__ == "VotingClassifier"
+    assert [name for name, _estimator in clf.estimators] == [
+        "multirocket",
+        "sprocket",
+        "shapelet",
+        "phase_hmm",
+    ]
+    assert clf.voting == "soft"
+
+
 def test_sequence_rocket_transformer_builds_deterministic_temporal_features():
     x = np.arange(4 * 36 * 4, dtype=np.float32).reshape(4, 36 * 4)
     transformer = RandomConvolutionSequenceTransformer(
@@ -316,6 +338,32 @@ def test_sequence_phase_hmm_classifier_supports_predict_proba():
     proba = clf.predict_proba(x[:2])
 
     assert isinstance(clf, PhaseHMMSequenceClassifier)
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
+
+
+def test_sequence_ensemble_pipeline_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_ensemble",
+        random_state=3,
+        sequence_multirocket_kernels=6,
+        sequence_multirocket_max_channels_per_kernel=3,
+        sequence_sprocket_kernels=6,
+        sequence_sprocket_prototypes_per_class=2,
+        sequence_sprocket_max_channels_per_kernel=3,
+        sequence_shapelets_per_class=2,
+        sequence_shapelet_max_channels=3,
+        sequence_phase_hmm_states=3,
+        sequence_phase_hmm_max_channels=3,
+    )
+
+    clf.fit(x, y)
+    proba = clf.predict_proba(x[:2])
+
     assert proba.shape == (2, 2)
     assert np.allclose(proba.sum(axis=1), 1.0)
 

@@ -1,6 +1,6 @@
 # GestureFlow ML System Design
 
-Last updated: `2026-06-30`
+Last updated: `2026-07-02`
 
 Purpose: единый living-документ по ML-системе GestureFlow для JMLC. Здесь
 фиксируется не только текущая архитектура, но и путь разработки: что уже
@@ -25,6 +25,7 @@ Purpose: единый living-документ по ML-системе GestureFlow
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | live A/B against `sequence_knn` |
+| Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
 | Intent gate `static/dynamic/none` | Added | H-070: MLP gate offline accuracy `0.9672`, macro F1 `0.9480` | live matrix: static, dynamic, random/no-command |
 | MediaPipe quality A/B | Added | H-085: timestamp, thresholds, smoothing, hand-lost grace logged to MLflow | compare profiles on live 20-attempt matrix |
 
@@ -94,6 +95,7 @@ static poses. A natural swipe should be recognized after movement ends by
 | Static rejection verifiers | `models/static_rejection_verifiers.pkl` | one-vs-rest, one-class, isolation, LOF, metric, MLP verifiers | Added |
 | Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
 | Dynamic sequence MLP artifacts | `models/dynamic_sequence_mlp.*` | neural baseline over 36-frame dynamic sequences | Added |
+| Dynamic sequence ensemble artifacts | `models/dynamic_sequence_ensemble.*` | soft-voting MultiRocket/SProcket/Shapelet/PhaseHMM dynamic recognizer | Added |
 | Dynamic prototype verifier | `models/dynamic_prototypes.json` | open-set sequence verifier for dynamic gestures | Added |
 | Dynamic sequence MLP verifier | `models/dynamic_sequence_mlp_prototypes.json` | open-set verifier for the sequence MLP profile | Added |
 | Intent gate model | `models/intent_gate_mlp.pkl` | first-stage `static/dynamic/none` ML router | Added |
@@ -486,3 +488,4 @@ Change log:
 | `2026-06-29` | Added no-command/return-motion live policy and planned dynamic verifier | H-053 |
 | `2026-06-29` | Added dynamic prototype verifier and offline comparison | H-054 |
 | `2026-06-29` | Added `sequence_mlp` neural dynamic baseline | H-068 |
+| `2026-07-02` | Added `sequence_ensemble` dynamic model and lowercase-safe prototype evaluation | H-086 |

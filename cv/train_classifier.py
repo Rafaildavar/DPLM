@@ -6,7 +6,7 @@ from typing import Iterable, List, Optional, Tuple
 
 import joblib
 import numpy as np
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.neighbors import KNeighborsClassifier
@@ -36,6 +36,7 @@ SUPPORTED_MODEL_TYPES = (
     "sequence_sprocket",
     "sequence_shapelet",
     "sequence_phase_hmm",
+    "sequence_ensemble",
     "svm",
     "extra_trees",
     "rf",
@@ -64,6 +65,7 @@ DEFAULT_SEQUENCE_SHAPELET_MAX_CHANNELS = 12
 DEFAULT_SEQUENCE_PHASE_HMM_STATES = 6
 DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS = 44
 DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION = 0.02
+DEFAULT_SEQUENCE_ENSEMBLE_WEIGHTS = (0.35, 0.30, 0.25, 0.10)
 
 
 # --------------------------------------------------
@@ -295,6 +297,93 @@ def build_classifier(
             variance_regularization=float(sequence_phase_hmm_variance_regularization),
             use_uniform_prior=True,
         )
+    if model == "sequence_ensemble":
+        return VotingClassifier(
+            estimators=[
+                (
+                    "multirocket",
+                    make_pipeline(
+                        RandomMultiRocketSequenceTransformer(
+                            n_kernels=max(1, int(sequence_multirocket_kernels)),
+                            max_dilation=max(
+                                1,
+                                int(sequence_multirocket_max_dilation),
+                            ),
+                            max_channels_per_kernel=max(
+                                1,
+                                int(sequence_multirocket_max_channels_per_kernel),
+                            ),
+                            random_state=int(random_state),
+                        ),
+                        StandardScaler(),
+                        LogisticRegression(
+                            max_iter=2500,
+                            class_weight="balanced",
+                            random_state=int(random_state),
+                        ),
+                    ),
+                ),
+                (
+                    "sprocket",
+                    make_pipeline(
+                        SprocketSequenceTransformer(
+                            n_kernels=max(1, int(sequence_sprocket_kernels)),
+                            prototypes_per_class=max(
+                                1,
+                                int(sequence_sprocket_prototypes_per_class),
+                            ),
+                            max_dilation=max(1, int(sequence_sprocket_max_dilation)),
+                            max_channels_per_kernel=max(
+                                1,
+                                int(sequence_sprocket_max_channels_per_kernel),
+                            ),
+                            random_state=int(random_state),
+                        ),
+                        StandardScaler(),
+                        LogisticRegression(
+                            max_iter=2500,
+                            class_weight="balanced",
+                            random_state=int(random_state),
+                        ),
+                    ),
+                ),
+                (
+                    "shapelet",
+                    make_pipeline(
+                        ShapeletSequenceTransformer(
+                            shapelets_per_class=max(
+                                1,
+                                int(sequence_shapelets_per_class),
+                            ),
+                            max_channels_per_shapelet=max(
+                                1,
+                                int(sequence_shapelet_max_channels),
+                            ),
+                            random_state=int(random_state),
+                        ),
+                        StandardScaler(),
+                        LogisticRegression(
+                            max_iter=2500,
+                            class_weight="balanced",
+                            random_state=int(random_state),
+                        ),
+                    ),
+                ),
+                (
+                    "phase_hmm",
+                    PhaseHMMSequenceClassifier(
+                        n_states=max(2, int(sequence_phase_hmm_states)),
+                        max_channels=max(1, int(sequence_phase_hmm_max_channels)),
+                        variance_regularization=float(
+                            sequence_phase_hmm_variance_regularization
+                        ),
+                        use_uniform_prior=True,
+                    ),
+                ),
+            ],
+            voting="soft",
+            weights=list(DEFAULT_SEQUENCE_ENSEMBLE_WEIGHTS),
+        )
     if model == "sequence_rocket":
         return make_pipeline(
             RandomConvolutionSequenceTransformer(
@@ -465,8 +554,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Тип классификатора: knn, sequence_knn, sequence_mlp, "
             "sequence_rocket, sequence_multirocket, sequence_sprocket, "
-            "sequence_shapelet, sequence_phase_hmm, svm, extra_trees, "
-            "rf или logreg"
+            "sequence_shapelet, sequence_phase_hmm, sequence_ensemble, "
+            "svm, extra_trees, rf или logreg"
         ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
@@ -1020,6 +1109,12 @@ def _log_mlflow_run(
                     "sequence_phase_hmm_max_channels": sequence_phase_hmm_max_channels,
                     "sequence_phase_hmm_variance_regularization": (
                         sequence_phase_hmm_variance_regularization
+                    ),
+                    "sequence_ensemble_members": (
+                        "multirocket,sprocket,shapelet,phase_hmm"
+                    ),
+                    "sequence_ensemble_weights": ",".join(
+                        f"{weight:.2f}" for weight in DEFAULT_SEQUENCE_ENSEMBLE_WEIGHTS
                     ),
                     "expect_dim": (
                         int(args.expect_dim)

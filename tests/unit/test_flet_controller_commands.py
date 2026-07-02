@@ -15,6 +15,7 @@ from app.flet_app.controller import (
     AUTO_STATIC_GESTURE_CONFIRM_FRAMES,
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
@@ -302,6 +303,30 @@ def test_build_sequence_rocket_prototype_training_command_uses_own_sequence_outp
     )
 
 
+def test_build_sequence_ensemble_prototype_training_command_uses_own_sequence_output(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_sequence_ensemble.pkl"),
+    )
+
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_sequence_ensemble_prototypes.json"
+    )
+    assert cmd[cmd.index("--target-frames") + 1] == "36"
+
+
 def test_build_sequence_shapelet_72_prototype_training_command_uses_long_target(
     monkeypatch,
     tmp_path,
@@ -488,6 +513,25 @@ def test_embedded_dynamic_model_paths_can_use_sequence_rocket(monkeypatch, tmp_p
         "dynamic_sequence_rocket_classes.json",
         "dynamic_sequence_rocket_feature_dim.txt",
         "dynamic_sequence_rocket_feature_mode.txt",
+    ]
+
+
+def test_embedded_dynamic_model_paths_can_use_sequence_ensemble(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+
+    dynamic_paths = controller._embedded_model_paths()
+
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_sequence_ensemble.pkl",
+        "dynamic_sequence_ensemble_classes.json",
+        "dynamic_sequence_ensemble_feature_dim.txt",
+        "dynamic_sequence_ensemble_feature_mode.txt",
     ]
 
 

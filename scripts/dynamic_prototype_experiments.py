@@ -268,7 +268,8 @@ def evaluate_model(
 
     for record in rows:
         decision = predict_dynamic_prototype(payload, record.sequence)
-        predicted = str(decision.get("label") or "")
+        expected = str(record.label or "").strip().lower()
+        predicted = str(decision.get("label") or "").strip().lower()
         reason = str(decision.get("reason") or "")
         distance = float(decision.get("distance") or 0.0)
         threshold = float(decision.get("threshold") or 0.0)
@@ -282,15 +283,15 @@ def evaluate_model(
                 result = "rejected"
         else:
             positive_total += 1
-            expected_sequence.append(record.label)
+            expected_sequence.append(expected)
             if predicted:
                 predicted_sequence.append(predicted)
             label_stats = per_label.setdefault(
-                record.label,
+                expected,
                 {"total": 0, "correct": 0, "wrong": 0, "rejected": 0},
             )
             label_stats["total"] += 1
-            if predicted == record.label:
+            if predicted == expected:
                 positive_correct += 1
                 label_stats["correct"] += 1
                 result = "correct"
@@ -304,7 +305,7 @@ def evaluate_model(
                 result = "wrong"
         attempts.append(
             EvaluationRow(
-                expected=record.label,
+                expected=expected,
                 predicted=predicted,
                 result=result,
                 reason=reason,
@@ -505,6 +506,11 @@ def _copy_base_dynamic_artifacts(base_dir: Path, target_dir: Path) -> None:
         "dynamic_sequence_shapelet_72_feature_dim.txt",
         "dynamic_sequence_shapelet_72_feature_mode.txt",
         "dynamic_sequence_shapelet_72_rejection.json",
+        "dynamic_sequence_ensemble.pkl",
+        "dynamic_sequence_ensemble_classes.json",
+        "dynamic_sequence_ensemble_feature_dim.txt",
+        "dynamic_sequence_ensemble_feature_mode.txt",
+        "dynamic_sequence_ensemble_rejection.json",
     ):
         source = base_dir / name
         if source.exists():

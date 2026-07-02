@@ -4537,3 +4537,84 @@ Offline result:
 - `live_miss_rate` и `hand_lost_streak_max` ниже.
 - `negative_false_positive_rate` не растет.
 - Runtime latency остается в интерактивном диапазоне.
+
+### H-086: Dynamic sequence ensemble для сложных пользовательских жестов
+
+Статус: `implemented`, ждет live A/B
+
+Дата: `2026-07-02`
+
+Наблюдение:
+- `KNN` плохо подходит для dynamic sequence: он выбирает ближайший класс и
+  легко раскладывает сложный жест на похожий простой `swipe_*`.
+- Отдельные временные модели (`MultiRocket`, `SProcket`, `Shapelet`,
+  `PhaseHMM`) дают разные типы ошибок.
+- Для текущего размера датасета LSTM/GRU пока рискованнее: модель сложнее, но
+  данных на пользовательский жест пока мало.
+
+Гипотеза:
+- Soft-voting ensemble из нескольких sequence-подходов даст более устойчивую
+  оценку сложной траектории без большого нейросетевого переобучения.
+- Prototype/rejection layer должен оставаться включенным, чтобы ensemble не
+  повышал false positives на `partial_swipe`, `random_motion`,
+  `return_motion`, `wrong_axis_motion` и IPN external negatives.
+
+Решение:
+- Добавлен `model_type=sequence_ensemble` в `cv.train_classifier`.
+- Состав ensemble:
+  - `RandomMultiRocketSequenceTransformer + LogisticRegression`;
+  - `SprocketSequenceTransformer + LogisticRegression`;
+  - `ShapeletSequenceTransformer + LogisticRegression`;
+  - `PhaseHMMSequenceClassifier`.
+- Исправлена sklearn-совместимость `PhaseHMMSequenceClassifier`:
+  `ClassifierMixin` теперь стоит перед `BaseEstimator`.
+- Добавлены UI/runtime profile artifacts:
+  - `models/dynamic_sequence_ensemble.pkl`;
+  - `models/dynamic_sequence_ensemble_classes.json`;
+  - `models/dynamic_sequence_ensemble_feature_dim.txt`;
+  - `models/dynamic_sequence_ensemble_feature_mode.txt`;
+  - `models/dynamic_sequence_ensemble_rejection.json`;
+  - `models/dynamic_sequence_ensemble_prototypes.json`.
+- Dynamic prototype labels нормализуются в lowercase, чтобы `UpAndLeft`
+  из папки и `upandleft` из trained classes не расходились в live verifier и
+  offline evaluator.
+
+Offline result:
+- Classifier training:
+  - samples: `190`;
+  - classes: `9`;
+  - feature mode: `dynamic_sequence`;
+  - feature dim: `1584`;
+  - training accuracy: `1.0000`;
+  - MLflow run: `train-dynamic-sequence-ensemble`.
+- Prototype/rejection report:
+  `docs/experiments/dynamic_prototype_sequence_ensemble.md`.
+- Prototype split with external negatives:
+  - train: `472`;
+  - test: `158`;
+  - overall success: `0.9873`;
+  - positive recall: `0.9565`;
+  - negative reject rate: `0.9926`;
+  - negative false positive rate: `0.0074`;
+  - sequence accuracy: `0.9565`;
+  - `upandleft`: `5/5` correct offline.
+
+Что тестировать:
+- На Главной выбрать dynamic profile `sequence_ensemble`.
+- Recognition mode: `auto` или `dynamic` для чистого dynamic A/B.
+- Threshold сначала `0.70-0.80`, затем поднять к `0.90`, если recall высокий.
+- Live evaluation:
+  - `upandleft`: 20 попыток;
+  - `swipe_up`: 20 попыток;
+  - `swipe_left`: 20 попыток;
+  - `swipe_down`: 20 попыток, если физически удобно;
+  - `partial_swipe`: 10 попыток;
+  - `random_motion`: 10 попыток;
+  - `return_motion`: 10 попыток.
+
+Критерий успеха:
+- `upandleft` распознается как отдельный label, а не как два простых свайпа.
+- `swipe_up/swipe_left` не деградируют относительно `sequence_multirocket` и
+  `sequence_sprocket`.
+- `live_negative_false_positive_rate` не выше `10%`.
+- Камера остается интерактивной, без заметной задержки.

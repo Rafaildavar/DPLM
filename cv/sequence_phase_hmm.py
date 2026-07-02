@@ -9,7 +9,7 @@ from sklearn.utils.validation import check_is_fitted
 from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES
 
 
-class PhaseHMMSequenceClassifier(BaseEstimator, ClassifierMixin):
+class PhaseHMMSequenceClassifier(ClassifierMixin, BaseEstimator):
     """Small fixed-phase HMM-style classifier.
 
     The model splits each completed gesture into ordered temporal phases and

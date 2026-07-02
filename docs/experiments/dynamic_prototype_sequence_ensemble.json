@@ -1,0 +1,1585 @@
+{
+  "generated_at": 1783000898.146882,
+  "data_root": "data/gestures",
+  "external_negative_root": "data/external",
+  "include_external_negatives": true,
+  "train_count": 472,
+  "test_count": 158,
+  "records_by_label": {
+    "UpAndLeft": 20,
+    "negative_external_ipn_dynamic": 440,
+    "no_gesture_static": 20,
+    "partial_swipe": 20,
+    "random_motion": 20,
+    "return_motion": 20,
+    "swipe_down": 20,
+    "swipe_left": 30,
+    "swipe_up": 20,
+    "wrong_axis_motion": 20
+  },
+  "train_by_label": {
+    "UpAndLeft": 15,
+    "negative_external_ipn_dynamic": 330,
+    "no_gesture_static": 15,
+    "partial_swipe": 15,
+    "random_motion": 15,
+    "return_motion": 15,
+    "swipe_down": 15,
+    "swipe_left": 22,
+    "swipe_up": 15,
+    "wrong_axis_motion": 15
+  },
+  "test_by_label": {
+    "UpAndLeft": 5,
+    "negative_external_ipn_dynamic": 110,
+    "no_gesture_static": 5,
+    "partial_swipe": 5,
+    "random_motion": 5,
+    "return_motion": 5,
+    "swipe_down": 5,
+    "swipe_left": 8,
+    "swipe_up": 5,
+    "wrong_axis_motion": 5
+  },
+  "negative_conflict_filter": {
+    "enabled": true,
+    "method": "prototype_distance",
+    "conflict_margin": 1.2,
+    "external_negative_root": "/Users/remi/Developer/GUAP/DPLM/data/external",
+    "positive_count": 90,
+    "external_negative_total": 440,
+    "safe_external_negative_count": 440,
+    "conflict_count": 0,
+    "conflict_rate": 0.0,
+    "nearest_positive_labels": {
+      "swipe_down": 1,
+      "swipe_left": 27,
+      "swipe_up": 3,
+      "upandleft": 409
+    },
+    "conflicting_negative_labels": {},
+    "conflicts": [],
+    "status": "ok"
+  },
+  "best_method": "prototype_distance",
+  "reports": [
+    {
+      "method": "prototype_distance",
+      "metrics": {
+        "total": 158,
+        "positive_total": 23,
+        "negative_total": 135,
+        "positive_recall": 0.9565217391304348,
+        "positive_reject_rate": 0.043478260869565216,
+        "positive_wrong_rate": 0.0,
+        "negative_reject_rate": 0.9925925925925926,
+        "negative_false_positive_rate": 0.007407407407407408,
+        "overall_success": 0.9873417721518988,
+        "sequence_edit_distance": 1,
+        "sequence_accuracy": 0.9565217391304348,
+        "per_label": {
+          "upandleft": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          },
+          "swipe_down": {
+            "total": 5,
+            "correct": 5,
+            "wrong": 0,
+            "rejected": 0
+          },
+          "swipe_left": {
+            "total": 8,
+            "correct": 8,
+            "wrong": 0,
+            "rejected": 0
+          },
+          "swipe_up": {
+            "total": 5,
+            "correct": 4,
+            "wrong": 0,
+            "rejected": 1
+          }
+        }
+      },
+      "model_path": "models/experiments/dynamic_prototype/prototype_distance/dynamic_sequence_ensemble_prototypes.json",
+      "attempts": [
+        {
+          "expected": "upandleft",
+          "predicted": "upandleft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03135698661208153,
+          "threshold": 0.08626331951403844,
+          "path": "data/gestures/UpAndLeft/sample_0019.npy"
+        },
+        {
+          "expected": "upandleft",
+          "predicted": "upandleft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.02740257978439331,
+          "threshold": 0.08626331951403844,
+          "path": "data/gestures/UpAndLeft/sample_0005.npy"
+        },
+        {
+          "expected": "upandleft",
+          "predicted": "upandleft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.0226887259632349,
+          "threshold": 0.08626331951403844,
+          "path": "data/gestures/UpAndLeft/sample_0014.npy"
+        },
+        {
+          "expected": "upandleft",
+          "predicted": "upandleft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05832391232252121,
+          "threshold": 0.08626331951403844,
+          "path": "data/gestures/UpAndLeft/sample_0004.npy"
+        },
+        {
+          "expected": "upandleft",
+          "predicted": "upandleft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.025773586705327034,
+          "threshold": 0.08626331951403844,
+          "path": "data/gestures/UpAndLeft/sample_0009.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.401550829410553,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0158.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2119167447090149,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_1_0208.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1723112016916275,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_4cm11_10_r_56_0192.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16265268623828888,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_229_0007.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24020639061927795,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0147.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.23381160199642181,
+          "threshold": 0.06911657101491041,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0237.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.25871044397354126,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_4cm11_10_r_54_0157.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14005836844444275,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_230_0022.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31663256883621216,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0124.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 2.3510756492614746,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0131.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20458588004112244,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_7_r_83_0045.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.14030803740024567,
+          "threshold": 0.06911657101491041,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm42_12_r_158_0186.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2007509022951126,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_7_r_82_0030.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.26368850469589233,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0018.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19259695708751678,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0098.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1825740784406662,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm1_4_r_232_0064.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23411616683006287,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm1_4_r_232_0052.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.27930763363838196,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_81_0015.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2777888774871826,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_1cv12_7_r_83_0035.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23452530801296234,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0069.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.3745743036270142,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_205_0077.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22224731743335724,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_82_0031.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3973725736141205,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_81_0006.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23532149195671082,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_158_0182.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3544347584247589,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0149.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20243613421916962,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_12_r_158_0173.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12716907262802124,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_205_0076.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4127403795719147,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_1cv12_8_r_86_0087.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1886027604341507,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_11_r_1_0206.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22321957349777222,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g11_1cv12_8_r_88_0117.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 10.799891471862793,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_205_0085.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2473592460155487,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_2_0229.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20091509819030762,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_205_0070.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3384860157966614,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_7_r_82_0021.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1885962188243866,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_10_r_55_0176.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19817693531513214,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0127.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.37209075689315796,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_85_0063.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19157883524894714,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_230_0031.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23277893662452698,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0145.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20503045618534088,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_4cm11_11_r_1_0212.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3804769515991211,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_159_0199.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.38295039534568787,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_11_r_1_0209.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2873300313949585,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_11_r_2_0225.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23636731505393982,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0137.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.29066455364227295,
+          "threshold": 0.08626331951403844,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm42_12_r_157_0150.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3427048921585083,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0008.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18542751669883728,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_11_r_206_0102.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3868273198604584,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0072.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.45919349789619446,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_54_0154.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3017652928829193,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0015.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3024657070636749,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0030.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5185647010803223,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_3_0235.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22290970385074615,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_12_r_157_0154.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.43118301033973694,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0172.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3965318202972412,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0171.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.29572594165802,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_232_0058.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21236008405685425,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_11_r_2_0231.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4005587697029114,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0107.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1570712924003601,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_208_0144.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20619258284568787,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0058.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23218415677547455,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_157_0163.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3918567895889282,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_54_0160.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4257431626319885,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0186.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3549390137195587,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0073.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14395993947982788,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm1_4_r_230_0017.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.32655104994773865,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_11_r_1_0201.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13342711329460144,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_8_r_86_0083.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.291835218667984,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_88_0128.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.25272926688194275,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0041.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3415304720401764,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0023.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.36750391125679016,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0197.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3452288806438446,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0098.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.38264474272727966,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_53_0140.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14968280494213104,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_11_r_1_0215.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3187308609485626,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0073.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22014974057674408,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_83_0040.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23535755276679993,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_206_0091.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3044263422489166,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0084.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.673708438873291,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_158_0170.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21020570397377014,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0125.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4666910469532013,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0113.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22076304256916046,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0129.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2930663526058197,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_12_r_158_0169.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.278354674577713,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_11_r_208_0128.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7109645009040833,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_159_0197.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4484517276287079,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0112.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3711687922477722,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_86_0088.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2184695154428482,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_10_r_53_0139.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4405728876590729,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0151.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20574453473091125,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_11_r_2_0222.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4070338010787964,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0105.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1481616199016571,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_207_0120.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17248228192329407,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_207_0112.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20204930007457733,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_10_r_54_0163.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.37992164492607117,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0103.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16849790513515472,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0166.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31922128796577454,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0070.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3481849730014801,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0055.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.45735377073287964,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_56_0188.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14575664699077606,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_207_0115.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23277302086353302,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_7_r_82_0022.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21215535700321198,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_7_r_81_0017.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.27596771717071533,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0116.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.41168585419654846,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_54_0152.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.408128559589386,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0164.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.226423978805542,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_1cv12_7_r_82_0027.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14535871148109436,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_10_r_55_0174.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.21175628900527954,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_83_0033.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3732184171676636,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0189.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2833755612373352,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0047.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10784005373716354,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0018.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.03229985386133194,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0012.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.006604019086807966,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0015.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.0043561989441514015,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0002.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2546698749065399,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0013.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3480364978313446,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0014.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.678859293460846,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0010.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.4264870584011078,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0000.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 1.0474187135696411,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/partial_swipe/sample_auto_0002.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.8405391573905945,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0007.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12173404544591904,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0019.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.04806796833872795,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0014.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.046879637986421585,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0008.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.09879854321479797,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.0764852836728096,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0003.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6327395439147949,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0007.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7699243426322937,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0014.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7305493950843811,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0005.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 4.003156661987305,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0003.npy"
+        },
+        {
+          "expected": "return_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.9764581322669983,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0001.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.025070562958717346,
+          "threshold": 0.08485842266217108,
+          "path": "data/gestures/swipe_down/sample_0003.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.02962419018149376,
+          "threshold": 0.08485842266217108,
+          "path": "data/gestures/swipe_down/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.047748204320669174,
+          "threshold": 0.08485842266217108,
+          "path": "data/gestures/swipe_down/sample_0016.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04561910405755043,
+          "threshold": 0.08485842266217108,
+          "path": "data/gestures/swipe_down/sample_0007.npy"
+        },
+        {
+          "expected": "swipe_down",
+          "predicted": "swipe_down",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05778498947620392,
+          "threshold": 0.08485842266217108,
+          "path": "data/gestures/swipe_down/sample_0013.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04682387411594391,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0008.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.039084989577531815,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0021.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.029322203248739243,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0016.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.032206278294324875,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0027.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03196663409471512,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0004.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.03933278098702431,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0005.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04645789787173271,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0009.npy"
+        },
+        {
+          "expected": "swipe_left",
+          "predicted": "swipe_left",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.027396688237786293,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/swipe_left/sample_0022.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.07310132682323456,
+          "threshold": 0.07602073109210852,
+          "path": "data/gestures/swipe_up/sample_0002.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.04360331594944,
+          "threshold": 0.07602073109210852,
+          "path": "data/gestures/swipe_up/sample_0000.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.039751842617988586,
+          "threshold": 0.07602073109210852,
+          "path": "data/gestures/swipe_up/sample_0016.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.07685050368309021,
+          "threshold": 0.07602073109210852,
+          "path": "data/gestures/swipe_up/sample_0017.npy"
+        },
+        {
+          "expected": "swipe_up",
+          "predicted": "swipe_up",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.042717017233371735,
+          "threshold": 0.07602073109210852,
+          "path": "data/gestures/swipe_up/sample_0019.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "swipe_left",
+          "result": "false_positive",
+          "reason": "accepted",
+          "distance": 0.05640389397740364,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0002.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.11935706436634064,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0010.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.08426155894994736,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0014.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10697366297245026,
+          "threshold": 0.0,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0006.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "far_from_prototype",
+          "distance": 0.09126792848110199,
+          "threshold": 0.06911657101491041,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0013.npy"
+        }
+      ],
+      "thresholds": {
+        "swipe_down": {
+          "threshold": 0.08485842266217108,
+          "positive_radius": 0.08485842266217108,
+          "positive_distance_mean": 0.03956841739515463,
+          "positive_distance_p95": 0.062487410008907285,
+          "impostor_distance_p10": 0.29679928421974183
+        },
+        "swipe_left": {
+          "threshold": 0.06911657101491041,
+          "positive_radius": 0.06911657101491041,
+          "positive_distance_mean": 0.030266564339399338,
+          "positive_distance_p95": 0.04081231970340013,
+          "impostor_distance_p10": 0.2615322947502136
+        },
+        "swipe_up": {
+          "threshold": 0.07602073109210852,
+          "positive_radius": 0.07602073109210852,
+          "positive_distance_mean": 0.04517085899909337,
+          "positive_distance_p95": 0.05691216140985488,
+          "impostor_distance_p10": 0.3390892088413239
+        },
+        "upandleft": {
+          "threshold": 0.08626331951403844,
+          "positive_radius": 0.08626331951403844,
+          "positive_distance_mean": 0.03918384661277135,
+          "positive_distance_p95": 0.06699556969106195,
+          "impostor_distance_p10": 0.23835743665695192
+        }
+      },
+      "negative_conflict_filter": {
+        "enabled": true,
+        "method": "prototype_distance",
+        "conflict_margin": 1.2,
+        "external_negative_root": "/Users/remi/Developer/GUAP/DPLM/data/external",
+        "positive_count": 90,
+        "external_negative_total": 440,
+        "safe_external_negative_count": 440,
+        "conflict_count": 0,
+        "conflict_rate": 0.0,
+        "nearest_positive_labels": {
+          "swipe_down": 1,
+          "swipe_left": 27,
+          "swipe_up": 3,
+          "upandleft": 409
+        },
+        "conflicting_negative_labels": {},
+        "conflicts": [],
+        "status": "ok"
+      }
+    }
+  ],
+  "production_out": "models/dynamic_sequence_ensemble_prototypes.json"
+}

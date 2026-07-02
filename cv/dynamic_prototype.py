@@ -111,8 +111,11 @@ def fit_dynamic_prototype_model(
     method = _normalize_method(method)
     grouped: dict[str, list[DynamicSequenceRecord]] = {}
     for record in records:
+        label = str(record.label or "").strip().lower()
+        if not label:
+            continue
         normalized = DynamicSequenceRecord(
-            label=record.label,
+            label=label,
             sequence=normalize_dynamic_sequence(
                 record.sequence,
                 target_dim=target_dim,
@@ -121,7 +124,7 @@ def fit_dynamic_prototype_model(
             path=record.path,
             is_negative=record.is_negative,
         )
-        grouped.setdefault(record.label, []).append(normalized)
+        grouped.setdefault(label, []).append(normalized)
 
     positive_labels = sorted(
         label
@@ -250,10 +253,15 @@ def predict_dynamic_prototype(
     ranked.sort(key=lambda item: item[0])
     best_distance, best = ranked[0]
     second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
-    label = str(best.get("label") or "")
+    raw_label = str(best.get("label") or "").strip()
+    label = raw_label.lower()
     prototype_type = str(best.get("type") or "")
     thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
-    threshold_payload = thresholds.get(label) if isinstance(thresholds, dict) else None
+    threshold_payload = (
+        thresholds.get(raw_label) or thresholds.get(label)
+        if isinstance(thresholds, dict)
+        else None
+    )
     threshold = (
         float(threshold_payload.get("threshold") or 0.0)
         if isinstance(threshold_payload, dict)

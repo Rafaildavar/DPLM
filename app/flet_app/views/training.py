@@ -48,6 +48,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_shapelet": "models/dynamic_sequence_shapelet.pkl",
     "sequence_shapelet_72": "models/dynamic_sequence_shapelet_72.pkl",
     "sequence_phase_hmm": "models/dynamic_sequence_phase_hmm.pkl",
+    "sequence_ensemble": "models/dynamic_sequence_ensemble.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 72
@@ -117,6 +118,12 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_phase_hmm_classes.json",
             "models/dynamic_sequence_phase_hmm_feature_dim.txt",
             "models/dynamic_sequence_phase_hmm_feature_mode.txt",
+        )
+    if clean == "sequence_ensemble":
+        return (
+            "models/dynamic_sequence_ensemble_classes.json",
+            "models/dynamic_sequence_ensemble_feature_dim.txt",
+            "models/dynamic_sequence_ensemble_feature_mode.txt",
         )
     return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
 
@@ -262,6 +269,10 @@ class TrainingView:
                 ft.DropdownOption(
                     key="sequence_phase_hmm",
                     text="sequence_phase_hmm",
+                ),
+                ft.DropdownOption(
+                    key="sequence_ensemble",
+                    text="sequence_ensemble",
                 ),
             ],
             editable=False,
