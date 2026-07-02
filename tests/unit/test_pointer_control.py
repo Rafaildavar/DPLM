@@ -372,6 +372,48 @@ def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):
     assert hotkeys == [("alt", "shift", "tab")]
 
 
+def test_two_finger_swipe_freezes_cursor_while_tracking(monkeypatch):
+    moves = []
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    first = svc.update(_payload(_open_index_landmarks(tip=(0.50, 0.24))))
+    armed = svc.update(_payload(_two_finger_landmarks(center=(0.62, 0.24))))
+    tracking = svc.update(_payload(_two_finger_landmarks(center=(0.56, 0.24))))
+    swipe = svc.update(_payload(_two_finger_landmarks(center=(0.43, 0.24))))
+
+    assert first.moved
+    assert armed.ok
+    assert not tracking.moved
+    assert swipe.tab_switched == "left"
+    assert hotkeys == [("ctrl", "left")]
+    assert len(moves) == 2
+    assert moves[0] == moves[1]
+
+
 def _payload(landmarks):
     return json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
 

@@ -108,6 +108,8 @@ class DynamicMotionSegmenter:
         end_still_frames: int = 2,
         release_frames: int = 2,
         release_step_ratio: float = 0.45,
+        completion_grace_frames: int = 3,
+        resume_step_ratio: float = 0.62,
         min_active_frames: int = 8,
         max_active_frames: int = 60,
         cooldown_frames: int = 8,
@@ -123,6 +125,8 @@ class DynamicMotionSegmenter:
         self.end_still_frames = max(1, int(end_still_frames))
         self.release_frames = max(1, int(release_frames))
         self.release_step_ratio = max(0.05, min(0.95, float(release_step_ratio)))
+        self.completion_grace_frames = max(0, int(completion_grace_frames))
+        self.resume_step_ratio = max(0.05, min(0.95, float(resume_step_ratio)))
         self.min_active_frames = max(3, int(min_active_frames))
         self.max_active_frames = max(self.min_active_frames, int(max_active_frames))
         self.cooldown_frames = max(0, int(cooldown_frames))
@@ -140,6 +144,9 @@ class DynamicMotionSegmenter:
         self._release_frames = 0
         self._peak_step = 0.0
         self._cooldown_remaining = 0
+        self._pending_completion_reason = ""
+        self._pending_completion_sequence: np.ndarray | None = None
+        self._completion_grace_remaining = 0
 
     @property
     def phase(self) -> str:
@@ -164,6 +171,9 @@ class DynamicMotionSegmenter:
         self._release_frames = 0
         self._peak_step = 0.0
         self._cooldown_remaining = 0
+        self._pending_completion_reason = ""
+        self._pending_completion_sequence = None
+        self._completion_grace_remaining = 0
 
     def finish_due_to_hand_lost(self) -> MotionSegmentUpdate:
         """Complete an active swipe when the hand leaves the frame naturally."""
@@ -175,6 +185,11 @@ class DynamicMotionSegmenter:
         if not self._active:
             self.reset()
             return MotionSegmentUpdate("idle", 0, end_reason="hand_lost")
+        if self._pending_completion_sequence is not None:
+            return self._complete_active(
+                end_reason=self._pending_completion_reason or "hand_lost",
+                sequence=self._pending_completion_sequence,
+            )
 
         sequence = np.stack(self._active, axis=0)
         enough_frames = len(self._active) >= self.min_active_frames
@@ -241,6 +256,27 @@ class DynamicMotionSegmenter:
             still_threshold,
             float(self._peak_step) * self.release_step_ratio,
         )
+        resume_threshold = max(
+            still_threshold * 1.5,
+            float(self._peak_step) * self.resume_step_ratio,
+        )
+
+        if self._pending_completion_sequence is not None:
+            if step > resume_threshold:
+                self._pending_completion_reason = ""
+                self._pending_completion_sequence = None
+                self._completion_grace_remaining = 0
+                self._still_frames = 0
+                self._release_frames = 0
+            else:
+                self._completion_grace_remaining -= 1
+                if self._completion_grace_remaining <= 0:
+                    return self._complete_active(
+                        end_reason=self._pending_completion_reason or "velocity_drop",
+                        sequence=self._pending_completion_sequence,
+                    )
+                return MotionSegmentUpdate("active", len(self._active))
+
         if sufficient_motion and step <= release_threshold:
             self._release_frames += 1
         else:
@@ -255,13 +291,32 @@ class DynamicMotionSegmenter:
         if ended_by_still:
             end_reason = "still"
             keep = max(2, sequence.shape[0] - self._still_frames + 1)
-            return self._complete_active(
+            return self._defer_completion(
                 end_reason=end_reason,
                 sequence=sequence[:keep],
             )
         if ended_by_release:
-            return self._complete_active(end_reason="velocity_drop", sequence=sequence)
+            return self._defer_completion(
+                end_reason="velocity_drop",
+                sequence=sequence,
+            )
         return self._complete_active(end_reason="max_frames", sequence=sequence)
+
+    def _defer_completion(
+        self,
+        *,
+        end_reason: str,
+        sequence: np.ndarray,
+    ) -> MotionSegmentUpdate:
+        if self.completion_grace_frames <= 0:
+            return self._complete_active(end_reason=end_reason, sequence=sequence)
+        self._pending_completion_reason = str(end_reason or "velocity_drop")
+        self._pending_completion_sequence = np.asarray(
+            sequence,
+            dtype=np.float32,
+        ).copy()
+        self._completion_grace_remaining = self.completion_grace_frames
+        return MotionSegmentUpdate("active", len(self._active))
 
     def _complete_active(
         self,
@@ -282,6 +337,9 @@ class DynamicMotionSegmenter:
         self._still_frames = 0
         self._release_frames = 0
         self._peak_step = 0.0
+        self._pending_completion_reason = ""
+        self._pending_completion_sequence = None
+        self._completion_grace_remaining = 0
         self._cooldown_remaining = self.cooldown_frames
         return MotionSegmentUpdate(
             "completed",

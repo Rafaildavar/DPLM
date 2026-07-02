@@ -43,6 +43,9 @@ PINKY_FINGER_MCP = 17
 PINKY_FINGER_PIP = 18
 PINKY_FINGER_DIP = 19
 Point = tuple[float, float]
+TAB_SWIPE_IDLE = "idle"
+TAB_SWIPE_ARMED = "armed"
+TAB_SWIPE_TRACKING = "tracking"
 
 
 def macos_accessibility_trusted() -> bool:
@@ -212,6 +215,7 @@ class PointerControlService:
         tab_swipe_cooldown_s: float = 0.45,
         tab_swipe_min_frames: int = 3,
         tab_swipe_release_frames: int = 1,
+        tab_swipe_arm_frames: int = 2,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
@@ -226,6 +230,7 @@ class PointerControlService:
         self.tab_swipe_cooldown_s = max(0.0, float(tab_swipe_cooldown_s))
         self.tab_swipe_min_frames = max(2, int(tab_swipe_min_frames))
         self.tab_swipe_release_frames = max(1, int(tab_swipe_release_frames))
+        self.tab_swipe_arm_frames = max(1, int(tab_swipe_arm_frames))
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
         self._accessibility_warned = False
@@ -239,6 +244,10 @@ class PointerControlService:
         self._last_tab_swipe_ts = 0.0
         self._swipe_requires_release = False
         self._swipe_release_pose_frames = 0
+        self._tab_swipe_state = TAB_SWIPE_IDLE
+        self._tab_swipe_pose_frames = 0
+        self._tab_swipe_direction = ""
+        self._freeze_cursor_for_swipe = False
 
     def reset(self) -> None:
         self._smooth_x = None
@@ -251,6 +260,10 @@ class PointerControlService:
         self._swipe_missing_pose_frames = 0
         self._swipe_requires_release = False
         self._swipe_release_pose_frames = 0
+        self._tab_swipe_state = TAB_SWIPE_IDLE
+        self._tab_swipe_pose_frames = 0
+        self._tab_swipe_direction = ""
+        self._freeze_cursor_for_swipe = False
 
     def compute(self, landmarks_json: str) -> tuple[PointerUpdateResult, Optional[PointerAction]]:
         if not PYAUTOGUI_AVAILABLE:
@@ -279,6 +292,7 @@ class PointerControlService:
             return PointerUpdateResult(ok=True, moved=False), None
         ix, iy = index_tip
         index_folded = self._is_index_folded(landmarks)
+        tab_swipe = self._tab_swipe_requested(landmarks, index_folded)
 
         screen_w, screen_h = _screen_size()
         margin = self.edge_margin
@@ -291,11 +305,16 @@ class PointerControlService:
         previous_x = self._smooth_x
         previous_y = self._smooth_y
         freeze_for_click = index_folded and previous_x is not None and previous_y is not None
+        freeze_for_swipe = (
+            self._freeze_cursor_for_swipe
+            and previous_x is not None
+            and previous_y is not None
+        )
 
         if self._smooth_x is None or self._smooth_y is None:
             self._smooth_x = target_x
             self._smooth_y = target_y
-        elif freeze_for_click:
+        elif freeze_for_click or freeze_for_swipe:
             target_x = self._smooth_x
             target_y = self._smooth_y
         else:
@@ -306,7 +325,6 @@ class PointerControlService:
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = self._click_requested(index_folded)
-        tab_swipe = self._tab_swipe_requested(landmarks, index_folded)
         moved = True
         if previous_x is not None and previous_y is not None:
             moved = (
@@ -510,7 +528,30 @@ class PointerControlService:
             return None
         return (index_tip[0] + middle_tip[0]) / 2.0, (index_tip[1] + middle_tip[1]) / 2.0
 
+    def _tab_swipe_threshold_for_hand(self, landmarks: list[Any]) -> float:
+        anchors = [
+            _landmark_point(landmarks, index)
+            for index in (
+                INDEX_FINGER_MCP,
+                MIDDLE_FINGER_MCP,
+                RING_FINGER_MCP,
+                PINKY_FINGER_MCP,
+            )
+        ]
+        points = [point for point in anchors if point is not None]
+        if len(points) < 2:
+            return self.tab_swipe_threshold
+
+        hand_span = max(
+            _distance(a, b)
+            for i, a in enumerate(points)
+            for b in points[i + 1 :]
+        )
+        adaptive = max(0.045, min(0.16, hand_span * 0.90))
+        return max(self.tab_swipe_threshold * 0.75, adaptive)
+
     def _tab_swipe_requested(self, landmarks: list[Any], index_folded: bool) -> str:
+        self._freeze_cursor_for_swipe = False
         if index_folded:
             self._reset_tab_swipe_tracking()
             self._swipe_requires_release = False
@@ -527,15 +568,21 @@ class PointerControlService:
                     self._reset_tab_swipe_tracking()
             else:
                 self._swipe_release_pose_frames = 0
+                self._freeze_cursor_for_swipe = True
             return ""
 
         if center is None:
             self._swipe_missing_pose_frames += 1
             if self._two_finger_swipe_points and self._swipe_missing_pose_frames <= 2:
+                self._freeze_cursor_for_swipe = True
                 return ""
             self._reset_tab_swipe_tracking()
             return ""
         self._swipe_missing_pose_frames = 0
+        self._freeze_cursor_for_swipe = True
+        self._tab_swipe_pose_frames += 1
+        if self._tab_swipe_state == TAB_SWIPE_IDLE:
+            self._tab_swipe_state = TAB_SWIPE_ARMED
         if not self._tab_swipe_pose_active:
             print("[i] Pointer: two-finger swipe pose ready", flush=True)
             self._tab_swipe_pose_active = True
@@ -545,6 +592,10 @@ class PointerControlService:
         self._two_finger_swipe_points = [
             point for point in self._two_finger_swipe_points if now - point[0] <= 0.75
         ][-14:]
+        threshold = self._tab_swipe_threshold_for_hand(landmarks)
+        if self._tab_swipe_pose_frames < self.tab_swipe_arm_frames:
+            return ""
+        self._tab_swipe_state = TAB_SWIPE_TRACKING
         if len(self._two_finger_swipe_points) < self.tab_swipe_min_frames:
             return ""
 
@@ -564,12 +615,18 @@ class PointerControlService:
                 continue
             if abs(candidate_dx) < abs(candidate_dy) * 1.4:
                 continue
+            direction = "left" if candidate_dx < 0 else "right"
+            if self._tab_swipe_direction and direction != self._tab_swipe_direction:
+                continue
             if candidate is None or abs(candidate_dx) > abs(candidate[2]):
                 candidate = (point_t, point, candidate_dx, candidate_dy)
 
+        if abs(raw_dx) >= threshold * 0.45 and not self._tab_swipe_direction:
+            self._tab_swipe_direction = "left" if raw_dx < 0 else "right"
+
         if candidate is None:
             if (
-                abs(raw_dx) >= self.tab_swipe_threshold * 0.45
+                abs(raw_dx) >= threshold * 0.45
                 and now - self._last_swipe_tracking_log_ts >= 0.45
             ):
                 print(
@@ -580,9 +637,9 @@ class PointerControlService:
             return ""
 
         start_t, _start, dx, dy = candidate
-        if abs(dx) < self.tab_swipe_threshold:
+        if abs(dx) < threshold:
             if (
-                abs(raw_dx) >= self.tab_swipe_threshold * 0.45
+                abs(raw_dx) >= threshold * 0.45
                 and now - self._last_swipe_tracking_log_ts >= 0.45
             ):
                 print(
@@ -601,12 +658,17 @@ class PointerControlService:
         self._last_tab_swipe_ts = now
         self._reset_tab_swipe_tracking()
         self._swipe_requires_release = True
+        self._freeze_cursor_for_swipe = True
         return "left" if dx < 0 else "right"
 
     def _reset_tab_swipe_tracking(self) -> None:
         self._two_finger_swipe_points.clear()
         self._tab_swipe_pose_active = False
         self._swipe_missing_pose_frames = 0
+        self._tab_swipe_state = TAB_SWIPE_IDLE
+        self._tab_swipe_pose_frames = 0
+        self._tab_swipe_direction = ""
+        self._freeze_cursor_for_swipe = False
 
     def _tab_swipe_hotkey(self, direction: str) -> tuple[str, ...]:
         if sys.platform == "darwin":

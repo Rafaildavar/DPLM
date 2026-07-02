@@ -74,9 +74,24 @@ def test_segmenter_emits_one_completed_swipe_after_motion_stops():
     assert motion[0] < -0.4
 
 
-def test_segmenter_emits_swipe_on_velocity_drop_without_final_pose_hold():
+def test_segmenter_emits_swipe_after_short_velocity_drop_grace():
     segmenter = DynamicMotionSegmenter(cooldown_frames=0)
-    points = [0.80, 0.78, 0.74, 0.68, 0.61, 0.54, 0.47, 0.40, 0.34, 0.31, 0.30]
+    points = [
+        0.80,
+        0.78,
+        0.74,
+        0.68,
+        0.61,
+        0.54,
+        0.47,
+        0.40,
+        0.34,
+        0.31,
+        0.30,
+        0.30,
+        0.30,
+        0.30,
+    ]
 
     completed = [
         update
@@ -89,6 +104,28 @@ def test_segmenter_emits_swipe_on_velocity_drop_without_final_pose_hold():
     assert completed[0].end_reason == "velocity_drop"
     motion = trajectory_features(completed[0].completed_sequence, target_dim=44)
     assert motion[0] < -0.4
+
+
+def test_segmenter_does_not_split_compound_gesture_on_corner_pause():
+    segmenter = DynamicMotionSegmenter(cooldown_frames=0)
+    points = (
+        [(0.50, 0.82), (0.50, 0.76), (0.50, 0.68), (0.50, 0.60)]
+        + [(0.50, 0.54), (0.50, 0.53)]
+        + [(0.44, 0.53), (0.38, 0.53), (0.32, 0.53), (0.30, 0.53)]
+        + [(0.30, 0.53), (0.30, 0.53), (0.30, 0.53), (0.30, 0.53)]
+    )
+
+    updates = [segmenter.update(_frame(x, y)) for x, y in points]
+    completion_indices = [
+        index for index, update in enumerate(updates) if update.completed_sequence is not None
+    ]
+
+    assert completion_indices == [len(points) - 1]
+    completed = updates[completion_indices[0]].completed_sequence
+    assert completed is not None
+    motion = trajectory_features(completed, target_dim=44)
+    assert motion[0] < -0.20
+    assert motion[1] < -0.20
 
 
 def test_segmenter_emits_swipe_when_hand_leaves_after_motion():
