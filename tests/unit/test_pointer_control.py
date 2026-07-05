@@ -491,7 +491,7 @@ def test_two_frame_two_finger_motion_does_not_switch_windows(monkeypatch):
     assert hotkeys == []
 
 
-def test_two_finger_swipe_rejects_direction_reversal(monkeypatch):
+def test_two_finger_swipe_accepts_decisive_motion_after_small_reversal(monkeypatch):
     hotkeys = []
 
     class FakePyAutoGUI:
@@ -523,8 +523,8 @@ def test_two_finger_swipe_rejects_direction_reversal(monkeypatch):
     final = svc.update(_payload(_two_finger_landmarks(center=(0.32, 0.24))))
 
     assert not reversed_motion.tab_switched
-    assert not final.tab_switched
-    assert hotkeys == []
+    assert final.tab_switched == "left"
+    assert hotkeys == [("ctrl", "left")]
 
 
 def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):

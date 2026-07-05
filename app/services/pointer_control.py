@@ -283,22 +283,22 @@ class PointerControlService:
         self,
         *,
         smoothing: float = 0.28,
-        second_smoothing: float = 0.32,
+        second_smoothing: float = 0.62,
         velocity_gate_px: float = 0.75,
-        pointer_jump_limit: float = 0.18,
-        pointer_jump_hold_frames: int = 2,
+        pointer_jump_limit: float = 0.28,
+        pointer_jump_hold_frames: int = 1,
         edge_margin: float = 0.08,
-        move_deadzone_px: float = 4.0,
+        move_deadzone_px: float = 2.5,
         click_debounce_s: float = 0.42,
-        tab_swipe_threshold: float = 0.075,
-        tab_swipe_vertical_tolerance: float = 0.20,
-        tab_swipe_min_speed: float = 0.12,
-        tab_swipe_cooldown_s: float = 0.65,
+        tab_swipe_threshold: float = 0.06,
+        tab_swipe_vertical_tolerance: float = 0.24,
+        tab_swipe_min_speed: float = 0.08,
+        tab_swipe_cooldown_s: float = 0.50,
         tab_swipe_min_frames: int = 3,
-        tab_swipe_release_frames: int = 2,
-        tab_swipe_arm_frames: int = 2,
-        tab_swipe_direction_noise: float = 0.012,
-        tab_swipe_min_directional_frames: int = 2,
+        tab_swipe_release_frames: int = 1,
+        tab_swipe_arm_frames: int = 1,
+        tab_swipe_direction_noise: float = 0.010,
+        tab_swipe_min_directional_frames: int = 1,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
         self.second_smoothing = max(0.05, min(0.95, float(second_smoothing)))
@@ -493,16 +493,16 @@ class PointerControlService:
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
-        if distance_px <= 10.0:
-            return max(0.06, base * 0.22)
-        if distance_px <= 36.0:
-            return max(0.08, base * 0.35)
-        if distance_px <= 120.0:
-            return max(0.12, base * 0.55)
+        if distance_px <= 8.0:
+            return max(0.06, base * 0.20)
+        if distance_px <= 28.0:
+            return max(0.10, base * 0.45)
+        if distance_px <= 110.0:
+            return max(0.18, base * 0.78)
         screen_diag = math.hypot(float(screen_w), float(screen_h))
         if distance_px >= screen_diag * 0.20:
-            return min(0.70, base + 0.18)
-        return max(0.16, base * 0.75)
+            return min(0.86, base + 0.24)
+        return max(0.25, base * 0.90)
 
     def _limit_step(
         self,
@@ -687,8 +687,8 @@ class PointerControlService:
             for i, a in enumerate(points)
             for b in points[i + 1 :]
         )
-        adaptive = max(0.045, min(0.16, hand_span * 0.90))
-        return max(self.tab_swipe_threshold * 0.75, adaptive)
+        adaptive = max(0.035, min(0.13, hand_span * 0.65))
+        return max(self.tab_swipe_threshold * 0.70, adaptive)
 
     def _tab_swipe_requested(self, landmarks: list[Any], index_folded: bool) -> str:
         self._freeze_cursor_for_swipe = False
@@ -753,7 +753,7 @@ class PointerControlService:
             candidate_dy = center[1] - point[1]
             if abs(candidate_dy) > self.tab_swipe_vertical_tolerance:
                 continue
-            if abs(candidate_dx) < abs(candidate_dy) * 1.4:
+            if abs(candidate_dx) < abs(candidate_dy):
                 continue
             direction = "left" if candidate_dx < 0 else "right"
             if self._tab_swipe_direction and direction != self._tab_swipe_direction:
@@ -823,26 +823,32 @@ class PointerControlService:
         vertical_drift = 0.0
         noise = self.tab_swipe_direction_noise
         points = [point for _point_t, point in self._two_finger_swipe_points]
+        net_dx = points[-1][0] - points[0][0]
+        if abs(net_dx) < threshold * 0.55:
+            return False
+        if ("left" if net_dx < 0 else "right") != direction:
+            return False
         for previous, current in zip(points, points[1:]):
             dx = current[0] - previous[0]
             dy = current[1] - previous[1]
             if abs(dx) < noise and abs(dy) < noise:
                 continue
-            if abs(dx) < abs(dy) * 1.15:
+            if abs(dx) < abs(dy) * 0.85:
                 return False
             if abs(dx) >= noise:
                 step_direction = "left" if dx < 0 else "right"
-                if step_direction != direction:
-                    return False
-                aligned_frames += 1
-                horizontal_progress += abs(dx)
+                if step_direction == direction:
+                    aligned_frames += 1
+                    horizontal_progress += abs(dx)
+                else:
+                    horizontal_progress -= abs(dx) * 0.70
             vertical_drift += abs(dy)
 
         if aligned_frames < self.tab_swipe_min_directional_frames:
             return False
-        if horizontal_progress < max(threshold * 0.65, noise * aligned_frames):
+        if horizontal_progress < max(threshold * 0.50, noise * aligned_frames):
             return False
-        return vertical_drift <= max(self.tab_swipe_vertical_tolerance, horizontal_progress * 0.65)
+        return vertical_drift <= max(self.tab_swipe_vertical_tolerance, horizontal_progress * 0.95)
 
     def _reset_tab_swipe_tracking(self) -> None:
         self._two_finger_swipe_points.clear()
