@@ -1,4 +1,4 @@
-.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
+.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
@@ -27,6 +27,18 @@ test-jmlc-ml:
 ml-smoke:
 	LOKY_MAX_CPU_COUNT=4 $(PYTHON) -m scripts.ml_smoke \
 		--report-json $(CI_ARTIFACT_DIR)/ml_smoke_report.json
+
+docker-build:
+	docker build --platform linux/amd64 -t gestureflow-runtime:local .
+
+docker-ml-smoke:
+	docker compose --profile tools run --rm ml-smoke
+
+docker-ci:
+	docker compose --profile tools run --rm ci
+
+docker-mlflow:
+	docker compose --profile tools up mlflow
 
 jmlc-profile:
 	$(PYTHON) -m scripts.jmlc_dataset_profile

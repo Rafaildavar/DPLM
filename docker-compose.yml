@@ -1,8 +1,17 @@
 # -----------------------------------------------------------------------------
-# PostgreSQL для приложения DPLM (только база данных, без приложения).
+# Docker services для GestureFlow.
 #
 # Старт:
 #   docker compose up -d db
+#   docker compose --profile tools run --rm ml-smoke
+#   docker compose --profile tools run --rm ci
+#   docker compose --profile tools up mlflow
+#
+# Важно: macOS Docker Desktop не является хорошим способом раздавать
+# desktop-приложение с веб-камерой. Контейнер здесь нужен для воспроизводимого
+# ML/runtime окружения, smoke-проверок и CD-артефактов. Нативное окно Flet с
+# камерой лучше распространять как macOS bundle / release archive.
+#
 # Подключение из приложения берётся из переменных окружения /
 # из файла .env (см. .env.example).
 #
@@ -34,5 +43,55 @@ services:
       timeout: 3s
       retries: 10
 
+  ml-smoke:
+    profiles: ["tools"]
+    platform: linux/amd64
+    build:
+      context: .
+      target: runtime
+    image: gestureflow-runtime:local
+    command: make ml-smoke
+    environment:
+      PYTHON: python
+      CI_ARTIFACT_DIR: /app/outputs/ci
+      DPLM_DB_BACKEND: sqlite
+      DPLM_SQLITE_PATH: /app/.runtime/dplm.sqlite
+    volumes:
+      - ./outputs:/app/outputs
+
+  ci:
+    profiles: ["tools"]
+    platform: linux/amd64
+    build:
+      context: .
+      target: runtime
+    image: gestureflow-runtime:local
+    command: make ci
+    environment:
+      PYTHON: python
+      CI_ARTIFACT_DIR: /app/outputs/ci
+      DPLM_DB_BACKEND: sqlite
+      DPLM_SQLITE_PATH: /app/.runtime/dplm.sqlite
+    volumes:
+      - ./outputs:/app/outputs
+
+  mlflow:
+    profiles: ["tools"]
+    platform: linux/amd64
+    build:
+      context: .
+      target: runtime
+    image: gestureflow-runtime:local
+    command: >
+      python -m mlflow ui
+      --backend-store-uri sqlite:////app/mlflow/mlflow.db
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    volumes:
+      - gestureflow_mlflow:/app/mlflow
+
 volumes:
   dplm_postgres_data:
+  gestureflow_mlflow:

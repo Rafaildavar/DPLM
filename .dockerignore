@@ -1,0 +1,35 @@
+.git
+.github/.cache
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.DS_Store
+
+# Local runtime state.
+.env
+.db_data
+mlflow.db
+mlruns
+outputs
+logs
+*.log
+
+# Large or private datasets are mounted/managed outside the image.
+data/raw
+data/external
+data/experiments
+data/gestures
+
+# Generated documents and temporary exports.
+docs/figures
+docs/articles
+*.docx
+*.pptx
+*.xlsx

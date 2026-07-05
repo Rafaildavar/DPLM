@@ -1,0 +1,58 @@
+name: Docker Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - contest_version
+    tags:
+      - "v*"
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "requirements.txt"
+      - "Makefile"
+      - "app/**"
+      - "cv/**"
+      - "models/**"
+      - "scripts/ml_smoke.py"
+      - ".github/workflows/docker-runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  docker-runtime:
+    name: Build Docker runtime and run ML smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build runtime image
+        run: docker build --platform linux/amd64 -t gestureflow-runtime:${{ github.sha }} .
+
+      - name: Run ML smoke inside container
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e CI_ARTIFACT_DIR=/app/outputs/ci \
+            gestureflow-runtime:${{ github.sha }} \
+            make ml-smoke
+
+      - name: Export image metadata
+        if: always()
+        run: |
+          mkdir -p outputs/docker
+          docker image inspect gestureflow-runtime:${{ github.sha }} \
+            > outputs/docker/image-inspect.json
+
+      - name: Upload Docker metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-runtime-metadata
+          path: outputs/docker/
+          if-no-files-found: ignore

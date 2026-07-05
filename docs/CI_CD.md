@@ -6,6 +6,7 @@ Implemented first production-oriented CI/CD layer:
 
 - GitHub Actions CI for pull requests and pushes.
 - Separate ML smoke workflow for model artifact checks.
+- Docker runtime workflow for reproducible headless ML/runtime validation.
 - Tag-based desktop release bundle.
 - Local Makefile entrypoints for the same checks.
 
@@ -27,6 +28,38 @@ Loads tracked model files, rebuilds synthetic feature vectors from metadata, run
 ```text
 outputs/ci/ml_smoke_report.json
 ```
+
+```bash
+make docker-build
+make docker-ml-smoke
+make docker-ci
+```
+
+Builds the local `gestureflow-runtime:local` image and runs the same checks in a
+clean Linux container. This validates the project outside the developer's macOS
+virtualenv and makes CD more realistic.
+
+The Docker runtime is built as `linux/amd64`. This is intentional: current
+MediaPipe wheels required by the project are available for Linux x86_64, while
+Linux arm64 Docker builds on Apple Silicon do not provide the required
+`mediapipe>=0.10.33` package. Docker Desktop runs the amd64 image through
+emulation on Apple Silicon Macs.
+
+The image installs `torch` separately from the PyTorch CPU wheel index and then
+installs the remaining project requirements. This avoids pulling CUDA/GPU
+packages into a headless ML smoke image and keeps the CD artifact aligned with
+the actual CPU inference path.
+
+The Dockerfile is multi-stage: compiler/build tooling is used only in the
+builder stage, while the final `runtime` stage contains the installed Python
+environment, system runtime libraries and project files.
+
+```bash
+make docker-mlflow
+```
+
+Starts an MLflow UI service from the Docker runtime image on
+`http://127.0.0.1:5000`.
 
 ## GitHub Actions
 
@@ -71,6 +104,26 @@ Purpose:
 - detect broken serialized models or metadata drift;
 - keep a machine-readable report as artifact.
 
+### `.github/workflows/docker-runtime.yml`
+
+Trigger:
+
+- manual `workflow_dispatch`;
+- push to `contest_version` when Docker/runtime/model files change;
+- tag push `v*`.
+
+Checks:
+
+- build `gestureflow-runtime:<sha>` from `Dockerfile`;
+- run `make ml-smoke` inside the container;
+- upload Docker image metadata as artifact.
+
+Purpose:
+
+- prove the ML/runtime layer is reproducible outside the local machine;
+- detect missing Linux system packages before release;
+- make CD relevant for ML/edge/server handoff scenarios.
+
 ### `.github/workflows/desktop-release.yml`
 
 Trigger:
@@ -94,8 +147,16 @@ local model files. CI cannot honestly test a real webcam stream on GitHub-hosted
 runners, so the pipeline is split:
 
 - CI verifies code and ML artifacts without hardware.
+- Docker verifies a clean Linux runtime for headless ML checks.
 - Live camera quality is verified through the project live-evaluation mode.
 - Release workflow packages a reproducible project bundle.
+
+Docker is not the primary way to distribute the macOS desktop camera app to
+friends. Docker Desktop on macOS does not provide a smooth native webcam/window
+experience for this Flet application because the camera and desktop window live
+outside the Linux container. For sharing the actual app, the better CD target is
+a native macOS `.app`/`.zip` bundle. Docker remains valuable as a reproducible
+runtime artifact for ML smoke, MLOps, CI and future edge/server variants.
 
 Next desktop CD step:
 

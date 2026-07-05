@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml)
 [![ML Smoke](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml)
+[![Docker Runtime](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml)
 [![Desktop Release Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml)
 
 ## Что Это
@@ -224,12 +225,49 @@ PYTHON=.venv/bin/python make ci
 
 - `CI`: unit tests + ML smoke на push/PR;
 - `ML Smoke`: отдельная регулярная проверка model artifacts;
+- `Docker Runtime`: сборка headless runtime image + ML smoke внутри контейнера;
 - `Desktop Release Bundle`: сборка release bundle по tag/manual run.
 
 Текущий CD-подход для desktop-приложения: не деплой на сервер, а выпуск
 воспроизводимого handoff bundle с кодом, моделями, конфигами и документацией.
 
 Подробнее: [docs/CI_CD.md](docs/CI_CD.md).
+
+## Docker
+
+Docker используется как воспроизводимый headless runtime для ML-проверок,
+MLOps и CD. Это не основной способ раздавать macOS-приложение с камерой:
+Docker Desktop на macOS плохо подходит для нативного окна Flet и доступа к
+веб-камере. Для друзей и демо нужен следующий CD-слой: macOS `.app`/`.zip`.
+
+Image собирается под `linux/amd64`, даже на Apple Silicon. Это сделано
+намеренно: нужные MediaPipe wheels для Linux доступны на x86_64, а не для
+обычной arm64-сборки Docker на Mac.
+
+Внутри Docker `torch` ставится отдельно из CPU wheel index, чтобы контейнер не
+тянул CUDA/GPU зависимости. Для нашей задачи это честнее: live-распознавание и
+ML smoke работают на CPU, а CD-проверка остается переносимой.
+
+Локальные команды:
+
+```bash
+make docker-build
+make docker-ml-smoke
+make docker-ci
+make docker-mlflow
+```
+
+Сервисы напрямую:
+
+```bash
+docker compose --profile tools run --rm ml-smoke
+docker compose --profile tools run --rm ci
+docker compose --profile tools up mlflow
+```
+
+`docker-runtime.yml` в GitHub Actions собирает image и запускает ML smoke
+внутри контейнера, чтобы проверить, что модельные артефакты и runtime не
+завязаны на локальную macOS-среду.
 
 ## Быстрый Старт
 
