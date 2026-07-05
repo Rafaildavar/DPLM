@@ -43,7 +43,7 @@ def memory_session():
 # ---------------------------------------------------------------------------
 
 
-def test_taxonomy_has_six_categories():
+def test_taxonomy_has_expected_categories():
     assert set(CATEGORY_LABELS.keys()) == {
         "launch",
         "system",
@@ -51,6 +51,7 @@ def test_taxonomy_has_six_categories():
         "media",
         "hotkey",
         "script",
+        "workflow",
     }
 
 
@@ -60,7 +61,7 @@ def test_every_action_has_category():
         assert category_for_action(action) in CATEGORY_LABELS
 
 
-def test_all_six_categories_have_at_least_one_action():
+def test_all_categories_have_at_least_one_action():
     counts = {cid: 0 for cid in CATEGORY_LABELS}
     for cid in ACTION_TO_CATEGORY.values():
         counts[cid] += 1
@@ -154,6 +155,23 @@ def test_r6_is_dangerous_command_via_action_spec():
     assert is_dangerous_command(cmd_safe) is False
 
 
+def test_r6_is_dangerous_command_inside_sequence():
+    cmd = Command(
+        name="Workflow",
+        platform="macos",
+        action_spec=json.dumps(
+            {
+                "action": "sequence",
+                "steps": [
+                    {"action": "open_app", "app": "Preview"},
+                    {"action": "lock_screen"},
+                ],
+            }
+        ),
+    )
+    assert is_dangerous_command(cmd) is True
+
+
 def test_r6_is_dangerous_command_via_shell_prefix():
     cmd = Command(name="Shell", platform="macos", script_path="shell:rm -rf /tmp/x")
     assert is_dangerous_command(cmd) is True
@@ -183,6 +201,17 @@ def test_r7_open_url_requires_http():
     assert validate_action_spec({"action": "open_url", "url": "https://example.com"}) is None
 
 
+def test_r7_open_path_requires_existing_absolute_path(tmp_path):
+    target = tmp_path / "task.pdf"
+    target.write_text("demo\n")
+
+    assert validate_action_spec({"action": "open_path"}) is not None
+    err = validate_action_spec({"action": "open_path", "path": "relative/file.txt"})
+    assert err is not None
+    assert "абсолютным" in err
+    assert validate_action_spec({"action": "open_path", "path": str(target)}) is None
+
+
 def test_r7_scroll_clicks_must_be_int():
     assert validate_action_spec({"action": "scroll"}) is not None
     err = validate_action_spec({"action": "scroll", "clicks": "abc"})
@@ -210,6 +239,46 @@ def test_r7_media_key_kind_validated():
     assert validate_action_spec({"action": "media_key", "kind": "what"}) is not None
     assert validate_action_spec({"action": "media_key", "kind": "play_pause"}) is None
     assert validate_action_spec({"action": "media_key", "kind": "next"}) is None
+
+
+def test_r7_wait_and_notify_validated():
+    assert validate_action_spec({"action": "wait"}) is not None
+    assert validate_action_spec({"action": "wait", "seconds": "abc"}) is not None
+    assert validate_action_spec({"action": "wait", "seconds": 0}) is not None
+    assert validate_action_spec({"action": "wait", "seconds": 1.5}) is None
+
+    assert validate_action_spec({"action": "notify"}) is not None
+    assert validate_action_spec({"action": "notify", "message": "Готово"}) is None
+
+
+def test_r7_sequence_validates_each_step(tmp_path):
+    target = tmp_path / "lesson.txt"
+    target.write_text("demo\n")
+
+    spec = {
+        "action": "sequence",
+        "steps": [
+            {"action": "open_path", "path": str(target)},
+            {"action": "wait", "seconds": 0.5},
+            {"action": "notify", "message": "Рабочее место готово"},
+        ],
+    }
+    assert validate_action_spec(spec) is None
+
+    assert validate_action_spec({"action": "sequence", "steps": []}) is not None
+    err = validate_action_spec(
+        {
+            "action": "sequence",
+            "steps": [{"action": "open_path", "path": "/no/such/file"}],
+        }
+    )
+    assert err is not None
+    assert "шаг 1" in err
+
+    nested = {"action": "sequence", "steps": [{"action": "sequence", "steps": []}]}
+    err = validate_action_spec(nested)
+    assert err is not None
+    assert "нельзя вкладывать" in err
 
 
 def test_r7_run_script_requires_existing_py(tmp_path):

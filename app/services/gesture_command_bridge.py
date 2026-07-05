@@ -262,14 +262,27 @@ def is_dangerous_command(command: Command) -> bool:
     """
     spec = parse_command_action_spec(command)
     if spec:
-        action = (spec.get("action") or "").strip().lower()
-        if action in DANGEROUS_ACTIONS:
+        if _action_spec_is_dangerous(spec):
             return True
     sp = (command.script_path or "").strip().lower()
     if sp.startswith("shell:"):
         return True
     if sp.endswith(".py") and sp.startswith("/"):
         return True
+    return False
+
+
+def _action_spec_is_dangerous(spec: dict) -> bool:
+    action = (spec.get("action") or "").strip().lower()
+    if action in DANGEROUS_ACTIONS:
+        return True
+    if action == "sequence":
+        steps = spec.get("steps") or []
+        if isinstance(steps, list):
+            return any(
+                isinstance(step, dict) and _action_spec_is_dangerous(step)
+                for step in steps
+            )
     return False
 
 
