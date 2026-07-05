@@ -21,7 +21,10 @@ __all__ = [
     "PolicyAgent",
     "RelevanceReviewerAgent",
     "ResearchAgent",
+    "ResearchQueryPlanner",
+    "ResearchRecipeValidator",
     "ScenarioAgent",
+    "SkillMemoryWriterAgent",
     "ValidationAgent",
 ]
 
@@ -68,10 +71,25 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.reviewer import RelevanceReviewerAgent
 
         return RelevanceReviewerAgent
-    if name == "ResearchAgent":
-        from app.services.binding_agents.research import ResearchAgent
+    if name in {
+        "ResearchAgent",
+        "ResearchQueryPlanner",
+        "ResearchRecipeValidator",
+        "SkillMemoryWriterAgent",
+    }:
+        from app.services.binding_agents.research import (
+            ResearchAgent,
+            ResearchQueryPlanner,
+            ResearchRecipeValidator,
+            SkillMemoryWriterAgent,
+        )
 
-        return ResearchAgent
+        return {
+            "ResearchAgent": ResearchAgent,
+            "ResearchQueryPlanner": ResearchQueryPlanner,
+            "ResearchRecipeValidator": ResearchRecipeValidator,
+            "SkillMemoryWriterAgent": SkillMemoryWriterAgent,
+        }[name]
     if name in {"BindingAgentE2ECase", "BindingAgentLlmJudge"}:
         from app.services.binding_agents.e2e_judge import (
             BindingAgentE2ECase,

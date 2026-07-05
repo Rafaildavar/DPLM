@@ -38,6 +38,8 @@ BINDING_AGENT_MLFLOW_ENV = "DPLM_BINDING_AGENT_MLFLOW"
 BINDING_AGENT_MLFLOW_EXPERIMENT_ENV = "DPLM_BINDING_AGENT_MLFLOW_EXPERIMENT"
 BINDING_AGENT_GENAI_TRACES_ENV = "DPLM_BINDING_AGENT_GENAI_TRACES"
 BINDING_AGENT_GENAI_EVAL_ENV = "DPLM_BINDING_AGENT_GENAI_EVAL"
+BINDING_AGENT_LOCAL_FIRST_ENV = "DPLM_BINDING_AGENT_LOCAL_FIRST"
+BINDING_AGENT_REWRITE_ANSWERS_ENV = "DPLM_BINDING_AGENT_REWRITE_ANSWERS"
 
 AGENT_ACTION_LABELS: dict[str, str] = {
     "open_app": "Открыть приложение",
@@ -565,6 +567,8 @@ def _parse_action(text: str) -> dict[str, Any] | None:
         for alias, url in SITE_ALIASES.items():
             if alias in lower:
                 return {"action": "open_url", "platform": "macos", "url": url}
+    if any(marker in lower for marker in ("сайт", "website", "url", "адрес")):
+        return None
 
     script_path = _find_path(text, python_only=True)
     if script_path and ("скрипт" in lower or "script" in lower or ".py" in lower):
@@ -865,6 +869,17 @@ def _provider_name(provider: str | None) -> str:
 
 def _wants_mistral(provider: str | None) -> bool:
     return _provider_name(provider) in {"mistral", "mistral-api", "llm"}
+
+
+def _local_first_enabled() -> bool:
+    return _env_flag(BINDING_AGENT_LOCAL_FIRST_ENV, default=True)
+
+
+def _answer_rewrite_enabled(provider: str | None) -> bool:
+    return _wants_mistral(provider) and _env_flag(
+        BINDING_AGENT_REWRITE_ANSWERS_ENV,
+        default=False,
+    )
 
 
 def binding_agent_provider_label(provider: str | None = None) -> str:
@@ -1861,7 +1876,7 @@ class BindingAgentMlflowLogger:
         provider: str,
         model: str,
     ) -> dict[str, Any]:
-        if not _env_flag(BINDING_AGENT_GENAI_EVAL_ENV, default=True):
+        if not _env_flag(BINDING_AGENT_GENAI_EVAL_ENV, default=False):
             return {}
         genai = getattr(mlflow, "genai", None)
         evaluate = getattr(genai, "evaluate", None)
@@ -2280,7 +2295,7 @@ class BindingAgentOrchestrator:
                 )
             )
             answer_steps = list(steps)
-            if _wants_mistral(provider):
+            if _answer_rewrite_enabled(provider):
                 rewrite_step, rewritten = self.mistral_agent.rewrite_answer(
                     context,
                     intent=intent,
@@ -2331,7 +2346,7 @@ class BindingAgentOrchestrator:
                 context.conversation_history,
             )
             answer_steps = list(steps)
-            if _wants_mistral(provider):
+            if _answer_rewrite_enabled(provider):
                 rewrite_step, rewritten = self.mistral_agent.rewrite_answer(
                     context,
                     intent=intent,
@@ -2368,34 +2383,116 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
-        if _wants_mistral(provider):
-            model_step, model_draft = self.mistral_agent.run(
+        wants_model = _wants_mistral(provider)
+        local_first = _local_first_enabled()
+
+        if wants_model and not local_first:
+            model_result, steps = self._mistral_binding_result(
                 context,
                 intent=intent,
                 block=block,
+                base_steps=steps,
             )
-            steps.append(model_step)
-            if model_draft is not None:
-                model_result = self._result_from_external_draft(
-                    context,
-                    model_draft,
-                    steps,
-                )
-                model_result = self._maybe_research_result(
-                    context,
-                    model_result,
-                    steps,
-                )
+            if model_result is not None:
                 return self._finish_result(
-                    self._review_result(
-                        context,
-                        model_result,
-                        intent_step,
-                    ),
+                    self._review_result(context, model_result, intent_step),
                     context,
                     provider=provider_name,
                 )
 
+        local_result = self._run_local_binding_pipeline(
+            context,
+            intent=intent,
+            steps=steps,
+        )
+
+        if wants_model and local_first and self._needs_mistral_fallback(local_result):
+            reason = self._mistral_fallback_reason(local_result)
+            fallback_steps = [
+                *local_result.steps,
+                AgentStep(
+                    "Orchestrator",
+                    "fallback",
+                    "Локальный контракт неполный; пробую Mistral как fallback.",
+                    {
+                        "reason": reason,
+                        "localFirst": True,
+                        "localCanApply": local_result.can_apply,
+                        "localMissing": list(local_result.missing),
+                    },
+                ),
+            ]
+            model_result, fallback_steps = self._mistral_binding_result(
+                context,
+                intent=intent,
+                block=block,
+                base_steps=fallback_steps,
+            )
+            if model_result is not None and self._model_candidate_improves(
+                local_result,
+                model_result,
+            ):
+                return self._finish_result(
+                    self._review_result(context, model_result, intent_step),
+                    context,
+                    provider=provider_name,
+                )
+            local_result = replace(
+                local_result,
+                steps=[
+                    *fallback_steps,
+                    AgentStep(
+                        "Orchestrator",
+                        "skipped",
+                        "Mistral fallback не улучшил локальный контракт.",
+                        {"reason": reason},
+                    ),
+                ],
+            )
+
+        return self._finish_result(
+            self._review_result(context, local_result, intent_step),
+            context,
+            provider=provider_name,
+        )
+
+    def _mistral_binding_result(
+        self,
+        context: BindingAgentContext,
+        *,
+        intent: str,
+        block: str,
+        base_steps: list[AgentStep],
+    ) -> tuple[BindingAgentResult | None, list[AgentStep]]:
+        steps = list(base_steps)
+        model_step, model_draft = self.mistral_agent.run(
+            context,
+            intent=intent,
+            block=block,
+        )
+        steps.append(model_step)
+        if model_draft is None:
+            return None, steps
+        model_result = self._result_from_external_draft(
+            context,
+            model_draft,
+            steps,
+        )
+        model_result = self._maybe_research_result(
+            context,
+            model_result,
+            steps,
+        )
+        return model_result, list(model_result.steps)
+
+    def _run_local_binding_pipeline(
+        self,
+        context: BindingAgentContext,
+        *,
+        intent: str,
+        steps: list[AgentStep],
+    ) -> BindingAgentResult:
+        steps = list(steps)
         gesture_step = self.gesture_agent.run(context)
         steps.append(gesture_step)
         gesture = str(gesture_step.data.get("gesture") or "")
@@ -2422,7 +2519,7 @@ class BindingAgentOrchestrator:
         research: dict[str, Any] = {}
         if not action_spec:
             research_step = self.research_agent.run(context)
-            steps.append(research_step)
+            self._append_research_step(steps, research_step)
             action_spec = dict(research_step.data.get("action_spec") or {})
             research = dict(research_step.data.get("research") or {})
 
@@ -2482,11 +2579,40 @@ class BindingAgentOrchestrator:
             steps=steps,
             research=research,
         )
-        return self._finish_result(
-            self._review_result(context, result, intent_step),
-            context,
-            provider=provider_name,
-        )
+        return result
+
+    def _needs_mistral_fallback(self, result: BindingAgentResult) -> bool:
+        if result.can_apply:
+            return False
+        normalized_missing = {_norm(item) for item in result.missing}
+        if "действие" in normalized_missing or "action" in normalized_missing:
+            return True
+        if result.error:
+            return True
+        return bool(result.gesture_label and not result.action_spec)
+
+    def _mistral_fallback_reason(self, result: BindingAgentResult) -> str:
+        if result.error:
+            return "local_error"
+        normalized_missing = {_norm(item) for item in result.missing}
+        if "действие" in normalized_missing or "action" in normalized_missing:
+            return "missing_action"
+        if result.gesture_label and not result.action_spec:
+            return "empty_action_spec"
+        return "incomplete_contract"
+
+    def _model_candidate_improves(
+        self,
+        local_result: BindingAgentResult,
+        model_result: BindingAgentResult,
+    ) -> bool:
+        if model_result.can_apply and not local_result.can_apply:
+            return True
+        if model_result.ok and not local_result.ok:
+            return True
+        if model_result.action_spec and not local_result.action_spec:
+            return len(model_result.missing) <= len(local_result.missing)
+        return False
 
     def _review_result(
         self,
@@ -2557,7 +2683,7 @@ class BindingAgentOrchestrator:
         if not needs_research:
             return result
         research_step = self.research_agent.run(context)
-        steps.append(research_step)
+        self._append_research_step(steps, research_step)
         action_spec = dict(research_step.data.get("action_spec") or {})
         if not action_spec:
             return result
@@ -2569,6 +2695,31 @@ class BindingAgentOrchestrator:
             action_spec=action_spec,
             research=research,
         )
+
+    def _append_research_step(
+        self,
+        steps: list[AgentStep],
+        research_step: AgentStep,
+    ) -> None:
+        steps.append(research_step)
+        pipeline = research_step.data.get("researchPipeline")
+        if not isinstance(pipeline, list):
+            return
+        for item in pipeline:
+            if not isinstance(item, dict):
+                continue
+            agent = str(item.get("agent") or "").strip()
+            if not agent:
+                continue
+            data = item.get("data") if isinstance(item.get("data"), dict) else {}
+            steps.append(
+                AgentStep(
+                    agent,
+                    str(item.get("status") or ""),
+                    str(item.get("message") or ""),
+                    dict(data),
+                )
+            )
 
     def _result_from_researched_action(
         self,

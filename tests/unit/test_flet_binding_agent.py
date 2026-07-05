@@ -4,7 +4,14 @@ import os
 import sys
 
 from app.flet_app.views.bindings import BindingsView, build_agent_binding_draft
-from app.services.binding_agents import GuardrailsAgent, IntentAgent, RelevanceReviewerAgent
+from app.services.binding_agents import (
+    GuardrailsAgent,
+    IntentAgent,
+    RelevanceReviewerAgent,
+    ResearchQueryPlanner,
+    ResearchRecipeValidator,
+    SkillMemoryWriterAgent,
+)
 from app.services.binding_agents.eval_cases import (
     BINDING_AGENT_EVAL_CASES,
     binding_agent_eval_dataset,
@@ -50,6 +57,9 @@ def test_binding_agents_are_importable_from_dedicated_package():
     assert GuardrailsAgent.__module__.endswith(".guardrails")
     assert IntentAgent.__module__.endswith(".intent")
     assert RelevanceReviewerAgent.__module__.endswith(".reviewer")
+    assert ResearchQueryPlanner.__module__.endswith(".research")
+    assert ResearchRecipeValidator.__module__.endswith(".research")
+    assert SkillMemoryWriterAgent.__module__.endswith(".research")
 
 
 def test_binding_agent_skills_are_importable_from_dedicated_package():
@@ -359,7 +369,9 @@ def test_binding_agent_orchestrator_returns_multi_agent_trace():
     assert result.intent == "create_binding"
 
 
-def test_binding_agent_mistral_provider_uses_model_response():
+def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_LOCAL_FIRST", "0")
+
     class FakeResponse:
         def read(self):
             content = json.dumps(
@@ -429,7 +441,9 @@ def test_binding_agent_mistral_provider_uses_model_response():
     assert mistral_step.data["durationMs"] >= 0
 
 
-def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature():
+def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_REWRITE_ANSWERS", "1")
+
     class FakeResponse:
         def read(self):
             return json.dumps(
@@ -485,7 +499,9 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature():
     assert mistral_step.data["temperature"] == 0.72
 
 
-def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt():
+def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_REWRITE_ANSWERS", "1")
+
     class FakeResponse:
         def read(self):
             return json.dumps(
@@ -535,7 +551,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt():
     assert mistral_step.data["purpose"] == "answer_rewrite"
 
 
-def test_binding_agent_auto_enables_mistral_when_api_key_env_exists(monkeypatch):
+def test_binding_agent_auto_provider_prefers_local_contract_when_api_key_env_exists(monkeypatch):
     class FakeResponse:
         def read(self):
             content = json.dumps(
@@ -562,10 +578,16 @@ def test_binding_agent_auto_enables_mistral_when_api_key_env_exists(monkeypatch)
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     monkeypatch.delenv("DPLM_BINDING_AGENT_PROVIDER", raising=False)
     monkeypatch.delenv("BINDING_AGENT_PROVIDER", raising=False)
+    called = {"urlopen": False}
+
+    def fake_urlopen(_request, timeout):
+        called["urlopen"] = True
+        return FakeResponse()
+
     agent = MistralBindingAgent(
         api_key="test-key",
         model="test-mistral",
-        urlopen=lambda _request, timeout: FakeResponse(),
+        urlopen=fake_urlopen,
     )
 
     result = BindingAgentOrchestrator(mistral_agent=agent).run(
@@ -574,27 +596,23 @@ def test_binding_agent_auto_enables_mistral_when_api_key_env_exists(monkeypatch)
     )
 
     assert result.ok is True
-    assert result.response_text == "Mistral: авто-режим работает."
-    assert any(step.agent == "Mistral Agent" for step in result.steps)
+    assert result.response_text.startswith("Локальный агент")
+    assert not called["urlopen"]
+    assert not any(step.agent == "Mistral Agent" for step in result.steps)
 
 
 def test_binding_agent_mistral_provider_falls_back_without_api_key():
     agent = MistralBindingAgent(api_key="")
     result = BindingAgentOrchestrator(mistral_agent=agent).run(
-        "жест palm открывает Safari",
+        "жест palm сделай mission control",
         GESTURES,
         provider="mistral",
     )
 
-    assert result.ok is True
+    assert result.ok is False
     assert result.gesture_label == "palm"
-    assert result.action_spec["action"] == "open_app"
-    assert [step.agent for step in result.steps[:4]] == [
-        "Guardrails Agent",
-        "Intent Agent",
-        "Mistral Agent",
-        "Gesture Agent",
-    ]
+    assert result.action_spec == {}
+    assert "действие" in result.missing
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.status == "need_input"
 
@@ -761,6 +779,7 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
             calls["trace_updates"].append(kwargs)
 
     monkeypatch.setenv("DPLM_BINDING_AGENT_MLFLOW", "1")
+    monkeypatch.setenv("DPLM_BINDING_AGENT_GENAI_EVAL", "1")
     monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path / 'mlflow.db'}")
     monkeypatch.setenv("DPLM_BINDING_AGENT_MLFLOW_EXPERIMENT", "AgentFlow")
     monkeypatch.setitem(sys.modules, "mlflow", FakeMlflow)
@@ -1107,8 +1126,11 @@ def test_binding_agent_researches_unknown_action_before_clarifying(tmp_path):
         "keys": ["ctrl", "up"],
     }
     assert "Research Agent" in [step.agent for step in result.steps]
+    assert "Research Query Planner" in [step.agent for step in result.steps]
+    assert "Research Recipe Validator" in [step.agent for step in result.steps]
     research_step = next(step for step in result.steps if step.agent == "Research Agent")
     assert research_step.data["durationMs"] >= 0
+    assert research_step.data["researchPipeline"][0]["agent"] == "Research Query Planner"
     assert draft["researchProposal"]["approvalRequired"] is True
     assert draft["researchProposal"]["rememberOnApproval"] is True
     assert "запомню это как skill" in draft["agentReply"]
@@ -1160,6 +1182,8 @@ def test_research_approval_writes_skill_and_next_run_uses_memory(tmp_path):
     research_step = next(step for step in result.steps if step.agent == "Research Agent")
 
     assert saved is not None
+    assert saved["writerAgent"] == "Skill Memory Writer"
+    assert saved["skillPath"] == str(skill_path)
     assert result.can_apply is True
     assert result.action_spec["keys"] == ["ctrl", "up"]
     assert research_step.data["source"] == "user_skill_memory"

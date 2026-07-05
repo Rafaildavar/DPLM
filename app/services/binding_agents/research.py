@@ -123,9 +123,137 @@ class ResearchRecipe:
         )
 
 
+@dataclass(frozen=True)
+class ResearchQueryPlan:
+    query: str
+    platform: str
+    intent: str
+    allow_web: bool
+    confidence: float
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "platform": self.platform,
+            "intent": self.intent,
+            "allowWeb": self.allow_web,
+            "confidence": self.confidence,
+            "reason": self.reason,
+        }
+
+
 class ResearchProvider(Protocol):
     def research(self, context: BindingAgentContext) -> ResearchRecipe | None:
         """Return a source-backed recipe or None when research cannot help."""
+
+
+def _step_dict(step: AgentStep) -> dict[str, Any]:
+    return {
+        "agent": step.agent,
+        "status": step.status,
+        "message": step.message,
+        "data": dict(step.data),
+    }
+
+
+class ResearchQueryPlanner:
+    name = "Research Query Planner"
+
+    def run(self, context: BindingAgentContext) -> tuple[AgentStep, ResearchQueryPlan]:
+        lower = _norm(context.prompt)
+        allow_web = str(os.getenv(RESEARCH_WEB_ENV) or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        intent = "macos_action_lookup"
+        reason = "Запрос похож на действие macOS, которого нет в локальном parser."
+        if any(marker in lower for marker in ("сайт", "url", "website", "адрес")):
+            intent = "website_lookup"
+            reason = "Нужен URL или проверенный способ открыть сайт."
+        elif any(
+            marker in lower
+            for marker in ("экран", "space", "desktop", "рабочий стол")
+        ):
+            intent = "desktop_navigation_lookup"
+            reason = "Нужна команда навигации macOS."
+        plan = ResearchQueryPlan(
+            query=context.prompt,
+            platform="macos",
+            intent=intent,
+            allow_web=allow_web,
+            confidence=0.74,
+            reason=reason,
+        )
+        return (
+            AgentStep(
+                self.name,
+                "ok",
+                "Собрал план поиска рецепта.",
+                {"plan": plan.to_dict()},
+            ),
+            plan,
+        )
+
+
+class ResearchRecipeValidator:
+    name = "Research Recipe Validator"
+
+    def run(
+        self,
+        recipe: ResearchRecipe | None,
+        *,
+        plan: ResearchQueryPlan,
+        approval_required: bool,
+        source: str,
+    ) -> AgentStep:
+        issues: list[str] = []
+        action_spec = dict(recipe.action_spec) if recipe else {}
+        if not recipe:
+            issues.append("recipe_missing")
+        if recipe and recipe.platform and recipe.platform != plan.platform:
+            issues.append("platform_mismatch")
+        if not action_spec.get("action"):
+            issues.append("action_missing")
+        if approval_required and recipe and not (
+            recipe.source_title or recipe.source_url or recipe.source_excerpt
+        ):
+            issues.append("source_missing")
+        status = "ok" if not issues else "blocked"
+        return AgentStep(
+            self.name,
+            status,
+            (
+                "Проверил research-рецепт."
+                if not issues
+                else "Research-рецепт не прошёл проверку."
+            ),
+            {
+                "issues": issues,
+                "source": source,
+                "approvalRequired": approval_required,
+                "action": str(action_spec.get("action") or ""),
+                "plan": plan.to_dict(),
+            },
+        )
+
+
+class SkillMemoryWriterAgent:
+    name = "Skill Memory Writer"
+
+    def __init__(self, memory: ResearchMemoryStore) -> None:
+        self.memory = memory
+
+    def approve(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        saved = self.memory.approve(proposal)
+        return {
+            **saved,
+            "writerAgent": self.name,
+            "memoryPath": str(self.memory.memory_path),
+            "skillPath": str(self.memory.skill_path),
+        }
 
 
 class ResearchMemoryStore:
@@ -455,8 +583,12 @@ class ResearchAgent:
         *,
         memory: ResearchMemoryStore | None = None,
         provider: ResearchProvider | None = None,
+        planner: ResearchQueryPlanner | None = None,
+        validator: ResearchRecipeValidator | None = None,
     ) -> None:
         self.memory = memory or ResearchMemoryStore()
+        self.planner = planner or ResearchQueryPlanner()
+        self.validator = validator or ResearchRecipeValidator()
         self.provider = provider or CompositeResearchProvider(
             (
                 SourceBackedResearchProvider(),
@@ -466,8 +598,29 @@ class ResearchAgent:
 
     def run(self, context: BindingAgentContext) -> AgentStep:
         started = time.perf_counter()
+        planner_step, plan = self.planner.run(context)
+        substeps = [_step_dict(planner_step)]
         learned = self.memory.find(context.prompt)
         if learned:
+            validator_step = self.validator.run(
+                learned,
+                plan=plan,
+                approval_required=False,
+                source="user_skill_memory",
+            )
+            substeps.append(_step_dict(validator_step))
+            if validator_step.status == "blocked":
+                return AgentStep(
+                    self.name,
+                    "need_clarification",
+                    "Одобренный skill-рецепт не прошёл проверку.",
+                    {
+                        "action_spec": {},
+                        "source": "user_skill_memory_blocked",
+                        "researchPipeline": substeps,
+                        "durationMs": _elapsed_ms(started),
+                    },
+                )
             return AgentStep(
                 self.name,
                 "ok",
@@ -476,11 +629,19 @@ class ResearchAgent:
                     "action_spec": dict(learned.action_spec),
                     "source": "user_skill_memory",
                     "research": learned.to_proposal(approval_required=False),
+                    "researchPipeline": substeps,
                     "durationMs": _elapsed_ms(started),
                 },
             )
 
         recipe = self.provider.research(context)
+        validator_step = self.validator.run(
+            recipe,
+            plan=plan,
+            approval_required=True,
+            source="source_backed_research" if recipe else "research_miss",
+        )
+        substeps.append(_step_dict(validator_step))
         if recipe is None:
             return AgentStep(
                 self.name,
@@ -490,6 +651,20 @@ class ResearchAgent:
                     "action_spec": {},
                     "source": "research_miss",
                     "query": context.prompt,
+                    "researchPipeline": substeps,
+                    "durationMs": _elapsed_ms(started),
+                },
+            )
+        if validator_step.status == "blocked":
+            return AgentStep(
+                self.name,
+                "need_clarification",
+                "Research Agent нашёл рецепт, но validator его остановил.",
+                {
+                    "action_spec": {},
+                    "source": "research_blocked",
+                    "query": context.prompt,
+                    "researchPipeline": substeps,
                     "durationMs": _elapsed_ms(started),
                 },
             )
@@ -502,6 +677,7 @@ class ResearchAgent:
                 "action_spec": dict(recipe.action_spec),
                 "source": "source_backed_research",
                 "research": recipe.to_proposal(approval_required=True),
+                "researchPipeline": substeps,
                 "durationMs": _elapsed_ms(started),
             },
         )
@@ -520,7 +696,8 @@ def approve_research_proposal(
     action_spec = proposal.get("actionSpec")
     if not isinstance(action_spec, dict) or not action_spec.get("action"):
         return None
-    return ResearchMemoryStore(
+    memory = ResearchMemoryStore(
         memory_path=memory_path,
         skill_path=skill_path,
-    ).approve(proposal)
+    )
+    return SkillMemoryWriterAgent(memory).approve(proposal)

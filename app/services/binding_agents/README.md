@@ -19,4 +19,28 @@ after the user approves it through the UI.
 Live web research is allowlisted and opt-in via `DPLM_BINDING_RESEARCH_WEB=1`;
 memory and source-backed local recipes are available without network access.
 
+The orchestrator is contract-first by default:
+
+- `DPLM_BINDING_AGENT_LOCAL_FIRST=1` means deterministic agents try to build
+  the draft before Mistral is called.
+- If the local contract is complete, Mistral is skipped even when
+  `MISTRAL_API_KEY` exists.
+- If the local contract misses an action or hits validation trouble, Mistral can
+  be used as fallback and the trace records the fallback reason.
+- `DPLM_BINDING_AGENT_REWRITE_ANSWERS=1` enables model paraphrasing for answer
+  mode; otherwise project/general answers stay local and fast.
+- `DPLM_BINDING_AGENT_GENAI_EVAL=1` enables `mlflow.genai.evaluate`; by default
+  the UI hot path logs traces and metrics without running scorer evaluation.
+
+Research is split into visible stages:
+
+- `Research Query Planner` classifies the lookup and records whether live web
+  research is allowed.
+- `Research Agent` checks approved memory, source-backed recipes, then optional
+  allowlisted Apple web search.
+- `Research Recipe Validator` rejects recipes without an action, wrong platform,
+  or missing source evidence when approval is required.
+- `Skill Memory Writer` writes only user-approved recipes back to the persisted
+  researched-actions skill pack.
+
 `app.services.binding_agent` remains the public compatibility facade and keeps shared contracts, parsing helpers, MLflow logging, and the orchestrator. It imports the skill registry from `skills/`, which avoids UI import churn while keeping concrete agent roles and reusable capabilities separated.
