@@ -2,6 +2,9 @@
 import json
 
 from app.services.pointer_control import (
+    POINTER_STATE_CLICK_READY,
+    POINTER_STATE_LOST,
+    POINTER_STATE_TRACKING,
     PointerControlService,
     _pick_pointer_hand,
     _screen_size,
@@ -29,6 +32,17 @@ def test_pick_pointer_hand_prefers_right():
         {"landmarks": [], "handedness": "Right"},
     ]
     assert _pick_pointer_hand(hands)["handedness"] == "Right"
+
+
+def test_pick_pointer_hand_prefers_closest_visible_hand():
+    far_right = _proximity_landmarks(center=(0.60, 0.50), scale=0.45)
+    near_left = _proximity_landmarks(center=(0.40, 0.50), scale=1.10)
+    hands = [
+        {"landmarks": far_right, "handedness": "Right"},
+        {"landmarks": near_left, "handedness": "Left"},
+    ]
+
+    assert _pick_pointer_hand(hands)["landmarks"] is near_left
 
 
 def test_pointer_moves_cursor(monkeypatch):
@@ -145,6 +159,149 @@ def test_pointer_ignores_small_jitter(monkeypatch):
 
     assert first.moved
     assert not jitter.moved
+    assert len(moves) == 1
+
+
+def test_pointer_double_smoothing_dampens_large_jump(monkeypatch):
+    moves = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(
+        smoothing=0.5,
+        second_smoothing=0.4,
+        edge_margin=0.0,
+        move_deadzone_px=0.0,
+        velocity_gate_px=0.0,
+        pointer_jump_limit=1.0,
+    )
+    first = svc.update(_payload(_open_index_landmarks(tip=(0.20, 0.20))))
+    second = svc.update(_payload(_open_index_landmarks(tip=(0.80, 0.20))))
+
+    assert first.state == POINTER_STATE_TRACKING
+    assert second.state == POINTER_STATE_TRACKING
+    assert moves[0][0] == 200
+    assert 200 < moves[1][0] < 800
+
+
+def test_pointer_rejects_single_frame_tracking_spike(monkeypatch):
+    moves = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(
+        edge_margin=0.0,
+        move_deadzone_px=0.0,
+        velocity_gate_px=0.0,
+        pointer_jump_limit=0.12,
+        pointer_jump_hold_frames=2,
+    )
+    first = svc.update(_payload(_open_index_landmarks(tip=(0.50, 0.20))))
+    spike = svc.update(_payload(_open_index_landmarks(tip=(0.90, 0.20))))
+    back = svc.update(_payload(_open_index_landmarks(tip=(0.50, 0.20))))
+
+    assert first.moved
+    assert not spike.moved
+    assert not back.moved
+    assert moves == [(500, 160)]
+
+
+def test_pointer_reports_lost_and_click_ready_states(monkeypatch):
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(*_args, **_kwargs):
+            pass
+
+        @staticmethod
+        def click(*_args, **_kwargs):
+            pass
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(click_debounce_s=0.1)
+
+    assert svc.update("[]").state == POINTER_STATE_LOST
+    svc.update(_payload(_open_index_landmarks()))
+    folded = svc.update(_payload(_folded_index_landmarks()))
+
+    assert folded.state == POINTER_STATE_CLICK_READY
+    assert folded.clicked
+
+
+def test_pointer_velocity_gate_suppresses_micro_motion(monkeypatch):
+    moves = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(
+        edge_margin=0.0,
+        move_deadzone_px=0.0,
+        velocity_gate_px=3.0,
+    )
+    first = svc.update(_payload(_open_index_landmarks(tip=(0.50, 0.20))))
+    micro = svc.update(_payload(_open_index_landmarks(tip=(0.502, 0.20))))
+
+    assert first.moved
+    assert not micro.moved
     assert len(moves) == 1
 
 
@@ -334,6 +491,42 @@ def test_two_frame_two_finger_motion_does_not_switch_windows(monkeypatch):
     assert hotkeys == []
 
 
+def test_two_finger_swipe_rejects_direction_reversal(monkeypatch):
+    hotkeys = []
+
+    class FakePyAutoGUI:
+        FAILSAFE = False
+        PAUSE = 0
+
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def hotkey(*keys):
+            hotkeys.append(keys)
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+
+    svc = PointerControlService(tab_swipe_cooldown_s=0.0)
+    svc.update(_payload(_two_finger_landmarks(center=(0.50, 0.24))))
+    svc.update(_payload(_two_finger_landmarks(center=(0.41, 0.24))))
+    reversed_motion = svc.update(_payload(_two_finger_landmarks(center=(0.53, 0.24))))
+    final = svc.update(_payload(_two_finger_landmarks(center=(0.32, 0.24))))
+
+    assert not reversed_motion.tab_switched
+    assert not final.tab_switched
+    assert hotkeys == []
+
+
 def test_two_finger_swipe_requires_release_before_second_switch(monkeypatch):
     hotkeys = []
 
@@ -484,4 +677,31 @@ def _open_palm_landmarks(*, center=(0.5, 0.24)):
     landmarks[18] = [pinky_x, 0.45]
     landmarks[19] = [pinky_x, 0.33]
     landmarks[20] = [pinky_x, center[1] + 0.02]
+    return landmarks
+
+
+def _proximity_landmarks(*, center=(0.5, 0.5), scale=1.0):
+    cx, cy = center
+    offsets = {
+        0: (0.00, 0.18),
+        5: (-0.07, 0.05),
+        6: (-0.08, -0.04),
+        7: (-0.09, -0.12),
+        8: (-0.10, -0.20),
+        9: (0.00, 0.04),
+        10: (0.00, -0.06),
+        11: (0.00, -0.15),
+        12: (0.00, -0.24),
+        13: (0.07, 0.05),
+        14: (0.08, -0.03),
+        15: (0.09, -0.10),
+        16: (0.10, -0.17),
+        17: (0.13, 0.08),
+        18: (0.14, 0.00),
+        19: (0.15, -0.06),
+        20: (0.16, -0.12),
+    }
+    landmarks = _blank_landmarks()
+    for index, (dx, dy) in offsets.items():
+        landmarks[index] = [cx + dx * scale, cy + dy * scale]
     return landmarks

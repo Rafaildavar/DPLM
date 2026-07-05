@@ -46,6 +46,12 @@ Point = tuple[float, float]
 TAB_SWIPE_IDLE = "idle"
 TAB_SWIPE_ARMED = "armed"
 TAB_SWIPE_TRACKING = "tracking"
+POINTER_STATE_IDLE = "idle"
+POINTER_STATE_DISABLED = "disabled"
+POINTER_STATE_LOST = "lost"
+POINTER_STATE_TRACKING = "tracking"
+POINTER_STATE_CLICK_READY = "click-ready"
+POINTER_STATE_SWIPE_TRACKING = "swipe-tracking"
 
 
 def macos_accessibility_trusted() -> bool:
@@ -90,6 +96,9 @@ class PointerUpdateResult:
     clicked: bool = False
     tab_switched: str = ""
     error: str = ""
+    state: str = POINTER_STATE_IDLE
+    x: Optional[int] = None
+    y: Optional[int] = None
 
 
 @dataclass
@@ -131,6 +140,29 @@ def parse_landmarks_json(landmarks_json: str) -> list[dict[str, Any]]:
 def _pick_pointer_hand(hands: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     if not hands:
         return None
+    if len(hands) == 1:
+        return hands[0]
+
+    ranked = sorted(
+        (
+            (
+                _hand_camera_score(hand),
+                (hand.get("handedness") or "").strip().lower() == "right",
+                -index,
+                hand,
+            )
+            for index, hand in enumerate(hands)
+        ),
+        key=lambda item: (item[0], item[1], item[2]),
+        reverse=True,
+    )
+    best_score = ranked[0][0]
+    second_score = ranked[1][0] if len(ranked) > 1 else 0.0
+    if best_score > 0.0 and (
+        best_score - second_score >= 0.025 or best_score >= second_score * 1.08
+    ):
+        return ranked[0][3]
+
     for hand in hands:
         if (hand.get("handedness") or "").strip().lower() == "right":
             return hand
@@ -159,6 +191,51 @@ def _landmark_point(landmarks: list[Any], index: int) -> Optional[Point]:
         return float(point[0]), float(point[1])
     except (TypeError, ValueError, IndexError):
         return None
+
+
+def _hand_camera_score(hand: dict[str, Any]) -> float:
+    landmarks = hand.get("landmarks") or []
+    if not isinstance(landmarks, list):
+        return 0.0
+
+    points = [
+        point
+        for point in (_landmark_point(landmarks, index) for index in range(len(landmarks)))
+        if point is not None
+    ]
+    if len(points) < 2:
+        return 0.0
+
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+    bbox_diag = math.hypot(max_x - min_x, max_y - min_y)
+
+    palm_anchors = [
+        _landmark_point(landmarks, index)
+        for index in (
+            INDEX_FINGER_MCP,
+            MIDDLE_FINGER_MCP,
+            RING_FINGER_MCP,
+            PINKY_FINGER_MCP,
+        )
+    ]
+    palm_points = [point for point in palm_anchors if point is not None]
+    palm_span = 0.0
+    if len(palm_points) >= 2:
+        palm_span = max(
+            _distance(a, b)
+            for i, a in enumerate(palm_points)
+            for b in palm_points[i + 1 :]
+        )
+
+    wrist = _landmark_point(landmarks, 0)
+    palm_depth = 0.0
+    if wrist is not None and palm_points:
+        palm_depth = sum(_distance(wrist, point) for point in palm_points) / len(palm_points)
+
+    return palm_span * 2.5 + palm_depth + bbox_diag * 0.5
 
 
 def _screen_size() -> tuple[int, int]:
@@ -206,18 +283,28 @@ class PointerControlService:
         self,
         *,
         smoothing: float = 0.28,
+        second_smoothing: float = 0.32,
+        velocity_gate_px: float = 0.75,
+        pointer_jump_limit: float = 0.18,
+        pointer_jump_hold_frames: int = 2,
         edge_margin: float = 0.08,
         move_deadzone_px: float = 4.0,
         click_debounce_s: float = 0.42,
         tab_swipe_threshold: float = 0.075,
         tab_swipe_vertical_tolerance: float = 0.20,
         tab_swipe_min_speed: float = 0.12,
-        tab_swipe_cooldown_s: float = 0.45,
+        tab_swipe_cooldown_s: float = 0.65,
         tab_swipe_min_frames: int = 3,
-        tab_swipe_release_frames: int = 1,
+        tab_swipe_release_frames: int = 2,
         tab_swipe_arm_frames: int = 2,
+        tab_swipe_direction_noise: float = 0.012,
+        tab_swipe_min_directional_frames: int = 2,
     ) -> None:
         self.smoothing = max(0.05, min(0.95, float(smoothing)))
+        self.second_smoothing = max(0.05, min(0.95, float(second_smoothing)))
+        self.velocity_gate_px = max(0.0, float(velocity_gate_px))
+        self.pointer_jump_limit = max(0.05, min(1.0, float(pointer_jump_limit)))
+        self.pointer_jump_hold_frames = max(0, int(pointer_jump_hold_frames))
         self.edge_margin = max(0.0, min(0.4, float(edge_margin)))
         self.move_deadzone_px = max(0.0, float(move_deadzone_px))
         self.click_debounce_s = max(0.1, float(click_debounce_s))
@@ -231,8 +318,20 @@ class PointerControlService:
         self.tab_swipe_min_frames = max(2, int(tab_swipe_min_frames))
         self.tab_swipe_release_frames = max(1, int(tab_swipe_release_frames))
         self.tab_swipe_arm_frames = max(1, int(tab_swipe_arm_frames))
+        self.tab_swipe_direction_noise = max(
+            0.002,
+            min(0.08, float(tab_swipe_direction_noise)),
+        )
+        self.tab_swipe_min_directional_frames = max(
+            1,
+            int(tab_swipe_min_directional_frames),
+        )
+        self._primary_smooth_x: Optional[float] = None
+        self._primary_smooth_y: Optional[float] = None
         self._smooth_x: Optional[float] = None
         self._smooth_y: Optional[float] = None
+        self._last_pointer_point: Optional[Point] = None
+        self._pointer_jump_frames = 0
         self._accessibility_warned = False
         self._missing_frames = 0
         self._index_folded = False
@@ -250,8 +349,12 @@ class PointerControlService:
         self._freeze_cursor_for_swipe = False
 
     def reset(self) -> None:
+        self._primary_smooth_x = None
+        self._primary_smooth_y = None
         self._smooth_x = None
         self._smooth_y = None
+        self._last_pointer_point = None
+        self._pointer_jump_frames = 0
         self._missing_frames = 0
         self._index_folded = False
         self._two_finger_swipe_points.clear()
@@ -271,6 +374,7 @@ class PointerControlService:
                 PointerUpdateResult(
                     ok=False,
                     error="pyautogui не установлен (pip install pyautogui)",
+                    state=POINTER_STATE_DISABLED,
                 ),
                 None,
             )
@@ -280,17 +384,17 @@ class PointerControlService:
             self._missing_frames += 1
             if self._missing_frames >= 4:
                 self.reset()
-            return PointerUpdateResult(ok=True, moved=False), None
+            return PointerUpdateResult(ok=True, moved=False, state=POINTER_STATE_LOST), None
         self._missing_frames = 0
 
         landmarks = hand.get("landmarks") or []
         if not isinstance(landmarks, list) or len(landmarks) <= INDEX_FINGER_TIP:
-            return PointerUpdateResult(ok=True, moved=False), None
+            return PointerUpdateResult(ok=True, moved=False, state=POINTER_STATE_LOST), None
 
         index_tip = _landmark_point(landmarks, INDEX_FINGER_TIP)
         if index_tip is None:
-            return PointerUpdateResult(ok=True, moved=False), None
-        ix, iy = index_tip
+            return PointerUpdateResult(ok=True, moved=False, state=POINTER_STATE_LOST), None
+        ix, iy = self._stable_pointer_point(index_tip)
         index_folded = self._is_index_folded(landmarks)
         tab_swipe = self._tab_swipe_requested(landmarks, index_folded)
 
@@ -312,28 +416,38 @@ class PointerControlService:
         )
 
         if self._smooth_x is None or self._smooth_y is None:
+            self._primary_smooth_x = target_x
+            self._primary_smooth_y = target_y
             self._smooth_x = target_x
             self._smooth_y = target_y
         elif freeze_for_click or freeze_for_swipe:
             target_x = self._smooth_x
             target_y = self._smooth_y
         else:
-            distance_px = math.hypot(target_x - self._smooth_x, target_y - self._smooth_y)
+            primary_x = self._primary_smooth_x if self._primary_smooth_x is not None else self._smooth_x
+            primary_y = self._primary_smooth_y if self._primary_smooth_y is not None else self._smooth_y
+            distance_px = math.hypot(target_x - primary_x, target_y - primary_y)
             alpha = self._adaptive_alpha(distance_px, screen_w, screen_h)
-            self._smooth_x = self._smooth_x * (1.0 - alpha) + target_x * alpha
-            self._smooth_y = self._smooth_y * (1.0 - alpha) + target_y * alpha
+            self._primary_smooth_x = primary_x * (1.0 - alpha) + target_x * alpha
+            self._primary_smooth_y = primary_y * (1.0 - alpha) + target_y * alpha
+            beta = self.second_smoothing
+            self._smooth_x = self._smooth_x * (1.0 - beta) + self._primary_smooth_x * beta
+            self._smooth_y = self._smooth_y * (1.0 - beta) + self._primary_smooth_y * beta
             self._limit_step(previous_x, previous_y, screen_w, screen_h)
 
         clicked = self._click_requested(index_folded)
+        state = self._pointer_state(index_folded=index_folded, tab_swipe=tab_swipe)
         moved = True
         if previous_x is not None and previous_y is not None:
+            delta = math.hypot(self._smooth_x - previous_x, self._smooth_y - previous_y)
             moved = (
-                math.hypot(self._smooth_x - previous_x, self._smooth_y - previous_y)
-                >= self.move_deadzone_px
+                delta > 1e-6
+                and delta >= self.move_deadzone_px
+                and delta >= self.velocity_gate_px
             )
 
         if not moved and not clicked and not tab_swipe:
-            return PointerUpdateResult(ok=True, moved=False), None
+            return PointerUpdateResult(ok=True, moved=False, state=state), None
 
         action = PointerAction(
             x=max(0, min(int(screen_w) - 1, int(round(self._smooth_x)))),
@@ -347,9 +461,35 @@ class PointerControlService:
                 moved=moved,
                 clicked=clicked,
                 tab_switched=tab_swipe,
+                state=state,
+                x=action.x,
+                y=action.y,
             ),
             action,
         )
+
+    def _pointer_state(self, *, index_folded: bool, tab_swipe: str) -> str:
+        if tab_swipe or self._freeze_cursor_for_swipe or self._tab_swipe_state == TAB_SWIPE_TRACKING:
+            return POINTER_STATE_SWIPE_TRACKING
+        if index_folded:
+            return POINTER_STATE_CLICK_READY
+        return POINTER_STATE_TRACKING
+
+    def _stable_pointer_point(self, point: Point) -> Point:
+        previous = self._last_pointer_point
+        if previous is None:
+            self._last_pointer_point = point
+            self._pointer_jump_frames = 0
+            return point
+
+        if _distance(point, previous) > self.pointer_jump_limit:
+            self._pointer_jump_frames += 1
+            if self._pointer_jump_frames <= self.pointer_jump_hold_frames:
+                return previous
+
+        self._last_pointer_point = point
+        self._pointer_jump_frames = 0
+        return point
 
     def _adaptive_alpha(self, distance_px: float, screen_w: int, screen_h: int) -> float:
         base = self.smoothing
@@ -621,9 +761,6 @@ class PointerControlService:
             if candidate is None or abs(candidate_dx) > abs(candidate[2]):
                 candidate = (point_t, point, candidate_dx, candidate_dy)
 
-        if abs(raw_dx) >= threshold * 0.45 and not self._tab_swipe_direction:
-            self._tab_swipe_direction = "left" if raw_dx < 0 else "right"
-
         if candidate is None:
             if (
                 abs(raw_dx) >= threshold * 0.45
@@ -637,6 +774,19 @@ class PointerControlService:
             return ""
 
         start_t, _start, dx, dy = candidate
+        direction = "left" if dx < 0 else "right"
+        if not self._tab_swipe_direction_is_stable(direction, threshold):
+            if (
+                abs(raw_dx) >= threshold * 0.45
+                and now - self._last_swipe_tracking_log_ts >= 0.45
+            ):
+                print(
+                    f"[i] Pointer: two-finger swipe stabilizing dx={raw_dx:.2f} dy={raw_dy:.2f}",
+                    flush=True,
+                )
+                self._last_swipe_tracking_log_ts = now
+            return ""
+
         if abs(dx) < threshold:
             if (
                 abs(raw_dx) >= threshold * 0.45
@@ -656,10 +806,43 @@ class PointerControlService:
             return ""
 
         self._last_tab_swipe_ts = now
+        self._tab_swipe_direction = direction
         self._reset_tab_swipe_tracking()
         self._swipe_requires_release = True
         self._freeze_cursor_for_swipe = True
-        return "left" if dx < 0 else "right"
+        return direction
+
+    def _tab_swipe_direction_is_stable(self, direction: str, threshold: float) -> bool:
+        if direction not in {"left", "right"}:
+            return False
+        if len(self._two_finger_swipe_points) < self.tab_swipe_min_directional_frames + 1:
+            return False
+
+        aligned_frames = 0
+        horizontal_progress = 0.0
+        vertical_drift = 0.0
+        noise = self.tab_swipe_direction_noise
+        points = [point for _point_t, point in self._two_finger_swipe_points]
+        for previous, current in zip(points, points[1:]):
+            dx = current[0] - previous[0]
+            dy = current[1] - previous[1]
+            if abs(dx) < noise and abs(dy) < noise:
+                continue
+            if abs(dx) < abs(dy) * 1.15:
+                return False
+            if abs(dx) >= noise:
+                step_direction = "left" if dx < 0 else "right"
+                if step_direction != direction:
+                    return False
+                aligned_frames += 1
+                horizontal_progress += abs(dx)
+            vertical_drift += abs(dy)
+
+        if aligned_frames < self.tab_swipe_min_directional_frames:
+            return False
+        if horizontal_progress < max(threshold * 0.65, noise * aligned_frames):
+            return False
+        return vertical_drift <= max(self.tab_swipe_vertical_tolerance, horizontal_progress * 0.65)
 
     def _reset_tab_swipe_tracking(self) -> None:
         self._two_finger_swipe_points.clear()

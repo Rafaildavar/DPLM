@@ -1,5 +1,5 @@
 """
-GUI-агностичный контроллер для Flet-версии GestureFlow.
+GUI-агностичный контроллер для Flet-версии GestureBind.
 
 Делает то же, что прежний :class:`app.main.AppController` (PySide6), но без
 зависимостей от Qt: вместо ``Signal/Slot`` — обычные списки коллбэков.
@@ -52,6 +52,7 @@ from app.services.live_gesture_state import (
     LiveGestureState,
 )
 from cv.gesture_dataset_files import (
+    augmented_sample_path,
     augmented_sample_paths,
     gesture_sample_paths,
     real_sample_paths,
@@ -353,8 +354,8 @@ DYNAMIC_OPPOSITE_LABELS = {
 SAMPLE_RECORDING_READY_FRAMES = 6
 SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
-SAMPLE_RECORDING_STATIC_AUGMENTATIONS = 0
-SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS = 0
+SAMPLE_RECORDING_STATIC_AUGMENTATIONS = 1
+SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS = 2
 DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
 DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
 LIVE_EVAL_DEFAULT_ATTEMPTS = 10
@@ -421,6 +422,7 @@ class AppController:
         landmarks_changed(str)       # JSON со списком ландмарок
         gesture_mode_changed(bool)
         pointer_mode_changed(bool)
+        pointer_state_changed(dict)
         landmark_overlay_changed(bool)
         voice_assistant_state_changed(str)
         two_hands_changed(bool)
@@ -454,6 +456,14 @@ class AppController:
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
         self._pointer_mode: bool = False
+        self._pointer_state_payload: dict[str, Any] = {
+            "enabled": False,
+            "state": "idle",
+            "moved": False,
+            "clicked": False,
+            "tabSwitched": "",
+            "error": "",
+        }
         self._confidence: float = 0.0
         self._landmarks_json: str = "[]"
         self._last_label: str = ""
@@ -486,6 +496,7 @@ class AppController:
         self.landmarks_changed = _Event()
         self.gesture_mode_changed = _Event()
         self.pointer_mode_changed = _Event()
+        self.pointer_state_changed = _Event()
         self.landmark_overlay_changed = _Event()
         self.voice_assistant_state_changed = _Event()
         self.two_hands_changed = _Event()
@@ -2537,7 +2548,7 @@ class AppController:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>GestureFlow live evaluation - {expected}</title>
+  <title>GestureBind live evaluation - {expected}</title>
   <style>
     body {{ margin: 0; padding: 32px; background: #0d1218; color: #f5f7fb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     h1 {{ margin: 0 0 8px; font-size: 34px; }}
@@ -2594,7 +2605,9 @@ class AppController:
         reason: str,
     ) -> None:
         experiment = str(
-            os.getenv("GESTUREFLOW_MLFLOW_EXPERIMENT") or "GestureFlow"
+            os.getenv("GESTUREBIND_MLFLOW_EXPERIMENT")
+            or os.getenv("GESTUREFLOW_MLFLOW_EXPERIMENT")
+            or "GestureBind"
         ).strip()
         if not experiment:
             return
@@ -2665,7 +2678,7 @@ class AppController:
                 mlflow.set_tags(
                     {
                         "run_kind": "live_evaluation",
-                        "source": "gestureflow_flet",
+                        "source": "gesturebind_flet",
                         "finish_reason": str(reason or ""),
                         "artifact_bundle": "live_evaluation/index.html",
                     }
@@ -3130,15 +3143,54 @@ class AppController:
                 self._pointer_control.reset()
             except Exception:
                 pass
+        self._emit_pointer_state(state="idle", moved=False, clicked=False)
+
+    def _emit_pointer_state(
+        self,
+        *,
+        state: str,
+        moved: bool = False,
+        clicked: bool = False,
+        tab_switched: str = "",
+        error: str = "",
+    ) -> None:
+        payload = {
+            "enabled": bool(getattr(self, "_pointer_mode", False)),
+            "state": str(state or "idle"),
+            "moved": bool(moved),
+            "clicked": bool(clicked),
+            "tabSwitched": str(tab_switched or ""),
+            "error": str(error or ""),
+        }
+        if payload == getattr(self, "_pointer_state_payload", None):
+            return
+        self._pointer_state_payload = payload
+        event = getattr(self, "pointer_state_changed", None)
+        if event is not None:
+            try:
+                event.emit(dict(payload))
+            except Exception:
+                pass
 
     def _update_pointer_from_landmarks(self, landmarks_json: str) -> None:
         if not self._pointer_mode:
             return
         pointer = self._ensure_pointer_control()
         if pointer is None:
+            self._emit_pointer_state(
+                state="disabled",
+                error="pyautogui недоступен",
+            )
             self._set_status("Pointer: pyautogui недоступен")
             return
         result = pointer.update(landmarks_json)
+        self._emit_pointer_state(
+            state=str(getattr(result, "state", "") or "tracking"),
+            moved=bool(getattr(result, "moved", False)),
+            clicked=bool(getattr(result, "clicked", False)),
+            tab_switched=str(getattr(result, "tab_switched", "") or ""),
+            error=str(getattr(result, "error", "") or ""),
+        )
         if not result.ok and result.error:
             self._set_status(f"Pointer: {result.error}")
 
@@ -3723,6 +3775,7 @@ class AppController:
         *,
         two_hands: bool,
         include_global_motion: bool = False,
+        include_landmark_z: bool = False,
     ) -> Any | None:
         import numpy as np
 
@@ -3730,15 +3783,32 @@ class AppController:
 
         def hand_feature(hand: Any) -> Any:
             normalized = normalize_landmarks(hand.landmarks)
+            pts = np.asarray(hand.landmarks, dtype=np.float32)
+            wrist = (
+                pts[0]
+                if pts.shape == (21, 2)
+                else np.zeros(2, dtype=np.float32)
+            )
+            if include_landmark_z:
+                xyz = np.asarray(
+                    getattr(hand, "landmarks_xyz", None) or [],
+                    dtype=np.float32,
+                )
+                if xyz.shape == (21, 3):
+                    z = xyz[:, 2:3]
+                else:
+                    z = np.zeros((21, 1), dtype=np.float32)
+                pose_xyz = np.concatenate([normalized, z], axis=1)
+                if not include_global_motion:
+                    return pose_xyz.astype(np.float32, copy=False)
+                return np.concatenate([pose_xyz.reshape(-1), wrist], axis=0).astype(
+                    np.float32,
+                    copy=False,
+                )
             if not include_global_motion:
                 return normalized
 
-            pts = np.asarray(hand.landmarks, dtype=np.float32)
             pose = normalized.reshape(-1)
-            if pts.shape == (21, 2):
-                wrist = pts[0]
-            else:
-                wrist = np.zeros(2, dtype=np.float32)
             return np.concatenate([pose, wrist], axis=0).astype(np.float32, copy=False)
 
         features: list[Any] = []
@@ -3750,7 +3820,7 @@ class AppController:
 
         if two_hands:
             if include_global_motion:
-                per_hand_dim = 44
+                per_hand_dim = 65 if include_landmark_z else 44
                 if len(features) >= 2:
                     return np.concatenate(features[:2], axis=0)
                 if len(features) == 1:
@@ -3762,8 +3832,9 @@ class AppController:
                 if len(features) >= 2:
                     return np.concatenate(features[:2], axis=0)
                 if len(features) == 1:
+                    pad_shape = (21, 3) if include_landmark_z else (21, 2)
                     return np.concatenate(
-                        [features[0], np.zeros((21, 2), dtype=np.float32)],
+                        [features[0], np.zeros(pad_shape, dtype=np.float32)],
                         axis=0,
                     )
             return None
@@ -3895,6 +3966,7 @@ class AppController:
             sequence_displacement,
             sequence_motion_energy,
             sequence_to_matrix,
+            trajectory_features,
         )
 
         seq = sequence_to_matrix(sequence)
@@ -3906,8 +3978,9 @@ class AppController:
 
         has_global_motion = bool(include_global_motion and seq.shape[1] >= 44)
         if has_global_motion:
-            dx = float(seq[-1, -2] - seq[0, -2])
-            dy = float(seq[-1, -1] - seq[0, -1])
+            motion = trajectory_features(seq)
+            dx = float(motion[0])
+            dy = float(motion[1])
             if motion_energy < DYNAMIC_SAMPLE_MIN_MOTION_ENERGY:
                 warnings.append("low_motion")
 
@@ -4005,14 +4078,25 @@ class AppController:
             "label": str(session.get("label") or ""),
             "sample": path.name,
             "kind": kind,
-            "source": "camera",
-            "source_sample": "",
+            "source": "camera" if kind == "real" else "augmented",
+            "source_sample": source_path.name if source_path is not None else "",
             "transform": transform,
             "transform_metadata": transform_metadata or {},
             "frames": int(arr.shape[0]),
             "raw_feature_dim": int(arr.reshape(arr.shape[0], -1).shape[1]),
             "two_hands": bool(session.get("two_hands")),
             "include_global_motion": bool(session.get("include_global_motion")),
+            "include_landmark_z": bool(session.get("include_landmark_z")),
+            "sample_feature_format": (
+                "landmark_xyz_wrist_xy"
+                if bool(session.get("include_global_motion"))
+                and bool(session.get("include_landmark_z"))
+                else "landmark_xyz"
+                if bool(session.get("include_landmark_z"))
+                else "landmark_xy_wrist_xy"
+                if bool(session.get("include_global_motion"))
+                else "landmark_xy"
+            ),
             "projected_hand_scale_median": projected_hand_scale,
             "quality": self._json_safe_sample_report(report),
             "recorded_at": time.time(),
@@ -4027,7 +4111,64 @@ class AppController:
         projected_hand_scale: float | None,
         on_line: Optional[Callable[[str], None]],
     ) -> int:
-        return 0
+        import numpy as np
+
+        from cv.gesture_augmentation import augment_gislr_landmark_sequence
+
+        count = max(0, int(session.get("augment_count", 0) or 0))
+        if count <= 0:
+            return 0
+
+        saved = 0
+        include_global_motion = bool(session.get("include_global_motion"))
+        for variant_index in range(count):
+            seed = self._sample_recording_seed(
+                str(session.get("label") or ""),
+                source_path.with_name(f"{source_path.name}:{variant_index}"),
+            )
+            try:
+                augmented, transform_metadata = augment_gislr_landmark_sequence(
+                    arr,
+                    seed=seed,
+                    include_global_motion=include_global_motion,
+                )
+            except Exception as exc:
+                if on_line:
+                    on_line(f"[w] GISLR-аугментация пропущена: {exc}")
+                continue
+
+            out_path = augmented_sample_path(source_path, variant_index)
+            try:
+                np.save(out_path, augmented.astype(np.float32, copy=False))
+            except OSError as exc:
+                if on_line:
+                    on_line(f"[w] Не удалось сохранить augmented sample: {exc}")
+                continue
+
+            report = self._sample_quality_report(
+                augmented,
+                label=str(session.get("label") or ""),
+                include_global_motion=include_global_motion,
+            )
+            report["projected_hand_scale"] = projected_hand_scale
+            self._write_sample_metadata(
+                out_path,
+                self._sample_metadata_payload(
+                    session=session,
+                    path=out_path,
+                    arr=augmented,
+                    kind="augmented",
+                    report=report,
+                    projected_hand_scale=projected_hand_scale,
+                    source_path=source_path,
+                    transform="gislr_landmark_v1",
+                    transform_metadata=transform_metadata,
+                ),
+                on_line,
+            )
+            saved += 1
+
+        return saved
 
     def _process_sample_recording_frame(self, frame_bgr: Any) -> str:
         import cv2
@@ -4059,6 +4200,7 @@ class AppController:
             hands,
             two_hands=bool(session.get("two_hands")),
             include_global_motion=bool(session.get("include_global_motion")),
+            include_landmark_z=bool(session.get("include_landmark_z")),
         )
         hand_scales: list[float] = []
         for hand in hands:
@@ -4901,8 +5043,8 @@ class AppController:
         if target == self._pointer_mode:
             return
         self._pointer_mode = target
-        if not target:
-            self._reset_pointer_control()
+        self._reset_pointer_control()
+        self._emit_pointer_state(state="idle", moved=False, clicked=False)
         self.pointer_mode_changed.emit(target)
         if self._embedded_active:
             self._set_status(self._live_recognition_status())
@@ -5247,6 +5389,10 @@ class AppController:
             }
             out: list[dict[str, Any]] = []
             for g in rows:
+                label_value = str(g.label or "").strip()
+                system_class = self._is_system_internal_gesture_label(label_value)
+                if system_class:
+                    continue
                 samples = list(getattr(g, "samples", []) or [])
                 user_samples = [
                     sample
@@ -5257,13 +5403,18 @@ class AppController:
                     sample_count = len(user_samples)
                 except Exception:
                     sample_count = 0
+                visible_sample_count = sample_count
                 samples_path = str(getattr(g, "samples_path", "") or "").strip()
                 preview_path = ""
                 if user_samples:
                     preview_path = str(
                         getattr(user_samples[0], "features_path", "") or ""
                     )
+                elif samples:
+                    preview_path = str(getattr(samples[0], "features_path", "") or "")
+                    visible_sample_count = len(samples)
                 legacy_user_samples: list[Path] = []
+                legacy_visible_samples: list[Path] = []
                 if samples_path:
                     try:
                         sample_dir = self._configured_path(samples_path)
@@ -5275,11 +5426,20 @@ class AppController:
                                 )
                             )
                             sample_count = len(legacy_user_samples)
+                            visible_sample_count = max(
+                                visible_sample_count,
+                                sample_count,
+                            )
+                            if visible_sample_count <= 0:
+                                legacy_visible_samples = gesture_sample_paths(sample_dir)
+                                visible_sample_count = len(legacy_visible_samples)
                         if not preview_path and legacy_user_samples:
                             preview_path = str(legacy_user_samples[0])
+                        if not preview_path and legacy_visible_samples:
+                            preview_path = str(legacy_visible_samples[0])
                     except Exception:
                         pass
-                if sample_count <= 0:
+                if visible_sample_count <= 0:
                     continue
                 command = current.get(g.id)
                 action_spec: dict[str, Any] = {}
@@ -5298,14 +5458,18 @@ class AppController:
                 out.append(
                     {
                         "id": int(g.id),
-                        "label": str(g.label or ""),
+                        "label": label_value,
                         "description": str(g.description or ""),
                         "samplesPath": str(getattr(g, "samples_path", "") or ""),
                         "samplePreviewPath": preview_path,
-                        "sampleCount": int(sample_count),
+                        "sampleCount": int(visible_sample_count),
+                        "userRecordedSamples": int(sample_count),
+                        "standardClass": bool(sample_count <= 0),
+                        "systemClass": False,
+                        "canDelete": bool(sample_count > 0),
                         "gestureType": (
                             GESTURE_TYPE_DYNAMIC
-                            if str(g.label or "").strip().lower() in dynamic_classes
+                            if label_value.lower() in dynamic_classes
                             else ""
                         ),
                         "isTwoHands": bool(
@@ -6047,6 +6211,7 @@ class AppController:
         frames: int = 30,
         two_hands: bool = False,
         include_global_motion: bool = False,
+        include_landmark_z: bool = False,
         on_line: Optional[Callable[[str], None]] = None,
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
@@ -6083,6 +6248,7 @@ class AppController:
         out_dir = data_dir / clean
         target_samples = max(1, int(num_samples))
         target_frames = max(1, int(frames))
+        use_landmark_z = bool(include_landmark_z)
         augment_count = (
             SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS
             if include_global_motion
@@ -6094,6 +6260,7 @@ class AppController:
             "frames": target_frames,
             "two_hands": bool(two_hands),
             "include_global_motion": bool(include_global_motion),
+            "include_landmark_z": use_landmark_z,
             "augment_count": augment_count,
             "started_camera_for_recording": False,
             "saved": 0,
@@ -6131,6 +6298,7 @@ class AppController:
                 f"{target_frames} кадров"
                 + (" (две руки)" if two_hands else "")
                 + (" + глобальное движение" if include_global_motion else "")
+                + (" + landmark z" if use_landmark_z else "")
             )
             on_line(
                 "[i] Держи стартовую позу неподвижно — после отсчета записывай движение"

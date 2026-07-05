@@ -1,5 +1,5 @@
 """
-Главный экран GestureFlow: превью камеры + жесты + последняя команда.
+Главный экран GestureBind: превью камеры + жесты + последняя команда.
 
 В отличие от старой версии (где главная только показывала список команд, а
 распознавание жило на отдельной вкладке/в subprocess), здесь главная — это
@@ -388,6 +388,12 @@ class HomeView:
         self._status_text = ft.Text(
             controller.status, size=12, color=COLOR_MUTED, italic=True
         )
+        self._pointer_state_text = ft.Text(
+            "Pointer: off",
+            size=12,
+            color=COLOR_MUTED,
+            no_wrap=True,
+        )
 
         # Подписки. Все события могут прийти из фонового потока, поэтому
         # все обновления UI идут через ``page.run_thread``.
@@ -403,6 +409,7 @@ class HomeView:
         controller.two_hands_changed.connect(self._on_two_hands)
         controller.gesture_mode_changed.connect(self._on_gesture_mode)
         controller.pointer_mode_changed.connect(self._on_pointer_mode)
+        controller.pointer_state_changed.connect(self._on_pointer_state)
         controller.landmark_overlay_changed.connect(self._on_landmark_overlay)
         controller.recognition_model_mode_changed.connect(self._on_model_mode)
         controller.dynamic_model_profile_changed.connect(self._on_dynamic_profile)
@@ -1136,6 +1143,54 @@ class HomeView:
                 self._pointer_switch.update()
             except Exception:
                 pass
+        if not value:
+            self._apply_pointer_state({"enabled": False, "state": "idle"})
+
+    def _on_pointer_state(self, payload: dict) -> None:
+        self._page.run_thread(self._apply_pointer_state, payload)
+
+    def _apply_pointer_state(self, payload: dict) -> None:
+        data = payload if isinstance(payload, dict) else {}
+        enabled = bool(data.get("enabled"))
+        state = str(data.get("state") or "idle").strip()
+        error = str(data.get("error") or "").strip()
+        tab_switched = str(data.get("tabSwitched") or "").strip()
+        clicked = bool(data.get("clicked"))
+
+        if not enabled:
+            text = "Pointer: off"
+            color = COLOR_MUTED
+        elif error or state == "disabled":
+            text = f"Pointer: {error or 'disabled'}"
+            color = COLOR_DANGER
+        elif tab_switched:
+            text = f"Pointer: swipe {tab_switched}"
+            color = COLOR_WARNING
+        elif clicked:
+            text = "Pointer: clicked"
+            color = COLOR_SUCCESS
+        elif state == "lost":
+            text = "Pointer: lost hand"
+            color = COLOR_WARNING
+        elif state == "click-ready":
+            text = "Pointer: click-ready"
+            color = COLOR_WARNING
+        elif state == "swipe-tracking":
+            text = "Pointer: swipe"
+            color = COLOR_WARNING
+        elif state == "tracking":
+            text = "Pointer: tracking"
+            color = COLOR_SUCCESS
+        else:
+            text = "Pointer: idle"
+            color = COLOR_MUTED
+
+        self._pointer_state_text.value = text
+        self._pointer_state_text.color = color
+        try:
+            self._pointer_state_text.update()
+        except Exception:
+            pass
 
     def _on_landmark_overlay(self, value: bool) -> None:
         self._page.run_thread(self._apply_landmark_overlay, value)
@@ -1616,6 +1671,23 @@ class HomeView:
                             self._pointer_switch,
                             self._two_hands_switch,
                         ],
+                    ),
+                    ft.Container(
+                        bgcolor="#171A1D",
+                        border_radius=8,
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+                        content=ft.Row(
+                            spacing=8,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Icon(
+                                    ft.Icons.TOUCH_APP,
+                                    size=15,
+                                    color=COLOR_WARNING,
+                                ),
+                                self._pointer_state_text,
+                            ],
+                        ),
                     ),
                 ],
             ),

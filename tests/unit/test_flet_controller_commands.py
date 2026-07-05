@@ -51,9 +51,18 @@ def _dispatch_controller():
     controller._live_evaluation_lock = threading.RLock()
     controller._gesture_mode = True
     controller._pointer_mode = False
+    controller._pointer_control = None
     controller._show_landmark_overlay = True
     controller._recognition_model_mode = "static"
     controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
+    controller._pointer_state_payload = {
+        "enabled": False,
+        "state": "idle",
+        "moved": False,
+        "clicked": False,
+        "tabSwitched": "",
+        "error": "",
+    }
     controller._auto_execute_on_gesture = True
     controller._status = "Idle"
     controller.confidence_changed = _Event()
@@ -62,6 +71,7 @@ def _dispatch_controller():
     controller.gesture_detected = _Event()
     controller.gesture_mode_changed = _Event()
     controller.pointer_mode_changed = _Event()
+    controller.pointer_state_changed = _Event()
     controller.status_changed = _Event()
     controller.dynamic_model_profile_changed = _Event()
     controller.recognition_model_mode_changed = _Event()
@@ -1133,7 +1143,8 @@ def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     assert controller._sample_recording["frames"] == 7
     assert controller._sample_recording["two_hands"] is True
     assert controller._sample_recording["include_global_motion"] is False
-    assert controller._sample_recording["augment_count"] == 0
+    assert controller._sample_recording["include_landmark_z"] is False
+    assert controller._sample_recording["augment_count"] == 1
     assert controller._sample_recording["started_camera_for_recording"] is True
     assert controller._sample_recording["out_dir"] == tmp_path / "gestures" / "Wave"
     assert controller._status == "Запись жеста: Wave"
@@ -1266,7 +1277,73 @@ def test_process_sample_recording_frame_saves_npy(monkeypatch, tmp_path):
     assert any("Сохранено" in line for line in lines)
 
 
-def test_process_sample_recording_frame_does_not_save_positive_augmentations(
+def test_process_static_sample_recording_frame_saves_xyz_features(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "Gun"
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+        landmarks_xyz = [
+            (float(i) / 20.0, float(i % 5) / 5.0, float(i) / 100.0)
+            for i in range(21)
+        ]
+
+    class FakeDetector:
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            pass
+
+    controller._sample_recording_detector = FakeDetector()
+    controller._sample_recording = {
+        "label": "Gun",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "include_global_motion": False,
+        "include_landmark_z": True,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": None,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: Gun"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(
+        controller,
+        "sync_dataset_to_db",
+        lambda: {"created": 1, "updated": 0, "total": 1, "samples": 1},
+    )
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    sample = np.load(label_dir / "sample_0000.npy")
+    metadata = json.loads(
+        (label_dir / "sample_0000.meta.json").read_text(encoding="utf-8")
+    )
+    assert sample.shape == (2, 21, 3)
+    assert np.allclose(sample[0, :, 2], [float(i) / 100.0 for i in range(21)])
+    assert metadata["raw_feature_dim"] == 63
+    assert metadata["include_landmark_z"] is True
+    assert metadata["include_global_motion"] is False
+    assert metadata["sample_feature_format"] == "landmark_xyz"
+    assert done_codes == [0]
+
+
+def test_process_sample_recording_frame_saves_gislr_augmentations(
     monkeypatch,
     tmp_path,
 ):
@@ -1316,8 +1393,16 @@ def test_process_sample_recording_frame_does_not_save_positive_augmentations(
     controller._process_sample_recording_frame(frame)
 
     assert (label_dir / "sample_0000.npy").exists()
-    assert not (label_dir / "aug_sample_0000_00.npy").exists()
-    assert not (label_dir / "aug_sample_0000_01.npy").exists()
+    aug0 = label_dir / "aug_sample_0000_00.npy"
+    aug1 = label_dir / "aug_sample_0000_01.npy"
+    assert aug0.exists()
+    assert aug1.exists()
+    assert np.load(aug0).shape == (2, 21, 2)
+    metadata = json.loads(aug0.with_suffix(".meta.json").read_text(encoding="utf-8"))
+    assert metadata["source"] == "augmented"
+    assert metadata["source_sample"] == "sample_0000.npy"
+    assert metadata["transform"] == "gislr_landmark_v1"
+    assert metadata["transform_metadata"]["policy"] == "gislr_landmark_v1"
     assert done_codes == [0]
 
 
@@ -1377,6 +1462,72 @@ def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
     assert np.allclose(sample[0, -2:], [0.0, 0.0])
     assert metadata["raw_feature_dim"] == 44
     assert metadata["projected_hand_scale_median"] > 0.0
+    assert done_codes == [0]
+
+
+def test_process_dynamic_sample_recording_frame_saves_xyz_wrist_features(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "SwipeRight"
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+        landmarks_xyz = [
+            (float(i) / 20.0, float(i % 5) / 5.0, float(i) / 100.0)
+            for i in range(21)
+        ]
+
+    class FakeDetector:
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            pass
+
+    controller._sample_recording_detector = FakeDetector()
+    controller._sample_recording = {
+        "label": "SwipeRight",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "include_global_motion": True,
+        "include_landmark_z": True,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": None,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: SwipeRight"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(
+        controller,
+        "sync_dataset_to_db",
+        lambda: {"created": 1, "updated": 0, "total": 1, "samples": 1},
+    )
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    sample = np.load(label_dir / "sample_0000.npy")
+    metadata = json.loads(
+        (label_dir / "sample_0000.meta.json").read_text(encoding="utf-8")
+    )
+    assert sample.shape == (2, 65)
+    assert np.allclose(sample[0, 2:63:3], [float(i) / 100.0 for i in range(21)])
+    assert np.allclose(sample[0, -2:], [0.0, 0.0])
+    assert metadata["raw_feature_dim"] == 65
+    assert metadata["include_landmark_z"] is True
+    assert metadata["sample_feature_format"] == "landmark_xyz_wrist_xy"
     assert done_codes == [0]
 
 
@@ -2038,6 +2189,40 @@ def test_dispatch_cursor_only_ignores_gesture_execution_but_keeps_landmarks():
     assert controller._pending_frames == 0
 
 
+def test_update_pointer_emits_pointer_state_payload():
+    controller = _dispatch_controller()
+    controller._pointer_mode = True
+    emitted = []
+    controller.pointer_state_changed.connect(emitted.append)
+
+    class FakePointer:
+        def update(self, landmarks_json):
+            assert landmarks_json == "[[[]]]"
+
+            class Result:
+                ok = True
+                moved = False
+                clicked = True
+                tab_switched = ""
+                error = ""
+                state = "click-ready"
+
+            return Result()
+
+    controller._pointer_control = FakePointer()
+
+    AppController._update_pointer_from_landmarks(controller, "[[[]]]")
+
+    assert emitted[-1] == {
+        "enabled": True,
+        "state": "click-ready",
+        "moved": False,
+        "clicked": True,
+        "tabSwitched": "",
+        "error": "",
+    }
+
+
 def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     controller = _dispatch_controller()
     controller._recognition_model_mode = "dynamic"
@@ -2409,7 +2594,7 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     )
 
     assert calls["tracking_uri"] == "sqlite:///test-live.db"
-    assert calls["experiment"] == "GestureFlow"
+    assert calls["experiment"] == "GestureBind"
     assert (
         calls["run_name"]
         == "live-swipe_left-auto-sequence_mlp-open_set_policy"
