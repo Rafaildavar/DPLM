@@ -18,6 +18,7 @@ from app.flet_app.controller import (
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
@@ -579,6 +580,25 @@ def test_embedded_dynamic_model_paths_can_use_sequence_gru_backbone(monkeypatch,
         "dynamic_sequence_gru_backbone_classes.json",
         "dynamic_sequence_gru_backbone_feature_dim.txt",
         "dynamic_sequence_gru_backbone_feature_mode.txt",
+    ]
+
+
+def test_embedded_dynamic_model_paths_can_use_sequence_lstm_backbone(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+
+    dynamic_paths = controller._embedded_model_paths()
+
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_sequence_lstm_backbone.pkl",
+        "dynamic_sequence_lstm_backbone_classes.json",
+        "dynamic_sequence_lstm_backbone_feature_dim.txt",
+        "dynamic_sequence_lstm_backbone_feature_mode.txt",
     ]
 
 

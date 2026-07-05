@@ -1,9 +1,9 @@
-"""PyTorch GRU backbone for dynamic gesture sequences.
+"""PyTorch recurrent backbones for dynamic gesture sequences.
 
 The classifier follows the same sklearn-style API as the other sequence
 models in this project, so it can be saved with joblib and used by the
-existing live inference path. It trains a small per-frame backbone plus GRU
-over flattened ``dynamic_sequence`` features.
+existing live inference path. It trains a small per-frame backbone plus a
+GRU/LSTM recurrent layer over flattened ``dynamic_sequence`` features.
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ class OptunaTuningSummary:
 
 class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
     """Small GRU classifier for multivariate landmark time-series."""
+
+    sequence_model_name = "sequence_gru_backbone"
+    estimator_name = "TorchGRUBackboneClassifier"
+    log_prefix = "gru"
 
     def __init__(
         self,
@@ -75,7 +79,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
 
         self.classes_, encoded = np.unique(labels, return_inverse=True)
         if self.classes_.size < 2:
-            raise ValueError("TorchGRUBackboneClassifier needs at least two classes")
+            raise ValueError(f"{self.estimator_name} needs at least two classes")
         self.n_features_in_ = int(matrix.shape[1])
         self.n_channels_ = int(self.n_features_in_ // int(self.target_frames))
 
@@ -85,7 +89,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
 
         _seed_torch(torch, int(self.random_state))
         device = self._torch_device(torch)
-        model = _GRUBackboneNet(
+        model = self._build_network(
             input_dim=int(self.n_channels_),
             class_count=int(self.classes_.size),
             backbone_dim=max(4, int(self.backbone_dim)),
@@ -166,7 +170,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
 
             if bool(self.verbose) and (epoch + 1) % 20 == 0:
                 print(
-                    "[gru] "
+                    f"[{self.log_prefix}] "
                     f"epoch={epoch + 1} train_loss={train_loss:.4f} "
                     f"eval_loss={eval_loss:.4f} eval_accuracy={eval_accuracy:.4f}"
                 )
@@ -197,7 +201,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         sequences = self._transform_normalizer(sequences)
 
         device = self._torch_device(torch)
-        model = _GRUBackboneNet(
+        model = self._build_network(
             input_dim=int(self.n_channels_),
             class_count=int(self.classes_.size),
             backbone_dim=max(4, int(self.backbone_dim)),
@@ -228,7 +232,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
             raise ValueError("target_frames must be greater than 1")
         if matrix.shape[1] <= 0 or matrix.shape[1] % target_frames != 0:
             raise ValueError(
-                "sequence_gru_backbone expects flattened dynamic_sequence features "
+                f"{self.sequence_model_name} expects flattened dynamic_sequence features "
                 f"with dimension divisible by {target_frames}; got {matrix.shape[1]}"
             )
         if not np.isfinite(matrix).all():
@@ -310,12 +314,63 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         missing = [name for name in required if not hasattr(self, name)]
         if missing:
             raise RuntimeError(
-                "TorchGRUBackboneClassifier is not fitted; missing "
+                f"{self.estimator_name} is not fitted; missing "
                 + ", ".join(missing)
             )
 
+    def _build_network(
+        self,
+        *,
+        input_dim: int,
+        class_count: int,
+        backbone_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        dropout: float,
+        use_bidirectional: bool,
+    ):
+        return _GRUBackboneNet(
+            input_dim=input_dim,
+            class_count=class_count,
+            backbone_dim=backbone_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            use_bidirectional=use_bidirectional,
+        )
 
-def tune_gru_backbone_hyperparameters(
+
+class TorchLSTMBackboneClassifier(TorchGRUBackboneClassifier):
+    """Small LSTM classifier for multivariate landmark time-series."""
+
+    sequence_model_name = "sequence_lstm_backbone"
+    estimator_name = "TorchLSTMBackboneClassifier"
+    log_prefix = "lstm"
+
+    def _build_network(
+        self,
+        *,
+        input_dim: int,
+        class_count: int,
+        backbone_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        dropout: float,
+        use_bidirectional: bool,
+    ):
+        return _LSTMBackboneNet(
+            input_dim=input_dim,
+            class_count=class_count,
+            backbone_dim=backbone_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            use_bidirectional=use_bidirectional,
+        )
+
+
+def _tune_recurrent_backbone_hyperparameters(
+    classifier_cls,
     X: np.ndarray,
     y: np.ndarray,
     *,
@@ -325,7 +380,7 @@ def tune_gru_backbone_hyperparameters(
     random_state: int = 42,
     max_epochs: int = 70,
 ) -> OptunaTuningSummary:
-    """Run a compact Optuna search over GRU hyperparameters."""
+    """Run a compact Optuna search over recurrent hyperparameters."""
     optuna = _require_optuna()
     matrix = np.asarray(X, dtype=np.float32)
     labels = np.asarray(y)
@@ -366,7 +421,7 @@ def tune_gru_backbone_hyperparameters(
             ),
             "batch_size": trial.suggest_categorical("batch_size", [8, 16, 24]),
         }
-        classifier = TorchGRUBackboneClassifier(
+        classifier = classifier_cls(
             target_frames=int(target_frames),
             max_epochs=max(10, int(max_epochs)),
             validation_fraction=0.0,
@@ -395,6 +450,52 @@ def tune_gru_backbone_hyperparameters(
         best_params=dict(study.best_params),
         trials=len(study.trials),
         used_validation_split=bool(used_validation),
+    )
+
+
+def tune_gru_backbone_hyperparameters(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    n_trials: int = 8,
+    timeout: int | None = None,
+    random_state: int = 42,
+    max_epochs: int = 70,
+) -> OptunaTuningSummary:
+    """Run a compact Optuna search over GRU hyperparameters."""
+    return _tune_recurrent_backbone_hyperparameters(
+        TorchGRUBackboneClassifier,
+        X,
+        y,
+        target_frames=target_frames,
+        n_trials=n_trials,
+        timeout=timeout,
+        random_state=random_state,
+        max_epochs=max_epochs,
+    )
+
+
+def tune_lstm_backbone_hyperparameters(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    n_trials: int = 8,
+    timeout: int | None = None,
+    random_state: int = 42,
+    max_epochs: int = 70,
+) -> OptunaTuningSummary:
+    """Run a compact Optuna search over LSTM hyperparameters."""
+    return _tune_recurrent_backbone_hyperparameters(
+        TorchLSTMBackboneClassifier,
+        X,
+        y,
+        target_frames=target_frames,
+        n_trials=n_trials,
+        timeout=timeout,
+        random_state=random_state,
+        max_epochs=max_epochs,
     )
 
 
@@ -440,6 +541,57 @@ class _GRUBackboneNet:
             def forward(self, x):
                 embedded = self.backbone(x)
                 output, _hidden = self.gru(embedded)
+                final = output[:, -1, :]
+                mean = output.mean(dim=1)
+                max_values = output.max(dim=1).values
+                features = torch.cat([final, mean, max_values], dim=1)
+                return self.head(features)
+
+        return Net()
+
+
+class _LSTMBackboneNet:
+    def __new__(
+        cls,
+        *,
+        input_dim: int,
+        class_count: int,
+        backbone_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        dropout: float,
+        use_bidirectional: bool,
+    ):
+        torch = _require_torch()
+
+        class Net(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.backbone = torch.nn.Sequential(
+                    torch.nn.Linear(input_dim, backbone_dim),
+                    torch.nn.LayerNorm(backbone_dim),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(dropout),
+                )
+                self.lstm = torch.nn.LSTM(
+                    input_size=backbone_dim,
+                    hidden_size=hidden_dim,
+                    num_layers=num_layers,
+                    batch_first=True,
+                    dropout=dropout if num_layers > 1 else 0.0,
+                    bidirectional=use_bidirectional,
+                )
+                directions = 2 if use_bidirectional else 1
+                temporal_dim = hidden_dim * directions
+                self.head = torch.nn.Sequential(
+                    torch.nn.LayerNorm(temporal_dim * 3),
+                    torch.nn.Dropout(dropout),
+                    torch.nn.Linear(temporal_dim * 3, class_count),
+                )
+
+            def forward(self, x):
+                embedded = self.backbone(x)
+                output, _hidden = self.lstm(embedded)
                 final = output[:, -1, :]
                 mean = output.mean(dim=1)
                 max_values = output.max(dim=1).values

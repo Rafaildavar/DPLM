@@ -1,0 +1,11 @@
+[
+  "upandleft",
+  "no_gesture_static",
+  "partial_swipe",
+  "random_motion",
+  "return_motion",
+  "swipe_down",
+  "swipe_left",
+  "swipe_up",
+  "wrong_axis_motion"
+]

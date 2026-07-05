@@ -26,7 +26,9 @@ from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
 from cv.sequence_gru_backbone import (
     TorchGRUBackboneClassifier,
+    TorchLSTMBackboneClassifier,
     tune_gru_backbone_hyperparameters,
+    tune_lstm_backbone_hyperparameters,
 )
 from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
@@ -42,6 +44,7 @@ SUPPORTED_MODEL_TYPES = (
     "sequence_phase_hmm",
     "sequence_ensemble",
     "sequence_gru_backbone",
+    "sequence_lstm_backbone",
     "svm",
     "extra_trees",
     "rf",
@@ -83,6 +86,18 @@ DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION = 0.20
 DEFAULT_SEQUENCE_GRU_PATIENCE = 24
 DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS = 0
 DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS = 70
+DEFAULT_SEQUENCE_LSTM_BACKBONE_DIM = 64
+DEFAULT_SEQUENCE_LSTM_HIDDEN_DIM = 96
+DEFAULT_SEQUENCE_LSTM_LAYERS = 1
+DEFAULT_SEQUENCE_LSTM_DROPOUT = 0.25
+DEFAULT_SEQUENCE_LSTM_LEARNING_RATE = 1e-3
+DEFAULT_SEQUENCE_LSTM_WEIGHT_DECAY = 1e-4
+DEFAULT_SEQUENCE_LSTM_MAX_EPOCHS = 180
+DEFAULT_SEQUENCE_LSTM_BATCH_SIZE = 16
+DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION = 0.20
+DEFAULT_SEQUENCE_LSTM_PATIENCE = 28
+DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS = 0
+DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS = 70
 
 
 # --------------------------------------------------
@@ -237,6 +252,17 @@ def build_classifier(
     sequence_gru_batch_size: int = DEFAULT_SEQUENCE_GRU_BATCH_SIZE,
     sequence_gru_validation_fraction: float = DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION,
     sequence_gru_patience: int = DEFAULT_SEQUENCE_GRU_PATIENCE,
+    sequence_lstm_backbone_dim: int = DEFAULT_SEQUENCE_LSTM_BACKBONE_DIM,
+    sequence_lstm_hidden_dim: int = DEFAULT_SEQUENCE_LSTM_HIDDEN_DIM,
+    sequence_lstm_layers: int = DEFAULT_SEQUENCE_LSTM_LAYERS,
+    sequence_lstm_dropout: float = DEFAULT_SEQUENCE_LSTM_DROPOUT,
+    sequence_lstm_bidirectional: bool = False,
+    sequence_lstm_learning_rate: float = DEFAULT_SEQUENCE_LSTM_LEARNING_RATE,
+    sequence_lstm_weight_decay: float = DEFAULT_SEQUENCE_LSTM_WEIGHT_DECAY,
+    sequence_lstm_max_epochs: int = DEFAULT_SEQUENCE_LSTM_MAX_EPOCHS,
+    sequence_lstm_batch_size: int = DEFAULT_SEQUENCE_LSTM_BATCH_SIZE,
+    sequence_lstm_validation_fraction: float = DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION,
+    sequence_lstm_patience: int = DEFAULT_SEQUENCE_LSTM_PATIENCE,
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -434,6 +460,24 @@ def build_classifier(
             patience=max(1, int(sequence_gru_patience)),
             random_state=int(random_state),
         )
+    if model == "sequence_lstm_backbone":
+        return TorchLSTMBackboneClassifier(
+            backbone_dim=max(4, int(sequence_lstm_backbone_dim)),
+            hidden_dim=max(4, int(sequence_lstm_hidden_dim)),
+            num_layers=max(1, int(sequence_lstm_layers)),
+            dropout=max(0.0, float(sequence_lstm_dropout)),
+            use_bidirectional=bool(sequence_lstm_bidirectional),
+            learning_rate=max(1e-6, float(sequence_lstm_learning_rate)),
+            weight_decay=max(0.0, float(sequence_lstm_weight_decay)),
+            max_epochs=max(1, int(sequence_lstm_max_epochs)),
+            batch_size=max(1, int(sequence_lstm_batch_size)),
+            validation_fraction=max(
+                0.0,
+                min(0.50, float(sequence_lstm_validation_fraction)),
+            ),
+            patience=max(1, int(sequence_lstm_patience)),
+            random_state=int(random_state),
+        )
     if model == "sequence_rocket":
         return make_pipeline(
             RandomConvolutionSequenceTransformer(
@@ -605,7 +649,8 @@ def parse_args() -> argparse.Namespace:
             "Тип классификатора: knn, sequence_knn, sequence_mlp, "
             "sequence_rocket, sequence_multirocket, sequence_sprocket, "
             "sequence_shapelet, sequence_phase_hmm, sequence_ensemble, "
-            "sequence_gru_backbone, svm, extra_trees, rf или logreg"
+            "sequence_gru_backbone, sequence_lstm_backbone, "
+            "svm, extra_trees, rf или logreg"
         ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
@@ -813,6 +858,90 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Optional Optuna timeout in seconds; 0 means no timeout.",
     )
+    p.add_argument(
+        "--sequence-lstm-backbone-dim",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_BACKBONE_DIM,
+        help="Per-frame MLP embedding size for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-hidden-dim",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_HIDDEN_DIM,
+        help="LSTM hidden state size for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-layers",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_LAYERS,
+        help="Number of recurrent LSTM layers.",
+    )
+    p.add_argument(
+        "--sequence-lstm-dropout",
+        type=float,
+        default=DEFAULT_SEQUENCE_LSTM_DROPOUT,
+        help="Dropout for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-bidirectional",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use a bidirectional LSTM for offline/live classification.",
+    )
+    p.add_argument(
+        "--sequence-lstm-learning-rate",
+        type=float,
+        default=DEFAULT_SEQUENCE_LSTM_LEARNING_RATE,
+        help="AdamW learning rate for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-weight-decay",
+        type=float,
+        default=DEFAULT_SEQUENCE_LSTM_WEIGHT_DECAY,
+        help="AdamW weight decay for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-max-epochs",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_MAX_EPOCHS,
+        help="Maximum epochs for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-batch-size",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_BATCH_SIZE,
+        help="Mini-batch size for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-validation-fraction",
+        type=float,
+        default=DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION,
+        help="Internal validation split for sequence_lstm_backbone early stopping.",
+    )
+    p.add_argument(
+        "--sequence-lstm-patience",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_PATIENCE,
+        help="Early-stopping patience for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-optuna-trials",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS,
+        help="Run Optuna tuning before final sequence_lstm_backbone training.",
+    )
+    p.add_argument(
+        "--sequence-lstm-optuna-max-epochs",
+        type=int,
+        default=DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS,
+        help="Epoch budget per Optuna trial for sequence_lstm_backbone.",
+    )
+    p.add_argument(
+        "--sequence-lstm-optuna-timeout",
+        type=int,
+        default=0,
+        help="Optional LSTM Optuna timeout in seconds; 0 means no timeout.",
+    )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
         "--include-label",
@@ -1013,6 +1142,109 @@ def main() -> None:
     for key, value in sequence_gru_params.items():
         setattr(args, f"{key}_effective", value)
 
+    sequence_lstm_params = {
+        "sequence_lstm_backbone_dim": int(args.sequence_lstm_backbone_dim),
+        "sequence_lstm_hidden_dim": int(args.sequence_lstm_hidden_dim),
+        "sequence_lstm_layers": int(args.sequence_lstm_layers),
+        "sequence_lstm_dropout": float(args.sequence_lstm_dropout),
+        "sequence_lstm_bidirectional": bool(args.sequence_lstm_bidirectional),
+        "sequence_lstm_learning_rate": float(args.sequence_lstm_learning_rate),
+        "sequence_lstm_weight_decay": float(args.sequence_lstm_weight_decay),
+        "sequence_lstm_max_epochs": int(args.sequence_lstm_max_epochs),
+        "sequence_lstm_batch_size": int(args.sequence_lstm_batch_size),
+        "sequence_lstm_validation_fraction": float(args.sequence_lstm_validation_fraction),
+        "sequence_lstm_patience": int(args.sequence_lstm_patience),
+    }
+    args.sequence_lstm_optuna_summary = None
+    args.sequence_lstm_optuna_out = ""
+    if (
+        str(args.model_type).strip().lower() == "sequence_lstm_backbone"
+        and int(args.sequence_lstm_optuna_trials) > 0
+    ):
+        trials = max(1, int(args.sequence_lstm_optuna_trials))
+        print(f"[i] Optuna tuning для sequence_lstm_backbone: trials={trials}")
+        tuning = tune_lstm_backbone_hyperparameters(
+            X,
+            y,
+            target_frames=36,
+            n_trials=trials,
+            timeout=int(args.sequence_lstm_optuna_timeout) or None,
+            random_state=int(args.random_state),
+            max_epochs=max(10, int(args.sequence_lstm_optuna_max_epochs)),
+        )
+        best_params = dict(tuning.best_params)
+        sequence_lstm_params.update(
+            {
+                "sequence_lstm_backbone_dim": int(
+                    best_params.get(
+                        "backbone_dim",
+                        sequence_lstm_params["sequence_lstm_backbone_dim"],
+                    )
+                ),
+                "sequence_lstm_hidden_dim": int(
+                    best_params.get(
+                        "hidden_dim",
+                        sequence_lstm_params["sequence_lstm_hidden_dim"],
+                    )
+                ),
+                "sequence_lstm_layers": int(
+                    best_params.get(
+                        "num_layers",
+                        sequence_lstm_params["sequence_lstm_layers"],
+                    )
+                ),
+                "sequence_lstm_dropout": float(
+                    best_params.get(
+                        "dropout",
+                        sequence_lstm_params["sequence_lstm_dropout"],
+                    )
+                ),
+                "sequence_lstm_bidirectional": bool(
+                    best_params.get(
+                        "use_bidirectional",
+                        sequence_lstm_params["sequence_lstm_bidirectional"],
+                    )
+                ),
+                "sequence_lstm_learning_rate": float(
+                    best_params.get(
+                        "learning_rate",
+                        sequence_lstm_params["sequence_lstm_learning_rate"],
+                    )
+                ),
+                "sequence_lstm_weight_decay": float(
+                    best_params.get(
+                        "weight_decay",
+                        sequence_lstm_params["sequence_lstm_weight_decay"],
+                    )
+                ),
+                "sequence_lstm_batch_size": int(
+                    best_params.get(
+                        "batch_size",
+                        sequence_lstm_params["sequence_lstm_batch_size"],
+                    )
+                ),
+            }
+        )
+        args.sequence_lstm_optuna_summary = {
+            "best_score": float(tuning.best_score),
+            "best_params": best_params,
+            "trials": int(tuning.trials),
+            "used_validation_split": bool(tuning.used_validation_split),
+        }
+        args.sequence_lstm_optuna_out = str(
+            out_path.with_name(f"{out_path.stem}_optuna.json")
+        )
+        Path(args.sequence_lstm_optuna_out).write_text(
+            json.dumps(args.sequence_lstm_optuna_summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(
+            "[i] Optuna best: "
+            f"score={tuning.best_score:.4f}, params={json.dumps(best_params)}"
+        )
+    for key, value in sequence_lstm_params.items():
+        setattr(args, f"{key}_effective", value)
+
     clf = build_classifier(
         str(args.model_type),
         neighbors=int(args.neighbors),
@@ -1048,6 +1280,7 @@ def main() -> None:
             args.sequence_phase_hmm_variance_regularization
         ),
         **sequence_gru_params,
+        **sequence_lstm_params,
     )
     clf.fit(X, y)
     train_accuracy = float(clf.score(X, y))
@@ -1400,6 +1633,109 @@ def _log_mlflow_run(
             getattr(args, "sequence_gru_optuna_trials", DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS)
         )
         sequence_gru_optuna_summary = getattr(args, "sequence_gru_optuna_summary", None)
+        sequence_lstm_backbone_dim = int(
+            getattr(args, "sequence_lstm_backbone_dim", DEFAULT_SEQUENCE_LSTM_BACKBONE_DIM)
+        )
+        sequence_lstm_hidden_dim = int(
+            getattr(args, "sequence_lstm_hidden_dim", DEFAULT_SEQUENCE_LSTM_HIDDEN_DIM)
+        )
+        sequence_lstm_layers = int(
+            getattr(args, "sequence_lstm_layers", DEFAULT_SEQUENCE_LSTM_LAYERS)
+        )
+        sequence_lstm_dropout = float(
+            getattr(args, "sequence_lstm_dropout", DEFAULT_SEQUENCE_LSTM_DROPOUT)
+        )
+        sequence_lstm_bidirectional = bool(
+            getattr(args, "sequence_lstm_bidirectional", False)
+        )
+        sequence_lstm_learning_rate = float(
+            getattr(
+                args,
+                "sequence_lstm_learning_rate",
+                DEFAULT_SEQUENCE_LSTM_LEARNING_RATE,
+            )
+        )
+        sequence_lstm_weight_decay = float(
+            getattr(
+                args,
+                "sequence_lstm_weight_decay",
+                DEFAULT_SEQUENCE_LSTM_WEIGHT_DECAY,
+            )
+        )
+        sequence_lstm_max_epochs = int(
+            getattr(args, "sequence_lstm_max_epochs", DEFAULT_SEQUENCE_LSTM_MAX_EPOCHS)
+        )
+        sequence_lstm_batch_size = int(
+            getattr(args, "sequence_lstm_batch_size", DEFAULT_SEQUENCE_LSTM_BATCH_SIZE)
+        )
+        sequence_lstm_validation_fraction = float(
+            getattr(
+                args,
+                "sequence_lstm_validation_fraction",
+                DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION,
+            )
+        )
+        sequence_lstm_patience = int(
+            getattr(args, "sequence_lstm_patience", DEFAULT_SEQUENCE_LSTM_PATIENCE)
+        )
+        sequence_lstm_effective = {
+            "sequence_lstm_backbone_dim_effective": int(
+                getattr(
+                    args,
+                    "sequence_lstm_backbone_dim_effective",
+                    sequence_lstm_backbone_dim,
+                )
+            ),
+            "sequence_lstm_hidden_dim_effective": int(
+                getattr(
+                    args,
+                    "sequence_lstm_hidden_dim_effective",
+                    sequence_lstm_hidden_dim,
+                )
+            ),
+            "sequence_lstm_layers_effective": int(
+                getattr(args, "sequence_lstm_layers_effective", sequence_lstm_layers)
+            ),
+            "sequence_lstm_dropout_effective": float(
+                getattr(args, "sequence_lstm_dropout_effective", sequence_lstm_dropout)
+            ),
+            "sequence_lstm_bidirectional_effective": bool(
+                getattr(
+                    args,
+                    "sequence_lstm_bidirectional_effective",
+                    sequence_lstm_bidirectional,
+                )
+            ),
+            "sequence_lstm_learning_rate_effective": float(
+                getattr(
+                    args,
+                    "sequence_lstm_learning_rate_effective",
+                    sequence_lstm_learning_rate,
+                )
+            ),
+            "sequence_lstm_weight_decay_effective": float(
+                getattr(
+                    args,
+                    "sequence_lstm_weight_decay_effective",
+                    sequence_lstm_weight_decay,
+                )
+            ),
+            "sequence_lstm_batch_size_effective": int(
+                getattr(
+                    args,
+                    "sequence_lstm_batch_size_effective",
+                    sequence_lstm_batch_size,
+                )
+            ),
+        }
+        sequence_lstm_optuna_trials = int(
+            getattr(
+                args,
+                "sequence_lstm_optuna_trials",
+                DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS,
+            )
+        )
+        sequence_lstm_optuna_summary = getattr(args, "sequence_lstm_optuna_summary", None)
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -1468,6 +1804,21 @@ def _log_mlflow_run(
                     "sequence_gru_patience": sequence_gru_patience,
                     "sequence_gru_optuna_trials": sequence_gru_optuna_trials,
                     **sequence_gru_effective,
+                    "sequence_lstm_backbone_dim": sequence_lstm_backbone_dim,
+                    "sequence_lstm_hidden_dim": sequence_lstm_hidden_dim,
+                    "sequence_lstm_layers": sequence_lstm_layers,
+                    "sequence_lstm_dropout": sequence_lstm_dropout,
+                    "sequence_lstm_bidirectional": sequence_lstm_bidirectional,
+                    "sequence_lstm_learning_rate": sequence_lstm_learning_rate,
+                    "sequence_lstm_weight_decay": sequence_lstm_weight_decay,
+                    "sequence_lstm_max_epochs": sequence_lstm_max_epochs,
+                    "sequence_lstm_batch_size": sequence_lstm_batch_size,
+                    "sequence_lstm_validation_fraction": (
+                        sequence_lstm_validation_fraction
+                    ),
+                    "sequence_lstm_patience": sequence_lstm_patience,
+                    "sequence_lstm_optuna_trials": sequence_lstm_optuna_trials,
+                    **sequence_lstm_effective,
                     "sequence_ensemble_members": (
                         "multirocket,sprocket,shapelet,phase_hmm"
                     ),
@@ -1504,6 +1855,13 @@ def _log_mlflow_run(
                 metrics["sequence_gru_optuna_trials_done"] = float(
                     sequence_gru_optuna_summary.get("trials", 0)
                 )
+            if isinstance(sequence_lstm_optuna_summary, dict):
+                metrics["sequence_lstm_optuna_best_score"] = float(
+                    sequence_lstm_optuna_summary.get("best_score", 0.0)
+                )
+                metrics["sequence_lstm_optuna_trials_done"] = float(
+                    sequence_lstm_optuna_summary.get("trials", 0)
+                )
             mlflow.log_metrics(metrics)
             for artifact in (
                 out_path,
@@ -1519,6 +1877,13 @@ def _log_mlflow_run(
                 optuna_out = Path(optuna_out_value)
                 if optuna_out.exists():
                     mlflow.log_artifact(str(optuna_out))
+            lstm_optuna_out_value = str(
+                getattr(args, "sequence_lstm_optuna_out", "") or ""
+            ).strip()
+            if lstm_optuna_out_value:
+                lstm_optuna_out = Path(lstm_optuna_out_value)
+                if lstm_optuna_out.exists():
+                    mlflow.log_artifact(str(lstm_optuna_out))
         print(f"[✓] MLflow run logged: experiment={experiment!r}, uri={tracking_uri}")
     except Exception as exc:
         print(f"[w] MLflow logging failed: {exc}")

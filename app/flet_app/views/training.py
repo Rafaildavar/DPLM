@@ -50,6 +50,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_phase_hmm": "models/dynamic_sequence_phase_hmm.pkl",
     "sequence_ensemble": "models/dynamic_sequence_ensemble.pkl",
     "sequence_gru_backbone": "models/dynamic_sequence_gru_backbone.pkl",
+    "sequence_lstm_backbone": "models/dynamic_sequence_lstm_backbone.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 72
@@ -60,6 +61,8 @@ _DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
 _DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_sequence"
 _DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS = 8
 _DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS = 70
+_DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS = 8
+_DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS = 70
 _DEFAULT_MODEL_TYPE = "knn"
 _DEFAULT_K_NEIGHBORS = 5
 _PLACEHOLDER_DATA_URL = (
@@ -133,6 +136,12 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_gru_backbone_classes.json",
             "models/dynamic_sequence_gru_backbone_feature_dim.txt",
             "models/dynamic_sequence_gru_backbone_feature_mode.txt",
+        )
+    if clean == "sequence_lstm_backbone":
+        return (
+            "models/dynamic_sequence_lstm_backbone_classes.json",
+            "models/dynamic_sequence_lstm_backbone_feature_dim.txt",
+            "models/dynamic_sequence_lstm_backbone_feature_mode.txt",
         )
     return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
 
@@ -286,6 +295,10 @@ class TrainingView:
                 ft.DropdownOption(
                     key="sequence_gru_backbone",
                     text="sequence_gru_backbone",
+                ),
+                ft.DropdownOption(
+                    key="sequence_lstm_backbone",
+                    text="sequence_lstm_backbone",
                 ),
             ],
             editable=False,
@@ -948,6 +961,18 @@ class TrainingView:
                     "[i] Для sequence_gru_backbone включен Optuna tuning: "
                     f"trials={_DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS}, "
                     f"epochs/trial={_DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS}"
+                )
+            elif train_model_type == "sequence_lstm_backbone":
+                training_extra_args = [
+                    "--sequence-lstm-optuna-trials",
+                    str(_DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS),
+                    "--sequence-lstm-optuna-max-epochs",
+                    str(_DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS),
+                ]
+                self._append_log(
+                    "[i] Для sequence_lstm_backbone включен Optuna tuning: "
+                    f"trials={_DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS}, "
+                    f"epochs/trial={_DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS}"
                 )
             self._append_log(
                 f"[i] Обучение отдельной dynamic-модели: "

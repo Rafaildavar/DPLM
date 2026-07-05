@@ -7,7 +7,7 @@ import numpy as np
 from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
-from cv.sequence_gru_backbone import TorchGRUBackboneClassifier
+from cv.sequence_gru_backbone import TorchGRUBackboneClassifier, TorchLSTMBackboneClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
 from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
@@ -201,6 +201,24 @@ def test_build_classifier_supports_sequence_gru_backbone_model():
     )
 
     assert isinstance(clf, TorchGRUBackboneClassifier)
+    assert clf.backbone_dim == 16
+    assert clf.hidden_dim == 24
+    assert clf.max_epochs == 3
+
+
+def test_build_classifier_supports_sequence_lstm_backbone_model():
+    clf = build_classifier(
+        "sequence_lstm_backbone",
+        random_state=7,
+        sequence_lstm_backbone_dim=16,
+        sequence_lstm_hidden_dim=24,
+        sequence_lstm_layers=1,
+        sequence_lstm_max_epochs=3,
+        sequence_lstm_batch_size=4,
+        sequence_lstm_validation_fraction=0.0,
+    )
+
+    assert isinstance(clf, TorchLSTMBackboneClassifier)
     assert clf.backbone_dim == 16
     assert clf.hidden_dim == 24
     assert clf.max_epochs == 3
@@ -406,6 +424,29 @@ def test_sequence_gru_backbone_classifier_supports_predict_proba():
     proba = clf.predict_proba(x[:2])
 
     assert isinstance(clf, TorchGRUBackboneClassifier)
+    assert proba.shape == (2, 2)
+    assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-5)
+
+
+def test_sequence_lstm_backbone_classifier_supports_predict_proba():
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(12, 36 * 4)).astype(np.float32)
+    x[6:] += 0.75
+    y = np.asarray([0] * 6 + [1] * 6)
+    clf = build_classifier(
+        "sequence_lstm_backbone",
+        random_state=3,
+        sequence_lstm_backbone_dim=12,
+        sequence_lstm_hidden_dim=16,
+        sequence_lstm_max_epochs=3,
+        sequence_lstm_batch_size=4,
+        sequence_lstm_validation_fraction=0.0,
+    )
+
+    clf.fit(x, y)
+    proba = clf.predict_proba(x[:2])
+
+    assert isinstance(clf, TorchLSTMBackboneClassifier)
     assert proba.shape == (2, 2)
     assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-5)
 

@@ -4795,3 +4795,104 @@ Offline result:
   `--sequence-gru-optuna-trials 0`.
 - Если segmentation отдаст только prefix жеста, GRU тоже не увидит полный
   `upAndLeft`; поэтому H-087 остается обязательной частью pipeline.
+
+### H-089: PyTorch `sequence_lstm_backbone` для compound dynamic gestures
+
+Дата: 2026-07-05.
+
+Контекст:
+- После GRU нужна LSTM-версия той же идеи: проверить, даст ли explicit memory
+  gate лучшую устойчивость на сложных жестах, где порядок фаз важнее, чем
+  локальное направление движения.
+- Главная проблема live: compound gesture `upAndLeft` не должен обрываться как
+  `swipe_up`, а случайные/частичные движения должны уходить в reject.
+
+Гипотеза:
+- LSTM над normalized `dynamic_sequence` может лучше удерживать более длинный
+  temporal context, чем GRU, на жестах вида `phase A -> phase B`.
+- При этом LSTM может быть тяжелее и сильнее переобучаться на маленьком
+  пользовательском датасете, поэтому сравниваем только через live A/B.
+
+Решение:
+- Добавлен `TorchLSTMBackboneClassifier` в общий recurrent-модуль
+  `cv.sequence_gru_backbone`.
+- Архитектура совпадает с GRU-кандидатом:
+  - вход: `dynamic_sequence`, `36` кадров;
+  - per-frame `Linear -> LayerNorm -> ReLU -> Dropout`;
+  - `torch.nn.LSTM`;
+  - head по `final`, `mean`, `max` hidden states;
+  - `CrossEntropyLoss` с class weights;
+  - optimizer `AdamW`;
+  - early stopping по validation split.
+- Добавлен `model_type=sequence_lstm_backbone` в `cv.train_classifier`.
+- Добавлены CLI-флаги `--sequence-lstm-*`, включая Optuna:
+  `--sequence-lstm-optuna-trials`, `--sequence-lstm-optuna-max-epochs`,
+  `--sequence-lstm-optuna-timeout`.
+- Добавлены UI/runtime profile и отдельные артефакты:
+  - `models/dynamic_sequence_lstm_backbone.pkl`;
+  - `models/dynamic_sequence_lstm_backbone_classes.json`;
+  - `models/dynamic_sequence_lstm_backbone_feature_dim.txt`;
+  - `models/dynamic_sequence_lstm_backbone_feature_mode.txt`;
+  - `models/dynamic_sequence_lstm_backbone_rejection.json`;
+  - `models/dynamic_sequence_lstm_backbone_prototypes.json`;
+  - `models/dynamic_sequence_lstm_backbone_optuna.json`.
+
+Что логируется в MLflow:
+- `sequence_lstm_*` raw/effective params;
+- `sequence_lstm_optuna_best_score`;
+- `sequence_lstm_optuna_trials_done`;
+- artifacts: модель, metadata, rejection metadata, Optuna JSON.
+
+Первичный результат:
+- Обучен artifact `models/dynamic_sequence_lstm_backbone.pkl`.
+- Включенные классы:
+  - positives: `upandleft`, `swipe_down`, `swipe_left`, `swipe_up`;
+  - negatives: `no_gesture_static`, `partial_swipe`, `random_motion`,
+    `return_motion`, `wrong_axis_motion`.
+- Feature mode: `dynamic_sequence`.
+- Feature dim: `1584`.
+- Optuna:
+  - trials: `4`;
+  - best validation score: `0.9167`;
+  - best params: `backbone_dim=32`, `hidden_dim=48`, `num_layers=1`,
+    `dropout=0.3228`, `bidirectional=True`, `learning_rate=0.000874`,
+    `weight_decay=0.000157`, `batch_size=24`.
+- Final training accuracy: `0.9368`.
+- Prototype/reject layer:
+  - report: `docs/experiments/dynamic_prototype_lstm_backbone.md`;
+  - train samples: `472`;
+  - test samples: `158`;
+  - external negatives: `true`;
+  - overall: `0.9873`;
+  - positive recall: `0.9565`;
+  - negative reject: `0.9926`;
+  - negative FP: `0.0074`;
+  - sequence accuracy: `0.9565`;
+  - offline `upandleft`: `5/5`.
+
+Вывод:
+- LSTM-кандидат готов к live A/B.
+- На offline split он выглядит лучше GRU по Optuna validation score и final
+  train accuracy, но это не финальный вывод: в задаче главный критерий -
+  live поток после segmentation.
+
+Что проверить:
+- На Главной выбрать `Dynamic = sequence_lstm_backbone`.
+- Recognition mode: `dynamic`, затем `auto`.
+- Reject: `open_set_policy`.
+- Confidence threshold:
+  - старт: `0.85`;
+  - если много false positives на negatives: `0.90`;
+  - если `upandleft` missed: `0.75-0.80` и смотреть reject reason.
+- Live evaluation:
+  - `upandleft`: 20 попыток;
+  - `swipe_up`: 20 попыток;
+  - `swipe_left`: 20 попыток;
+  - `swipe_down`: 20 попыток, если удобно;
+  - `partial_swipe`, `random_motion`, `return_motion`, `wrong_axis_motion`:
+    по 10 попыток.
+
+Критерий успеха:
+- `upandleft` определяется как отдельный label после полного движения.
+- Простые swipe-жесты остаются не ниже `90%` live accuracy.
+- Negative false positive rate на live остается не выше `10%`.
