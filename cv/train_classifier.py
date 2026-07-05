@@ -24,6 +24,10 @@ from cv.gesture_dataset_files import gesture_sample_paths
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
+from cv.sequence_gru_backbone import (
+    TorchGRUBackboneClassifier,
+    tune_gru_backbone_hyperparameters,
+)
 from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
 
@@ -37,6 +41,7 @@ SUPPORTED_MODEL_TYPES = (
     "sequence_shapelet",
     "sequence_phase_hmm",
     "sequence_ensemble",
+    "sequence_gru_backbone",
     "svm",
     "extra_trees",
     "rf",
@@ -66,6 +71,18 @@ DEFAULT_SEQUENCE_PHASE_HMM_STATES = 6
 DEFAULT_SEQUENCE_PHASE_HMM_MAX_CHANNELS = 44
 DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION = 0.02
 DEFAULT_SEQUENCE_ENSEMBLE_WEIGHTS = (0.35, 0.30, 0.25, 0.10)
+DEFAULT_SEQUENCE_GRU_BACKBONE_DIM = 64
+DEFAULT_SEQUENCE_GRU_HIDDEN_DIM = 96
+DEFAULT_SEQUENCE_GRU_LAYERS = 1
+DEFAULT_SEQUENCE_GRU_DROPOUT = 0.20
+DEFAULT_SEQUENCE_GRU_LEARNING_RATE = 1e-3
+DEFAULT_SEQUENCE_GRU_WEIGHT_DECAY = 1e-4
+DEFAULT_SEQUENCE_GRU_MAX_EPOCHS = 160
+DEFAULT_SEQUENCE_GRU_BATCH_SIZE = 16
+DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION = 0.20
+DEFAULT_SEQUENCE_GRU_PATIENCE = 24
+DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS = 0
+DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS = 70
 
 
 # --------------------------------------------------
@@ -80,6 +97,7 @@ def load_dataset(
     include_labels: Optional[Iterable[str]] = None,
     lowercase_labels: bool = False,
     feature_mode: str = FEATURE_STATIC_MEAN,
+    include_augmented: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Загружает реальные семплы из data_root/<label>/sample_*.npy
@@ -104,7 +122,10 @@ def load_dataset(
         label = raw_label.lower() if lowercase_labels else raw_label
         if canonical_include and label not in canonical_include and raw_label not in raw_include:
             continue
-        sample_files = gesture_sample_paths(label_dir)
+        sample_files = gesture_sample_paths(
+            label_dir,
+            include_augmented=bool(include_augmented),
+        )
         if not sample_files:
             print(f"[i] Пропуск: нет семплов в {label_dir}")
             continue
@@ -205,6 +226,17 @@ def build_classifier(
     sequence_phase_hmm_variance_regularization: float = (
         DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION
     ),
+    sequence_gru_backbone_dim: int = DEFAULT_SEQUENCE_GRU_BACKBONE_DIM,
+    sequence_gru_hidden_dim: int = DEFAULT_SEQUENCE_GRU_HIDDEN_DIM,
+    sequence_gru_layers: int = DEFAULT_SEQUENCE_GRU_LAYERS,
+    sequence_gru_dropout: float = DEFAULT_SEQUENCE_GRU_DROPOUT,
+    sequence_gru_bidirectional: bool = False,
+    sequence_gru_learning_rate: float = DEFAULT_SEQUENCE_GRU_LEARNING_RATE,
+    sequence_gru_weight_decay: float = DEFAULT_SEQUENCE_GRU_WEIGHT_DECAY,
+    sequence_gru_max_epochs: int = DEFAULT_SEQUENCE_GRU_MAX_EPOCHS,
+    sequence_gru_batch_size: int = DEFAULT_SEQUENCE_GRU_BATCH_SIZE,
+    sequence_gru_validation_fraction: float = DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION,
+    sequence_gru_patience: int = DEFAULT_SEQUENCE_GRU_PATIENCE,
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -384,6 +416,24 @@ def build_classifier(
             voting="soft",
             weights=list(DEFAULT_SEQUENCE_ENSEMBLE_WEIGHTS),
         )
+    if model == "sequence_gru_backbone":
+        return TorchGRUBackboneClassifier(
+            backbone_dim=max(4, int(sequence_gru_backbone_dim)),
+            hidden_dim=max(4, int(sequence_gru_hidden_dim)),
+            num_layers=max(1, int(sequence_gru_layers)),
+            dropout=max(0.0, float(sequence_gru_dropout)),
+            use_bidirectional=bool(sequence_gru_bidirectional),
+            learning_rate=max(1e-6, float(sequence_gru_learning_rate)),
+            weight_decay=max(0.0, float(sequence_gru_weight_decay)),
+            max_epochs=max(1, int(sequence_gru_max_epochs)),
+            batch_size=max(1, int(sequence_gru_batch_size)),
+            validation_fraction=max(
+                0.0,
+                min(0.50, float(sequence_gru_validation_fraction)),
+            ),
+            patience=max(1, int(sequence_gru_patience)),
+            random_state=int(random_state),
+        )
     if model == "sequence_rocket":
         return make_pipeline(
             RandomConvolutionSequenceTransformer(
@@ -555,7 +605,7 @@ def parse_args() -> argparse.Namespace:
             "Тип классификатора: knn, sequence_knn, sequence_mlp, "
             "sequence_rocket, sequence_multirocket, sequence_sprocket, "
             "sequence_shapelet, sequence_phase_hmm, sequence_ensemble, "
-            "svm, extra_trees, rf или logreg"
+            "sequence_gru_backbone, svm, extra_trees, rf или logreg"
         ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
@@ -679,6 +729,90 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION,
         help="Blend factor between per-class and global variance.",
     )
+    p.add_argument(
+        "--sequence-gru-backbone-dim",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_BACKBONE_DIM,
+        help="Per-frame MLP embedding size for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-hidden-dim",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_HIDDEN_DIM,
+        help="GRU hidden state size for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-layers",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_LAYERS,
+        help="Number of recurrent GRU layers.",
+    )
+    p.add_argument(
+        "--sequence-gru-dropout",
+        type=float,
+        default=DEFAULT_SEQUENCE_GRU_DROPOUT,
+        help="Dropout for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-bidirectional",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use a bidirectional GRU for offline/live classification.",
+    )
+    p.add_argument(
+        "--sequence-gru-learning-rate",
+        type=float,
+        default=DEFAULT_SEQUENCE_GRU_LEARNING_RATE,
+        help="AdamW learning rate for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-weight-decay",
+        type=float,
+        default=DEFAULT_SEQUENCE_GRU_WEIGHT_DECAY,
+        help="AdamW weight decay for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-max-epochs",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_MAX_EPOCHS,
+        help="Maximum epochs for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-batch-size",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_BATCH_SIZE,
+        help="Mini-batch size for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-validation-fraction",
+        type=float,
+        default=DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION,
+        help="Internal validation split for sequence_gru_backbone early stopping.",
+    )
+    p.add_argument(
+        "--sequence-gru-patience",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_PATIENCE,
+        help="Early-stopping patience for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-optuna-trials",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS,
+        help="Run Optuna tuning before final sequence_gru_backbone training.",
+    )
+    p.add_argument(
+        "--sequence-gru-optuna-max-epochs",
+        type=int,
+        default=DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS,
+        help="Epoch budget per Optuna trial for sequence_gru_backbone.",
+    )
+    p.add_argument(
+        "--sequence-gru-optuna-timeout",
+        type=int,
+        default=0,
+        help="Optional Optuna timeout in seconds; 0 means no timeout.",
+    )
     p.add_argument("--expect-dim", type=int, default=None, help="Ожидаемая длина признака (например, 42 или 84)")
     p.add_argument(
         "--include-label",
@@ -690,6 +824,11 @@ def parse_args() -> argparse.Namespace:
         "--lowercase-labels",
         action="store_true",
         help="Сохранять имена классов в нижнем регистре (New -> new)",
+    )
+    p.add_argument(
+        "--include-augmented",
+        action="store_true",
+        help="Включить aug_sample_* в обучение; по умолчанию используется только camera baseline.",
     )
     p.add_argument(
         "--mlflow-experiment",
@@ -739,6 +878,7 @@ def main() -> None:
         include_labels=args.include_label,
         lowercase_labels=bool(args.lowercase_labels),
         feature_mode=str(args.feature_mode),
+        include_augmented=bool(args.include_augmented),
     )
     print(
         f"[i] Загружено семплов: {len(X)}; классов: {len(classes)}; "
@@ -769,6 +909,109 @@ def main() -> None:
             )
     args.sequence_mlp_validation_fraction_effective = sequence_mlp_validation_fraction
     args.sequence_mlp_early_stopping_effective = sequence_mlp_early_stopping
+
+    sequence_gru_params = {
+        "sequence_gru_backbone_dim": int(args.sequence_gru_backbone_dim),
+        "sequence_gru_hidden_dim": int(args.sequence_gru_hidden_dim),
+        "sequence_gru_layers": int(args.sequence_gru_layers),
+        "sequence_gru_dropout": float(args.sequence_gru_dropout),
+        "sequence_gru_bidirectional": bool(args.sequence_gru_bidirectional),
+        "sequence_gru_learning_rate": float(args.sequence_gru_learning_rate),
+        "sequence_gru_weight_decay": float(args.sequence_gru_weight_decay),
+        "sequence_gru_max_epochs": int(args.sequence_gru_max_epochs),
+        "sequence_gru_batch_size": int(args.sequence_gru_batch_size),
+        "sequence_gru_validation_fraction": float(args.sequence_gru_validation_fraction),
+        "sequence_gru_patience": int(args.sequence_gru_patience),
+    }
+    args.sequence_gru_optuna_summary = None
+    args.sequence_gru_optuna_out = ""
+    if (
+        str(args.model_type).strip().lower() == "sequence_gru_backbone"
+        and int(args.sequence_gru_optuna_trials) > 0
+    ):
+        trials = max(1, int(args.sequence_gru_optuna_trials))
+        print(f"[i] Optuna tuning для sequence_gru_backbone: trials={trials}")
+        tuning = tune_gru_backbone_hyperparameters(
+            X,
+            y,
+            target_frames=36,
+            n_trials=trials,
+            timeout=int(args.sequence_gru_optuna_timeout) or None,
+            random_state=int(args.random_state),
+            max_epochs=max(10, int(args.sequence_gru_optuna_max_epochs)),
+        )
+        best_params = dict(tuning.best_params)
+        sequence_gru_params.update(
+            {
+                "sequence_gru_backbone_dim": int(
+                    best_params.get(
+                        "backbone_dim",
+                        sequence_gru_params["sequence_gru_backbone_dim"],
+                    )
+                ),
+                "sequence_gru_hidden_dim": int(
+                    best_params.get(
+                        "hidden_dim",
+                        sequence_gru_params["sequence_gru_hidden_dim"],
+                    )
+                ),
+                "sequence_gru_layers": int(
+                    best_params.get(
+                        "num_layers",
+                        sequence_gru_params["sequence_gru_layers"],
+                    )
+                ),
+                "sequence_gru_dropout": float(
+                    best_params.get(
+                        "dropout",
+                        sequence_gru_params["sequence_gru_dropout"],
+                    )
+                ),
+                "sequence_gru_bidirectional": bool(
+                    best_params.get(
+                        "use_bidirectional",
+                        sequence_gru_params["sequence_gru_bidirectional"],
+                    )
+                ),
+                "sequence_gru_learning_rate": float(
+                    best_params.get(
+                        "learning_rate",
+                        sequence_gru_params["sequence_gru_learning_rate"],
+                    )
+                ),
+                "sequence_gru_weight_decay": float(
+                    best_params.get(
+                        "weight_decay",
+                        sequence_gru_params["sequence_gru_weight_decay"],
+                    )
+                ),
+                "sequence_gru_batch_size": int(
+                    best_params.get(
+                        "batch_size",
+                        sequence_gru_params["sequence_gru_batch_size"],
+                    )
+                ),
+            }
+        )
+        args.sequence_gru_optuna_summary = {
+            "best_score": float(tuning.best_score),
+            "best_params": best_params,
+            "trials": int(tuning.trials),
+            "used_validation_split": bool(tuning.used_validation_split),
+        }
+        args.sequence_gru_optuna_out = str(
+            out_path.with_name(f"{out_path.stem}_optuna.json")
+        )
+        Path(args.sequence_gru_optuna_out).write_text(
+            json.dumps(args.sequence_gru_optuna_summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(
+            "[i] Optuna best: "
+            f"score={tuning.best_score:.4f}, params={json.dumps(best_params)}"
+        )
+    for key, value in sequence_gru_params.items():
+        setattr(args, f"{key}_effective", value)
 
     clf = build_classifier(
         str(args.model_type),
@@ -804,6 +1047,7 @@ def main() -> None:
         sequence_phase_hmm_variance_regularization=float(
             args.sequence_phase_hmm_variance_regularization
         ),
+        **sequence_gru_params,
     )
     clf.fit(X, y)
     train_accuracy = float(clf.score(X, y))
@@ -1057,6 +1301,105 @@ def _log_mlflow_run(
                 DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION,
             )
         )
+        sequence_gru_backbone_dim = int(
+            getattr(args, "sequence_gru_backbone_dim", DEFAULT_SEQUENCE_GRU_BACKBONE_DIM)
+        )
+        sequence_gru_hidden_dim = int(
+            getattr(args, "sequence_gru_hidden_dim", DEFAULT_SEQUENCE_GRU_HIDDEN_DIM)
+        )
+        sequence_gru_layers = int(
+            getattr(args, "sequence_gru_layers", DEFAULT_SEQUENCE_GRU_LAYERS)
+        )
+        sequence_gru_dropout = float(
+            getattr(args, "sequence_gru_dropout", DEFAULT_SEQUENCE_GRU_DROPOUT)
+        )
+        sequence_gru_bidirectional = bool(
+            getattr(args, "sequence_gru_bidirectional", False)
+        )
+        sequence_gru_learning_rate = float(
+            getattr(
+                args,
+                "sequence_gru_learning_rate",
+                DEFAULT_SEQUENCE_GRU_LEARNING_RATE,
+            )
+        )
+        sequence_gru_weight_decay = float(
+            getattr(
+                args,
+                "sequence_gru_weight_decay",
+                DEFAULT_SEQUENCE_GRU_WEIGHT_DECAY,
+            )
+        )
+        sequence_gru_max_epochs = int(
+            getattr(args, "sequence_gru_max_epochs", DEFAULT_SEQUENCE_GRU_MAX_EPOCHS)
+        )
+        sequence_gru_batch_size = int(
+            getattr(args, "sequence_gru_batch_size", DEFAULT_SEQUENCE_GRU_BATCH_SIZE)
+        )
+        sequence_gru_validation_fraction = float(
+            getattr(
+                args,
+                "sequence_gru_validation_fraction",
+                DEFAULT_SEQUENCE_GRU_VALIDATION_FRACTION,
+            )
+        )
+        sequence_gru_patience = int(
+            getattr(args, "sequence_gru_patience", DEFAULT_SEQUENCE_GRU_PATIENCE)
+        )
+        sequence_gru_effective = {
+            "sequence_gru_backbone_dim_effective": int(
+                getattr(
+                    args,
+                    "sequence_gru_backbone_dim_effective",
+                    sequence_gru_backbone_dim,
+                )
+            ),
+            "sequence_gru_hidden_dim_effective": int(
+                getattr(
+                    args,
+                    "sequence_gru_hidden_dim_effective",
+                    sequence_gru_hidden_dim,
+                )
+            ),
+            "sequence_gru_layers_effective": int(
+                getattr(args, "sequence_gru_layers_effective", sequence_gru_layers)
+            ),
+            "sequence_gru_dropout_effective": float(
+                getattr(args, "sequence_gru_dropout_effective", sequence_gru_dropout)
+            ),
+            "sequence_gru_bidirectional_effective": bool(
+                getattr(
+                    args,
+                    "sequence_gru_bidirectional_effective",
+                    sequence_gru_bidirectional,
+                )
+            ),
+            "sequence_gru_learning_rate_effective": float(
+                getattr(
+                    args,
+                    "sequence_gru_learning_rate_effective",
+                    sequence_gru_learning_rate,
+                )
+            ),
+            "sequence_gru_weight_decay_effective": float(
+                getattr(
+                    args,
+                    "sequence_gru_weight_decay_effective",
+                    sequence_gru_weight_decay,
+                )
+            ),
+            "sequence_gru_batch_size_effective": int(
+                getattr(
+                    args,
+                    "sequence_gru_batch_size_effective",
+                    sequence_gru_batch_size,
+                )
+            ),
+        }
+        sequence_gru_optuna_trials = int(
+            getattr(args, "sequence_gru_optuna_trials", DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS)
+        )
+        sequence_gru_optuna_summary = getattr(args, "sequence_gru_optuna_summary", None)
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -1110,6 +1453,21 @@ def _log_mlflow_run(
                     "sequence_phase_hmm_variance_regularization": (
                         sequence_phase_hmm_variance_regularization
                     ),
+                    "sequence_gru_backbone_dim": sequence_gru_backbone_dim,
+                    "sequence_gru_hidden_dim": sequence_gru_hidden_dim,
+                    "sequence_gru_layers": sequence_gru_layers,
+                    "sequence_gru_dropout": sequence_gru_dropout,
+                    "sequence_gru_bidirectional": sequence_gru_bidirectional,
+                    "sequence_gru_learning_rate": sequence_gru_learning_rate,
+                    "sequence_gru_weight_decay": sequence_gru_weight_decay,
+                    "sequence_gru_max_epochs": sequence_gru_max_epochs,
+                    "sequence_gru_batch_size": sequence_gru_batch_size,
+                    "sequence_gru_validation_fraction": (
+                        sequence_gru_validation_fraction
+                    ),
+                    "sequence_gru_patience": sequence_gru_patience,
+                    "sequence_gru_optuna_trials": sequence_gru_optuna_trials,
+                    **sequence_gru_effective,
                     "sequence_ensemble_members": (
                         "multirocket,sprocket,shapelet,phase_hmm"
                     ),
@@ -1132,15 +1490,21 @@ def _log_mlflow_run(
                 }
             )
             negative_labels = rejection_metadata.get("negative_labels") or []
-            mlflow.log_metrics(
-                {
-                    "sample_count": float(sample_count),
-                    "class_count": float(len(classes)),
-                    "feature_dim": float(feature_dim),
-                    "train_accuracy": float(train_accuracy),
-                    "negative_class_count": float(len(negative_labels)),
-                }
-            )
+            metrics = {
+                "sample_count": float(sample_count),
+                "class_count": float(len(classes)),
+                "feature_dim": float(feature_dim),
+                "train_accuracy": float(train_accuracy),
+                "negative_class_count": float(len(negative_labels)),
+            }
+            if isinstance(sequence_gru_optuna_summary, dict):
+                metrics["sequence_gru_optuna_best_score"] = float(
+                    sequence_gru_optuna_summary.get("best_score", 0.0)
+                )
+                metrics["sequence_gru_optuna_trials_done"] = float(
+                    sequence_gru_optuna_summary.get("trials", 0)
+                )
+            mlflow.log_metrics(metrics)
             for artifact in (
                 out_path,
                 classes_out,
@@ -1150,6 +1514,11 @@ def _log_mlflow_run(
             ):
                 if artifact.exists():
                     mlflow.log_artifact(str(artifact))
+            optuna_out_value = str(getattr(args, "sequence_gru_optuna_out", "") or "").strip()
+            if optuna_out_value:
+                optuna_out = Path(optuna_out_value)
+                if optuna_out.exists():
+                    mlflow.log_artifact(str(optuna_out))
         print(f"[✓] MLflow run logged: experiment={experiment!r}, uri={tracking_uri}")
     except Exception as exc:
         print(f"[w] MLflow logging failed: {exc}")

@@ -345,6 +345,17 @@ def test_sequence_ensemble_uses_own_sequence_model_and_metadata_paths():
     )
 
 
+def test_sequence_gru_backbone_uses_own_sequence_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("sequence_gru_backbone") == (
+        "models/dynamic_sequence_gru_backbone.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("sequence_gru_backbone") == (
+        "models/dynamic_sequence_gru_backbone_classes.json",
+        "models/dynamic_sequence_gru_backbone_feature_dim.txt",
+        "models/dynamic_sequence_gru_backbone_feature_mode.txt",
+    )
+
+
 def test_developer_dynamic_flow_can_train_sequence_ensemble_candidate():
     controller = _DummyController()
     view = TrainingView(_DummyPage(), controller)
@@ -371,3 +382,32 @@ def test_developer_dynamic_flow_can_train_sequence_ensemble_candidate():
         training_call["feature_mode_out_path"]
         == "models/dynamic_sequence_ensemble_feature_mode.txt"
     )
+
+
+def test_developer_dynamic_flow_can_train_sequence_gru_backbone_candidate():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+    view._dyn_model_type.value = "sequence_gru_backbone"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
+    view._dyn_tr_neighbors.value = ""
+
+    view._on_train_start(None, mode="dynamic")
+
+    training_call = controller.training_calls[-1]
+    assert training_call["out_path"] == "models/dynamic_sequence_gru_backbone.pkl"
+    assert training_call["model_type"] == "sequence_gru_backbone"
+    assert training_call["feature_mode"] == "dynamic_sequence"
+    assert (
+        training_call["classes_out_path"]
+        == "models/dynamic_sequence_gru_backbone_classes.json"
+    )
+    assert (
+        training_call["feature_dim_out_path"]
+        == "models/dynamic_sequence_gru_backbone_feature_dim.txt"
+    )
+    assert (
+        training_call["feature_mode_out_path"]
+        == "models/dynamic_sequence_gru_backbone_feature_mode.txt"
+    )
+    assert "--sequence-gru-optuna-trials" in training_call["extra_args"]

@@ -10,6 +10,8 @@ Pillow>=10.0
 scikit-learn
 mlflow
 psutil
+torch
+optuna
 
 # Voice Assistant
 pyttsx3

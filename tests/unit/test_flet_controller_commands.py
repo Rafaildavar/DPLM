@@ -17,6 +17,7 @@ from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
     DYNAMIC_RECOGNITION_WINDOW,
@@ -177,6 +178,25 @@ def test_build_training_command_can_write_dynamic_model_metadata(monkeypatch, tm
     assert cmd[cmd.index("--feature-mode-out") + 1].endswith(
         "dynamic_sequence_mlp_feature_mode.txt"
     )
+
+
+def test_build_training_command_appends_model_extra_args(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    monkeypatch.setattr(controller, "_active_training_labels_from_db", lambda: ["swipe_up"])
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: tmp_path / "classes.json")
+    monkeypatch.setattr(controller, "_configured_feature_dim_path", lambda: tmp_path / "feature_dim.txt")
+
+    cmd = controller._build_training_command(
+        data_root=str(tmp_path / "gestures"),
+        out_path=str(tmp_path / "dynamic_sequence_gru_backbone.pkl"),
+        feature_mode="dynamic_sequence",
+        model_type="sequence_gru_backbone",
+        extra_args=["--sequence-gru-optuna-trials", "3"],
+    )
+
+    assert cmd[cmd.index("--model-type") + 1] == "sequence_gru_backbone"
+    assert cmd[-2:] == ["--sequence-gru-optuna-trials", "3"]
 
 
 def test_build_training_command_filters_dynamic_scope(monkeypatch, tmp_path):
@@ -540,6 +560,25 @@ def test_embedded_dynamic_model_paths_can_use_sequence_ensemble(monkeypatch, tmp
         "dynamic_sequence_ensemble_classes.json",
         "dynamic_sequence_ensemble_feature_dim.txt",
         "dynamic_sequence_ensemble_feature_mode.txt",
+    ]
+
+
+def test_embedded_dynamic_model_paths_can_use_sequence_gru_backbone(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._recognition_model_mode = "dynamic"
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_models_dir", lambda: model_dir)
+
+    dynamic_paths = controller._embedded_model_paths()
+
+    assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE
+    assert [path.name for path in dynamic_paths] == [
+        "dynamic_sequence_gru_backbone.pkl",
+        "dynamic_sequence_gru_backbone_classes.json",
+        "dynamic_sequence_gru_backbone_feature_dim.txt",
+        "dynamic_sequence_gru_backbone_feature_mode.txt",
     ]
 
 

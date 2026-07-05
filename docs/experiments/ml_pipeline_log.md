@@ -4669,3 +4669,129 @@ Offline result:
 - Если пользователь делает длинную паузу на углу compound gesture, сегмент все
   равно может завершиться как prefix; это уже надо решать либо подсказкой в UI,
   либо более длинным/адаптивным grace.
+
+### H-088: PyTorch `sequence_gru_backbone` + Optuna для сложных dynamic gestures
+
+Статус: `implemented`, первый artifact обучен, ждет live A/B
+
+Дата: `2026-07-05`
+
+Наблюдение:
+- `sequence_multirocket` / `sequence_sprocket` хорошо работают на простых
+  свайпах, но compound gesture вроде `upAndLeft` может путаться с отдельными
+  фазами `swipe_up` и `swipe_left`.
+- Для жестов произвольной формы модель должна видеть порядок кадров и
+  накапливать evidence по всей траектории, а не только сравнивать итоговые
+  статистики или ближайший prototype.
+
+Гипотеза:
+- Маленький recurrent backbone над `dynamic_sequence` сможет лучше различать
+  последовательность фаз жеста: `up -> left` отличается от просто `up` и от
+  просто `left`.
+- Optuna-подбор гиперпараметров нужен как ML pipeline слой: мы не выбираем
+  hidden size / dropout / learning rate вручную, а логируем best params и
+  best validation score в MLflow.
+
+Решение:
+- Добавлен `cv.sequence_gru_backbone.TorchGRUBackboneClassifier`.
+- Архитектура:
+  - вход: flattened `dynamic_sequence` (`36` кадров * per-frame landmarks /
+    global motion channels);
+  - нормализация каналов по train set;
+  - per-frame MLP backbone: `Linear -> LayerNorm -> ReLU -> Dropout`;
+  - `torch.nn.GRU`;
+  - head по `final`, `mean`, `max` hidden states;
+  - loss: `CrossEntropyLoss` с class weights;
+  - optimizer: `AdamW`;
+  - early stopping по internal validation split.
+- Добавлен `model_type=sequence_gru_backbone` в `cv.train_classifier`.
+- Добавлен Optuna layer:
+  - CLI: `--sequence-gru-optuna-trials`,
+    `--sequence-gru-optuna-max-epochs`, `--sequence-gru-optuna-timeout`;
+  - search space: `backbone_dim`, `hidden_dim`, `num_layers`, `dropout`,
+    `use_bidirectional`, `learning_rate`, `weight_decay`, `batch_size`;
+  - финальная GRU-модель обучается уже с best params.
+- Добавлены зависимости `torch` и `optuna` в `requirements.txt`.
+- UI training получил профиль `sequence_gru_backbone`;
+  по умолчанию для него включается `Optuna trials=8`.
+- Home dynamic dropdown получил профиль `sequence_gru_backbone`.
+- Runtime paths:
+  - `models/dynamic_sequence_gru_backbone.pkl`;
+  - `models/dynamic_sequence_gru_backbone_classes.json`;
+  - `models/dynamic_sequence_gru_backbone_feature_dim.txt`;
+  - `models/dynamic_sequence_gru_backbone_feature_mode.txt`;
+  - `models/dynamic_sequence_gru_backbone_prototypes.json`;
+  - `models/dynamic_sequence_gru_backbone_optuna.json`.
+
+Что логируется в MLflow:
+- training metrics: `train_accuracy`, `sample_count`, `class_count`,
+  `feature_dim`, `negative_class_count`;
+- Optuna metrics: `sequence_gru_optuna_best_score`,
+  `sequence_gru_optuna_trials_done`;
+- params: `sequence_gru_*` и `sequence_gru_*_effective`;
+- artifacts: модель, classes, feature dim/mode, rejection metadata,
+  Optuna JSON.
+
+Первичный результат:
+- Обучен artifact `models/dynamic_sequence_gru_backbone.pkl`.
+- Включенные классы:
+  - positives: `upandleft`, `swipe_down`, `swipe_left`, `swipe_up`;
+  - negatives: `no_gesture_static`, `partial_swipe`, `random_motion`,
+    `return_motion`, `wrong_axis_motion`.
+- Feature mode: `dynamic_sequence`.
+- Feature dim: `1584`.
+- Optuna:
+  - trials: `4`;
+  - best validation score: `0.8542`;
+  - best params: `backbone_dim=48`, `hidden_dim=128`, `num_layers=2`,
+    `dropout=0.2624`, `bidirectional=True`, `learning_rate=0.00222`,
+    `weight_decay=0.0000308`, `batch_size=24`.
+- Final training accuracy: `0.8579`.
+- Prototype/reject layer:
+  - report: `docs/experiments/dynamic_prototype_gru_backbone.md`;
+  - train samples: `472`;
+  - test samples: `158`;
+  - external negatives: `true`;
+  - overall: `0.9873`;
+  - positive recall: `0.9565`;
+  - negative reject: `0.9926`;
+  - negative FP: `0.0074`;
+  - sequence accuracy: `0.9565`;
+  - offline `upandleft`: `5/5`.
+
+Вывод:
+- GRU-кандидат теперь можно честно тестировать в live.
+- Нельзя считать GRU автоматически лучше `sequence_ensemble`: train accuracy
+  ниже, чем у prototype-heavy моделей. Главный критерий теперь live:
+  распознает ли она `upandleft` полным жестом и не ухудшает ли negatives.
+
+Что проверить:
+- В Training выбрать `sequence_gru_backbone` и обучить dynamic model.
+- На Главной выбрать `Dynamic = sequence_gru_backbone`.
+- Recognition mode: сначала `dynamic`, потом `auto`.
+- Reject: `open_set_policy`.
+- Confidence threshold:
+  - старт: `0.80`;
+  - если много false positive на negatives: поднять до `0.90`;
+  - если `upAndLeft` часто missed: временно опустить до `0.70-0.75` и
+    смотреть margin/prototype reason в MLflow.
+- Live evaluation:
+  - `upandleft`: 20 попыток;
+  - `swipe_up`: 20 попыток;
+  - `swipe_left`: 20 попыток;
+  - `partial_swipe`: 10 попыток;
+  - `random_motion`: 10 попыток;
+  - `return_motion`: 10 попыток.
+
+Критерий успеха:
+- `upandleft` определяется как отдельный label после завершения полного жеста.
+- Простые `swipe_up` / `swipe_left` не деградируют сильнее чем на `5-10%`
+  относительно `sequence_ensemble`.
+- `live_negative_false_positive_rate` остается не выше `10%`.
+
+Риски:
+- Deep-модель может переобучиться на маленьком пользовательском датасете.
+- Optuna увеличивает время обучения; для быстрых daily retrain можно ставить
+  `--sequence-gru-optuna-trials 0`.
+- Если segmentation отдаст только prefix жеста, GRU тоже не увидит полный
+  `upAndLeft`; поэтому H-087 остается обязательной частью pipeline.

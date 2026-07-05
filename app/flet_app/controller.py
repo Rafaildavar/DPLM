@@ -209,6 +209,7 @@ DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET = "sequence_shapelet"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72 = "sequence_shapelet_72"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM = "sequence_phase_hmm"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE = "sequence_ensemble"
+DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE = "sequence_gru_backbone"
 DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP
 DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
@@ -219,6 +220,7 @@ DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
 )
 DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp.pkl",
@@ -229,6 +231,7 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72: "dynamic_sequence_shapelet_72.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM: "dynamic_sequence_phase_hmm.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE: "dynamic_sequence_ensemble.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE: "dynamic_sequence_gru_backbone.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp",
@@ -239,6 +242,7 @@ DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72: "dynamic_sequence_shapelet_72",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM: "dynamic_sequence_phase_hmm",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE: "dynamic_sequence_ensemble",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE: "dynamic_sequence_gru_backbone",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp_prototypes.json",
@@ -260,6 +264,9 @@ DYNAMIC_PROTOTYPE_FILENAMES = {
     ),
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE: (
         "dynamic_sequence_ensemble_prototypes.json"
+    ),
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE: (
+        "dynamic_sequence_gru_backbone_prototypes.json"
     ),
 }
 INTENT_GATE_MODEL_FILENAME = "intent_gate_mlp.pkl"
@@ -6204,6 +6211,7 @@ class AppController:
         feature_dim_out_path: str = "",
         feature_mode_out_path: str = "",
         training_scope: str = "",
+        extra_args: Optional[list[str]] = None,
         on_line: Optional[Callable[[str], None]] = None,
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
@@ -6247,6 +6255,7 @@ class AppController:
             feature_dim_out_path=feature_dim_out_path,
             feature_mode_out_path=feature_mode_out_path,
             training_scope=training_scope,
+            extra_args=extra_args,
         )
 
         try:
@@ -6489,6 +6498,7 @@ class AppController:
         feature_dim_out_path: str = "",
         feature_mode_out_path: str = "",
         training_scope: str = "",
+        extra_args: Optional[list[str]] = None,
     ) -> list[str]:
         actual_data_root = data_root or str(self._configured_data_dir())
         actual_out_path = out_path or str(self._configured_model_path())
@@ -6525,6 +6535,10 @@ class AppController:
             cmd += ["--include-label", label]
         if expect_dim is not None:
             cmd += ["--expect-dim", str(int(expect_dim))]
+        for item in extra_args or []:
+            clean = str(item).strip()
+            if clean:
+                cmd.append(clean)
         return cmd
 
     def _build_dynamic_prototype_training_command(
