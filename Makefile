@@ -1,7 +1,14 @@
-.PHONY: test-unit test-jmlc-profile test-jmlc-ml jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
+.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
+CI_ARTIFACT_DIR ?= outputs/ci
+CI_PYTEST_TARGETS ?= tests/unit --ignore=tests/unit/test_app_controller.py
+
+ci: test-unit-ci ml-smoke
+
+test-unit-ci:
+	$(PYTHON) -m pytest $(CI_PYTEST_TARGETS) --no-cov -q
 
 test-unit:
 	$(PYTHON) -m pytest tests/unit -q
@@ -16,6 +23,10 @@ test-jmlc-ml:
 		tests/unit/test_compare_models.py \
 		tests/unit/test_threshold_report.py \
 		-q -o addopts=''
+
+ml-smoke:
+	LOKY_MAX_CPU_COUNT=4 $(PYTHON) -m scripts.ml_smoke \
+		--report-json $(CI_ARTIFACT_DIR)/ml_smoke_report.json
 
 jmlc-profile:
 	$(PYTHON) -m scripts.jmlc_dataset_profile

@@ -1,0 +1,53 @@
+name: ML Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+  push:
+    branches:
+      - contest_version
+    paths:
+      - "app/**"
+      - "cv/**"
+      - "models/**"
+      - "scripts/ml_smoke.py"
+      - "Makefile"
+      - ".github/workflows/ml-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  model-artifacts:
+    name: Model artifact smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run ML smoke
+        env:
+          PYTHON: python
+        run: make ml-smoke
+
+      - name: Upload ML smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-smoke-report
+          path: outputs/ci/ml_smoke_report.json
+          if-no-files-found: error
