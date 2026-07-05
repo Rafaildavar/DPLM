@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -42,6 +43,7 @@ CATEGORY_NAVIGATION = "navigation"
 CATEGORY_MEDIA = "media"
 CATEGORY_HOTKEY = "hotkey"
 CATEGORY_SCRIPT = "script"
+CATEGORY_WORKFLOW = "workflow"
 
 CATEGORY_LABELS: Dict[str, str] = {
     CATEGORY_LAUNCH: "Запуск приложения",
@@ -50,12 +52,15 @@ CATEGORY_LABELS: Dict[str, str] = {
     CATEGORY_MEDIA: "Мультимедиа",
     CATEGORY_HOTKEY: "Горячая клавиша",
     CATEGORY_SCRIPT: "Пользовательский скрипт",
+    CATEGORY_WORKFLOW: "Сценарии",
 }
 
 # Соответствие action → категория (см. docs/BINDING_RULES.md, раздел 4).
 ACTION_TO_CATEGORY: Dict[str, str] = {
     "open_app": CATEGORY_LAUNCH,
+    "open_path": CATEGORY_LAUNCH,
     "open_url": CATEGORY_LAUNCH,
+    "notify": CATEGORY_SYSTEM,
     "volume_up": CATEGORY_SYSTEM,
     "volume_down": CATEGORY_SYSTEM,
     "mute_toggle": CATEGORY_SYSTEM,
@@ -68,6 +73,8 @@ ACTION_TO_CATEGORY: Dict[str, str] = {
     "media_key": CATEGORY_MEDIA,
     "key_combination": CATEGORY_HOTKEY,
     "run_script": CATEGORY_SCRIPT,
+    "sequence": CATEGORY_WORKFLOW,
+    "wait": CATEGORY_WORKFLOW,
 }
 
 
@@ -88,6 +95,11 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
         "category": CATEGORY_LAUNCH,
         "fields": {"url": "str — https://..."},
         "example": {"action": "open_url", "url": "https://example.com", "platform": "macos"},
+    },
+    "open_path": {
+        "category": CATEGORY_LAUNCH,
+        "fields": {"path": "str — абсолютный путь к файлу или папке"},
+        "example": {"action": "open_path", "path": "/Users/remi/Documents", "platform": "macos"},
     },
     # --- Категория 2: системные действия ---
     "volume_up": {
@@ -117,6 +129,14 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
     "screenshot": {
         "category": CATEGORY_SYSTEM,
         "example": {"action": "screenshot", "platform": "macos"},
+    },
+    "notify": {
+        "category": CATEGORY_SYSTEM,
+        "fields": {
+            "message": "str — текст уведомления",
+            "title": "str — заголовок, опционально",
+        },
+        "example": {"action": "notify", "title": "GestureFlow", "message": "Готово", "platform": "macos"},
     },
     # --- Категория 3: прокрутка / навигация ---
     "scroll": {
@@ -150,6 +170,24 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
         },
         "example": {"action": "run_script", "script_path": "/path/to/tool.py", "platform": "macos"},
     },
+    # --- Категория 7: пользовательские сценарии ---
+    "wait": {
+        "category": CATEGORY_WORKFLOW,
+        "fields": {"seconds": "float — пауза между шагами, 0.1–60 секунд"},
+        "example": {"action": "wait", "seconds": 1.0, "platform": "macos"},
+    },
+    "sequence": {
+        "category": CATEGORY_WORKFLOW,
+        "fields": {"steps": "list[dict] — шаги сценария"},
+        "example": {
+            "action": "sequence",
+            "platform": "macos",
+            "steps": [
+                {"action": "open_app", "app": "Preview"},
+                {"action": "notify", "message": "Рабочее место готово"},
+            ],
+        },
+    },
 }
 
 
@@ -162,6 +200,130 @@ def is_dangerous_action(action: str) -> bool:
     return (action or "").strip().lower() in DANGEROUS_ACTIONS
 
 
+def _validate_path(value: str, *, action: str) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return f"{action}: укажите путь"
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        return f"{action}: путь должен быть абсолютным или начинаться с ~"
+    if not path.exists():
+        return f"{action}: путь не найден: {raw}"
+    return None
+
+
+def _validate_action_spec_inner(
+    spec: Dict[str, Any],
+    *,
+    allow_sequence: bool,
+    prefix: str = "",
+) -> Optional[str]:
+    label = f"{prefix}: " if prefix else ""
+    if not isinstance(spec, dict):
+        return f"{label}action_spec должен быть объектом (dict)"
+
+    action = (spec.get("action") or "").strip()
+    if not action:
+        return f"{label}Не задано поле «action»"
+    if action not in ACTION_SPEC_SCHEMA:
+        return f"{label}Неизвестное действие «{action}»"
+
+    if action == "sequence":
+        if not allow_sequence:
+            return f"{label}sequence нельзя вкладывать внутрь другого сценария"
+        steps = spec.get("steps")
+        if not isinstance(steps, list) or not steps:
+            return f"{label}sequence: добавьте хотя бы один шаг"
+        if len(steps) > 20:
+            return f"{label}sequence: максимум 20 шагов"
+        for index, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                return f"{label}sequence: шаг {index} должен быть объектом"
+            err = _validate_action_spec_inner(
+                step,
+                allow_sequence=False,
+                prefix=f"sequence: шаг {index}",
+            )
+            if err:
+                return f"{label}{err}"
+        return None
+
+    if action == "open_path":
+        err = _validate_path(str(spec.get("path") or ""), action="open_path")
+        if err:
+            return f"{label}{err}"
+
+    if action == "wait":
+        seconds = spec.get("seconds")
+        if seconds is None:
+            return f"{label}wait: укажите поле «seconds»"
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            return f"{label}wait: «seconds» должно быть числом"
+        if value < 0.1 or value > 60:
+            return f"{label}wait: пауза должна быть от 0.1 до 60 секунд"
+
+    if action == "notify":
+        if not (spec.get("message") or "").strip():
+            return f"{label}notify: укажите текст уведомления"
+
+    if action == "run_script":
+        path = (spec.get("script_path") or "").strip()
+        if not path:
+            return f"{label}run_script: укажите абсолютный путь к .py-файлу"
+        if not path.startswith("/"):
+            return f"{label}run_script: путь должен быть абсолютным (начинаться с «/»)"
+        if not path.lower().endswith(".py"):
+            return f"{label}run_script: поддерживаются только файлы с расширением .py"
+        try:
+            p = Path(path)
+            if not p.is_file():
+                return f"{label}run_script: файл не найден: {path}"
+            if p.stat().st_size == 0:
+                return f"{label}run_script: файл пустой"
+        except OSError as e:
+            return f"{label}run_script: не удалось прочитать файл: {e}"
+
+    if action == "scroll":
+        clicks = spec.get("clicks")
+        if clicks is None:
+            return f"{label}scroll: укажите поле «clicks» (целое число)"
+        try:
+            int(clicks)
+        except (TypeError, ValueError):
+            return f"{label}scroll: поле «clicks» должно быть целым числом"
+
+    if action == "press":
+        if not (spec.get("key") or "").strip():
+            return f"{label}press: укажите поле «key» (имя клавиши PyAutoGUI)"
+
+    if action == "key_combination":
+        keys = spec.get("keys")
+        if not isinstance(keys, list) or not keys:
+            return f"{label}key_combination: поле «keys» должно быть непустым списком строк"
+        if any(not isinstance(k, str) or not k.strip() for k in keys):
+            return f"{label}key_combination: все элементы «keys» должны быть непустыми строками"
+
+    if action == "media_key":
+        kind = (spec.get("kind") or "").strip().lower()
+        if kind not in {"play_pause", "play", "pause", "next", "prev", "previous"}:
+            return f"{label}media_key: «kind» должен быть play_pause | next | prev"
+
+    if action == "open_app":
+        if not (spec.get("app") or "").strip():
+            return f"{label}open_app: укажите имя приложения в поле «app»"
+
+    if action == "open_url":
+        url = (spec.get("url") or "").strip()
+        if not url:
+            return f"{label}open_url: укажите URL"
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return f"{label}open_url: URL должен начинаться с http:// или https://"
+
+    return None
+
+
 def validate_action_spec(spec: Dict[str, Any]) -> Optional[str]:
     """
     Валидация JSON-описания действия (см. R7 + структурные проверки).
@@ -169,71 +331,7 @@ def validate_action_spec(spec: Dict[str, Any]) -> Optional[str]:
     Returns:
         ``None`` если ок, иначе сообщение об ошибке (готовое для UI).
     """
-    if not isinstance(spec, dict):
-        return "action_spec должен быть объектом (dict)"
-
-    action = (spec.get("action") or "").strip()
-    if not action:
-        return "Не задано поле «action»"
-    if action not in ACTION_SPEC_SCHEMA:
-        return f"Неизвестное действие «{action}»"
-
-    if action == "run_script":
-        path = (spec.get("script_path") or "").strip()
-        if not path:
-            return "run_script: укажите абсолютный путь к .py-файлу"
-        if not path.startswith("/"):
-            return "run_script: путь должен быть абсолютным (начинаться с «/»)"
-        if not path.lower().endswith(".py"):
-            return "run_script: поддерживаются только файлы с расширением .py"
-        try:
-            from pathlib import Path
-
-            p = Path(path)
-            if not p.is_file():
-                return f"run_script: файл не найден: {path}"
-            if p.stat().st_size == 0:
-                return "run_script: файл пустой"
-        except OSError as e:
-            return f"run_script: не удалось прочитать файл: {e}"
-
-    if action == "scroll":
-        clicks = spec.get("clicks")
-        if clicks is None:
-            return "scroll: укажите поле «clicks» (целое число)"
-        try:
-            int(clicks)
-        except (TypeError, ValueError):
-            return "scroll: поле «clicks» должно быть целым числом"
-
-    if action == "press":
-        if not (spec.get("key") or "").strip():
-            return "press: укажите поле «key» (имя клавиши PyAutoGUI)"
-
-    if action == "key_combination":
-        keys = spec.get("keys")
-        if not isinstance(keys, list) or not keys:
-            return "key_combination: поле «keys» должно быть непустым списком строк"
-        if any(not isinstance(k, str) or not k.strip() for k in keys):
-            return "key_combination: все элементы «keys» должны быть непустыми строками"
-
-    if action == "media_key":
-        kind = (spec.get("kind") or "").strip().lower()
-        if kind not in {"play_pause", "play", "pause", "next", "prev", "previous"}:
-            return "media_key: «kind» должен быть play_pause | next | prev"
-
-    if action == "open_app":
-        if not (spec.get("app") or "").strip():
-            return "open_app: укажите имя приложения в поле «app»"
-
-    if action == "open_url":
-        url = (spec.get("url") or "").strip()
-        if not url:
-            return "open_url: укажите URL"
-        if not (url.startswith("http://") or url.startswith("https://")):
-            return "open_url: URL должен начинаться с http:// или https://"
-
-    return None
+    return _validate_action_spec_inner(spec, allow_sequence=True)
 
 
 def parse_command_action_spec(command: Command) -> Optional[Dict[str, Any]]:
