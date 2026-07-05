@@ -43,6 +43,7 @@ GESTURES = [
 
 GESTURES_WITH_GUN = [*GESTURES, {"label": "gun"}]
 GESTURES_WITH_SWIPE_LEFT = [*GESTURES, {"label": "swipe_left"}]
+GESTURES_WITH_SH3 = [*GESTURES, {"label": "sh3"}]
 
 
 def test_binding_agents_are_importable_from_dedicated_package():
@@ -316,6 +317,21 @@ def test_binding_agent_uses_explicit_typed_gesture_from_prompt():
     }
     assert "Gesture Agent" in {item["agent"] for item in draft["agentTrace"]}
     assert draft["agentReply"].startswith("Локальный агент: понял")
+
+
+def test_binding_agent_does_not_treat_workday_goal_as_application():
+    draft = build_agent_binding_draft(
+        "привяжи жест sh3 к открытию моего рабочего дня",
+        GESTURES_WITH_SH3,
+    )
+
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["gestureLabel"] == "sh3"
+    assert draft["missing"] == ["действие"]
+    assert draft["actionSpec"] == {}
+    assert "Уточните" in draft["agentReply"]
+    assert "Calendar" not in draft["agentReply"]
 
 
 def test_binding_agent_orchestrator_returns_multi_agent_trace():
@@ -949,6 +965,52 @@ def test_binding_agent_replaces_contradictory_mistral_reply_when_contract_ready(
     assert result.action_spec["action"] == "open_url"
     assert "Укажите жест" not in result.response_text
     assert "gun" in result.response_text
+
+
+def test_binding_agent_rejects_mistral_calendar_guess_for_workday_goal():
+    class FakeResponse:
+        def read(self):
+            content = json.dumps(
+                {
+                    "gestureLabel": "sh3",
+                    "commandName": "open_workday",
+                    "mode": "single",
+                    "actionSpec": {
+                        "action": "open_app",
+                        "platform": "macos",
+                        "app": "Calendar",
+                    },
+                    "missing": [],
+                    "agentReply": "Подготовил sh3 к открытию рабочего дня.",
+                },
+                ensure_ascii=False,
+            )
+            return json.dumps(
+                {"choices": [{"message": {"content": content}}]},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+        def close(self):
+            pass
+
+    agent = MistralBindingAgent(
+        api_key="test-key",
+        model="test-mistral",
+        urlopen=lambda _request, timeout: FakeResponse(),
+    )
+
+    result = BindingAgentOrchestrator(mistral_agent=agent).run(
+        "привяжи жест sh3 к открытию моего рабочего дня",
+        GESTURES_WITH_SH3,
+        provider="mistral",
+    )
+
+    assert result.ok is False
+    assert result.can_apply is False
+    assert result.gesture_label == "sh3"
+    assert result.missing == ["действие"]
+    assert result.action_spec == {}
+    assert "Уточните" in result.response_text
 
 
 def test_binding_agent_maps_macos_space_left_navigation():

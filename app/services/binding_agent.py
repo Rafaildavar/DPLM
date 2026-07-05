@@ -93,6 +93,24 @@ APP_ALIASES: dict[str, str] = {
     "rambler mail": "Rambler Mail",
 }
 
+ABSTRACT_WORKFLOW_TARGET_MARKERS: tuple[str, ...] = (
+    "мой рабочий день",
+    "моего рабочего дня",
+    "рабочий день",
+    "рабочего дня",
+    "рабочее место",
+    "рабочего места",
+    "рабочий процесс",
+    "рабочего процесса",
+    "рабочий старт",
+    "рабочего старта",
+    "мое утро",
+    "моё утро",
+    "моего утра",
+    "мой день",
+    "моего дня",
+)
+
 SITE_ALIASES: dict[str, str] = {
     "chat gpt": "https://chatgpt.com",
     "chatgpt": "https://chatgpt.com",
@@ -492,8 +510,45 @@ def _extract_app_name(text: str) -> str:
         if match:
             value = _clean_value(match.group("value"))
             if value and not value.startswith(("http://", "https://", "/", "~")):
+                if _is_abstract_workflow_target(value):
+                    return ""
                 return value
     return ""
+
+
+def _is_abstract_workflow_target(value: str) -> bool:
+    lower = _norm(value).replace("ё", "е")
+    if not lower:
+        return False
+    markers = tuple(marker.replace("ё", "е") for marker in ABSTRACT_WORKFLOW_TARGET_MARKERS)
+    return any(marker in lower for marker in markers)
+
+
+def _prompt_mentions_app(text: str, app: str) -> bool:
+    lower = _norm(text).replace("ё", "е")
+    app_norm = _norm(app).replace("ё", "е")
+    if app_norm and app_norm in lower:
+        return True
+    for alias, mapped in APP_ALIASES.items():
+        if mapped == app and alias.replace("ё", "е") in lower:
+            return True
+    if app == "Calendar" and "календар" in lower:
+        return True
+    return False
+
+
+def _action_conflicts_with_abstract_workflow(
+    text: str,
+    action_spec: dict[str, Any],
+) -> bool:
+    if not action_spec or action_spec.get("action") != "open_app":
+        return False
+    app = str(action_spec.get("app") or "").strip()
+    if _is_abstract_workflow_target(app):
+        return True
+    if not _is_abstract_workflow_target(text):
+        return False
+    return not _prompt_mentions_app(text, app)
 
 
 def _parse_action(text: str) -> dict[str, Any] | None:
@@ -2578,13 +2633,18 @@ class BindingAgentOrchestrator:
     ) -> BindingAgentResult:
         gesture = str(draft.get("gestureLabel") or "").strip()
         action_spec = dict(draft.get("actionSpec") or {})
+        forced_missing: list[str] = []
+        if _action_conflicts_with_abstract_workflow(context.prompt, action_spec):
+            action_spec = {}
+            draft = {**draft, "agentReply": ""}
+            forced_missing.append("действие")
         memory_step = self.memory_agent.run(context, gesture)
         steps.append(memory_step)
         policy_step = self.policy_agent.run(gesture, action_spec)
         steps.append(policy_step)
         model_missing = _normalize_missing(draft.get("missing"))
         missing = _unique_missing(
-            model_missing + list(policy_step.data.get("missing") or [])
+            model_missing + forced_missing + list(policy_step.data.get("missing") or [])
         )
         if gesture:
             missing = [
@@ -2711,7 +2771,8 @@ class BindingAgentOrchestrator:
             if "действие" in missing:
                 return (
                     "Я понял жест. Уточните, какую команду к нему привязать: "
-                    "например открыть Safari, нажать command+z или показать уведомление."
+                    "например открыть Safari, нажать command+z, показать уведомление "
+                    "или перечислить шаги сценария."
                 )
             return (
                 "Локальный агент: действие понял, но нужно уточнить: "
