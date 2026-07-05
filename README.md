@@ -8,6 +8,7 @@
 [![ML Smoke](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml)
 [![Docker Runtime](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml)
 [![Desktop Release Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml)
+[![macOS App Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/macos-app.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/macos-app.yml)
 
 ## Что Это
 
@@ -226,6 +227,7 @@ PYTHON=.venv/bin/python make ci
 - `CI`: unit tests + ML smoke на push/PR;
 - `ML Smoke`: отдельная регулярная проверка model artifacts;
 - `Docker Runtime`: сборка headless runtime image + ML smoke внутри контейнера;
+- `macOS App Bundle`: сборка `.app/.zip` artifact на macOS runner;
 - `Desktop Release Bundle`: сборка release bundle по tag/manual run.
 
 Текущий CD-подход для desktop-приложения: не деплой на сервер, а выпуск
@@ -268,6 +270,22 @@ docker compose --profile tools up mlflow
 `docker-runtime.yml` в GitHub Actions собирает image и запускает ML smoke
 внутри контейнера, чтобы проверить, что модельные артефакты и runtime не
 завязаны на локальную macOS-среду.
+
+## macOS Artifact
+
+Для передачи приложения друзьям используется отдельный CD workflow
+`macos-app.yml`. Он запускается на macOS runner, проверяет ML smoke, собирает
+`GestureFlow.app` через PyInstaller/Flet и публикует `.zip` artifact.
+
+Локально на macOS можно запустить:
+
+```bash
+make macos-app
+```
+
+Важно: текущая сборка подписывается ad-hoc и не проходит Apple notarization.
+На первом запуске macOS может потребовать открыть приложение через right click
+-> Open и выдать разрешение на камеру.
 
 ## Быстрый Старт
 

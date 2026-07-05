@@ -1,4 +1,4 @@
-.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
+.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow macos-app jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
@@ -39,6 +39,9 @@ docker-ci:
 
 docker-mlflow:
 	docker compose --profile tools up mlflow
+
+macos-app:
+	bash packaging/macos/build_app.sh
 
 jmlc-profile:
 	$(PYTHON) -m scripts.jmlc_dataset_profile

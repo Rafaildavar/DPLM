@@ -7,6 +7,7 @@ Implemented first production-oriented CI/CD layer:
 - GitHub Actions CI for pull requests and pushes.
 - Separate ML smoke workflow for model artifact checks.
 - Docker runtime workflow for reproducible headless ML/runtime validation.
+- macOS app workflow for `.app`/`.zip` delivery artifacts.
 - Tag-based desktop release bundle.
 - Local Makefile entrypoints for the same checks.
 
@@ -60,6 +61,14 @@ make docker-mlflow
 
 Starts an MLflow UI service from the Docker runtime image on
 `http://127.0.0.1:5000`.
+
+```bash
+make macos-app
+```
+
+Builds a macOS `GestureFlow.app` archive through
+`packaging/macos/build_app.sh`. This target is intended for macOS machines and
+GitHub-hosted macOS runners.
 
 ## GitHub Actions
 
@@ -140,6 +149,30 @@ Current release is a handoff bundle, not yet a native installer. It contains
 source code, tracked model artifacts, configs and docs, while excluding local
 raw datasets, MLflow DB, virtualenvs and generated outputs.
 
+### `.github/workflows/macos-app.yml`
+
+Trigger:
+
+- manual `workflow_dispatch`;
+- push to `contest_version` when app/runtime/model/package files change;
+- tag push `v*`.
+
+Checks:
+
+- install project dependencies on a macOS runner;
+- run `scripts.ml_smoke` before packaging;
+- pre-bundle the Flet desktop client archive when available;
+- build `GestureFlow.app` with PyInstaller/Flet;
+- add macOS camera/microphone/automation usage descriptions to `Info.plist`;
+- ad-hoc sign the app;
+- upload a `.zip` artifact and attach it to draft releases on tags.
+
+Purpose:
+
+- create a user-facing macOS artifact, not just a source bundle;
+- verify that model files and runtime dependencies can be packaged together;
+- make CD relevant for real desktop delivery and demos.
+
 ## Desktop Deployment Logic
 
 GestureFlow is currently a desktop Flet application with local camera access and
@@ -150,6 +183,7 @@ runners, so the pipeline is split:
 - Docker verifies a clean Linux runtime for headless ML checks.
 - Live camera quality is verified through the project live-evaluation mode.
 - Release workflow packages a reproducible project bundle.
+- macOS app workflow produces a downloadable `.app/.zip` artifact.
 
 Docker is not the primary way to distribute the macOS desktop camera app to
 friends. Docker Desktop on macOS does not provide a smooth native webcam/window
@@ -160,10 +194,10 @@ runtime artifact for ML smoke, MLOps, CI and future edge/server variants.
 
 Next desktop CD step:
 
-- add PyInstaller/Flet native packaging;
-- build `.app`/`.zip` for macOS;
+- test the macOS artifact on a second physical Mac;
+- add Developer ID signing and Apple notarization;
 - optionally add Windows artifact later;
-- attach ML smoke report and model metrics to release.
+- attach richer model metrics to release assets.
 
 ## Mobile Deployment Logic
 
