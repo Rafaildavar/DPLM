@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -32,6 +33,11 @@ from app.services.binding_agent import (
     _short_text,
     _unique_missing,
 )
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
+
 
 class MistralBindingAgent:
     name = "Mistral Agent"
@@ -62,13 +68,14 @@ class MistralBindingAgent:
         intent: str = "create_binding",
         block: str = "binding",
     ) -> tuple[AgentStep, dict[str, Any] | None]:
+        started = time.perf_counter()
         if not (self.api_key or "").strip():
             return (
                 AgentStep(
                     self.name,
                     "need_input",
                     f"Не найден {MISTRAL_API_KEY_ENV}; использую локальный fallback.",
-                    {"model": self.model},
+                    {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
             )
@@ -99,7 +106,7 @@ class MistralBindingAgent:
                     self.name,
                     "blocked",
                     f"Mistral API вернул HTTP {exc.code}: {detail}",
-                    {"model": self.model},
+                    {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
             )
@@ -109,7 +116,7 @@ class MistralBindingAgent:
                     self.name,
                     "blocked",
                     f"Mistral API недоступен: {exc}",
-                    {"model": self.model},
+                    {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
             )
@@ -124,7 +131,7 @@ class MistralBindingAgent:
                     self.name,
                     "blocked",
                     f"Mistral ответил невалидным draft JSON: {exc}",
-                    {"model": self.model},
+                    {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
             )
@@ -139,6 +146,7 @@ class MistralBindingAgent:
                     "block": block,
                     "purpose": "binding_parse",
                     "temperature": payload.get("temperature"),
+                    "durationMs": _elapsed_ms(started),
                     "localPromptPreview": _short_text(
                         str(payload["messages"][1]["content"]),
                         360,
@@ -156,6 +164,7 @@ class MistralBindingAgent:
         block: str,
         base_answer: str,
     ) -> tuple[AgentStep, str | None]:
+        started = time.perf_counter()
         if not (self.api_key or "").strip():
             return (
                 AgentStep(
@@ -167,6 +176,7 @@ class MistralBindingAgent:
                         "intent": intent,
                         "block": block,
                         "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
                     },
                 ),
                 None,
@@ -208,6 +218,7 @@ class MistralBindingAgent:
                         "intent": intent,
                         "block": block,
                         "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
                     },
                 ),
                 None,
@@ -223,6 +234,7 @@ class MistralBindingAgent:
                         "intent": intent,
                         "block": block,
                         "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
                     },
                 ),
                 None,
@@ -242,6 +254,7 @@ class MistralBindingAgent:
                         "intent": intent,
                         "block": block,
                         "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
                     },
                 ),
                 None,
@@ -257,6 +270,7 @@ class MistralBindingAgent:
                         "intent": intent,
                         "block": block,
                         "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
                     },
                 ),
                 None,
@@ -272,6 +286,7 @@ class MistralBindingAgent:
                     "block": block,
                     "purpose": "answer_rewrite",
                     "temperature": payload.get("temperature"),
+                    "durationMs": _elapsed_ms(started),
                     "localPromptPreview": _short_text(
                         str(payload["messages"][1]["content"]),
                         360,

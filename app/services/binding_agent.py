@@ -577,7 +577,7 @@ def _parse_action(text: str) -> dict[str, Any] | None:
         return {
             "action": "notify",
             "platform": "macos",
-            "title": "DPLM",
+            "title": "GestureFlow",
             "message": message or "Готово",
         }
 
@@ -2627,8 +2627,15 @@ class BindingAgentOrchestrator:
                 f"Команда: {command_name or _action_title(action_spec)}",
                 f"Действие: {_action_title(action_spec)}",
             ]
+        can_apply = bool(action_spec and not missing and not error)
         response = str(draft.get("agentReply") or "").strip()
-        if not response:
+        if not response or self._external_reply_conflicts_with_contract(
+            response,
+            gesture=gesture,
+            action_spec=action_spec,
+            missing=missing,
+            error=error,
+        ):
             response = self._response_text(
                 ok=ok,
                 error=error,
@@ -2638,7 +2645,7 @@ class BindingAgentOrchestrator:
             )
         return BindingAgentResult(
             ok=ok,
-            can_apply=bool(action_spec and not missing and not error),
+            can_apply=can_apply,
             error=error,
             missing=missing,
             gesture_label=gesture,
@@ -2648,6 +2655,44 @@ class BindingAgentOrchestrator:
             summary=summary,
             response_text=response,
             steps=steps,
+        )
+
+    def _external_reply_conflicts_with_contract(
+        self,
+        response: str,
+        *,
+        gesture: str,
+        action_spec: dict[str, Any],
+        missing: list[str],
+        error: str,
+    ) -> bool:
+        if missing or error:
+            return False
+        if not (gesture and action_spec):
+            return False
+        lower = _norm(response)
+        clarify_markers = (
+            "уточн",
+            "укаж",
+            "выбер",
+            "не указан",
+            "не выбран",
+            "не хватает",
+            "осталось выбрать",
+            "нужно выбрать",
+            "нужно указать",
+            "нужно уточнить",
+        )
+        field_markers = (
+            "жест",
+            "gesture",
+            "действ",
+            "команд",
+            "action",
+            "привяз",
+        )
+        return any(marker in lower for marker in clarify_markers) and any(
+            marker in lower for marker in field_markers
         )
 
     def _response_text(

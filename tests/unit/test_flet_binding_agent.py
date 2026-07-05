@@ -409,6 +409,8 @@ def test_binding_agent_mistral_provider_uses_model_response():
         "Guardrails Agent",
         "Reviewer Agent",
     ]
+    mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
+    assert mistral_step.data["durationMs"] >= 0
 
 
 def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature():
@@ -799,7 +801,7 @@ def test_binding_agent_builds_sequence_draft():
         "steps": [
             {"action": "open_app", "app": "Preview"},
             {"action": "wait", "seconds": 1.0},
-            {"action": "notify", "title": "DPLM", "message": "Готово"},
+            {"action": "notify", "title": "GestureFlow", "message": "Готово"},
         ],
     }
 
@@ -902,6 +904,53 @@ def test_mistral_draft_drops_stale_missing_when_contract_fields_exist():
     assert draft["missing"] == []
 
 
+def test_binding_agent_replaces_contradictory_mistral_reply_when_contract_ready():
+    class FakeResponse:
+        def read(self):
+            content = json.dumps(
+                {
+                    "gestureLabel": "gun",
+                    "commandName": "open_url",
+                    "mode": "single",
+                    "actionSpec": {
+                        "action": "open_url",
+                        "platform": "macos",
+                        "url": "https://abiturient.itmo.ru/magistracy",
+                    },
+                    "missing": [],
+                    "agentReply": "Укажите жест для привязки.",
+                },
+                ensure_ascii=False,
+            )
+            return json.dumps(
+                {"choices": [{"message": {"content": content}}]},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+        def close(self):
+            pass
+
+    agent = MistralBindingAgent(
+        api_key="test-key",
+        model="test-mistral",
+        urlopen=lambda _request, timeout: FakeResponse(),
+    )
+
+    result = BindingAgentOrchestrator(mistral_agent=agent).run(
+        "привяжи жест gun к открытию сайта абитуриента для магистратуры итмо",
+        GESTURES_WITH_GUN,
+        provider="mistral",
+    )
+
+    assert result.ok is True
+    assert result.can_apply is True
+    assert result.missing == []
+    assert result.gesture_label == "gun"
+    assert result.action_spec["action"] == "open_url"
+    assert "Укажите жест" not in result.response_text
+    assert "gun" in result.response_text
+
+
 def test_binding_agent_maps_macos_space_left_navigation():
     draft = build_agent_binding_draft(
         "привяжи жест свайп влево к команде на мак ос перелистнуть экран",
@@ -996,6 +1045,8 @@ def test_binding_agent_researches_unknown_action_before_clarifying(tmp_path):
         "keys": ["ctrl", "up"],
     }
     assert "Research Agent" in [step.agent for step in result.steps]
+    research_step = next(step for step in result.steps if step.agent == "Research Agent")
+    assert research_step.data["durationMs"] >= 0
     assert draft["researchProposal"]["approvalRequired"] is True
     assert draft["researchProposal"]["rememberOnApproval"] is True
     assert "запомню это как skill" in draft["agentReply"]

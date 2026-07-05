@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -34,6 +35,10 @@ DEFAULT_SKILL_PATH = (
     / "researched-actions"
     / "SKILL.md"
 )
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
 
 
 def _memory_path() -> Path:
@@ -460,6 +465,7 @@ class ResearchAgent:
         )
 
     def run(self, context: BindingAgentContext) -> AgentStep:
+        started = time.perf_counter()
         learned = self.memory.find(context.prompt)
         if learned:
             return AgentStep(
@@ -470,6 +476,7 @@ class ResearchAgent:
                     "action_spec": dict(learned.action_spec),
                     "source": "user_skill_memory",
                     "research": learned.to_proposal(approval_required=False),
+                    "durationMs": _elapsed_ms(started),
                 },
             )
 
@@ -483,6 +490,7 @@ class ResearchAgent:
                     "action_spec": {},
                     "source": "research_miss",
                     "query": context.prompt,
+                    "durationMs": _elapsed_ms(started),
                 },
             )
 
@@ -494,6 +502,7 @@ class ResearchAgent:
                 "action_spec": dict(recipe.action_spec),
                 "source": "source_backed_research",
                 "research": recipe.to_proposal(approval_required=True),
+                "durationMs": _elapsed_ms(started),
             },
         )
 
