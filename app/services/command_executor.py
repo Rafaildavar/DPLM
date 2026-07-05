@@ -185,8 +185,14 @@ class CommandExecutor:
     def _dispatch_action(self, config: Dict[str, Any], **kwargs) -> bool:
         action = config.get("action")
 
+        if action == "sequence":
+            return self._run_sequence(config.get("steps", []), **kwargs)
+
         if action == "open_app":
             return self._open_application(config.get("app", ""))
+
+        if action == "open_path":
+            return self._open_path(config.get("path", ""))
 
         if action == "run_script":
             script_path = config.get("script_path")
@@ -221,6 +227,15 @@ class CommandExecutor:
                 return False
             return self._open_url(url)
 
+        if action == "wait":
+            return self._wait(config.get("seconds", 1.0))
+
+        if action == "notify":
+            return self._notify(
+                str(config.get("message") or ""),
+                title=str(config.get("title") or "GestureFlow"),
+            )
+
         if action == "mute_toggle":
             return self._press_single("volumemute")
 
@@ -248,6 +263,28 @@ class CommandExecutor:
 
         logger.error("Неизвестное действие: %s", action)
         return False
+
+    def _run_sequence(self, steps: Any, **kwargs) -> bool:
+        """Выполнить пользовательский сценарий из нескольких action_spec-шагов."""
+        if not isinstance(steps, list) or not steps:
+            logger.error("sequence: список шагов пуст или некорректен")
+            return False
+
+        for index, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                logger.error("sequence: шаг %s не является словарём", index)
+                return False
+            if step.get("action") == "sequence":
+                logger.error("sequence: вложенные сценарии не поддерживаются")
+                return False
+            if not self.execute_config(step, **kwargs):
+                logger.error(
+                    "sequence: шаг %s завершился ошибкой (%s)",
+                    index,
+                    step.get("action"),
+                )
+                return False
+        return True
 
     def execute(self, command_name: str, **kwargs) -> bool:
         """
@@ -329,6 +366,39 @@ class CommandExecutor:
         except Exception as e:
             logger.error(f"Ошибка запуска скрипта '{script_path}': {e}")
             return False
+
+    def _open_path(self, raw_path: str) -> bool:
+        """Открыть файл или папку штатным приложением ОС."""
+        try:
+            path = Path(str(raw_path or "")).expanduser()
+            if not path.exists():
+                logger.error("open_path: путь не найден: %s", raw_path)
+                return False
+
+            target = str(path)
+            if self.system == "darwin":
+                subprocess.Popen(
+                    ["open", target],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            if self.system == "windows":
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "", target],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            subprocess.Popen(
+                ["xdg-open", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except Exception as e:
+            logger.error("Ошибка open_path %r: %s", raw_path, e)
+            return False
     
     def _press_keys(self, keys: List[str]) -> bool:
         """
@@ -385,6 +455,54 @@ class CommandExecutor:
             return False
         except Exception as e:
             logger.error("Ошибка open_url: %s", e)
+            return False
+
+    def _wait(self, seconds: Any) -> bool:
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            logger.error("wait: некорректное значение seconds=%r", seconds)
+            return False
+        if value < 0:
+            logger.error("wait: пауза не может быть отрицательной")
+            return False
+        time.sleep(min(value, 60.0))
+        return True
+
+    @staticmethod
+    def _applescript_string(value: str) -> str:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def _notify(self, message: str, *, title: str = "GestureFlow") -> bool:
+        message = (message or "").strip()
+        title = (title or "GestureFlow").strip() or "GestureFlow"
+        if not message:
+            logger.error("notify: пустой текст уведомления")
+            return False
+        try:
+            if self.system == "darwin":
+                script = (
+                    "display notification "
+                    f"{self._applescript_string(message)} "
+                    f"with title {self._applescript_string(title)}"
+                )
+                subprocess.Popen(
+                    ["osascript", "-e", script],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            if self.system == "linux":
+                subprocess.Popen(
+                    ["notify-send", title, message],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            logger.info("%s: %s", title, message)
+            return True
+        except Exception as e:
+            logger.error("Ошибка notify: %s", e)
             return False
     
     def _brightness(self, direction: str) -> bool:
