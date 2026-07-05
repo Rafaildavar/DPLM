@@ -11,6 +11,8 @@ from typing import Any
 
 __all__ = [
     "ActionAgent",
+    "BindingAgentE2ECase",
+    "BindingAgentLlmJudge",
     "GestureAgent",
     "GuardrailsAgent",
     "IntentAgent",
@@ -70,4 +72,14 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.research import ResearchAgent
 
         return ResearchAgent
+    if name in {"BindingAgentE2ECase", "BindingAgentLlmJudge"}:
+        from app.services.binding_agents.e2e_judge import (
+            BindingAgentE2ECase,
+            BindingAgentLlmJudge,
+        )
+
+        return {
+            "BindingAgentE2ECase": BindingAgentE2ECase,
+            "BindingAgentLlmJudge": BindingAgentLlmJudge,
+        }[name]
     raise AttributeError(name)

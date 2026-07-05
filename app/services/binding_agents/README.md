@@ -8,6 +8,9 @@ The binding assistant is organized as a small multi-agent system:
 - `research.py` owns the source-backed Research Agent and user-approved action skill memory.
 - `mistral.py` is the optional model-backed draft adapter.
 - `reviewer.py` checks answer relevance before the result reaches the UI.
+- `e2e_judge.py` defines the 10-criterion LLM-as-a-judge rubric for
+  end-to-end agent checks. It can use a real completion function, while tests
+  use the deterministic local fallback so CI does not depend on API keys.
 - `skills/` contains the reusable skill catalog that agents attach to trace rows.
 
 Research results follow an approval loop: a recipe can fill a draft, but it is
