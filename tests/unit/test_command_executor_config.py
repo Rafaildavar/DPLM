@@ -4,12 +4,17 @@ import pytest
 import app.services.command_executor as ce
 
 
+def _enable_fake_pyautogui(monkeypatch):
+    monkeypatch.setattr(ce, "PYAUTOGUI_AVAILABLE", True)
+
+
 def test_execute_config_scroll(monkeypatch):
     calls = []
 
     def fake_scroll(n):
         calls.append(n)
 
+    _enable_fake_pyautogui(monkeypatch)
     monkeypatch.setattr(ce.pyautogui, "scroll", fake_scroll)
     ex = ce.CommandExecutor()
     ok = ex.execute_config({"action": "scroll", "clicks": -7, "platform": "all"})
@@ -31,6 +36,7 @@ def test_execute_config_platform_mismatch(monkeypatch):
 
 def test_execute_config_mute_toggle(monkeypatch):
     pressed = []
+    _enable_fake_pyautogui(monkeypatch)
     monkeypatch.setattr(ce.pyautogui, "press", lambda k: pressed.append(k))
 
     ex = ce.CommandExecutor()
@@ -130,6 +136,7 @@ def test_execute_config_screenshot(monkeypatch, tmp_path):
 )
 def test_execute_config_media_key(monkeypatch, kind, expected_key):
     pressed = []
+    _enable_fake_pyautogui(monkeypatch)
     monkeypatch.setattr(ce.pyautogui, "press", lambda k: pressed.append(k))
 
     ex = ce.CommandExecutor()
@@ -142,6 +149,7 @@ def test_execute_config_media_key(monkeypatch, kind, expected_key):
 
 def test_execute_config_media_key_unknown_kind(monkeypatch):
     pressed = []
+    _enable_fake_pyautogui(monkeypatch)
     monkeypatch.setattr(ce.pyautogui, "press", lambda k: pressed.append(k))
 
     ex = ce.CommandExecutor()

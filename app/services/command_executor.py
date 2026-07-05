@@ -12,15 +12,21 @@ import platform
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional, Dict, Any, List
 import logging
 
 try:
     import pyautogui
     PYAUTOGUI_AVAILABLE = True
-except ImportError:
+except Exception as exc:
+    pyautogui = SimpleNamespace(  # type: ignore[assignment]
+        hotkey=lambda *_args, **_kwargs: None,
+        press=lambda *_args, **_kwargs: None,
+        scroll=lambda *_args, **_kwargs: None,
+    )
     PYAUTOGUI_AVAILABLE = False
-    print("[WARN] pyautogui not installed - GUI automation disabled")
+    print(f"[WARN] pyautogui unavailable - GUI automation disabled: {exc}")
 
 logger = logging.getLogger(__name__)
 

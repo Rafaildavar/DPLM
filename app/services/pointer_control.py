@@ -17,7 +17,7 @@ try:
     pyautogui.FAILSAFE = False
     pyautogui.PAUSE = 0
     PYAUTOGUI_AVAILABLE = True
-except ImportError:
+except Exception:
     pyautogui = None  # type: ignore[assignment]
     PYAUTOGUI_AVAILABLE = False
 
