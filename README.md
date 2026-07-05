@@ -1,257 +1,354 @@
-# DPLM: Gesture & Voice Assistant
+# GestureFlow
 
-> **Статус: В активной разработке (полный редизайн)**  
-> Текущая ветка: `redesign`  
-> Старая версия: тег `v0.6.0-old`
+> Персональная ML-система для управления компьютером жестами: пользователь
+> записывает свои жесты через веб-камеру, обучает модели, проверяет качество в
+> live-evaluation и привязывает распознанные жесты к командам ОС.
 
-## Описание проекта
+[![CI](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml)
+[![ML Smoke](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml)
+[![Desktop Release Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml)
 
-Интеллектуальная система управления компьютером с помощью жестов и голосовых команд. Ключевая особенность: пользователь сам обучает систему жестам и привязывает их к любым командам (открытие приложений, системные действия, пользовательские скрипты).
+## Что Это
 
-### Основные возможности
+GestureFlow - desktop MVP и ML Engineering проект для распознавания
+пользовательских жестов по обычной веб-камере.
 
-1. **Обучение пользовательским жестам**
-   - Интуитивный интерфейс для записи семплов жестов
-   - Автоматическое обучение модели машинного обучения
-   - Проверка точности распознавания в реальном времени
+Главная идея: жесты не должны быть заранее жестко прошиты в приложении.
+Пользователь может:
 
-2. **Система команд**
-   - Готовые шаблоны: системные, медиа, кастомные
-   - Привязка жестов к любым действиям
-   - Кроссплатформенное выполнение (Windows + macOS)
+- записать собственный статический или динамический жест;
+- переобучить модель из интерфейса;
+- проверить реальные live-метрики на камере;
+- привязать жест к действию: открыть приложение, нажать горячие клавиши,
+  выполнить сценарий из нескольких шагов, показать уведомление или запустить
+  безопасный пользовательский скрипт.
 
-3. **Голосовой помощник**
-   - Распознавание речи (Speech-to-Text)
-   - Озвучка подтверждений и подсказок (Text-to-Speech)
-   - Контекстные диалоги и помощь
+Проект сделан как полноценная система, а не как notebook-классификатор:
+есть сбор данных, предобработка, модели, reject policy, online inference,
+MLOps-логирование, live-evaluation, CI/CD и продуктовый интерфейс.
 
-4. **Современный интерфейс**
-   - Минималистичная панель (прозрачность, drag&drop)
-   - Анимированный аватар-ассистент
-   - Material Design 3 (QML + Qt Quick)
-   - Визуальная обратная связь при распознавании
+## Почему Это Важно
+
+Обычные горячие клавиши нужно помнить, голос не всегда уместен, а отдельные
+контроллеры требуют дополнительного устройства. GestureFlow дает более
+персональный способ управления рабочим окружением: пользователь сам задает
+жесты, проверяет их качество и связывает с нужными командами.
+
+Потенциальные сценарии:
+
+- быстрые команды для разработчиков, дизайнеров, монтажеров и стримеров;
+- accessibility-сценарии, где жест удобнее клавиатуры или мыши;
+- управление презентациями, медиа, окнами и рабочими сценариями;
+- HCI/CV-исследования с воспроизводимым ML-пайплайном.
+
+## Ключевые Возможности
+
+| Область | Что реализовано |
+|---|---|
+| Запись данных | Запись жестов из Flet-интерфейса, сохранение `.npy` samples и metadata |
+| Статические жесты | Распознавание поз руки, negative-классы, rejection policy |
+| Динамические жесты | Sequence-модели, сегментация движения, natural end-of-gesture policy |
+| Пользовательское обучение | Обучение моделей из UI без ручного запуска CLI |
+| Live evaluation | Тесты по expected label: correct, wrong, missed, accuracy, confusion |
+| Команды ОС | Привязка жестов к действиям, hotkeys, media keys, сценариям `sequence` |
+| MLOps | MLflow runs, JSONL logs, HTML dashboard, артефакты экспериментов |
+| CI/CD | GitHub Actions: unit tests, ML smoke, release bundle |
+
+## Где Здесь ML
+
+GestureFlow использует MediaPipe Hands как CV-экстрактор landmark-точек, а
+решение о жесте принимает собственный ML-пайплайн поверх этих данных.
+
+### Данные
+
+Вход модели - последовательности landmark-точек руки:
+
+- static/quasi-static: положение кисти и пальцев в окне кадров;
+- dynamic: временной ряд `frames x features`, включая форму руки и global wrist
+  motion;
+- negative: движения и состояния, которые не должны запускать команды.
+
+Основные данные лежат в:
+
+```text
+data/gestures/<label>/sample_*.npy
+data/gestures/<label>/sample_*.meta.json
+configs/gesture_taxonomy.json
+```
+
+### Модели
+
+В проекте сравниваются и используются несколько подходов:
+
+- static baseline: pose-based классификация статических жестов;
+- dynamic sequence MLP;
+- dynamic LSTM backbone для более сложных временных жестов;
+- Rocket/MultiRocket/SProcket/Shapelet/PhaseHMM эксперименты для временных
+  рядов;
+- prototype/rejection layer для open-set поведения;
+- intent gate `static / dynamic / none`, чтобы не заставлять классификатор
+  выбирать жест там, где команды быть не должно.
+
+Модель не должна просто выбирать ближайший класс. Для безопасного управления
+ОС важны:
+
+- confidence threshold;
+- top1/top2 margin;
+- distance-to-prototype;
+- negative labels;
+- live false positive rate;
+- rejected/no-command outcomes.
+
+### Метрики
+
+Offline-метрики нужны, но главный критерий качества - поведение в live:
+
+- accuracy, precision, recall, macro F1;
+- per-class recall;
+- false positive rate;
+- dynamic-as-static confusion;
+- missed rate;
+- reject rate;
+- latency и FPS;
+- command success rate.
+
+Live-тесты автоматически пишутся в JSONL и MLflow, чтобы каждую гипотезу можно
+было проверить повторно.
 
 ## Архитектура
 
+```mermaid
+flowchart LR
+    User["Пользователь показывает жест"] --> Camera["Camera frames"]
+    Camera --> MP["MediaPipe Hands"]
+    MP --> Features["Landmarks + motion features"]
+    Features --> Gate["Intent gate: static / dynamic / none"]
+    Gate --> Static["Static recognizer"]
+    Gate --> Dynamic["Dynamic sequence recognizer"]
+    Static --> Reject["Rejection policy"]
+    Dynamic --> Reject
+    Reject --> Router["Recognition router"]
+    Router --> UI["Flet UI"]
+    Router --> Commands["Command executor"]
+    UI --> Eval["Live evaluation"]
+    Eval --> Logs["JSONL logs"]
+    Eval --> MLflow["MLflow"]
 ```
-DPLM/
-├── app/
-│   ├── qml/                # QML интерфейсы (Material Design 3)
-│   ├── backend/            # Бизнес-логика (команды, ML)
-│   ├── models/             # Модели данных (PostgreSQL + SQLAlchemy)
-│   ├── services/           # Сервисы (CV, TTS, STT, executor)
-│   ├── resources/          # Ресурсы (иконки, аватар, звуки)
-│   └── main.py             # Точка входа (Qt QML Application)
-├── data/
-│   └── gestures/           # Семплы жестов (NPY)
-├── models/
-│   └── user_gestures/      # Обученные модели пользователя
-├── docs/                   # Документация (RU + EN)
-└── requirements.txt        # Зависимости Python
+
+Основные модули:
+
+```text
+app/flet_app/              Flet desktop UI
+app/gesture_online_infer.py online inference and routing
+app/services/              commands, config, diagnostics, binding policy
+app/models/                SQLAlchemy models
+cv/                        feature extraction, training, sequence models
+scripts/                   experiments, reports, MLOps utilities
+models/                    tracked model artifacts and metadata
+docs/contest/              JMLC-oriented ML system design
+tests/                     unit and smoke tests
+.github/workflows/         CI/CD pipelines
 ```
 
-## Технологический стек
+## Product Flow
 
-| Компонент | Технология |
-|-----------|-----------|
-| **UI Framework** | PySide6 (QML + Qt Quick) |
-| **UI Design** | Material Design 3 |
-| **Computer Vision** | MediaPipe Hands (baseline), YOLO11 Pose (опционально) |
-| **ML Classification** | scikit-learn (KNN/SVM), LSTM/GRU (для сложных жестов) |
-| **Database** | PostgreSQL Embedded (pg_embed) |
-| **ORM** | SQLAlchemy + Alembic (миграции) |
-| **Speech-to-Text** | Временно отключено |
-| **Text-to-Speech** | Временно отключено |
-| **Command Execution** | subprocess, pyautogui |
-| **Platforms** | Windows 10/11, macOS 11+ |
+1. Пользователь открывает приложение.
+2. Включает камеру и live recognition.
+3. Записывает новый жест или использует уже существующий.
+4. Обучает модель из интерфейса.
+5. Запускает live evaluation: выбирает expected label и делает 10-20 попыток.
+6. Смотрит accuracy, wrong/missed, confusion и rejection outcomes.
+7. Привязывает жест к команде или сценарию.
+8. Система выполняет команду только после прохождения route + reject policy.
 
-## Быстрый старт
+## Command Binding
 
-### Установка
+GestureFlow поддерживает не только одиночные действия, но и сценарии:
+
+```json
+{
+  "action": "sequence",
+  "platform": "macos",
+  "steps": [
+    {"action": "open_app", "app": "Safari"},
+    {"action": "wait", "seconds": 1.0},
+    {"action": "notify", "title": "GestureFlow", "message": "Рабочее место готово"}
+  ]
+}
+```
+
+Поддерживаемые типы действий:
+
+- `open_app`, `open_url`, `open_path`;
+- `volume_up`, `volume_down`, `mute_toggle`;
+- `brightness_up`, `brightness_down`, `lock_screen`, `screenshot`;
+- `scroll`, `press`, `media_key`, `key_combination`;
+- `run_script`;
+- `wait`, `notify`, `sequence`.
+
+Опасные действия дополнительно помечаются политикой безопасности. Вложенные
+сценарии запрещены, чтобы не создавать неуправляемые цепочки.
+
+## MLOps И Наблюдаемость
+
+Проект фиксирует эксперименты и live-качество:
+
+- MLflow: параметры обучения, метрики, артефакты моделей;
+- `outputs/ci/ml_smoke_report.json`: проверка загрузки моделей в CI;
+- `~/.dplm/logs/live_evaluation.jsonl`: попытки live-тестов;
+- `~/.dplm/logs/runtime_performance.jsonl`: latency/FPS;
+- `docs/contest/ML_SYSTEM_DESIGN.md`: living-документ архитектуры ML-системы;
+- `docs/experiments/`: отчеты по гипотезам, rejection, datasets, thresholds.
+
+Запуск MLflow UI:
 
 ```bash
-# Клонирование репозитория
-git clone https://github.com/your-username/DPLM.git
+PYTHON=.venv/bin/python make mlflow-ui
+```
+
+После запуска UI доступен локально:
+
+```text
+http://127.0.0.1:5000
+```
+
+## CI/CD
+
+CI проверяет, что код и ML-артефакты не сломались после изменений:
+
+```bash
+PYTHON=.venv/bin/python make ci
+```
+
+В GitHub Actions:
+
+- `CI`: unit tests + ML smoke на push/PR;
+- `ML Smoke`: отдельная регулярная проверка model artifacts;
+- `Desktop Release Bundle`: сборка release bundle по tag/manual run.
+
+Текущий CD-подход для desktop-приложения: не деплой на сервер, а выпуск
+воспроизводимого handoff bundle с кодом, моделями, конфигами и документацией.
+
+Подробнее: [docs/CI_CD.md](docs/CI_CD.md).
+
+## Быстрый Старт
+
+### 1. Окружение
+
+Рекомендуется Python 3.11.
+
+```bash
+git clone https://github.com/Rafaildavar/DPLM.git
 cd DPLM
 
-# Создание и активация виртуального окружения (рекомендуется Python 3.12)
-python3.12 -m venv .venv
-source .venv/bin/activate  # macOS/Linux
-# .venv\Scripts\activate   # Windows
-
-# Установка зависимостей
-pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-### Запуск
+### 2. База Данных
 
 ```bash
-# 1) Запустить PostgreSQL
 docker compose up -d db
+PYTHONDONTWRITEBYTECODE=1 python -B -m scripts.seed_database
+```
 
-# 2) Запустить GUI (Flet — текущая основная версия)
+### 3. Приложение
+
+```bash
 PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
 ```
 
-Голосовой помощник временно отключён: его логика пока не подключена к текущей
-Flet-версии, поэтому вкладка «Помощник» убрана из интерфейса, чтобы не
-блокировать запуск и не показывать нерабочие кнопки. Основной сценарий сейчас:
-обучение жестов, список жестов, привязки жестов к командам и настройки.
-
-Если на macOS приложение зависает на экране `Working...`, удалите старый
-bytecode-кэш и запустите снова:
+### 4. Проверки
 
 ```bash
-find app -name __pycache__ -type d -prune -exec rm -rf {} +
-PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+PYTHON=.venv/bin/python make ci
+PYTHON=.venv/bin/python make ml-smoke
 ```
 
-### Legacy-запуск
+## Как Тестировать Жесты
 
-```bash
-# Запуск legacy QML/PySide6 (только если включён PySide6 в requirements.txt)
-python -m app.main
+Для live-метрик:
 
-# Запуск самой старой версии (для сравнения)
-git checkout v0.6.0-old
-python -m app.gui_main
-```
+1. Открой приложение.
+2. Перейди в live evaluation.
+3. Выбери expected label, например `swipe_up`.
+4. Сделай 10-20 попыток естественным жестом.
+5. Зафиксируй `correct`, `wrong`, `missed`, `accuracy`.
+6. Повтори для negative/no-command сценариев.
+7. Сравни результаты в MLflow и JSONL-логах.
 
-### Почему Flet, а не PySide6
-
-На macOS 26 (Tahoe) + Python 3.13 + Apple Silicon PySide6 регулярно ломался
-с ошибкой `Could not find the Qt platform plugin "cocoa"` из-за конфликтов
-загрузки `libqcocoa.dylib` через `@rpath/QtGui.framework`. Flet 0.85+
-поставляет собственный Flutter-runtime внутри пакета `flet_desktop`, не
-требует системных Qt-плагинов и устанавливается одним `pip install flet`.
-
-Архитектура Flet-версии:
-
-* `app/flet_app/main.py` — точка входа, конфигурация окна.
-* `app/flet_app/controller.py` — GUI-агностичный контроллер (камера, инференс,
-  команды). Заменяет PySide6-класс `AppController` без зависимостей от Qt.
-* `app/flet_app/views/` — экраны основной логики (`home`, `gestures`,
-  `training`, `bindings`, `settings`).
-
-Существующие сервисы (`app/services/*`, `app/models/*`, `cv/*`) переиспользуются
-без изменений — они и так были GUI-агностичными.
-
-### Известная проблема на macOS 26 (Tahoe)
-
-На macOS 26 wheel-ы `PySide6 6.10+` (включая 6.11) блокируются новой Gatekeeper-проверкой (`com.apple.provenance`), и Qt молча отбрасывает все плагины из директории `PySide6/Qt/plugins/platforms`. Симптом:
-
-```
-qt.qpa.plugin: Could not find the Qt platform plugin "cocoa"
-This application failed to start because no Qt platform plugin could be initialized.
-```
-
-В `requirements.txt` PySide6 закреплён на `6.9.3` — этой версии достаточно, и она работает на macOS 26 + Python 3.13 без правок. Если ты вручную ставил более новую версию, откатись:
-
-```bash
-.venv/bin/pip install --force-reinstall 'PySide6==6.9.3' 'PySide6-Addons==6.9.3' 'PySide6-Essentials==6.9.3' 'shiboken6==6.9.3'
-```
-
-### Если PySide6 не запускается на macOS
-
-Иногда `pip` оставляет повреждённую установку `PySide6` (пропадают `.dylib`/`.qm` файлы, например `libshiboken6...dylib`). В таком случае полностью переустановите Qt-стек в активном venv:
-
-```bash
-pip uninstall -y PySide6 PySide6-Addons shiboken6
-pip cache purge
-pip install --no-cache-dir -r requirements.txt
-python scripts/check_env.py
-python -m app.main
-```
-
-Если проблема повторяется, пересоздайте виртуальное окружение (`rm -rf .venv && python -m venv .venv`).
-
-Для ошибки `Could not find the Qt platform plugin "cocoa"` дополнительно очистите конфликтующие переменные окружения и запустите снова:
-
-```bash
-unset QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH
-python -m app.main
-```
-
-(Приложение выставляет корректные пути к плагинам Qt автоматически при запуске на macOS.)
-
-## Рабочий процесс
-
-1. **Создание команды**
-   - Открыть панель команд
-   - Нажать "Добавить команду"
-   - Указать название, платформу, действие (приложение/скрипт)
-
-2. **Обучение жесту**
-   - Выбрать команду → "Назначить жест"
-   - Выполнить жест 20-30 раз перед камерой
-   - Система автоматически обучит модель
-   - Проверить точность в режиме превью
-
-3. **Использование**
-   - Система работает в фоне (минималистичная панель)
-   - Выполнить жест → команда выполняется
-   - Аватар даёт визуальную обратную связь
-   - Голосовые подсказки при необходимости
+Для динамических жестов важно показывать именно естественное движение, а не
+`движение + удержание позы`. Система должна принимать решение по завершенному
+сегменту движения, а не по финальной статической позе.
 
 ## Документация
 
-- [Архитектура старой версии](docs/ARCHITECTURE_OLD.md) (RU + EN)
-- [Руководство пользователя](docs/USER_GUIDE.md) (в разработке)
-- [Руководство разработчика](docs/DEVELOPER.md) (в разработке)
-- [Список команд](docs/COMMANDS.md) (в разработке)
-- [Сравнение CV моделей](docs/CV_COMPARISON.md) (в разработке)
-- [Тестирование](docs/TESTING.md) (в разработке)
+- [JMLC overview](docs/contest/JMLC.md)
+- [ML System Design](docs/contest/ML_SYSTEM_DESIGN.md)
+- [CI/CD](docs/CI_CD.md)
+- [Binding Rules](docs/BINDING_RULES.md)
+- [Current Status](docs/CURRENT_STATUS.md)
 
-## Разработка
+## Почему Проект Подходит Для JMLC
 
-### Структура веток
+### Разработка И Инженерия
 
-- `main` — стабильная версия (релизы)
-- `dev` — разработка (интеграция фич)
-- `redesign` — **текущая ветка** (полный редизайн)
-- `v0.6.0-old` — тег старой версии
+- desktop MVP с реальным UX;
+- GitHub Actions CI/CD;
+- Docker/PostgreSQL слой;
+- тесты сервисов, роутинга, команд и ML-контрактов;
+- воспроизводимые CLI-команды;
+- release bundle workflow.
 
-### Коммиты
+### Data Science
 
-Формат сообщений:
-```
-<тип>: краткое описание
+- собственный датасет жестов;
+- feature engineering для static/dynamic режимов;
+- сравнение моделей временных рядов;
+- negative examples и rejection;
+- offline + live validation;
+- MLflow и отчеты по гипотезам.
 
-Подробное описание (опционально)
+### Применение ИИ
 
-<тип>: feat, fix, docs, refactor, test, chore
-```
+- ML внутри продукта: gesture recognition, intent gate, sequence models;
+- AI-assisted разработка: анализ гипотез, тест-кейсы, документация, code review;
+- AI-агенты планируются как отдельный слой для помощи в routing, data quality и
+  experiment analysis.
 
-Пример:
-```
-feat: implement gesture training service with LSTM support
+### Продуктовое Мышление
 
-- Add app/services/gesture_trainer.py
-- Support both KNN and LSTM classifiers
-- Integrate with QML UI via Qt signals
-```
+- понятная пользовательская проблема;
+- MVP закрывает полный путь от записи жеста до команды ОС;
+- есть live feedback loop;
+- качество оценивается не только accuracy, но и безопасностью выполнения команд.
 
-## Требования
+## Статус
 
-- Python 3.12 (рекомендуется для текущей Flet-версии)
-- macOS 11+ (Apple Silicon / Intel) или Windows 10/11
-- Веб-камера (1280×720 или выше)
-- 4GB RAM минимум (8GB рекомендуется)
-- 500MB свободного места на диске
+Текущая рабочая ветка: `contest_version`.
 
-## Лицензия
+Стабильно:
 
-MIT License (см. LICENSE)
+- Flet desktop app;
+- запись и обучение жестов;
+- command binding;
+- live evaluation;
+- MLflow/CI smoke;
+- статические жесты и базовый dynamic pipeline.
+
+В активной разработке:
+
+- качество сложных динамических жестов;
+- segmentation/end-of-gesture policy;
+- LSTM/sequence model experiments;
+- CD release bundle;
+- более красивая витрина метрик для демонстрации.
 
 ## Автор
 
-Разработано в рамках дипломного проекта ГУАП (2025)
+Rafail Davar
 
-## Связь
-
-- GitHub Issues: [проблемы и предложения]
-- Email: rafaildavar@gmail.com
-
----
-
-**Примечание**: Проект находится в активной разработке. Старая версия доступна в теге `v0.6.0-old` для ознакомления с исходной реализацией.
+Проект развивается как конкурсная версия GestureFlow для Junior ML Contest и как
+основа для дальнейшего ML/HCI-продукта.
