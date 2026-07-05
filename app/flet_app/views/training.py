@@ -1,12 +1,9 @@
 """
-Экран «Обучение» — UI-обёртка над CLI ``cv/record_gestures.py`` и
-``cv/train_classifier.py``.
+Экран «Обучение» — единый пользовательский поток записи и обучения жестов.
 
-Обычный режим оставляет только параметры, которые нужны пользователю:
-имя жеста, число сэмплов, режим двух рук и запуск обучения.
-
-Режим разработчика сохраняет прежние технические поля: длину записи,
-папку датасета, путь модели и количество соседей K.
+Пользователь выбирает тип жеста (статический или динамический), записывает
+примеры во встроенной камере и запускает обучение. Технические параметры модели
+подбираются из проектных defaults, без отдельного режима разработчика в UI.
 
 После успешного обучения модель попадает в ``models/knn.pkl`` —
 ``GestureOnlineInfer`` подхватит её при следующем запуске встроенного
@@ -38,6 +35,7 @@ _DEFAULT_DATA_ROOT = "data/gestures"
 _DEFAULT_MODEL_OUT = "models/knn.pkl"
 _DEFAULT_RECORD_SAMPLES = 8
 _DEFAULT_RECORD_FRAMES = 30
+_DEFAULT_STATIC_RECORD_FEATURE_DIM = 63
 _DEFAULT_DYNAMIC_MODEL_TYPE = "sequence_mlp"
 _DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_sequence_mlp.pkl"
 _DYNAMIC_MODEL_OUT_BY_TYPE = {
@@ -54,16 +52,21 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 72
+_DEFAULT_DYNAMIC_RECORD_FEATURE_DIM = 65
 _DEFAULT_NEGATIVE_SAMPLES_PER_LABEL = 20
 _DEFAULT_NEGATIVE_SEED = 42
 _STATIC_TRAINING_SCOPE = "static,quasi_static,negative"
 _DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
+_DEFAULT_STATIC_FEATURE_MODE = "static_craft_full_stats"
 _DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_sequence"
 _DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS = 8
 _DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS = 70
 _DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS = 8
 _DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS = 70
-_DEFAULT_MODEL_TYPE = "knn"
+_DEFAULT_MODEL_TYPE = "extra_trees"
+_DEFAULT_EXTRA_TREES_OPTUNA_TRIALS = 20
+_DEFAULT_EXTRA_TREES_OPTUNA_CV_FOLDS = 3
+_DEFAULT_EXTRA_TREES_OPTUNA_TIMEOUT = 120
 _DEFAULT_K_NEIGHBORS = 5
 _PLACEHOLDER_DATA_URL = (
     "data:image/png;base64,"
@@ -160,17 +163,35 @@ class TrainingView:
             hint_text="например: zoom",
             border_color=COLOR_SURFACE_HIGH,
         )
+        self._user_rec_type = ft.Dropdown(
+            label="Тип жеста",
+            value="static",
+            border_color=COLOR_SURFACE_HIGH,
+            width=180,
+            options=[
+                ft.DropdownOption(key="static", text="Статический"),
+                ft.DropdownOption(key="dynamic", text="Динамический"),
+            ],
+            editable=False,
+            on_select=self._on_user_gesture_type_changed,
+        )
         self._user_rec_samples = ft.TextField(
             label="Реальных дублей",
             value=str(_DEFAULT_RECORD_SAMPLES),
             width=140,
             border_color=COLOR_SURFACE_HIGH,
         )
+        self._user_rec_frames = ft.TextField(
+            label="Длина (кадров)",
+            value=str(_DEFAULT_RECORD_FRAMES),
+            width=160,
+            border_color=COLOR_SURFACE_HIGH,
+        )
         self._user_rec_two_hands = ft.Switch(
             label="Две руки", value=False, active_color=COLOR_ACCENT
         )
         self._user_rec_start_btn = ft.FilledButton(
-            content=ft.Text("Записать примеры", weight=ft.FontWeight.BOLD),
+            content=ft.Text("Записать и обновить модель", weight=ft.FontWeight.BOLD),
             icon=ft.Icons.FIBER_MANUAL_RECORD,
             style=ft.ButtonStyle(
                 bgcolor=COLOR_DANGER,
@@ -377,6 +398,8 @@ class TrainingView:
                 ft.DropdownOption(key="knn", text="knn"),
                 ft.DropdownOption(key="svm", text="svm"),
                 ft.DropdownOption(key="extra_trees", text="extra_trees"),
+                ft.DropdownOption(key="static_stacking", text="static_stacking"),
+                ft.DropdownOption(key="static_landmark_cnn", text="static_landmark_cnn"),
                 ft.DropdownOption(key="rf", text="rf"),
                 ft.DropdownOption(key="logreg", text="logreg"),
             ],
@@ -420,6 +443,17 @@ class TrainingView:
             height=260,
             width=float("inf"),
         )
+        self._activity_title = ft.Text(
+            "Готово",
+            size=15,
+            weight=ft.FontWeight.W_600,
+            color=COLOR_ON_SURFACE,
+        )
+        self._activity_detail = ft.Text(
+            "Запиши примеры жеста или обучи модель на уже собранных данных.",
+            size=12,
+            color=COLOR_MUTED,
+        )
 
         # --- Список записанных классов ------------------------------------
         self._datasets_column = ft.Column(spacing=8)
@@ -447,7 +481,13 @@ class TrainingView:
             weight=ft.FontWeight.BOLD,
             color=COLOR_MUTED,
         )
+        self._dataset_mix_text = ft.Text(
+            "Базовые 0 · Свои 0",
+            size=12,
+            color=COLOR_MUTED,
+        )
         self._pending_delete_label = ""
+        self._dataset_can_delete_labels: set[str] = set()
         self._last_recording_state: dict = {"active": False}
 
         # --- Превью записи -------------------------------------------------
@@ -520,8 +560,11 @@ class TrainingView:
     def _refresh_datasets(self) -> None:
         rows = self._controller.list_recorded_gestures()
         self._datasets_column.controls.clear()
+        self._dataset_can_delete_labels.clear()
         total_samples = 0
         class_counts: list[int] = []
+        base_classes = 0
+        custom_classes = 0
         if not rows:
             self._datasets_column.controls.append(
                 ft.Text(
@@ -534,9 +577,19 @@ class TrainingView:
             for row in rows:
                 label = str(row["label"])
                 samples = int(row["samples"])
+                can_delete = bool(row.get("canDelete", True))
+                delete_reason = str(
+                    row.get("deleteReason")
+                    or "Можно удалять только классы, записанные пользователем"
+                )
+                if can_delete:
+                    self._dataset_can_delete_labels.add(label)
+                    custom_classes += 1
+                else:
+                    base_classes += 1
                 total_samples += samples
                 class_counts.append(samples)
-                pending_delete = self._pending_delete_label == label
+                pending_delete = self._pending_delete_label == label and can_delete
                 actions: list[ft.Control]
                 if pending_delete:
                     actions = [
@@ -553,6 +606,15 @@ class TrainingView:
                             tooltip="Отмена",
                             on_click=lambda _e: self._cancel_delete_samples(),
                         ),
+                    ]
+                elif not can_delete:
+                    actions = [
+                        ft.IconButton(
+                            icon=ft.Icons.LOCK_OUTLINE,
+                            icon_color=COLOR_MUTED,
+                            tooltip=delete_reason,
+                            disabled=True,
+                        )
                     ]
                 else:
                     actions = [
@@ -585,6 +647,29 @@ class TrainingView:
                                     size=12,
                                     color=COLOR_MUTED,
                                 ),
+                                ft.Container(
+                                    bgcolor="#101316",
+                                    border_radius=8,
+                                    padding=ft.Padding.symmetric(horizontal=9, vertical=5),
+                                    content=ft.Row(
+                                        spacing=6,
+                                        tight=True,
+                                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                        controls=[
+                                            ft.Icon(
+                                                ft.Icons.EDIT if can_delete else ft.Icons.LOCK_OUTLINE,
+                                                size=13,
+                                                color=COLOR_SUCCESS if can_delete else COLOR_MUTED,
+                                            ),
+                                            ft.Text(
+                                                "свой" if can_delete else "базовый",
+                                                size=11,
+                                                color=COLOR_SUCCESS if can_delete else COLOR_MUTED,
+                                                no_wrap=True,
+                                            ),
+                                        ],
+                                    ),
+                                ),
                                 *actions,
                             ],
                         ),
@@ -603,16 +688,25 @@ class TrainingView:
         self._dataset_real_aug_value.value = str(total_samples)
         self._dataset_balance_value.value = balance_label
         self._dataset_balance_value.color = balance_color
+        self._dataset_mix_text.value = f"Базовые {base_classes} · Свои {custom_classes}"
         try:
             self._datasets_column.update()
             self._dataset_classes_value.update()
             self._dataset_samples_value.update()
             self._dataset_real_aug_value.update()
             self._dataset_balance_value.update()
+            self._dataset_mix_text.update()
         except Exception:
             pass
 
     def _request_delete_samples(self, label: str) -> None:
+        if label not in self._dataset_can_delete_labels:
+            self._pending_delete_label = ""
+            self._append_log(
+                f"[i] «{label}» защищён: можно удалять только классы, записанные пользователем"
+            )
+            self._refresh_datasets()
+            return
         self._pending_delete_label = label
         self._refresh_datasets()
 
@@ -649,6 +743,19 @@ class TrainingView:
             self._log_text.update()
         except Exception:
             pass
+
+    def _set_activity(self, title: str, detail: str, *, color: str = COLOR_MUTED) -> None:
+        self._page.run_thread(self._apply_activity, title, detail, color)
+
+    def _apply_activity(self, title: str, detail: str, color: str = COLOR_MUTED) -> None:
+        self._activity_title.value = title
+        self._activity_detail.value = detail
+        self._activity_detail.color = color
+        for control in (self._activity_title, self._activity_detail):
+            try:
+                control.update()
+            except Exception:
+                pass
 
     def _set_running(self, running: bool) -> None:
         self._page.run_thread(self._apply_running_state, running)
@@ -808,18 +915,65 @@ class TrainingView:
         except Exception:
             pass
 
+    def _current_user_gesture_kind(self) -> str:
+        clean = str(self._user_rec_type.value or "static").strip().lower()
+        return "dynamic" if clean == "dynamic" else "static"
+
+    def _on_user_gesture_type_changed(self, _e) -> None:
+        kind = self._current_user_gesture_kind()
+        if kind == "dynamic":
+            if str(self._user_rec_samples.value or "").strip() in {
+                "",
+                str(_DEFAULT_RECORD_SAMPLES),
+            }:
+                self._user_rec_samples.value = str(_DEFAULT_DYNAMIC_RECORD_SAMPLES)
+            if str(self._user_rec_frames.value or "").strip() in {
+                "",
+                str(_DEFAULT_RECORD_FRAMES),
+            }:
+                self._user_rec_frames.value = str(_DEFAULT_DYNAMIC_RECORD_FRAMES)
+        else:
+            if str(self._user_rec_samples.value or "").strip() in {
+                "",
+                str(_DEFAULT_DYNAMIC_RECORD_SAMPLES),
+            }:
+                self._user_rec_samples.value = str(_DEFAULT_RECORD_SAMPLES)
+            if str(self._user_rec_frames.value or "").strip() in {
+                "",
+                str(_DEFAULT_DYNAMIC_RECORD_FRAMES),
+            }:
+                self._user_rec_frames.value = str(_DEFAULT_RECORD_FRAMES)
+        for control in (self._user_rec_samples, self._user_rec_frames):
+            try:
+                control.update()
+            except Exception:
+                pass
+
     def _on_record_start(self, _e, *, mode: str = "developer") -> None:
         if mode == "user":
+            kind = self._current_user_gesture_kind()
             label = (self._user_rec_label.value or "").strip()
             samples = max(
                 1,
                 self._parse_int(
                     self._user_rec_samples.value,
-                    _DEFAULT_RECORD_SAMPLES,
+                    _DEFAULT_DYNAMIC_RECORD_SAMPLES
+                    if kind == "dynamic"
+                    else _DEFAULT_RECORD_SAMPLES,
                 ),
             )
-            frames = _DEFAULT_RECORD_FRAMES
+            frames = max(
+                1,
+                self._parse_int(
+                    self._user_rec_frames.value,
+                    _DEFAULT_DYNAMIC_RECORD_FRAMES
+                    if kind == "dynamic"
+                    else _DEFAULT_RECORD_FRAMES,
+                ),
+            )
             two_hands = bool(self._user_rec_two_hands.value)
+            include_global_motion = kind == "dynamic"
+            include_landmark_z = True
         elif mode == "dynamic":
             label = (self._dyn_rec_label.value or "").strip()
             samples = max(
@@ -837,6 +991,8 @@ class TrainingView:
                 ),
             )
             two_hands = bool(self._dyn_rec_two_hands.value)
+            include_global_motion = True
+            include_landmark_z = True
         else:
             label = (self._rec_label.value or "").strip()
             samples = max(
@@ -848,6 +1004,8 @@ class TrainingView:
                 self._parse_int(self._rec_frames.value, _DEFAULT_RECORD_FRAMES),
             )
             two_hands = bool(self._rec_two_hands.value)
+            include_global_motion = False
+            include_landmark_z = True
 
         if not label:
             self._append_log("[!] Укажи имя жеста")
@@ -856,23 +1014,42 @@ class TrainingView:
         self._append_log(
             f"[i] Запись «{label}»: {samples} реальных дублей, {frames} кадров"
             + (" (две руки)" if two_hands else "")
+            + (" + глобальное движение" if include_global_motion else "")
+            + (" + landmark z" if include_landmark_z else "")
         )
         self._append_log(
             "Запись выполняется во встроенной камере: держи жест в кадре, "
             "сэмплы сохранятся автоматически."
         )
+        self._set_activity(
+            "Идет запись",
+            f"Жест «{label}»: сохранится {samples} дублей по {frames} кадров.",
+            color=COLOR_DANGER,
+        )
 
+        auto_train_mode = mode
+        auto_user_kind = kind if mode == "user" else None
         ok = self._controller.start_recording(
             label=label,
             num_samples=samples,
             frames=frames,
             two_hands=two_hands,
-            include_global_motion=(mode == "dynamic"),
+            include_global_motion=include_global_motion,
+            include_landmark_z=include_landmark_z,
             on_line=self._append_log,
-            on_done=self._on_subprocess_done,
+            on_done=lambda code: self._on_recording_done(
+                code,
+                auto_train_mode=auto_train_mode,
+                user_kind=auto_user_kind,
+            ),
         )
         if not ok:
             self._append_log("[!] Не удалось запустить запись (возможно, уже идёт другая задача).")
+            self._set_activity(
+                "Запись не запустилась",
+                "Другая операция еще выполняется или камера недоступна.",
+                color=COLOR_DANGER,
+            )
             return
         self._set_running(True)
 
@@ -903,21 +1080,68 @@ class TrainingView:
             return
         self._set_running(True)
 
-    def _on_train_start(self, _e, *, mode: str = "developer") -> None:
+    def _on_train_start(
+        self,
+        _e,
+        *,
+        mode: str = "developer",
+        auto: bool = False,
+        user_kind: str | None = None,
+    ) -> bool:
         if mode == "user":
-            data_root = _DEFAULT_DATA_ROOT
-            out_path = _DEFAULT_MODEL_OUT
-            neighbors = _DEFAULT_K_NEIGHBORS
-            feature_mode = "static_mean"
-            expect_dim = 42
-            model_type = _DEFAULT_MODEL_TYPE
-            classes_out_path = ""
-            feature_dim_out_path = ""
-            feature_mode_out_path = ""
-            training_scope = _STATIC_TRAINING_SCOPE
-            training_extra_args: list[str] = []
+            kind = user_kind or self._current_user_gesture_kind()
+            if kind == "dynamic":
+                data_root = _DEFAULT_DATA_ROOT
+                out_path = _DEFAULT_DYNAMIC_MODEL_OUT
+                neighbors = _DEFAULT_K_NEIGHBORS
+                feature_mode = _DEFAULT_DYNAMIC_FEATURE_MODE
+                expect_dim = _DEFAULT_DYNAMIC_RECORD_FEATURE_DIM
+                model_type = _DEFAULT_DYNAMIC_MODEL_TYPE
+                (
+                    classes_out_path,
+                    feature_dim_out_path,
+                    feature_mode_out_path,
+                ) = _dynamic_metadata_out_for_type(model_type)
+                training_scope = _DYNAMIC_TRAINING_SCOPE
+                training_extra_args: list[str] = ["--include-augmented"]
+                self._append_log(
+                    "[i] Автообучение dynamic-модели"
+                    if auto
+                    else "[i] Обучение dynamic-модели со стандартными параметрами проекта"
+                )
+            else:
+                data_root = _DEFAULT_DATA_ROOT
+                out_path = _DEFAULT_MODEL_OUT
+                neighbors = _DEFAULT_K_NEIGHBORS
+                feature_mode = _DEFAULT_STATIC_FEATURE_MODE
+                expect_dim = _DEFAULT_STATIC_RECORD_FEATURE_DIM
+                model_type = _DEFAULT_MODEL_TYPE
+                classes_out_path = ""
+                feature_dim_out_path = ""
+                feature_mode_out_path = ""
+                training_scope = _STATIC_TRAINING_SCOPE
+                training_extra_args = [
+                    "--include-augmented",
+                    "--extra-trees-optuna-trials",
+                    str(_DEFAULT_EXTRA_TREES_OPTUNA_TRIALS),
+                    "--extra-trees-optuna-cv-folds",
+                    str(_DEFAULT_EXTRA_TREES_OPTUNA_CV_FOLDS),
+                    "--extra-trees-optuna-timeout",
+                    str(_DEFAULT_EXTRA_TREES_OPTUNA_TIMEOUT),
+                ]
+                if auto:
+                    self._append_log(
+                        "[i] Автообучение static-модели "
+                        f"+ Optuna trials={_DEFAULT_EXTRA_TREES_OPTUNA_TRIALS}"
+                    )
+                else:
+                    self._append_log(
+                        "[i] Обучение static-модели со стандартными параметрами проекта "
+                        f"+ Optuna trials={_DEFAULT_EXTRA_TREES_OPTUNA_TRIALS}"
+                    )
             self._append_log(
-                "[i] Обучение KNN со стандартными static/negative параметрами проекта"
+                "[i] GISLR-аугментации включены: старые aug_sample без "
+                "метки gislr_landmark_v1 будут проигнорированы"
             )
         elif mode == "dynamic":
             data_root = _DEFAULT_DATA_ROOT
@@ -987,9 +1211,13 @@ class TrainingView:
                 1,
                 self._parse_int(self._tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
             )
-            feature_mode = "static_mean"
-            expect_dim = 42
+            expect_dim = _DEFAULT_STATIC_RECORD_FEATURE_DIM
             model_type = str(self._tr_model_type.value or _DEFAULT_MODEL_TYPE).strip()
+            feature_mode = (
+                "static_landmark_image"
+                if model_type == "static_landmark_cnn"
+                else _DEFAULT_STATIC_FEATURE_MODE
+            )
             classes_out_path = ""
             feature_dim_out_path = ""
             feature_mode_out_path = ""
@@ -999,6 +1227,11 @@ class TrainingView:
         self._append_log(
             f"[i] Обучение: data={data_root}, out={out_path}, "
             f"model={model_type}, k={neighbors}, feature_mode={feature_mode}"
+        )
+        self._set_activity(
+            "Модель обучается",
+            "Приложение соберет записанные примеры и обновит распознавание после завершения.",
+            color=COLOR_ACCENT,
         )
         ok = self._controller.start_training(
             data_root=data_root,
@@ -1017,16 +1250,53 @@ class TrainingView:
         )
         if not ok:
             self._append_log("[!] Не удалось запустить обучение (возможно, уже идёт другая задача).")
-            return
+            self._set_activity(
+                "Обучение не запустилось",
+                "Другая операция еще выполняется. Дождись завершения или останови ее.",
+                color=COLOR_DANGER,
+            )
+            return False
         self._set_running(True)
+        return True
 
     def _on_cancel(self, _e) -> None:
         self._controller.cancel_training()
         self._append_log("[i] Остановка процесса…")
 
+    def _on_recording_done(
+        self,
+        code: int,
+        *,
+        auto_train_mode: str,
+        user_kind: str | None = None,
+    ) -> None:
+        if code != 0:
+            self._on_subprocess_done(code)
+            return
+
+        self._append_log("[i] Запись сохранена — запускаю автообучение модели")
+        self._set_activity(
+            "Автообучение",
+            "Модель обновляется по новым примерам.",
+            color=COLOR_ACCENT,
+        )
+        ok = self._on_train_start(
+            None,
+            mode=auto_train_mode,
+            auto=True,
+            user_kind=user_kind,
+        )
+        if not ok:
+            self._set_running(False)
+
     def _on_subprocess_done(self, code: int) -> None:
         status = "✓ успешно" if code == 0 else f"⚠ код выхода {code}"
         self._append_log(f"[i] Процесс завершён ({status})")
+        self._set_activity(
+            "Готово" if code == 0 else "Нужно проверить",
+            "Операция завершилась успешно." if code == 0 else "Операция завершилась с ошибкой.",
+            color=COLOR_SUCCESS if code == 0 else COLOR_WARNING,
+        )
         self._set_running(False)
         self._page.run_thread(self._refresh_datasets)
 
@@ -1201,6 +1471,7 @@ class TrainingView:
                             on_click=lambda _e: self._refresh_datasets(),
                         ),
                     ),
+                    self._dataset_mix_text,
                     metrics,
                     self._datasets_column,
                 ],
@@ -1265,7 +1536,9 @@ class TrainingView:
                         spacing=10,
                         wrap=True,
                         controls=[
+                            self._user_rec_type,
                             self._user_rec_samples,
+                            self._user_rec_frames,
                             self._user_rec_two_hands,
                         ],
                     ),
@@ -1399,7 +1672,7 @@ class TrainingView:
                 controls=[
                     self._panel_title(
                         ft.Icons.FILTER_ALT,
-                        "4. Negative",
+                        "3. Защита",
                         color=COLOR_MUTED,
                     ),
                     ft.Row(
@@ -1489,134 +1762,32 @@ class TrainingView:
         )
 
     def _build_training_body(self) -> ft.Control:
-        def border_all(color: str) -> ft.Border:
-            side = ft.BorderSide(1, color)
-            return ft.Border(top=side, right=side, bottom=side, left=side)
-
-        user_body = ft.Container(
-            content=ft.Column(
-                spacing=10,
-                controls=[
-                    self._build_user_record_card(),
-                    self._build_user_train_card(),
-                ],
-            ),
-            visible=True,
-        )
-        developer_body = ft.Container(
-            content=ft.Column(
-                spacing=10,
-                controls=[
-                    self._build_developer_record_card(),
-                    self._build_developer_train_card(),
-                    self._build_dynamic_card(),
-                    self._build_negative_card(),
-                ],
-            ),
-            visible=False,
-        )
-
-        segment_refs: dict[str, tuple[ft.Container, ft.Icon, ft.Text]] = {}
-
-        def apply_mode(mode: str) -> None:
-            user_body.visible = mode == "user"
-            developer_body.visible = mode == "developer"
-            for key, (container, icon, text) in segment_refs.items():
-                active = key == mode
-                container.bgcolor = "#223238" if active else "#171A1D"
-                container.border = border_all(COLOR_ACCENT if active else COLOR_SURFACE_HIGH)
-                icon.color = COLOR_ACCENT if active else COLOR_MUTED
-                text.color = COLOR_ON_SURFACE if active else COLOR_MUTED
-            try:
-                user_body.update()
-                developer_body.update()
-                for container, icon, text in segment_refs.values():
-                    container.update()
-                    icon.update()
-                    text.update()
-            except Exception:
-                pass
-
-        def make_mode_segment(
-            key: str,
-            label: str,
-            icon_name: str,
-            *,
-            selected: bool = False,
-        ) -> ft.Container:
-            icon = ft.Icon(
-                icon_name,
-                size=16,
-                color=COLOR_ACCENT if selected else COLOR_MUTED,
-            )
-            text = ft.Text(
-                label,
-                size=12,
-                weight=ft.FontWeight.W_600,
-                color=COLOR_ON_SURFACE if selected else COLOR_MUTED,
-                no_wrap=True,
-            )
-            container = ft.Container(
-                expand=True,
-                bgcolor="#223238" if selected else "#171A1D",
-                border=border_all(COLOR_ACCENT if selected else COLOR_SURFACE_HIGH),
-                border_radius=8,
-                padding=ft.Padding.symmetric(horizontal=12, vertical=9),
-                ink=False,
-                on_click=lambda _e, value=key: apply_mode(value),
-                content=ft.Row(
-                    spacing=8,
-                    tight=True,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[icon, text],
-                ),
-            )
-            segment_refs[key] = (container, icon, text)
-            return container
-
-        mode_picker = ft.Container(
-            bgcolor="#111417",
-            border=border_all(COLOR_SURFACE_HIGH),
-            border_radius=8,
-            padding=4,
-            content=ft.Row(
-                spacing=6,
-                controls=[
-                    make_mode_segment(
-                        "user",
-                        "Пользователь",
-                        ft.Icons.PERSON,
-                        selected=True,
-                    ),
-                    make_mode_segment(
-                        "developer",
-                        "Разработчик",
-                        ft.Icons.CODE,
-                    ),
-                ],
-            ),
-        )
-
         return ft.Column(
             spacing=10,
             controls=[
-                mode_picker,
-                user_body,
-                developer_body,
+                self._build_user_record_card(),
             ],
         )
 
-    def build(self) -> ft.Control:
-        workflow_strip = ft.Row(
-            spacing=8,
-            wrap=True,
-            controls=[
-                self._status_chip(ft.Icons.FIBER_MANUAL_RECORD, "запись", COLOR_DANGER),
-                self._status_chip(ft.Icons.DATASET, "датасет", COLOR_WARNING),
-                self._status_chip(ft.Icons.MODEL_TRAINING, "модель", COLOR_ACCENT),
-            ],
+    def _build_activity_card(self) -> ft.Control:
+        return surface_card(
+            ft.Column(
+                spacing=10,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.CHECK_CIRCLE,
+                        "Состояние",
+                        color=COLOR_SUCCESS,
+                    ),
+                    self._activity_title,
+                    self._activity_detail,
+                ],
+            ),
+            padding=14,
+            radius=8,
         )
+
+    def build(self) -> ft.Control:
         title_group = ft.Row(
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1640,7 +1811,7 @@ class TrainingView:
                             color=COLOR_ON_SURFACE,
                         ),
                         ft.Text(
-                            "запись, датасет, обучение, проверка",
+                            "запись примеров и обучение модели",
                             size=12,
                             color=COLOR_MUTED,
                         ),
@@ -1653,35 +1824,14 @@ class TrainingView:
             run_spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ft.Container(content=title_group, col={"xs": 12, "md": 5}),
-                ft.Container(content=workflow_strip, col={"xs": 12, "md": 5}),
+                ft.Container(content=title_group, col={"xs": 12, "md": 9}),
                 ft.Container(
                     content=self._cancel_btn,
                     alignment=ft.Alignment.CENTER_RIGHT,
-                    col={"xs": 12, "md": 2},
+                    col={"xs": 12, "md": 3},
                 ),
             ],
         )
-
-        datasets_card = self._build_dataset_manager_card()
-
-        log_card = surface_card(
-            ft.Column(
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.TERMINAL,
-                        "Журнал",
-                        color=COLOR_MUTED,
-                    ),
-                    self._log_scroll,
-                ],
-            ),
-            padding=14,
-            radius=8,
-        )
-        log_card.width = float("inf")
 
         main_row = ft.ResponsiveRow(
             spacing=14,
@@ -1696,19 +1846,11 @@ class TrainingView:
                         spacing=14,
                         controls=[
                             self._build_training_body(),
-                            self._build_workflow_card(),
+                            self._build_activity_card(),
                         ],
                     ),
                     col={"xs": 12, "lg": 5},
                 ),
-            ],
-        )
-        lower_row = ft.ResponsiveRow(
-            spacing=14,
-            run_spacing=14,
-            controls=[
-                ft.Container(content=datasets_card, col={"xs": 12, "lg": 5}),
-                ft.Container(content=log_card, col={"xs": 12, "lg": 7}),
             ],
         )
 
@@ -1719,6 +1861,5 @@ class TrainingView:
             controls=[
                 surface_card(header, padding=14, radius=8),
                 main_row,
-                lower_row,
             ],
         )
