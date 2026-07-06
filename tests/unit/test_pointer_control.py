@@ -515,6 +515,7 @@ def test_two_finger_swipe_accepts_decisive_motion_after_small_reversal(monkeypat
     monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
     monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
     monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
 
     svc = PointerControlService(tab_swipe_cooldown_s=0.0)
     svc.update(_payload(_two_finger_landmarks(center=(0.50, 0.24))))
