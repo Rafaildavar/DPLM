@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - contest_version
-      - main
     paths:
       - "app/**"
       - "cv/**"
