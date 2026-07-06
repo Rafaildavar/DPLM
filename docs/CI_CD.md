@@ -97,7 +97,7 @@ Trigger:
 
 - manual `workflow_dispatch`;
 - daily schedule;
-- push to `contest_version` when ML/runtime/model files change.
+- push to `contest_version` or `main` when ML/runtime/model files change.
 
 Checks:
 
@@ -118,7 +118,7 @@ Purpose:
 Trigger:
 
 - manual `workflow_dispatch`;
-- push to `contest_version` when Docker/runtime/model files change;
+- push to `contest_version` or `main` when Docker/runtime/model files change;
 - tag push `v*`.
 
 Checks:
@@ -154,7 +154,7 @@ raw datasets, MLflow DB, virtualenvs and generated outputs.
 Trigger:
 
 - manual `workflow_dispatch`;
-- push to `contest_version` when app/runtime/model/package files change;
+- push to `contest_version` or `main` when app/runtime/model/package files change;
 - tag push `v*`.
 
 Checks:

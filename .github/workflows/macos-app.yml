@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - contest_version
+      - main
     tags:
       - "v*"
     paths:
