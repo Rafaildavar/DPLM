@@ -7,7 +7,6 @@ on:
       - contest_version
       - dev
       - jmlc
-      - main
 
 permissions:
   contents: read

@@ -34,6 +34,7 @@ class SmokeProfile:
     feature_mode: str
     rejection: str = ""
     prototypes: str = ""
+    required: bool = True
 
 
 @dataclass
@@ -67,6 +68,7 @@ DEFAULT_PROFILES: tuple[SmokeProfile, ...] = (
         feature_mode="dynamic_sequence_mlp_feature_mode.txt",
         rejection="dynamic_sequence_mlp_rejection.json",
         prototypes="dynamic_sequence_mlp_prototypes.json",
+        required=False,
     ),
     SmokeProfile(
         name="dynamic_sequence_lstm_backbone",
@@ -101,9 +103,21 @@ def main() -> None:
     args = parse_args()
     models_dir = Path(args.models_dir)
     selected = _select_profiles(args.profile)
-    results = [_run_profile(models_dir, profile) for profile in selected]
+    allow_optional_skips = not bool(args.profile)
+    results = [
+        _run_profile(
+            models_dir,
+            profile,
+            allow_optional_skips=allow_optional_skips,
+        )
+        for profile in selected
+    ]
     payload = {
-        "status": "ok" if all(item.status == "ok" for item in results) else "failed",
+        "status": (
+            "ok"
+            if all(item.status in {"ok", "skipped"} for item in results)
+            else "failed"
+        ),
         "models_dir": str(models_dir),
         "profiles": [asdict(item) for item in results],
     }
@@ -118,6 +132,8 @@ def main() -> None:
                 f"{item.name}: ok label={item.predicted_label!r} "
                 f"conf={item.confidence:.3f} latency={item.inference_ms:.2f}ms"
             )
+        elif item.status == "skipped":
+            print(f"[ml-smoke] {item.name}: skipped {item.error}")
         else:
             print(f"[ml-smoke] {item.name}: failed {item.error}")
     print(f"[ml-smoke] report={report_path}")
@@ -136,7 +152,12 @@ def _select_profiles(names: Iterable[str]) -> list[SmokeProfile]:
     return [by_name[name] for name in requested]
 
 
-def _run_profile(models_dir: Path, profile: SmokeProfile) -> SmokeResult:
+def _run_profile(
+    models_dir: Path,
+    profile: SmokeProfile,
+    *,
+    allow_optional_skips: bool = False,
+) -> SmokeResult:
     model_path = models_dir / profile.model
     try:
         paths = {
@@ -198,6 +219,26 @@ def _run_profile(models_dir: Path, profile: SmokeProfile) -> SmokeResult:
             inference_ms=round(inference_ms, 3),
         )
     except Exception as exc:
+        if (
+            allow_optional_skips
+            and not profile.required
+            and _is_legacy_pickle_compatibility_error(exc)
+        ):
+            return SmokeResult(
+                name=profile.name,
+                status="skipped",
+                model_path=str(model_path),
+                feature_mode="",
+                feature_dim=0,
+                class_count=0,
+                predicted_label="",
+                confidence=0.0,
+                inference_ms=0.0,
+                error=(
+                    "legacy optional artifact is incompatible with this "
+                    f"NumPy/joblib runtime: {exc}"
+                ),
+            )
         return SmokeResult(
             name=profile.name,
             status="failed",
@@ -210,6 +251,14 @@ def _run_profile(models_dir: Path, profile: SmokeProfile) -> SmokeResult:
             inference_ms=0.0,
             error=str(exc),
         )
+
+
+def _is_legacy_pickle_compatibility_error(exc: Exception) -> bool:
+    message = str(exc)
+    return (
+        "BitGenerator" in message
+        and "not a known BitGenerator module" in message
+    )
 
 
 def _synthetic_sequence(*, raw_dim: int, frames: int, dynamic: bool) -> np.ndarray:

@@ -4,6 +4,8 @@
 
 Implemented first production-oriented CI/CD layer:
 
+- Sequential main-branch pipeline for CI tests, ML smoke, Docker runtime and
+  macOS app artifact.
 - GitHub Actions CI for pull requests and pushes.
 - Separate ML smoke workflow for model artifact checks.
 - Docker runtime workflow for reproducible headless ML/runtime validation.
@@ -72,12 +74,34 @@ GitHub-hosted macOS runners.
 
 ## GitHub Actions
 
+### `.github/workflows/main-pipeline.yml`
+
+Trigger:
+
+- manual `workflow_dispatch`;
+- push to `main`.
+
+Sequence:
+
+1. Unit tests install dependencies and run `make test-unit-ci`.
+2. ML smoke runs `make ml-smoke` only after unit tests pass.
+3. Docker runtime builds the Linux image and runs ML smoke inside the container
+   only after the direct ML smoke job passes.
+4. macOS app packaging runs only after Docker runtime validation passes.
+
+Purpose:
+
+- make `main` a single ordered quality gate;
+- stop CD artifacts when CI or model validation fails;
+- keep GitHub Actions visually readable as one pipeline instead of independent
+  parallel workflows.
+
 ### `.github/workflows/ci.yml`
 
 Trigger:
 
 - pull request;
-- push to `contest_version`, `dev`, `jmlc`, `main`.
+- push to `contest_version`, `dev`, `jmlc`.
 
 Checks:
 
