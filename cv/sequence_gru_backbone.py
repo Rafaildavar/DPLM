@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -649,6 +650,8 @@ def _seed_torch(torch, seed: int) -> None:
 
 
 def _require_torch():
+    os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+    os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
     try:
         import torch
     except Exception as exc:  # pragma: no cover - exercised only without torch

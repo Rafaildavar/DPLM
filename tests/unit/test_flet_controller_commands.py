@@ -554,7 +554,9 @@ def test_build_negative_generation_command_uses_configured_paths(monkeypatch, tm
     assert cmd[cmd.index("--data-root") + 1] == str(tmp_path / "gestures")
     assert cmd[cmd.index("--taxonomy") + 1] == str(tmp_path / "gesture_taxonomy.json")
     assert cmd[cmd.index("--samples-per-label") + 1] == "12"
-    assert cmd[cmd.index("--target-frames") + 1] == str(DYNAMIC_RECOGNITION_WINDOW)
+    assert cmd[cmd.index("--target-frames") + 1] == str(
+        DYNAMIC_RECOGNITION_LONG_WINDOW
+    )
     assert cmd[cmd.index("--seed") + 1] == "99"
     assert cmd[cmd.index("--manifest-out") + 1].endswith(
         "docs/experiments/negative_sampling_manifest.json"
@@ -870,7 +872,7 @@ def test_sync_dataset_to_db_imports_new_samples_before_training(monkeypatch, tmp
 
     assert summary == {"created": 1, "updated": 0, "total": 1, "samples": 3}
     with SessionLocal() as session:
-        gesture = session.query(Gesture).filter_by(label="ctrlz").one()
+        gesture = session.query(Gesture).filter_by(label="CTRLZ").one()
         assert gesture.model_class_id is None
         assert gesture.samples_path.endswith("CTRLZ")
         samples = session.query(GestureSample).filter_by(gesture_id=gesture.id).all()
@@ -1138,14 +1140,14 @@ def test_sync_dataset_to_db_keeps_camera_source_from_metadata(monkeypatch, tmp_p
     controller.sync_dataset_to_db()
 
     with SessionLocal() as session:
-        gesture = session.query(Gesture).filter_by(label="wave").one()
+        gesture = session.query(Gesture).filter_by(label="Wave").one()
         sample = session.query(GestureSample).filter_by(gesture_id=gesture.id).one()
         assert sample.source == "camera"
         assert gesture.description in {None, ""}
 
     rows = controller.get_db_gestures()
 
-    assert [row["label"] for row in rows] == ["wave"]
+    assert [row["label"] for row in rows] == ["Wave"]
     assert rows[0]["sampleCount"] == 1
     assert rows[0]["samplePreviewPath"].endswith("sample_0000.npy")
 
@@ -1967,7 +1969,7 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
     controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
     controller._record_recognition_event = lambda label, conf, ok: recorded.append((label, conf, ok))
 
-    for _ in range(GESTURE_CONFIRM_FRAMES - 1):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES - 1):
         controller._dispatch_infer_result(
             {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
         )
@@ -1976,7 +1978,7 @@ def test_dispatch_waits_for_stable_gesture_before_execution():
     assert executed == []
     assert recorded == []
     assert states[-1]["phase"] == "pending"
-    assert states[-1]["frames"] == GESTURE_CONFIRM_FRAMES - 1
+    assert states[-1]["frames"] == AUTO_STATIC_GESTURE_CONFIRM_FRAMES - 1
     assert states[-1]["progress"] < 1.0
 
     controller._dispatch_infer_result(
@@ -2111,7 +2113,7 @@ def test_dispatch_emits_cooldown_state_when_binding_policy_rejects():
     controller.execute_for_gesture = reject_for_cooldown
     controller._record_recognition_event = lambda *_args: None
 
-    for _ in range(GESTURE_CONFIRM_FRAMES):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES):
         controller._dispatch_infer_result(
             {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
         )
@@ -2380,11 +2382,11 @@ def test_dispatch_resets_confirmation_when_label_changes():
     controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
     controller._record_recognition_event = lambda *_args: None
 
-    for _ in range(GESTURE_CONFIRM_FRAMES - 2):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES - 2):
         controller._dispatch_infer_result(
             {"label": "new", "confidence": 0.9, "landmarks_json": "[]"}
         )
-    for _ in range(GESTURE_CONFIRM_FRAMES):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES):
         controller._dispatch_infer_result(
             {"label": "new2", "confidence": 0.7, "landmarks_json": "[]"}
         )
@@ -2400,14 +2402,14 @@ def test_dispatch_no_label_rearms_same_gesture():
     controller.execute_for_gesture = lambda label, conf: executed.append((label, conf)) or True
     controller._record_recognition_event = lambda *_args: None
 
-    for _ in range(GESTURE_CONFIRM_FRAMES):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES):
         controller._dispatch_infer_result(
             {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
         )
     controller._dispatch_infer_result(
         {"label": "", "confidence": 0.0, "landmarks_json": "[]"}
     )
-    for _ in range(GESTURE_CONFIRM_FRAMES):
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES):
         controller._dispatch_infer_result(
             {"label": "new", "confidence": 0.8, "landmarks_json": "[]"}
         )

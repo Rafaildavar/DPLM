@@ -120,6 +120,11 @@ class CommandExecutor:
                 "kind": "play_pause",
                 "platform": "macos"
             })
+            self.register_command("пауза или продолжить музыку", {
+                "action": "media_key",
+                "kind": "play_pause",
+                "platform": "macos"
+            })
             self.register_command("следующий трек", {
                 "action": "media_key",
                 "kind": "next",
