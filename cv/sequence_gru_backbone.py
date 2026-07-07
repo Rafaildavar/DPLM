@@ -105,11 +105,10 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
             use_bidirectional=bool(self.use_bidirectional),
         ).to(device)
 
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=max(1e-6, float(self.learning_rate)),
-            weight_decay=max(0.0, float(self.weight_decay)),
-        )
+        learning_rate = max(1e-6, float(self.learning_rate))
+        weight_decay = max(0.0, float(self.weight_decay))
+        optimizer_state: dict[int, tuple[Any, Any]] = {}
+        optimizer_step = 0
         class_weights = self._class_weights(encoded, torch, device)
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -131,12 +130,20 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
             for batch_indices in self._batch_indices(train_x.shape[0], epoch):
                 batch_x = train_x[batch_indices]
                 batch_y = train_y[batch_indices]
-                optimizer.zero_grad(set_to_none=True)
+                model.zero_grad(set_to_none=True)
                 logits = model(batch_x)
                 loss = criterion(logits, batch_y)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
-                optimizer.step()
+                optimizer_step += 1
+                self._adamw_step(
+                    torch,
+                    model.parameters(),
+                    state=optimizer_state,
+                    learning_rate=learning_rate,
+                    weight_decay=weight_decay,
+                    step=optimizer_step,
+                )
                 losses.append(float(loss.detach().cpu().item()))
 
             train_loss = float(np.mean(losses)) if losses else 0.0
@@ -298,6 +305,51 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
             predicted = torch.argmax(logits, dim=1)
             accuracy = float((predicted == y).float().mean().detach().cpu().item())
         return loss, accuracy
+
+    @staticmethod
+    def _adamw_step(
+        torch,
+        parameters,
+        *,
+        state: dict[int, tuple[Any, Any]],
+        learning_rate: float,
+        weight_decay: float,
+        step: int,
+    ) -> None:
+        # Avoid torch.optim construction: some CI PyTorch wheels import dynamo/triton
+        # there and can segfault before training starts.
+        beta1 = 0.9
+        beta2 = 0.999
+        epsilon = 1e-8
+        bias_correction1 = 1.0 - beta1**int(step)
+        bias_correction2 = 1.0 - beta2**int(step)
+        step_size = float(learning_rate) * math.sqrt(bias_correction2) / bias_correction1
+
+        with torch.no_grad():
+            for parameter in parameters:
+                gradient = parameter.grad
+                if gradient is None:
+                    continue
+                if weight_decay > 0.0:
+                    parameter.mul_(1.0 - float(learning_rate) * float(weight_decay))
+
+                key = id(parameter)
+                moments = state.get(key)
+                if moments is None:
+                    exp_avg = torch.zeros_like(parameter)
+                    exp_avg_sq = torch.zeros_like(parameter)
+                    state[key] = (exp_avg, exp_avg_sq)
+                else:
+                    exp_avg, exp_avg_sq = moments
+
+                exp_avg.mul_(beta1).add_(gradient, alpha=1.0 - beta1)
+                exp_avg_sq.mul_(beta2).addcmul_(gradient, gradient, value=1.0 - beta2)
+                parameter.addcdiv_(
+                    exp_avg,
+                    exp_avg_sq.sqrt().add_(epsilon),
+                    value=-step_size,
+                )
+                parameter.grad = None
 
     def _torch_device(self, torch):
         requested = str(self.device or "cpu").strip().lower()
