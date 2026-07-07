@@ -1,4 +1,4 @@
-DPLM: Gesture Assistant — Отчёт по проекту
+GestureBind: Gesture Assistant — Отчёт по проекту
 Этап 4 — Онлайн‑классификация и озвучивание (TTS)
 
 Цели этапа:

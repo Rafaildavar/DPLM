@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Главный файл запуска приложения DPLM
-Main entry point for DPLM application
+Главный файл запуска приложения GestureBind
+Main entry point for GestureBind application
 
 Запуск / Launch:
     python -m app.main
@@ -1224,7 +1224,7 @@ def main():
     # Пути Qt заданы до импорта PySide6 и при загрузке модуля
     # Создание приложения / Create application
     app = QGuiApplication(sys.argv)
-    app.setApplicationName("DPLM")
+    app.setApplicationName("GestureBind")
     app.setApplicationVersion("0.7.0")
     app.setOrganizationName("GUAP")
     app.setOrganizationDomain("guap.ru")
@@ -1257,7 +1257,7 @@ def main():
         print("[!] Не удалось загрузить QML интерфейс")
         sys.exit(-1)
     
-    print("[✓] Приложение DPLM запущено")
+    print("[✓] Приложение GestureBind запущено")
     return app.exec()
 
 

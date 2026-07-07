@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME:-manual}"
-          BUNDLE="gestureflow-${VERSION}.tar.gz"
+          BUNDLE="gesturebind-${VERSION}.tar.gz"
           tar \
             --exclude=".git" \
             --exclude=".venv" \
@@ -54,5 +54,5 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             outputs/release/*.tar.gz \
             --draft \
-            --title "GestureFlow ${GITHUB_REF_NAME}" \
+            --title "GestureBind ${GITHUB_REF_NAME}" \
             --notes "Desktop handoff bundle with source code, tracked model artifacts, configs and documentation."

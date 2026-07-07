@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-06-24T10:08:00+00:00",
+  "generated_at": "2026-06-24T13:03:39+00:00",
   "data_root": "data/gestures",
-  "class_count": 15,
-  "active_class_count": 6,
+  "class_count": 16,
+  "active_class_count": 7,
   "empty_class_count": 9,
-  "sample_count": 121,
-  "valid_sample_count": 121,
+  "sample_count": 151,
+  "valid_sample_count": 151,
   "invalid_sample_count": 0,
   "active_sample_min": 20,
-  "active_sample_max": 21,
-  "imbalance_ratio": 1.05,
+  "active_sample_max": 30,
+  "imbalance_ratio": 1.5,
   "frame_min": 30,
-  "frame_max": 30,
-  "frame_mean": 30.0,
+  "frame_max": 60,
+  "frame_mean": 35.96,
   "feature_dims": [
     42
   ],
@@ -86,6 +86,19 @@
       "frame_min": 30,
       "frame_max": 30,
       "frame_mean": 30.0,
+      "feature_dims": [
+        42
+      ],
+      "issues": []
+    },
+    {
+      "label": "hand_left",
+      "sample_count": 30,
+      "valid_sample_count": 30,
+      "invalid_sample_count": 0,
+      "frame_min": 60,
+      "frame_max": 60,
+      "frame_mean": 60.0,
       "feature_dims": [
         42
       ],

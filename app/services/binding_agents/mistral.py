@@ -312,12 +312,13 @@ class MistralBindingAgent:
         actions_text = ", ".join(sorted(AGENT_ACTION_LABELS))
         local_prompt = self._local_binding_prompt(context, intent=intent, block=block)
         system_prompt = (
-            "Ты семантический агент GestureFlow для привязки жестов к действиям macOS. "
+            "Ты семантический агент GestureBind для привязки жестов к действиям macOS. "
             "Верни только JSON без markdown. Не исполняй команды. "
             "Схема: gestureLabel, commandName, mode, actionSpec, summary, "
             "missing, agentReply. actionSpec.action должен быть одним из: "
             f"{actions_text}. Для открытия приложения используй open_app/app; "
             "для сайта open_url/url; для hotkey key_combination/keys; "
+            "для медиа и видео media_key/kind: pause, play, play_pause, next, prev; "
             "для сценария sequence/steps. platform всегда macos. "
             "Для macOS перехода между рабочими столами/Spaces: "
             "налево=['ctrl','left'], направо=['ctrl','right']; не используй fn+arrow. "
@@ -361,12 +362,12 @@ class MistralBindingAgent:
             base_answer=base_answer,
         )
         system_prompt = (
-            "Ты редактор ответов агента GestureFlow. Не решай вопрос заново и не "
+            "Ты редактор ответов агента GestureBind. Не решай вопрос заново и не "
             "расширяй область ответственности. Перефразируй локальный черновик "
             "в живом русском tone of voice: дружелюбно, чуть тепло, без сухой "
             "канцелярщины. Сохраняй markdown-формат, смысл, ограничения и "
             "безопасные рамки. Для unsupported_general мягко возвращай разговор "
-            "к GestureFlow. Верни только markdown-текст, без JSON."
+            "к GestureBind. Верни только markdown-текст, без JSON."
         )
         return {
             "model": self.model,
@@ -398,7 +399,7 @@ class MistralBindingAgent:
         else:
             task = (
                 "Пользователь хочет создать привязку жеста. Извлеки gestureLabel, "
-                "actionSpec и короткий agentReply в tone of voice GestureFlow."
+                "actionSpec и короткий agentReply в tone of voice GestureBind."
             )
         return (
             f"block={block}; intent={intent}.\n"
@@ -417,7 +418,7 @@ class MistralBindingAgent:
     ) -> str:
         if block == "unsupported_general":
             task = (
-                "Сделай добрый redirect: признай вопрос, легко верни к GestureFlow, "
+                "Сделай добрый redirect: признай вопрос, легко верни к GestureBind, "
                 "предложи 3-4 полезные возможности и один пример запроса."
             )
         elif intent == "validate_command":
@@ -427,7 +428,7 @@ class MistralBindingAgent:
             )
         else:
             task = (
-                "Перефразируй ответ по проекту GestureFlow: живо, понятно, без "
+                "Перефразируй ответ по проекту GestureBind: живо, понятно, без "
                 "одинакового начала и без лишнего маркетинга."
             )
         return (

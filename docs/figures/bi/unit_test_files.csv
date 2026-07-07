@@ -1,0 +1,23 @@
+File,Group,CollectedTests,RunStatus
+test_app_config.py,Конфигурация и диагностика,6,passed
+test_app_config_pointer.py,Конфигурация и диагностика,2,passed
+test_diagnostics.py,Конфигурация и диагностика,2,passed
+test_binding_policy.py,Правила привязок и безопасность,9,passed
+test_binding_rules.py,Правила привязок и безопасность,23,passed
+test_command_executor_config.py,Команды и системные действия,14,passed
+test_command_executor_defaults.py,Команды и системные действия,1,passed
+test_user_command_sync.py,Команды и системные действия,4,passed
+test_gesture_command_bridge.py,Команды и системные действия,5,passed
+test_database.py,БД и хранение данных,15,passed
+test_seed_database.py,БД и хранение данных,1,passed
+test_gesture_samples.py,БД и хранение данных,3,passed
+test_recording_cycle.py,"CV, запись и инференс",3,passed
+test_recording_overlay.py,"CV, запись и инференс",2,passed
+test_train_classifier.py,"CV, запись и инференс",1,passed
+test_gesture_online_infer_no_hand.py,"CV, запись и инференс",4,passed
+test_gesture_pose_signature.py,"CV, запись и инференс",2,passed
+test_recognition_events.py,"CV, запись и инференс",2,passed
+test_flet_controller_commands.py,Flet-контроллер и UI,12,passed
+test_ui_copy.py,Flet-контроллер и UI,2,passed
+test_pointer_control.py,Управление указателем,12,passed
+test_voice_assistant.py,Голосовой ассистент,12,passed

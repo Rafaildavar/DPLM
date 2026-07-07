@@ -18,7 +18,7 @@ BINDING_SKILLS: tuple[AgentSkill, ...] = (
     AgentSkill(
         "action.parse",
         "Action Parse",
-        "Преобразует обычную фразу в actionSpec для macOS-команды.",
+        "Преобразует обычную фразу в actionSpec через словари действий и macOS-онтологию.",
     ),
     AgentSkill(
         "action.research",

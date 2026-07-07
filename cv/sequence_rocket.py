@@ -15,7 +15,7 @@ from typing import Iterable
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES
+from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES, global_wrist_slices
 
 
 @dataclass(frozen=True)
@@ -153,12 +153,14 @@ class RandomConvolutionSequenceTransformer(BaseEstimator, TransformerMixin):
         # Dynamic samples recorded by the Flet UI often use 44 features per
         # hand: 42 pose values plus global wrist x/y. Give these global motion
         # channels regular coverage because they are important for gestures.
-        if n_channels < 44 or n_channels % 44 != 0 or index % 3 != 0:
+        if index % 3 != 0:
             return channels
 
         global_channels: list[int] = []
-        for offset in range(0, n_channels, 44):
-            global_channels.extend([offset + 42, offset + 43])
+        for start, end in global_wrist_slices(n_channels):
+            global_channels.extend(range(start, end))
+        if not global_channels:
+            return channels
         selected = list(channels.astype(int))
         for channel in global_channels:
             if channel not in selected:

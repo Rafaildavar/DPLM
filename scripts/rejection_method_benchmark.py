@@ -1,4 +1,4 @@
-"""Benchmark rejection methods for GestureFlow open-set recognition.
+"""Benchmark rejection methods for GestureBind open-set recognition.
 
 The report answers a practical JMLC question: which strategy rejects random or
 partial gestures without breaking real gestures?
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
-from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import ExtraTreesClassifier, IsolationForest, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
@@ -27,7 +27,7 @@ from sklearn.neighbors import (
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.svm import OneClassSVM
+from sklearn.svm import OneClassSVM, SVC
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -46,8 +46,12 @@ from cv.gesture_features import (  # noqa: E402
     FEATURE_STATIC_MEAN,
     build_feature_matrix,
     class_counts,
+    infer_target_dim,
     load_gesture_sequences,
+    GestureSequence,
+    sequence_to_matrix,
 )
+from cv.gesture_dataset_files import augmented_sample_paths, gesture_sample_paths  # noqa: E402
 
 DEFAULT_METHODS = (
     "negative_classes",
@@ -67,6 +71,7 @@ class RejectionDatasetInfo:
     data_root: str
     scope: str
     feature_mode: str
+    candidate_model: str
     target_dim: int
     sample_count: int
     class_count: int
@@ -74,6 +79,18 @@ class RejectionDatasetInfo:
     negative_labels: list[str]
     class_counts: dict[str, int]
     folds: int
+    include_augmented: bool = False
+
+
+@dataclass(frozen=True)
+class NegativeLabelMetrics:
+    label: str
+    total: int
+    rejected: int
+    false_positive: int
+    reject_rate: float
+    false_positive_rate: float
+    false_positive_predictions: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -97,6 +114,7 @@ class RejectionMethodResult:
     wrong_accept: int
     reject_reasons: dict[str, int]
     false_positive_predictions: dict[str, int]
+    negative_label_metrics: list[NegativeLabelMetrics]
     error: str = ""
 
 
@@ -150,6 +168,64 @@ def _method_list(methods: Iterable[str] | str | None) -> list[str]:
     return selected or list(DEFAULT_METHODS)
 
 
+def _gislr_augmented_sample_paths(label_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for sample_path in augmented_sample_paths(label_dir):
+        metadata_path = sample_path.with_suffix(".meta.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        transform = str(metadata.get("transform") or "")
+        transform_metadata = metadata.get("transform_metadata")
+        policy = (
+            str(transform_metadata.get("policy") or "")
+            if isinstance(transform_metadata, dict)
+            else ""
+        )
+        if transform == "gislr_landmark_v1" or policy == "gislr_landmark_v1":
+            paths.append(sample_path)
+    return paths
+
+
+def _load_records_for_benchmark(
+    data_root: Path,
+    *,
+    include_augmented: bool,
+    include_labels: Iterable[str] | None,
+    lowercase_labels: bool,
+) -> list[GestureSequence]:
+    raw_include = {
+        str(label).strip()
+        for label in (include_labels or [])
+        if str(label).strip()
+    }
+    canonical_include = {
+        label.lower() if lowercase_labels else label for label in raw_include
+    }
+    if not include_augmented and not raw_include and not lowercase_labels:
+        return load_gesture_sequences(data_root)
+
+    records: list[GestureSequence] = []
+    if not data_root.exists():
+        return records
+    for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
+        raw_label = label_dir.name
+        label = raw_label.lower() if lowercase_labels else raw_label
+        if canonical_include and label not in canonical_include and raw_label not in raw_include:
+            continue
+        sample_paths = gesture_sample_paths(label_dir)
+        if include_augmented:
+            sample_paths = [*sample_paths, *_gislr_augmented_sample_paths(label_dir)]
+        for sample_path in sample_paths:
+            try:
+                sequence = sequence_to_matrix(np.load(sample_path))
+            except Exception:
+                continue
+            records.append(GestureSequence(label=label, path=sample_path, sequence=sequence))
+    return records
+
+
 def _knn_neighbors(y_train: np.ndarray) -> int:
     counts = {label: int(np.count_nonzero(y_train == label)) for label in set(y_train)}
     min_count = min(counts.values()) if counts else 1
@@ -164,6 +240,62 @@ def _fit_knn(X_train: np.ndarray, y_train: np.ndarray) -> KNeighborsClassifier:
     )
     clf.fit(X_train, y_train)
     return clf
+
+
+def _fit_candidate_model(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    *,
+    candidate_model: str,
+    random_state: int,
+) -> Any:
+    model = str(candidate_model or "knn").strip().lower()
+    if model == "knn":
+        return _fit_knn(X_train, y_train)
+    if model == "extra_trees":
+        clf = ExtraTreesClassifier(
+            n_estimators=250,
+            random_state=int(random_state),
+            class_weight="balanced",
+            n_jobs=1,
+        )
+        clf.fit(X_train, y_train)
+        return clf
+    if model == "rf":
+        clf = RandomForestClassifier(
+            n_estimators=200,
+            random_state=int(random_state),
+            class_weight="balanced",
+            n_jobs=1,
+        )
+        clf.fit(X_train, y_train)
+        return clf
+    if model == "logreg":
+        clf = make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2000,
+                class_weight="balanced",
+                random_state=int(random_state),
+            ),
+        )
+        clf.fit(X_train, y_train)
+        return clf
+    if model == "svm":
+        clf = make_pipeline(
+            StandardScaler(),
+            SVC(
+                kernel="rbf",
+                C=2.0,
+                gamma="scale",
+                class_weight="balanced",
+                probability=True,
+                random_state=int(random_state),
+            ),
+        )
+        clf.fit(X_train, y_train)
+        return clf
+    raise ValueError(f"unsupported candidate model: {candidate_model}")
 
 
 def _ranked_probabilities(model: Any, sample: np.ndarray) -> list[tuple[float, str]]:
@@ -222,9 +354,16 @@ def _negative_classes_predictions(
     X_test: np.ndarray,
     *,
     negative_labels: set[str],
+    candidate_model: str,
+    random_state: int,
     **_kwargs: Any,
 ) -> list[Decision]:
-    clf = _fit_knn(X_train, y_train)
+    clf = _fit_candidate_model(
+        X_train,
+        y_train,
+        candidate_model=candidate_model,
+        random_state=random_state,
+    )
     decisions: list[Decision] = []
     for sample in X_test:
         label = str(clf.predict(sample.reshape(1, -1))[0])
@@ -242,9 +381,16 @@ def _confidence_threshold_predictions(
     *,
     negative_labels: set[str],
     confidence_threshold: float,
+    candidate_model: str,
+    random_state: int,
     **_kwargs: Any,
 ) -> list[Decision]:
-    clf = _fit_knn(X_train, y_train)
+    clf = _fit_candidate_model(
+        X_train,
+        y_train,
+        candidate_model=candidate_model,
+        random_state=random_state,
+    )
     decisions: list[Decision] = []
     for sample in X_test:
         ranked = _ranked_probabilities(clf, sample)
@@ -268,9 +414,16 @@ def _open_set_policy_predictions(
     negative_confidence_threshold: float,
     min_margin: float,
     distance_multiplier: float,
+    candidate_model: str,
+    random_state: int,
     **_kwargs: Any,
 ) -> list[Decision]:
-    clf = _fit_knn(X_train, y_train)
+    clf = _fit_candidate_model(
+        X_train,
+        y_train,
+        candidate_model=candidate_model,
+        random_state=random_state,
+    )
     prototypes = _fit_prototypes(X_train, y_train, positive_labels)
     decisions: list[Decision] = []
     for sample in X_test:
@@ -304,10 +457,16 @@ def _one_vs_rest_predictions(
     positive_labels: set[str],
     negative_labels: set[str],
     verifier_threshold: float,
+    candidate_model: str,
     random_state: int,
     **_kwargs: Any,
 ) -> list[Decision]:
-    candidate_model = _fit_knn(X_train, y_train)
+    fitted_candidate = _fit_candidate_model(
+        X_train,
+        y_train,
+        candidate_model=candidate_model,
+        random_state=random_state,
+    )
     verifiers: dict[str, Any] = {}
     for label in sorted(positive_labels):
         binary_y = (y_train == label).astype(np.int64)
@@ -326,7 +485,7 @@ def _one_vs_rest_predictions(
 
     decisions: list[Decision] = []
     for sample in X_test:
-        candidate = str(candidate_model.predict(sample.reshape(1, -1))[0])
+        candidate = str(fitted_candidate.predict(sample.reshape(1, -1))[0])
         if candidate in negative_labels:
             decisions.append(Decision("", "negative_class"))
             continue
@@ -350,10 +509,16 @@ def _outlier_verifier_predictions(
     *,
     positive_labels: set[str],
     negative_labels: set[str],
+    candidate_model: str,
     random_state: int,
     **_kwargs: Any,
 ) -> list[Decision]:
-    candidate_model = _fit_knn(X_train, y_train)
+    fitted_candidate = _fit_candidate_model(
+        X_train,
+        y_train,
+        candidate_model=candidate_model,
+        random_state=random_state,
+    )
     detectors: dict[str, tuple[StandardScaler, Any]] = {}
     for label in sorted(positive_labels):
         rows = X_train[y_train == label]
@@ -382,7 +547,7 @@ def _outlier_verifier_predictions(
 
     decisions: list[Decision] = []
     for sample in X_test:
-        candidate = str(candidate_model.predict(sample.reshape(1, -1))[0])
+        candidate = str(fitted_candidate.predict(sample.reshape(1, -1))[0])
         if candidate in negative_labels:
             decisions.append(Decision("", "negative_class"))
             continue
@@ -547,6 +712,15 @@ def _summarize_predictions(
     accepted_correct = 0
     reject_reasons: dict[str, int] = {}
     false_positive_predictions: dict[str, int] = {}
+    negative_breakdown: dict[str, dict[str, Any]] = {
+        label: {
+            "total": 0,
+            "rejected": 0,
+            "false_positive": 0,
+            "false_positive_predictions": {},
+        }
+        for label in sorted(negative_labels)
+    }
 
     for true_label, decision in zip(y_true, decisions):
         predicted = str(decision.label or "")
@@ -556,12 +730,27 @@ def _summarize_predictions(
             reject_reasons[reason] = reject_reasons.get(reason, 0) + 1
 
         if true_label in negative_labels:
+            bucket = negative_breakdown.setdefault(
+                true_label,
+                {
+                    "total": 0,
+                    "rejected": 0,
+                    "false_positive": 0,
+                    "false_positive_predictions": {},
+                },
+            )
+            bucket["total"] = int(bucket["total"]) + 1
             if rejected:
                 negative_rejected += 1
+                bucket["rejected"] = int(bucket["rejected"]) + 1
             else:
                 accepted += 1
                 negative_false_positive += 1
                 wrong_accept += 1
+                bucket["false_positive"] = int(bucket["false_positive"]) + 1
+                bucket_predictions = bucket["false_positive_predictions"]
+                if isinstance(bucket_predictions, dict):
+                    bucket_predictions[predicted] = int(bucket_predictions.get(predicted, 0)) + 1
                 false_positive_predictions[predicted] = (
                     false_positive_predictions.get(predicted, 0) + 1
                 )
@@ -581,6 +770,27 @@ def _summarize_predictions(
     overall_success = (
         (positive_correct + negative_rejected) / total if total else 0.0
     )
+    negative_label_metrics = []
+    for label, values in sorted(negative_breakdown.items()):
+        label_total = int(values.get("total") or 0)
+        label_rejected = int(values.get("rejected") or 0)
+        label_false_positive = int(values.get("false_positive") or 0)
+        label_predictions = values.get("false_positive_predictions") or {}
+        negative_label_metrics.append(
+            NegativeLabelMetrics(
+                label=label,
+                total=label_total,
+                rejected=label_rejected,
+                false_positive=label_false_positive,
+                reject_rate=_round(label_rejected / label_total if label_total else 0.0),
+                false_positive_rate=_round(
+                    label_false_positive / label_total if label_total else 0.0
+                ),
+                false_positive_predictions=dict(sorted(label_predictions.items()))
+                if isinstance(label_predictions, dict)
+                else {},
+            )
+        )
     return RejectionMethodResult(
         method=method,
         status="failed" if error else "ok",
@@ -607,6 +817,7 @@ def _summarize_predictions(
         wrong_accept=wrong_accept,
         reject_reasons=dict(sorted(reject_reasons.items())),
         false_positive_predictions=dict(sorted(false_positive_predictions.items())),
+        negative_label_metrics=negative_label_metrics,
         error=error,
     )
 
@@ -617,9 +828,12 @@ def benchmark_rejection_methods(
     taxonomy_path: Path,
     scope: str = "static",
     feature_mode: str | None = None,
+    candidate_model: str = "knn",
     target_dim: int | None = None,
     methods: Iterable[str] | str | None = None,
     include_labels: Iterable[str] | None = None,
+    include_augmented: bool = False,
+    lowercase_labels: bool = False,
     min_samples_per_class: int = 2,
     max_folds: int = 3,
     random_state: int = 42,
@@ -634,16 +848,24 @@ def benchmark_rejection_methods(
     actual_feature_mode = feature_mode or (
         FEATURE_DYNAMIC_STATS if str(scope).strip().lower() == "dynamic" else FEATURE_STATIC_MEAN
     )
-    actual_target_dim = int(
-        target_dim
-        if target_dim is not None
-        else (44 if actual_feature_mode == FEATURE_DYNAMIC_STATS else 42)
-    )
 
-    all_records = load_gesture_sequences(data_root)
+    all_records = _load_records_for_benchmark(
+        data_root,
+        include_augmented=include_augmented,
+        include_labels=include_labels,
+        lowercase_labels=lowercase_labels,
+    )
+    raw_allowed_labels = [
+        str(label).strip()
+        for label in (include_labels or [])
+        if str(label).strip()
+    ]
     allowed_labels = (
-        {str(label) for label in include_labels}
-        if include_labels is not None
+        {
+            label.lower() if lowercase_labels else label
+            for label in raw_allowed_labels
+        }
+        if raw_allowed_labels
         else None
     )
     records = [
@@ -661,6 +883,11 @@ def benchmark_rejection_methods(
     records = [record for record in records if record.label in kept_labels]
     if not records:
         raise RuntimeError("no records selected for rejection benchmark")
+    actual_target_dim = int(
+        target_dim
+        if target_dim is not None
+        else infer_target_dim(record.sequence for record in records)
+    )
 
     X, y_indices, labels = build_feature_matrix(
         records,
@@ -695,6 +922,7 @@ def benchmark_rejection_methods(
     common_kwargs = {
         "positive_labels": positive_labels,
         "negative_labels": negative_labels,
+        "candidate_model": str(candidate_model or "knn").strip().lower(),
         "confidence_threshold": float(confidence_threshold),
         "negative_confidence_threshold": float(negative_confidence_threshold),
         "min_margin": float(min_margin),
@@ -756,6 +984,7 @@ def benchmark_rejection_methods(
         data_root=str(data_root),
         scope=str(scope),
         feature_mode=actual_feature_mode,
+        candidate_model=str(candidate_model or "knn").strip().lower(),
         target_dim=actual_target_dim,
         sample_count=int(len(y)),
         class_count=int(len(labels)),
@@ -763,6 +992,7 @@ def benchmark_rejection_methods(
         negative_labels=sorted(negative_labels),
         class_counts=dict(sorted(filtered_counts.items())),
         folds=folds,
+        include_augmented=bool(include_augmented),
     )
     return RejectionBenchmarkReport(
         generated_at=time.time(),
@@ -785,7 +1015,9 @@ def build_markdown_report(report: RejectionBenchmarkReport) -> str:
         f"- data root: `{dataset.data_root}`",
         f"- scope: `{dataset.scope}`",
         f"- feature mode: `{dataset.feature_mode}`",
+        f"- candidate model: `{dataset.candidate_model}`",
         f"- target dim: `{dataset.target_dim}`",
+        f"- augmented samples: `{'included' if dataset.include_augmented else 'excluded'}`",
         f"- samples/classes/folds: `{dataset.sample_count}` / `{dataset.class_count}` / `{dataset.folds}`",
         f"- positive labels: `{', '.join(dataset.positive_labels)}`",
         f"- negative labels: `{', '.join(dataset.negative_labels)}`",
@@ -838,6 +1070,44 @@ def build_markdown_report(report: RejectionBenchmarkReport) -> str:
             "- `metric_nca_centroid`: metric-learning embedding + class prototype radius.",
             "- `mlp_negative_classes`: nonlinear supervised classifier with negative classes.",
             "",
+            "## Best Method Negative Breakdown",
+            "",
+        ]
+    )
+    best_result = next(
+        (result for result in report.methods if result.method == report.best_method),
+        None,
+    )
+    if best_result is None:
+        lines.append("No best method available.")
+    else:
+        lines.extend(
+            [
+                f"Best method: `{best_result.method}`",
+                "",
+                "| Negative label | Total | Rejected | False positive | Reject rate | FP rate | FP predictions |",
+                "|---|---:|---:|---:|---:|---:|---|",
+            ]
+        )
+        for row in best_result.negative_label_metrics:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        f"`{row.label}`",
+                        str(row.total),
+                        str(row.rejected),
+                        str(row.false_positive),
+                        f"{row.reject_rate:.4f}",
+                        f"{row.false_positive_rate:.4f}",
+                        f"`{json.dumps(row.false_positive_predictions, ensure_ascii=False)}`",
+                    ]
+                )
+                + " |"
+            )
+    lines.extend(
+        [
+            "",
             "## Reject Reasons",
             "",
         ]
@@ -875,8 +1145,29 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--scope", default="static", choices=["static", "dynamic", "all"])
     parser.add_argument("--feature-mode", default="")
+    parser.add_argument(
+        "--candidate-model",
+        default="knn",
+        choices=["knn", "extra_trees", "rf", "logreg", "svm"],
+    )
     parser.add_argument("--target-dim", type=int, default=None)
     parser.add_argument("--methods", default=",".join(DEFAULT_METHODS))
+    parser.add_argument(
+        "--include-label",
+        action="append",
+        default=[],
+        help="Restrict benchmark to a label. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--include-augmented",
+        action="store_true",
+        help="Include GISLR-marked aug_sample_* files with gislr_landmark_v1 metadata.",
+    )
+    parser.add_argument(
+        "--lowercase-labels",
+        action="store_true",
+        help="Normalize labels to lowercase before filtering and taxonomy lookup.",
+    )
     parser.add_argument("--min-samples-per-class", type=int, default=2)
     parser.add_argument("--max-folds", type=int, default=3)
     parser.add_argument("--random-state", type=int, default=42)
@@ -905,8 +1196,12 @@ def main() -> None:
         taxonomy_path=args.taxonomy,
         scope=args.scope,
         feature_mode=str(args.feature_mode or "") or None,
+        candidate_model=args.candidate_model,
         target_dim=args.target_dim,
         methods=args.methods,
+        include_labels=args.include_label,
+        include_augmented=args.include_augmented,
+        lowercase_labels=args.lowercase_labels,
         min_samples_per_class=args.min_samples_per_class,
         max_folds=args.max_folds,
         random_state=args.random_state,

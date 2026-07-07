@@ -6,7 +6,7 @@ Owner: ML pipeline
 
 ## Why This Exists
 
-GestureFlow is a personalized gesture system. The core positive dataset should
+GestureBind is a personalized gesture system. The core positive dataset should
 stay user-recorded because live quality depends on the user's camera, distance,
 hand shape, speed and command semantics.
 
@@ -41,7 +41,7 @@ Important storage decision:
 
 ## Prepared Data Format
 
-External data must be converted to the same landmark format as GestureFlow:
+External data must be converted to the same landmark format as GestureBind:
 
 ```text
 data/external/ipn_hand/<original_label>/sample_0000.npy
@@ -62,7 +62,7 @@ negative_external_hagrid_static
 ```
 
 This prevents a public class such as `call` or `stop` from becoming a new
-GestureFlow command by accident.
+GestureBind command by accident.
 
 ## Variants
 
@@ -76,7 +76,7 @@ Default variants:
 
 | Variant | Meaning |
 |---|---|
-| `baseline_internal` | current GestureFlow personal + synthetic negatives |
+| `baseline_internal` | current GestureBind personal + synthetic negatives |
 | `ipn_external` | baseline + IPN dynamic negative samples |
 | `hagrid_external` | baseline + HaGRID static negative samples |
 | `combined_external` | baseline + IPN + HaGRID |

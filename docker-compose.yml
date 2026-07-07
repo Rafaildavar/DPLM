@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Docker services для GestureFlow.
+# Docker services для GestureBind.
 #
 # Старт:
 #   docker compose up -d db
@@ -49,7 +49,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: make ml-smoke
     environment:
       PYTHON: python
@@ -65,7 +65,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: make ci
     environment:
       PYTHON: python
@@ -81,7 +81,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: >
       python -m mlflow ui
       --backend-store-uri sqlite:////app/mlflow/mlflow.db
@@ -90,8 +90,8 @@ services:
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
     volumes:
-      - gestureflow_mlflow:/app/mlflow
+      - gesturebind_mlflow:/app/mlflow
 
 volumes:
   dplm_postgres_data:
-  gestureflow_mlflow:
+  gesturebind_mlflow:

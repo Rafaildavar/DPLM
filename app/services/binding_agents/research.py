@@ -494,7 +494,7 @@ class AppleWebResearchProvider:
         try:
             request = urllib.request.Request(
                 url,
-                headers={"User-Agent": "GestureFlowResearchAgent/1.0"},
+                headers={"User-Agent": "GestureBindResearchAgent/1.0"},
             )
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 raw = response.read(700_000)

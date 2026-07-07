@@ -3,7 +3,7 @@
 The classifier follows the same sklearn-style API as the other sequence
 models in this project, so it can be saved with joblib and used by the
 existing live inference path. It trains a small per-frame backbone plus a
-GRU/LSTM recurrent layer over flattened ``dynamic_sequence`` features.
+GRU/LSTM recurrent layer over flattened temporal landmark features.
 """
 
 from __future__ import annotations
@@ -17,7 +17,10 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import train_test_split
 
-from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES
+from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    DYNAMIC_SEQUENCE_TARGET_FRAMES,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         random_state: int = 42,
         device: str = "cpu",
         verbose: bool = False,
+        feature_name: str = "dynamic_sequence",
     ) -> None:
         self.target_frames = target_frames
         self.backbone_dim = backbone_dim
@@ -69,6 +73,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         self.random_state = random_state
         self.device = device
         self.verbose = verbose
+        self.feature_name = feature_name
 
     def fit(self, X, y):  # noqa: D401 - sklearn API
         torch = _require_torch()
@@ -232,7 +237,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
             raise ValueError("target_frames must be greater than 1")
         if matrix.shape[1] <= 0 or matrix.shape[1] % target_frames != 0:
             raise ValueError(
-                f"{self.sequence_model_name} expects flattened dynamic_sequence features "
+                f"{self.sequence_model_name} expects flattened {self.feature_name} features "
                 f"with dimension divisible by {target_frames}; got {matrix.shape[1]}"
             )
         if not np.isfinite(matrix).all():
@@ -375,6 +380,7 @@ def _tune_recurrent_backbone_hyperparameters(
     y: np.ndarray,
     *,
     target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    feature_name: str = "dynamic_sequence",
     n_trials: int = 8,
     timeout: int | None = None,
     random_state: int = 42,
@@ -423,6 +429,7 @@ def _tune_recurrent_backbone_hyperparameters(
         }
         classifier = classifier_cls(
             target_frames=int(target_frames),
+            feature_name=str(feature_name),
             max_epochs=max(10, int(max_epochs)),
             validation_fraction=0.0,
             patience=max(8, int(max_epochs) // 3),
@@ -458,6 +465,7 @@ def tune_gru_backbone_hyperparameters(
     y: np.ndarray,
     *,
     target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    feature_name: str = "dynamic_sequence",
     n_trials: int = 8,
     timeout: int | None = None,
     random_state: int = 42,
@@ -469,6 +477,7 @@ def tune_gru_backbone_hyperparameters(
         X,
         y,
         target_frames=target_frames,
+        feature_name=feature_name,
         n_trials=n_trials,
         timeout=timeout,
         random_state=random_state,
@@ -481,6 +490,7 @@ def tune_lstm_backbone_hyperparameters(
     y: np.ndarray,
     *,
     target_frames: int = DYNAMIC_SEQUENCE_TARGET_FRAMES,
+    feature_name: str = "dynamic_sequence",
     n_trials: int = 8,
     timeout: int | None = None,
     random_state: int = 42,
@@ -492,11 +502,27 @@ def tune_lstm_backbone_hyperparameters(
         X,
         y,
         target_frames=target_frames,
+        feature_name=feature_name,
         n_trials=n_trials,
         timeout=timeout,
         random_state=random_state,
         max_epochs=max_epochs,
     )
+
+
+def make_dynamic_landmark_lstm_backbone_classifier(
+    **kwargs: Any,
+) -> TorchLSTMBackboneClassifier:
+    """Return the GISLR-style 72-frame landmark-image LSTM backbone."""
+    classifier = TorchLSTMBackboneClassifier(
+        target_frames=DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
+        feature_name="dynamic_landmark_image",
+        **kwargs,
+    )
+    classifier.sequence_model_name = "dynamic_landmark_lstm_backbone"
+    classifier.estimator_name = "TorchDynamicLandmarkLSTMBackboneClassifier"
+    classifier.log_prefix = "landmark_lstm"
+    return classifier
 
 
 class _GRUBackboneNet:

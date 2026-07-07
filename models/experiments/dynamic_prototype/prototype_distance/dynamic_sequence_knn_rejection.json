@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_by": "cv.train_classifier",
-  "generated_at": 1782738426.572725,
+  "generated_at": 1782738453.84583,
   "model_type": "sequence_knn",
   "feature_mode": "dynamic_sequence",
   "feature_dim": 1584,

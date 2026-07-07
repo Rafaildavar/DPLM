@@ -1,0 +1,5 @@
+Metric,MetricRu,Model,Value,Unit,Direction,DisplayValue
+Accuracy,Точность,Базовая модель,0.784,ratio,higher_is_better,78.4%
+Accuracy,Точность,Оптимизированная модель,0.962,ratio,higher_is_better,96.2%
+InferenceTime,Среднее время инференса,Базовая модель,15,ms,lower_is_better,15 мс
+InferenceTime,Среднее время инференса,Оптимизированная модель,8,ms,lower_is_better,8 мс

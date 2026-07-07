@@ -1,9 +1,9 @@
-# GestureFlow MAS architecture
+# GestureBind MAS architecture
 
 Дата: 2026-06-30
 
 Документ описывает текущую архитектуру многоагентной системы привязок
-GestureFlow и правила безопасного расширения.
+GestureBind и правила безопасного расширения.
 
 ## Цель системы
 
@@ -139,7 +139,7 @@ When adding an intent, scenario, guardrail rule, or parser behavior:
 1. Add a case to `BINDING_AGENT_EVAL_CASES`.
 2. Add a focused unit test if the behavior is subtle.
 3. Check MLflow fields if the trace contract changed.
-4. Update `docs/GESTUREFLOW_MAS_AUDIT.md` when the current state changes.
+4. Update `docs/GESTUREBIND_MAS_AUDIT.md` when the current state changes.
 
 ## Mistral usage
 
@@ -154,4 +154,3 @@ truth for tests. When Mistral is enabled, prompts include:
 - local task paraphrase.
 
 Model output must still pass policy, output guardrails, and reviewer checks.
-

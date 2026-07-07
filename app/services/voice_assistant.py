@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Голосовой помощник DPLM - полнофункциональный ассистент
-Voice Assistant DPLM - full-featured assistant
+Голосовой помощник GestureBind - полнофункциональный ассистент
+Voice Assistant GestureBind - full-featured assistant
 
 Функциональность:
 - STT (Speech-to-Text): распознавание речи через SpeechRecognition/Vosk

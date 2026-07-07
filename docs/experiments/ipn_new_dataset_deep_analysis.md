@@ -4,7 +4,7 @@
 
 ## Цель
 
-Проверить, помогают ли новые IPN Hand frame packs для GestureFlow:
+Проверить, помогают ли новые IPN Hand frame packs для GestureBind:
 
 - как external negative data для динамического rejection;
 - как validation/reference data для жестов, похожих на пользовательские свайпы;
@@ -65,7 +65,7 @@ frames/<video_id>/<video_id>_<frame_index>.jpg
 video,label,id,t_start,t_end,frames
 ```
 
-То есть для GestureFlow нужно выполнить отдельный feature extraction:
+То есть для GestureBind нужно выполнить отдельный feature extraction:
 
 1. выбрать сегмент по `video_id`, `t_start`, `t_end`;
 2. взять равномерно sampled кадры;

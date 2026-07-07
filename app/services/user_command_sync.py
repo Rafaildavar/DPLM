@@ -136,7 +136,7 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
             "message": "str — текст уведомления",
             "title": "str — заголовок, опционально",
         },
-        "example": {"action": "notify", "title": "GestureFlow", "message": "Готово", "platform": "macos"},
+        "example": {"action": "notify", "title": "GestureBind", "message": "Готово", "platform": "macos"},
     },
     # --- Категория 3: прокрутка / навигация ---
     "scroll": {
@@ -152,8 +152,8 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
     # --- Категория 4: мультимедиа ---
     "media_key": {
         "category": CATEGORY_MEDIA,
-        "fields": {"kind": "str — play_pause | next | prev"},
-        "example": {"action": "media_key", "kind": "play_pause", "platform": "macos"},
+        "fields": {"kind": "str — play | pause | play_pause | next | prev"},
+        "example": {"action": "media_key", "kind": "pause", "platform": "macos"},
     },
     # --- Категория 5: горячие клавиши ---
     "key_combination": {

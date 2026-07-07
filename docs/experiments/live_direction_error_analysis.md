@@ -5,7 +5,7 @@ Date: `2026-06-27`
 Source:
 
 - `~/.dplm/logs/live_evaluation.jsonl`
-- MLflow experiment `GestureFlow`
+- MLflow experiment `GestureBind`
 - Runs:
   - `live-swipe_up-auto-knn`
   - `live-swipe_down-auto-knn`

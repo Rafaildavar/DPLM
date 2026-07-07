@@ -4,8 +4,8 @@ import QtQuick.Layouts
 import QtQuick.Window
 
 /**
- * Главное окно приложения DPLM - современный интерфейс
- * Main DPLM application window - modern interface
+ * Главное окно приложения GestureBind - современный интерфейс
+ * Main GestureBind application window - modern interface
  * 
  * Material Design 3 с улучшенной визуализацией
  * Material Design 3 with enhanced visualization
@@ -24,7 +24,7 @@ Window {
     minimumWidth: 640
     minimumHeight: 600
     visible: true
-    title: "DPLM - Gesture & Voice Assistant"
+    title: "GestureBind - Gesture & Voice Assistant"
     
     // Material Design 3 тема / Material Design 3 theme
     Material.theme: Material.Dark
@@ -92,7 +92,7 @@ Window {
                     spacing: 6
                     
                     Text {
-                        text: "DPLM Assistant"
+                        text: "GestureBind Assistant"
                         font.pixelSize: 22
                         font.bold: true
                         color: "white"

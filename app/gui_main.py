@@ -135,7 +135,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DPLM — Gesture Assistant (GUI)")
+        self.setWindowTitle("GestureBind — Gesture Assistant (GUI)")
 
         self.camera_widget = CameraWidget(self)
 

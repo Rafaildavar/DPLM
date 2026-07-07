@@ -1,4 +1,4 @@
-# GestureFlow MLOps Dashboard
+# GestureBind MLOps Dashboard
 
 This folder contains the local HTML observability dashboard for the JMLC branch.
 
@@ -12,6 +12,12 @@ Generate it after recording live-evaluation runs:
 
 ```bash
 make mlops-dashboard
+```
+
+The default MLflow backend is `mlflow.db`. To render another local backend:
+
+```bash
+python -m scripts.mlops_dashboard --mlflow-db path/to/mlflow.db
 ```
 
 Open:
@@ -29,6 +35,17 @@ The dashboard tracks:
 - runtime latency from `runtime_performance.jsonl`;
 - model artifact size, modified time and SHA-256 fingerprint.
 
+The presentation showcase also reads the local MLflow SQLite backend and adds:
+
+- MLflow run-kind distribution across training, live, prototype and agent runs;
+- top live approaches by presentation score;
+- training model leaderboard with CV/Optuna/test metrics prioritized over
+  train-only accuracy;
+- live A/B scoreboard by dynamic profile and rejection method;
+- safety/rejection leaderboard for negative false positives, static false
+  positives, static hijacks and wrong dynamic direction;
+- recent MLflow timeline for telling the experiment story on slides.
+
 MLflow tracks training and live-evaluation experiments separately:
 
 ```bash
@@ -37,9 +54,13 @@ PYTHON=.venv/bin/python make mlflow-ui
 
 Then open `http://127.0.0.1:5000`.
 
-Training runs are logged to the local `GestureFlow` experiment with
+Training runs are logged to the local `GestureBind` experiment with
 `sqlite:///mlflow.db` as the tracking backend. MLflow stores run parameters,
 sample/class counts, train accuracy and model artifacts.
+
+For presentation, prefer `docs/mlops_dashboard/index.html` over raw scalar
+screenshots when explaining "which approach won": the static HTML aggregates
+MLflow runs into charts that show quality, safety and latency together.
 
 Live tests from the Flet interface are logged automatically when a test reaches
 its target attempt count or is stopped. Look for runs named

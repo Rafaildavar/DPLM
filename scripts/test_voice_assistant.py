@@ -23,7 +23,7 @@ except ImportError as e:
 def main():
     """Главная функция запуска / Main launch function"""
     print("=" * 60)
-    print("DPLM Голосовой помощник / Voice Assistant")
+    print("GestureBind Голосовой помощник / Voice Assistant")
     print("=" * 60)
     print()
     

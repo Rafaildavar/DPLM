@@ -1,4 +1,4 @@
-"""Analyze whether external IPN dynamic samples help GestureFlow rejection."""
+"""Analyze whether external IPN dynamic samples help GestureBind rejection."""
 
 from __future__ import annotations
 

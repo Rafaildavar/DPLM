@@ -4,7 +4,17 @@ from pathlib import Path
 import numpy as np
 
 from app.gesture_online_infer import GestureOnlineInfer
-from cv.gesture_features import FEATURE_DYNAMIC_SEQUENCE, FEATURE_DYNAMIC_SEQUENCE_72
+from cv.gesture_features import (
+    FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+    FEATURE_DYNAMIC_CRAFT_STATS,
+    FEATURE_DYNAMIC_LANDMARK_IMAGE,
+    FEATURE_DYNAMIC_SEQUENCE,
+    FEATURE_DYNAMIC_SEQUENCE_72,
+    FEATURE_STATIC_CRAFT_FULL_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
+    feature_vector_size,
+)
+from cv.hand_landmarker import DetectedHand
 
 
 class _NoHandsDetector:
@@ -645,6 +655,10 @@ def test_acknowledge_dynamic_event_preserves_segmenter_cooldown() -> None:
 
 def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:
     infer = object.__new__(GestureOnlineInfer)
+    infer._feature_mode = FEATURE_STATIC_CRAFT_FULL_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_STATIC_CRAFT_FULL_STATS, 63)
+    assert infer._infer_raw_feature_dim() == 63
+
     infer._feature_mode = "dynamic_stats"
 
     infer._feature_dim = 271
@@ -652,6 +666,44 @@ def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:
 
     infer._feature_dim = 264
     assert infer._infer_raw_feature_dim() == 44
+
+    infer._feature_mode = FEATURE_DYNAMIC_CRAFT_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_CRAFT_STATS, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_DYNAMIC_CRAFT_FULL_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_CRAFT_FULL_STATS, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_DYNAMIC_LANDMARK_IMAGE
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_LANDMARK_IMAGE, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_STATIC_LANDMARK_IMAGE
+    infer._feature_dim = feature_vector_size(FEATURE_STATIC_LANDMARK_IMAGE, 63)
+    assert infer._infer_raw_feature_dim() == 63
+
+
+def test_hand_frame_feature_builds_65_dim_xyz_wrist_layout() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    landmarks = _open_hand_landmarks()
+    normalized = np.zeros((21, 2), dtype=np.float32)
+    xyz = [
+        (float(point[0]), float(point[1]), float(index) / 100.0)
+        for index, point in enumerate(landmarks)
+    ]
+    hand = DetectedHand(
+        landmarks=landmarks,
+        handedness="Right",
+        score=1.0,
+        landmarks_xyz=xyz,
+    )
+
+    feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
+
+    assert feature.shape == (65,)
+    assert np.allclose(feature[2:63:3], [float(index) / 100.0 for index in range(21)])
+    assert np.allclose(feature[-2:], landmarks[0])
 
 
 def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:

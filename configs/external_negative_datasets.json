@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "External public-dataset sources used only as negative/rejection evidence. Put converted GestureFlow .npy samples under data/external/<source>/<label>/sample_*.npy.",
+  "description": "External public-dataset sources used only as negative/rejection evidence. Put converted GestureBind .npy samples under data/external/<source>/<label>/sample_*.npy.",
   "sources": {
     "ipn_hand": {
       "root": "data/external/ipn_hand",

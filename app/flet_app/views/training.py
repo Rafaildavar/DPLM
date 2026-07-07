@@ -5,9 +5,10 @@
 примеры во встроенной камере и запускает обучение. Технические параметры модели
 подбираются из проектных defaults, без отдельного режима разработчика в UI.
 
-После успешного обучения модель попадает в ``models/knn.pkl`` —
-``GestureOnlineInfer`` подхватит её при следующем запуске встроенного
-распознавания на Главной.
+После успешного обучения static-модель попадает в ``models/knn.pkl``, а
+dynamic-модель — в выбранный ``models/dynamic_*.pkl`` профиль. Главный экран
+подхватит соответствующие артефакты при следующем запуске встроенного
+распознавания.
 """
 from __future__ import annotations
 
@@ -36,9 +37,10 @@ _DEFAULT_MODEL_OUT = "models/knn.pkl"
 _DEFAULT_RECORD_SAMPLES = 8
 _DEFAULT_RECORD_FRAMES = 30
 _DEFAULT_STATIC_RECORD_FEATURE_DIM = 63
-_DEFAULT_DYNAMIC_MODEL_TYPE = "sequence_mlp"
-_DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_sequence_mlp.pkl"
+_DEFAULT_DYNAMIC_MODEL_TYPE = "dynamic_landmark_lstm_backbone"
+_DEFAULT_DYNAMIC_MODEL_OUT = "models/dynamic_landmark_lstm_backbone.pkl"
 _DYNAMIC_MODEL_OUT_BY_TYPE = {
+    "dynamic_landmark_lstm_backbone": "models/dynamic_landmark_lstm_backbone.pkl",
     "sequence_mlp": "models/dynamic_sequence_mlp.pkl",
     "sequence_rocket": "models/dynamic_sequence_rocket.pkl",
     "sequence_multirocket": "models/dynamic_sequence_multirocket.pkl",
@@ -49,6 +51,7 @@ _DYNAMIC_MODEL_OUT_BY_TYPE = {
     "sequence_ensemble": "models/dynamic_sequence_ensemble.pkl",
     "sequence_gru_backbone": "models/dynamic_sequence_gru_backbone.pkl",
     "sequence_lstm_backbone": "models/dynamic_sequence_lstm_backbone.pkl",
+    "dynamic_landmark_cnn": "models/dynamic_landmark_cnn.pkl",
 }
 _DEFAULT_DYNAMIC_RECORD_SAMPLES = 10
 _DEFAULT_DYNAMIC_RECORD_FRAMES = 72
@@ -58,7 +61,8 @@ _DEFAULT_NEGATIVE_SEED = 42
 _STATIC_TRAINING_SCOPE = "static,quasi_static,negative"
 _DYNAMIC_TRAINING_SCOPE = "dynamic,negative"
 _DEFAULT_STATIC_FEATURE_MODE = "static_craft_full_stats"
-_DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_sequence"
+_DEFAULT_DYNAMIC_FEATURE_MODE = "dynamic_landmark_image"
+_LEGACY_DYNAMIC_SEQUENCE_FEATURE_MODE = "dynamic_sequence"
 _DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS = 8
 _DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS = 70
 _DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS = 8
@@ -86,6 +90,12 @@ def _known_dynamic_model_outputs() -> set[str]:
 
 def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
     clean = str(model_type or _DEFAULT_DYNAMIC_MODEL_TYPE).strip().lower()
+    if clean == "dynamic_landmark_lstm_backbone":
+        return (
+            "models/dynamic_landmark_lstm_backbone_classes.json",
+            "models/dynamic_landmark_lstm_backbone_feature_dim.txt",
+            "models/dynamic_landmark_lstm_backbone_feature_mode.txt",
+        )
     if clean == "sequence_mlp":
         return (
             "models/dynamic_sequence_mlp_classes.json",
@@ -146,7 +156,22 @@ def _dynamic_metadata_out_for_type(model_type: str) -> tuple[str, str, str]:
             "models/dynamic_sequence_lstm_backbone_feature_dim.txt",
             "models/dynamic_sequence_lstm_backbone_feature_mode.txt",
         )
+    if clean == "dynamic_landmark_cnn":
+        return (
+            "models/dynamic_landmark_cnn_classes.json",
+            "models/dynamic_landmark_cnn_feature_dim.txt",
+            "models/dynamic_landmark_cnn_feature_mode.txt",
+        )
     return _dynamic_metadata_out_for_type(_DEFAULT_DYNAMIC_MODEL_TYPE)
+
+
+def _dynamic_feature_mode_for_model(model_type: str) -> str:
+    clean = str(model_type or _DEFAULT_DYNAMIC_MODEL_TYPE).strip().lower()
+    if clean == "sequence_shapelet_72":
+        return "dynamic_sequence_72"
+    if clean in {"dynamic_landmark_lstm_backbone", "dynamic_landmark_cnn"}:
+        return "dynamic_landmark_image"
+    return _LEGACY_DYNAMIC_SEQUENCE_FEATURE_MODE
 
 
 class TrainingView:
@@ -293,6 +318,10 @@ class TrainingView:
             value=_DEFAULT_DYNAMIC_MODEL_TYPE,
             border_color=COLOR_SURFACE_HIGH,
             options=[
+                ft.DropdownOption(
+                    key="dynamic_landmark_lstm_backbone",
+                    text="dynamic_landmark_lstm_backbone",
+                ),
                 ft.DropdownOption(key="sequence_mlp", text="sequence_mlp"),
                 ft.DropdownOption(key="sequence_rocket", text="sequence_rocket"),
                 ft.DropdownOption(
@@ -320,6 +349,10 @@ class TrainingView:
                 ft.DropdownOption(
                     key="sequence_lstm_backbone",
                     text="sequence_lstm_backbone",
+                ),
+                ft.DropdownOption(
+                    key="dynamic_landmark_cnn",
+                    text="dynamic_landmark_cnn",
                 ),
             ],
             editable=False,
@@ -907,9 +940,7 @@ class TrainingView:
                 self._dyn_model_out.update()
             except Exception:
                 pass
-        self._dyn_feature_mode.value = "dynamic_sequence"
-        if model_type == "sequence_shapelet_72":
-            self._dyn_feature_mode.value = "dynamic_sequence_72"
+        self._dyn_feature_mode.value = _dynamic_feature_mode_for_model(model_type)
         try:
             self._dyn_feature_mode.update()
         except Exception:
@@ -1149,12 +1180,10 @@ class TrainingView:
                 1,
                 self._parse_int(self._dyn_tr_neighbors.value, _DEFAULT_K_NEIGHBORS),
             )
-            feature_mode = (
-                "dynamic_sequence_72"
-                if str(self._dyn_model_type.value or "").strip().lower()
-                == "sequence_shapelet_72"
-                else _DEFAULT_DYNAMIC_FEATURE_MODE
-            )
+            selected_dynamic_model_type = str(
+                self._dyn_model_type.value or ""
+            ).strip().lower()
+            feature_mode = _dynamic_feature_mode_for_model(selected_dynamic_model_type)
             expect_dim = None
             model_type = str(
                 self._dyn_model_type.value or _DEFAULT_DYNAMIC_MODEL_TYPE
@@ -1186,7 +1215,10 @@ class TrainingView:
                     f"trials={_DEFAULT_SEQUENCE_GRU_OPTUNA_TRIALS}, "
                     f"epochs/trial={_DEFAULT_SEQUENCE_GRU_OPTUNA_MAX_EPOCHS}"
                 )
-            elif train_model_type == "sequence_lstm_backbone":
+            elif train_model_type in {
+                "sequence_lstm_backbone",
+                "dynamic_landmark_lstm_backbone",
+            }:
                 training_extra_args = [
                     "--sequence-lstm-optuna-trials",
                     str(_DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS),
@@ -1194,7 +1226,7 @@ class TrainingView:
                     str(_DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS),
                 ]
                 self._append_log(
-                    "[i] Для sequence_lstm_backbone включен Optuna tuning: "
+                    f"[i] Для {train_model_type} включен Optuna tuning: "
                     f"trials={_DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS}, "
                     f"epochs/trial={_DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS}"
                 )

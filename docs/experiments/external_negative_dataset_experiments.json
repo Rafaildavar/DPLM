@@ -431,7 +431,7 @@
   ],
   "notes": [
     "hagrid_external: skipped - variant requires external sources, but none were imported",
-    "External datasets are treated as negative/rejection data, not as replacement for personalized GestureFlow samples.",
+    "External datasets are treated as negative/rejection data, not as replacement for personalized GestureBind samples.",
     "Live validation still decides whether an external variant is useful for the user's camera and gesture style."
   ]
 }

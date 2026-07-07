@@ -1,0 +1,49 @@
+Dataset,VariantKey,Variant,Class,MetricKey,Metric,Value,Support,SampleCount,FeatureDim,Folds,KnnNeighbors
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,CTRLZ,precision,Precision,0.840000,21,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,CTRLZ,recall,Recall,1.000000,21,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,CTRLZ,f1,F1,0.913043,21,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,Hend,precision,Precision,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,Hend,recall,Recall,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,Hend,f1,F1,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,New,precision,Precision,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,New,recall,Recall,0.800000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,New,f1,F1,0.888889,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,w,precision,Precision,0.900000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,w,recall,Recall,0.900000,20,81,42,5,5
+CTRLZ/Hend/New/w,baseline,Базовый pipeline,w,f1,F1,0.900000,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,CTRLZ,precision,Precision,0.875000,21,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,CTRLZ,recall,Recall,1.000000,21,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,CTRLZ,f1,F1,0.933333,21,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,Hend,precision,Precision,0.894737,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,Hend,recall,Recall,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,Hend,f1,F1,0.871795,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,New,precision,Precision,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,New,recall,Recall,0.800000,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,New,f1,F1,0.888889,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,w,precision,Precision,0.863636,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,w,recall,Recall,0.950000,20,81,42,5,5
+CTRLZ/Hend/New/w,train_standardize,Стандартизация,w,f1,F1,0.904762,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,CTRLZ,precision,Precision,0.954545,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,CTRLZ,recall,Recall,1.000000,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,CTRLZ,f1,F1,0.976744,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,Hend,precision,Precision,0.888889,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,Hend,recall,Recall,0.800000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,Hend,f1,F1,0.842105,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,New,precision,Precision,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,New,recall,Recall,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,New,f1,F1,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,w,precision,Precision,0.857143,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,w,recall,Recall,0.900000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_mean_center,Центрирование примера,w,f1,F1,0.878049,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,CTRLZ,precision,Precision,0.840000,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,CTRLZ,recall,Recall,1.000000,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,CTRLZ,f1,F1,0.913043,21,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,Hend,precision,Precision,0.772727,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,Hend,recall,Recall,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,Hend,f1,F1,0.809524,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,New,precision,Precision,1.000000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,New,recall,Recall,0.750000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,New,f1,F1,0.857143,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,w,precision,Precision,0.894737,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,w,recall,Recall,0.850000,20,81,42,5,5
+CTRLZ/Hend/New/w,sample_l2_normalize,L2-нормализация,w,f1,F1,0.871795,20,81,42,5,5

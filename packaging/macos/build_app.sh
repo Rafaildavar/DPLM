@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="${APP_NAME:-GestureFlow}"
-VERSION="${GESTUREFLOW_VERSION:-local}"
+APP_NAME="${APP_NAME:-GestureBind}"
+VERSION="${GESTUREBIND_VERSION:-${GESTUREFLOW_VERSION:-local}}"
 ARTIFACT_DIR="outputs/release/${APP_NAME}-macos-${VERSION}"
 ZIP_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.zip"
 
@@ -44,7 +44,7 @@ python -m PyInstaller \
   --clean \
   --windowed \
   --name "$APP_NAME" \
-  --osx-bundle-identifier "ai.gestureflow.desktop" \
+  --osx-bundle-identifier "ai.gesturebind.desktop" \
   --collect-all flet \
   --collect-all flet_desktop \
   --collect-all mediapipe \
@@ -59,31 +59,31 @@ python -m PyInstaller \
   --add-data "configs:configs" \
   --add-data "alembic:alembic" \
   --add-data ".env.example:." \
-  packaging/macos/gestureflow_launcher.py
+  packaging/macos/gesturebind_launcher.py
 
 APP_PATH="dist/${APP_NAME}.app"
 PLIST_PATH="${APP_PATH}/Contents/Info.plist"
 
 if [[ -f "$PLIST_PATH" ]]; then
   /usr/libexec/PlistBuddy -c \
-    "Add :NSCameraUsageDescription string GestureFlow needs camera access to recognize hand gestures." \
+    "Add :NSCameraUsageDescription string GestureBind needs camera access to recognize hand gestures." \
     "$PLIST_PATH" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c \
-    "Set :NSCameraUsageDescription GestureFlow needs camera access to recognize hand gestures." \
+    "Set :NSCameraUsageDescription GestureBind needs camera access to recognize hand gestures." \
     "$PLIST_PATH"
 
   /usr/libexec/PlistBuddy -c \
-    "Add :NSMicrophoneUsageDescription string GestureFlow can use microphone access for voice assistant features." \
+    "Add :NSMicrophoneUsageDescription string GestureBind can use microphone access for voice assistant features." \
     "$PLIST_PATH" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c \
-    "Set :NSMicrophoneUsageDescription GestureFlow can use microphone access for voice assistant features." \
+    "Set :NSMicrophoneUsageDescription GestureBind can use microphone access for voice assistant features." \
     "$PLIST_PATH"
 
   /usr/libexec/PlistBuddy -c \
-    "Add :NSAppleEventsUsageDescription string GestureFlow can execute user-configured macOS automation commands." \
+    "Add :NSAppleEventsUsageDescription string GestureBind can execute user-configured macOS automation commands." \
     "$PLIST_PATH" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c \
-    "Set :NSAppleEventsUsageDescription GestureFlow can execute user-configured macOS automation commands." \
+    "Set :NSAppleEventsUsageDescription GestureBind can execute user-configured macOS automation commands." \
     "$PLIST_PATH"
 fi
 

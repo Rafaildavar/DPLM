@@ -15,12 +15,18 @@ from typing import Any, Deque, Dict, List, Optional
 import numpy as np
 
 from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,
+    STATIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+    FEATURE_DYNAMIC_CRAFT_STATS,
+    FEATURE_DYNAMIC_LANDMARK_IMAGE,
     FEATURE_DYNAMIC_SEQUENCE,
     FEATURE_DYNAMIC_SEQUENCE_72,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     build_feature_vector,
@@ -324,7 +330,11 @@ class GestureOnlineInfer:
         mode = str(
             getattr(self, "_feature_mode", FEATURE_STATIC_MEAN) or FEATURE_STATIC_MEAN
         )
-        if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+        if mode == FEATURE_STATIC_LANDMARK_IMAGE:
+            return STATIC_LANDMARK_IMAGE_TARGET_FRAMES
+        if mode in {FEATURE_DYNAMIC_SEQUENCE_72, FEATURE_DYNAMIC_LANDMARK_IMAGE}:
+            if mode == FEATURE_DYNAMIC_LANDMARK_IMAGE:
+                return DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES
             return DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES
         return DYNAMIC_SEQUENCE_TARGET_FRAMES
 
@@ -353,12 +363,12 @@ class GestureOnlineInfer:
         )
 
     def _is_two_hand_feature_dim(self, raw_feature_dim: int) -> bool:
-        if raw_feature_dim in {84, 88}:
+        if raw_feature_dim in {84, 88, 126, 130}:
             return True
         if raw_feature_dim % 2 != 0:
             return False
         per_hand_dim = raw_feature_dim // 2
-        return per_hand_dim in {42, 44}
+        return per_hand_dim in {42, 44, 63, 65}
 
     def _hand_frame_feature(
         self,
@@ -369,6 +379,26 @@ class GestureOnlineInfer:
     ) -> np.ndarray:
         pose = normalized.reshape(-1).astype(np.float32, copy=False)
         target = int(target_dim)
+        if target in {63, 65}:
+            xyz = np.asarray(hand.landmarks_xyz or [], dtype=np.float32)
+            if xyz.shape == (21, 3):
+                z = xyz[:, 2:3]
+            else:
+                z = np.zeros((21, 1), dtype=np.float32)
+            pose_xyz = np.concatenate([normalized, z], axis=1).reshape(-1)
+            if target == 63:
+                return pose_xyz.astype(np.float32, copy=False)
+
+            pts = np.asarray(hand.landmarks, dtype=np.float32)
+            wrist = (
+                pts[0]
+                if pts.shape == (21, 2)
+                else np.zeros(2, dtype=np.float32)
+            )
+            return np.concatenate([pose_xyz, wrist], axis=0).astype(
+                np.float32,
+                copy=False,
+            )
         if target <= pose.shape[0]:
             return pose[:target]
 
@@ -420,7 +450,11 @@ class GestureOnlineInfer:
             FEATURE_DYNAMIC_SEQUENCE,
             FEATURE_DYNAMIC_SEQUENCE_72,
             FEATURE_DYNAMIC_STATS,
+            FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+            FEATURE_DYNAMIC_CRAFT_STATS,
+            FEATURE_DYNAMIC_LANDMARK_IMAGE,
             FEATURE_HYBRID_STATS,
+            FEATURE_STATIC_LANDMARK_IMAGE,
         }
 
     def _window_ready_for_prediction(self) -> bool:
@@ -430,7 +464,12 @@ class GestureOnlineInfer:
         return len(self._window) >= target
 
     def _uses_global_dynamic_motion(self) -> bool:
-        return self._uses_temporal_features() and int(self._raw_feature_dim) >= 44
+        mode = getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
+        return (
+            mode != FEATURE_STATIC_LANDMARK_IMAGE
+            and self._uses_temporal_features()
+            and int(self._raw_feature_dim) >= 44
+        )
 
     def _dynamic_motion_gate(self) -> tuple[bool, dict[str, float]]:
         if not self._uses_global_dynamic_motion():
@@ -1879,7 +1918,11 @@ class GestureOnlineInfer:
     def _pose_matches_prediction(self, label: str, current_count: int | None) -> bool:
         if current_count is None or not label:
             return True
-        if self._uses_temporal_features():
+        if (
+            self._uses_temporal_features()
+            and getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
+            != FEATURE_STATIC_LANDMARK_IMAGE
+        ):
             return True
 
         signature = self._gesture_signatures.get(label) or self._gesture_signatures.get(

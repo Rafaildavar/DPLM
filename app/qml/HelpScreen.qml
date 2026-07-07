@@ -44,7 +44,7 @@ Item {
                 }
 
                 Label {
-                    text: qsTr("DPLM — жесты, камера и сценарии дипломного питча")
+                    text: qsTr("GestureBind — жесты, камера и сценарии дипломного питча")
                     font.pixelSize: 12
                     color: Material.color(Material.Grey, Material.Shade400)
                     Layout.fillWidth: true
@@ -111,7 +111,7 @@ Item {
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 13
                                 color: Material.foreground
-                                text: qsTr("DPLM объединяет интерфейс на Qt/QML, захват камеры (OpenCV) и конвейер жестов: MediaPipe для ключевых точек кисти, обучаемый классификатор (KNN в models/) и привязку жестов к системным командам.")
+                                text: qsTr("GestureBind объединяет интерфейс на Qt/QML, захват камеры (OpenCV) и конвейер жестов: MediaPipe для ключевых точек кисти, обучаемый классификатор (KNN в models/) и привязку жестов к системным командам.")
                             }
                         }
                     }

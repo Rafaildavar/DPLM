@@ -1,23 +1,23 @@
 # JMLC Dataset Profile
 
-Generated: `2026-06-24T10:08:00+00:00`
+Generated: `2026-06-24T13:03:39+00:00`
 
 ## Summary
 
 | Metric | Value |
 |---|---:|
-| Class directories | 15 |
-| Active classes | 6 |
+| Class directories | 16 |
+| Active classes | 7 |
 | Empty classes | 9 |
-| Samples | 121 |
-| Valid samples | 121 |
+| Samples | 151 |
+| Valid samples | 151 |
 | Invalid samples | 0 |
 | Active sample min | 20 |
-| Active sample max | 21 |
-| Imbalance ratio | 1.05 |
+| Active sample max | 30 |
+| Imbalance ratio | 1.5 |
 | Frame min | 30 |
-| Frame max | 30 |
-| Frame mean | 30.0 |
+| Frame max | 60 |
+| Frame mean | 35.96 |
 | Feature dimensions | 42 |
 
 ## Classes
@@ -30,6 +30,7 @@ Generated: `2026-06-24T10:08:00+00:00`
 | `Open` | 0 | 0 | 0 | n/a | n/a | n/a | n/a | - |
 | `UP` | 20 | 20 | 0 | 30 | 30 | 30.0 | 42 | - |
 | `gun` | 20 | 20 | 0 | 30 | 30 | 30.0 | 42 | - |
+| `hand_left` | 30 | 30 | 0 | 60 | 60 | 60.0 | 42 | - |
 | `hello` | 0 | 0 | 0 | n/a | n/a | n/a | n/a | - |
 | `palm` | 0 | 0 | 0 | n/a | n/a | n/a | n/a | - |
 | `peace_sign` | 0 | 0 | 0 | n/a | n/a | n/a | n/a | - |

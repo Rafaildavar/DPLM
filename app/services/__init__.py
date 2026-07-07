@@ -1,1 +1,1 @@
-"""Service layer package for DPLM."""
+"""Service layer package for GestureBind."""

@@ -69,7 +69,7 @@ def test_execute_config_notify_macos(monkeypatch):
     ok = ex.execute_config(
         {
             "action": "notify",
-            "title": "GestureFlow",
+            "title": "GestureBind",
             "message": "Рабочее место готово",
             "platform": "all",
         }
@@ -96,7 +96,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
     monkeypatch.setattr(
         ex,
         "_notify",
-        lambda message, *, title="GestureFlow": calls.append(("notify", title, message)) or True,
+        lambda message, *, title="GestureBind": calls.append(("notify", title, message)) or True,
     )
 
     ok = ex.execute_config(
@@ -106,7 +106,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
             "steps": [
                 {"action": "open_app", "app": "Preview"},
                 {"action": "wait", "seconds": 0.5},
-                {"action": "notify", "title": "GestureFlow", "message": "Готово"},
+                {"action": "notify", "title": "GestureBind", "message": "Готово"},
             ],
         }
     )
@@ -114,7 +114,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
     assert calls == [
         ("open_app", "Preview"),
         ("wait", 0.5),
-        ("notify", "GestureFlow", "Готово"),
+        ("notify", "GestureBind", "Готово"),
     ]
 
 
@@ -125,7 +125,7 @@ def test_execute_config_sequence_stops_on_failed_step(monkeypatch):
     monkeypatch.setattr(
         ex,
         "_notify",
-        lambda message, *, title="GestureFlow": calls.append(("notify", message)) or True,
+        lambda message, *, title="GestureBind": calls.append(("notify", message)) or True,
     )
 
     ok = ex.execute_config(

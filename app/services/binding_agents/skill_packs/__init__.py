@@ -1,4 +1,4 @@
-"""Filesystem skill packs for the GestureFlow binding MAS."""
+"""Filesystem skill packs for the GestureBind binding MAS."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -46,7 +46,7 @@ def _description_from_markdown(text: str) -> str:
     for line in lines:
         if line and not line.startswith("#"):
             return line.lstrip("- ").strip()
-    return "GestureFlow MAS skill pack."
+    return "GestureBind MAS skill pack."
 
 
 @lru_cache(maxsize=1)

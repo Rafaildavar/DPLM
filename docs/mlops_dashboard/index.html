@@ -3,18 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GestureFlow MLOps Dashboard</title>
+  <title>GestureBind MLOps Dashboard</title>
   <style>
     :root {
       color-scheme: dark;
       --bg: #10111d;
       --panel: #191b2b;
+      --panel-2: #202336;
       --line: #30344d;
       --text: #f5f7fb;
       --muted: #aab4c3;
       --accent: #14c6d5;
+      --accent-2: #f2b84b;
       --good: #4fd267;
       --bad: #ff5148;
+      --warn: #ffd166;
     }
     * { box-sizing: border-box; }
     body {
@@ -26,9 +29,12 @@
     }
     main { max-width: 1180px; margin: 0 auto; padding: 28px; }
     h1 { margin: 0 0 4px; font-size: 30px; }
-    h2 { margin: 0 0 14px; font-size: 18px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    h3 { margin: 0 0 10px; font-size: 15px; }
+    p { margin: 8px 0 0; }
     .muted { color: var(--muted); }
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -36,97 +42,402 @@
       padding: 16px;
       margin-top: 16px;
     }
+    .hero {
+      background: #151827;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin-top: 18px;
+    }
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    .stat {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }
     .metric { font-size: 28px; font-weight: 800; margin-top: 8px; }
+    .big-number { font-size: 30px; font-weight: 850; line-height: 1.1; margin: 8px 0 2px; }
+    .kicker { color: var(--accent-2); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      margin: 2px 4px 2px 0;
+      white-space: nowrap;
+    }
+    .chart { display: grid; gap: 10px; }
+    .bar-row { display: grid; grid-template-columns: minmax(160px, 260px) 1fr minmax(90px, auto); gap: 10px; align-items: center; }
+    .bar-label { overflow-wrap: anywhere; font-weight: 700; }
+    .bar-track { height: 12px; background: #0e101a; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+    .bar-fill.warn { background: var(--accent-2); }
+    .bar-value { color: var(--muted); text-align: right; white-space: nowrap; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid var(--line); padding: 9px 8px; text-align: left; }
     th { color: var(--muted); font-weight: 700; }
+    td { vertical-align: top; overflow-wrap: anywhere; }
     .good { color: var(--good); }
     .bad { color: var(--bad); }
+    .warn { color: var(--warn); }
     .mono { font-family: Menlo, Consolas, monospace; font-size: 12px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 560px) { main { padding: 16px; } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) {
+      .grid, .stat-row, .two-col { grid-template-columns: repeat(2, 1fr); }
+      .bar-row { grid-template-columns: 1fr; }
+      .bar-value { text-align: left; }
+    }
+    @media (max-width: 560px) {
+      main { padding: 16px; }
+      .grid, .stat-row, .two-col { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
 <main>
-  <h1>GestureFlow MLOps Dashboard</h1>
-  <div class="muted">Generated 2026-06-27T13:33:07Z</div>
+  <h1>GestureBind MLOps Dashboard</h1>
+  <div class="muted">Generated 2026-07-07T17:37:09Z</div>
+
+  <section class="hero">
+    <div class="kicker">MLflow Showcase</div>
+    <h2>Top approaches for presentation</h2>
+    <p class="muted">
+      Local MLflow history is summarized into leaderboard charts: training
+      candidates, live A/B quality, rejection safety and recent experiment
+      timeline.
+    </p>
+    <div class="stat-row">
+      <div class="stat"><div class="muted">MLflow runs</div><div class="big-number">479</div><div class="muted">tracked experiments</div></div>
+      <div class="stat"><div class="muted">Best live approach</div><div class="big-number bad">70.2%</div><div class="muted">sequence_knn / open_set_policy</div></div>
+      <div class="stat"><div class="muted">Best training score</div><div class="big-number good">94.8%</div><div class="muted">intent_gate_mlp + default_features</div></div>
+      <div class="stat"><div class="muted">Best safety layer</div><div class="big-number bad">81.6%</div><div class="muted">open_set_policy</div></div>
+    </div>
+    <p class="muted">
+      Best latest live run: no_gesture_static
+      via knn / open_set_policy;
+      source: <span class="mono">/Users/remi/Developer/GUAP/DPLM/mlflow.db</span>
+    </p>
+    <div><span class="pill">binding_agent_pipeline: 49</span><span class="pill">dynamic_prototype_experiment: 33</span><span class="pill">external_negative_dataset_benchmark: 14</span><span class="pill">external_negative_live_artifact_training: 14</span><span class="pill">intent_gate_training: 2</span><span class="pill">ipn_conversion: 4</span><span class="pill">ipn_tar_conversion: 4</span><span class="pill">live_evaluation: 291</span><span class="pill">static_rejection_verifier_training: 1</span><span class="pill">training: 41</span><span class="pill">uncategorized: 26</span></div>
+  </section>
+
 
   <section class="grid">
-    <div class="panel"><div class="muted">Live accuracy</div><div class="metric bad">43.7%</div><div class="muted">correct / all attempts</div></div>
-    <div class="panel"><div class="muted">Live attempts</div><div class="metric">103</div><div class="muted">from live_evaluation.jsonl</div></div>
+    <div class="panel"><div class="muted">Live accuracy</div><div class="metric bad">58.9%</div><div class="muted">correct / all attempts</div></div>
+    <div class="panel"><div class="muted">Live attempts</div><div class="metric">445</div><div class="muted">from live_evaluation.jsonl</div></div>
     <div class="panel"><div class="muted">Negative rejects</div><div class="metric">0</div><div class="muted">blocked by rejection layer</div></div>
-    <div class="panel"><div class="muted">Dataset samples</div><div class="metric">291</div><div class="muted">23 classes</div></div>
+    <div class="panel"><div class="muted">Dataset samples</div><div class="metric">240</div><div class="muted">12 classes</div></div>
   </section>
+
+  <section class="grid">
+    <div class="panel"><div class="muted">Usage events</div><div class="metric">4</div><div class="muted">rolling app telemetry</div></div>
+    <div class="panel"><div class="muted">Command success</div><div class="metric">100.0%</div><div class="muted">0 command attempts</div></div>
+    <div class="panel"><div class="muted">Avg confidence</div><div class="metric">100.0%</div><div class="muted">confirmed/rejected gestures</div></div>
+    <div class="panel"><div class="muted">Latest gesture</div><div class="metric">zoom</div><div class="muted">command_executed</div></div>
+  </section>
+
+  <section class="panel">
+    <h2>MLflow Top Approaches</h2>
+    <p class="muted">Presentation score = average live accuracy minus penalties for negative false positives, static hijacks and wrong dynamic direction.</p>
+    <div class="two-col">
+      <div><h3>Live profiles</h3><div class="chart"><div class="bar-row"><div class="bar-label">sequence_knn / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:100.0%"></div></div><div class="bar-value">70.2% · 3 runs</div></div><div class="bar-row"><div class="bar-label">knn / none</div><div class="bar-track"><div class="bar-fill" style="width:49.9%"></div></div><div class="bar-value">35.1% · 22 runs</div></div><div class="bar-row"><div class="bar-label">knn / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:43.8%"></div></div><div class="bar-value">30.8% · 136 runs</div></div><div class="bar-row"><div class="bar-label">sequence_mlp / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:41.7%"></div></div><div class="bar-value">29.3% · 106 runs</div></div><div class="bar-row"><div class="bar-label">dynamic_landmark_lstm_backbone / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:37.6%"></div></div><div class="bar-value">26.4% · 16 runs</div></div><div class="bar-row"><div class="bar-label">sequence_rocket / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:2.0%"></div></div><div class="bar-value">0.0% · 5 runs</div></div><div class="bar-row"><div class="bar-label">sequence_lstm_backbone / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:2.0%"></div></div><div class="bar-value">0.0% · 2 runs</div></div><div class="bar-row"><div class="bar-label">sequence_phase_hmm / open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:2.0%"></div></div><div class="bar-value">0.0% · 1 runs</div></div></div></div>
+      <div><h3>Training candidates</h3><div class="chart"><div class="bar-row"><div class="bar-label">intent_gate_mlp + default_features</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">94.8% · macro_f1</div></div><div class="bar-row"><div class="bar-label">sequence_lstm_backbone + dynamic_sequence</div><div class="bar-track"><div class="bar-fill warn" style="width:96.7%"></div></div><div class="bar-value">91.7% · sequence_lstm_optuna_best_score</div></div><div class="bar-row"><div class="bar-label">sequence_gru_backbone + dynamic_sequence</div><div class="bar-track"><div class="bar-fill warn" style="width:90.1%"></div></div><div class="bar-value">85.4% · sequence_gru_optuna_best_score</div></div><div class="bar-row"><div class="bar-label">extra_trees + static_craft_full_stats</div><div class="bar-track"><div class="bar-fill warn" style="width:76.6%"></div></div><div class="bar-value">72.6% · extra_trees_optuna_best_score</div></div><div class="bar-row"><div class="bar-label">knn + static_mean</div><div class="bar-track"><div class="bar-fill warn" style="width:76.0%"></div></div><div class="bar-value">72.0% · train_accuracy</div></div><div class="bar-row"><div class="bar-label">knn + dynamic_sequence</div><div class="bar-track"><div class="bar-fill warn" style="width:76.0%"></div></div><div class="bar-value">72.0% · train_accuracy</div></div><div class="bar-row"><div class="bar-label">sequence_ensemble + dynamic_sequence</div><div class="bar-track"><div class="bar-fill warn" style="width:76.0%"></div></div><div class="bar-value">72.0% · train_accuracy</div></div><div class="bar-row"><div class="bar-label">sequence_shapelet + dynamic_sequence_72</div><div class="bar-track"><div class="bar-fill warn" style="width:76.0%"></div></div><div class="bar-value">72.0% · train_accuracy</div></div></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Live A/B Scoreboard</h2>
+    <table><thead><tr><th>Approach</th><th>Runs</th><th>Score</th><th>Accuracy</th><th>Recall</th><th>Neg FP</th><th>Static hijack</th><th>Latency</th></tr></thead><tbody><tr><td>sequence_knn / open_set_policy</td><td>3</td><td>70.2%</td><td>76.2%</td><td>70.0%</td><td>0.0%</td><td>0.0%</td><td>3.59 s</td></tr>
+<tr><td>knn / none</td><td>22</td><td>35.1%</td><td>41.2%</td><td>40.6%</td><td>4.5%</td><td>18.2%</td><td>951 ms</td></tr>
+<tr><td>knn / open_set_policy</td><td>136</td><td>30.8%</td><td>37.6%</td><td>36.9%</td><td>6.2%</td><td>18.5%</td><td>929 ms</td></tr>
+<tr><td>sequence_mlp / open_set_policy</td><td>106</td><td>29.3%</td><td>37.4%</td><td>37.4%</td><td>9.4%</td><td>19.0%</td><td>525 ms</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone / open_set_policy</td><td>16</td><td>26.4%</td><td>34.4%</td><td>34.4%</td><td>9.4%</td><td>18.8%</td><td>333 ms</td></tr>
+<tr><td>sequence_rocket / open_set_policy</td><td>5</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>20.0%</td><td>2.82 s</td></tr>
+<tr><td>sequence_lstm_backbone / open_set_policy</td><td>2</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>5.6%</td><td>2.21 s</td></tr>
+<tr><td>sequence_phase_hmm / open_set_policy</td><td>1</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>10.0%</td><td>6.07 s</td></tr></tbody></table>
+    <h3>Best individual live runs</h3>
+    <table><thead><tr><th>Expected</th><th>Approach</th><th>Runs</th><th>Accuracy</th><th>Recall</th><th>Neg FP</th><th>Wrong dir</th><th>Latency</th><th>Total</th><th>Started</th></tr></thead><tbody><tr><td>no_gesture_static</td><td>knn / open_set_policy</td><td>25</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>1.20 s</td><td>25</td><td>2026-06-29 20:35</td></tr>
+<tr><td>no_gesture_static</td><td>sequence_mlp / open_set_policy</td><td>20</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>1.20 s</td><td>20</td><td>2026-07-05 15:09</td></tr>
+<tr><td>no_gesture_static</td><td>dynamic_landmark_lstm_backbone / open_set_policy</td><td>3</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>1.20 s</td><td>3</td><td>2026-07-06 15:50</td></tr>
+<tr><td>swipe_left</td><td>knn / none</td><td>1</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>1.46 s</td><td>10</td><td>2026-06-27 17:26</td></tr>
+<tr><td>swipe_left</td><td>sequence_knn / open_set_policy</td><td>1</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>1.74 s</td><td>20</td><td>2026-06-29 16:38</td></tr>
+<tr><td>swipe_up</td><td>sequence_knn / open_set_policy</td><td>1</td><td>100.0%</td><td>100.0%</td><td>0.0%</td><td>0.0%</td><td>5.61 s</td><td>20</td><td>2026-06-29 16:31</td></tr>
+<tr><td>swipe_left</td><td>sequence_mlp / open_set_policy</td><td>2</td><td>97.5%</td><td>97.5%</td><td>0.0%</td><td>2.5%</td><td>2.98 s</td><td>30</td><td>2026-06-29 19:09</td></tr>
+<tr><td>no_gesture_static</td><td>knn / none</td><td>5</td><td>80.0%</td><td>80.0%</td><td>20.0%</td><td>0.0%</td><td>1.72 s</td><td>19</td><td>2026-06-27 19:13</td></tr>
+<tr><td>no_command</td><td>knn / open_set_policy</td><td>18</td><td>52.8%</td><td>52.8%</td><td>47.2%</td><td>0.0%</td><td>677 ms</td><td>44</td><td>2026-06-29 20:35</td></tr>
+<tr><td>no_command</td><td>sequence_mlp / open_set_policy</td><td>20</td><td>50.0%</td><td>50.0%</td><td>50.0%</td><td>0.0%</td><td>575 ms</td><td>40</td><td>2026-07-05 15:09</td></tr>
+<tr><td>no_command</td><td>dynamic_landmark_lstm_backbone / open_set_policy</td><td>3</td><td>50.0%</td><td>50.0%</td><td>50.0%</td><td>0.0%</td><td>575 ms</td><td>6</td><td>2026-07-06 15:50</td></tr>
+<tr><td>swipe_left</td><td>knn / open_set_policy</td><td>5</td><td>42.2%</td><td>42.0%</td><td>0.0%</td><td>20.0%</td><td>3.63 s</td><td>33</td><td>2026-06-29 14:46</td></tr>
+<tr><td>swipe_down</td><td>sequence_knn / open_set_policy</td><td>1</td><td>28.6%</td><td>10.0%</td><td>0.0%</td><td>71.4%</td><td>3.42 s</td><td>7</td><td>2026-06-29 16:37</td></tr>
+<tr><td>swipe_up</td><td>knn / none</td><td>6</td><td>28.3%</td><td>28.3%</td><td>0.0%</td><td>5.0%</td><td>792 ms</td><td>24</td><td>2026-06-27 19:13</td></tr>
+<tr><td>swipe_down</td><td>knn / none</td><td>10</td><td>23.7%</td><td>22.3%</td><td>0.0%</td><td>23.0%</td><td>611 ms</td><td>32</td><td>2026-06-27 19:13</td></tr>
+<tr><td>swipe_down</td><td>knn / open_set_policy</td><td>55</td><td>18.9%</td><td>18.6%</td><td>0.0%</td><td>18.5%</td><td>628 ms</td><td>139</td><td>2026-06-29 20:35</td></tr></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Safety And Rejection</h2>
+    <div class="two-col">
+      <div><h3>Safety by rejection method</h3><div class="chart"><div class="bar-row"><div class="bar-label">open_set_policy</div><div class="bar-track"><div class="bar-fill" style="width:100.0%"></div></div><div class="bar-value">81.6% · 269 runs</div></div><div class="bar-row"><div class="bar-label">none</div><div class="bar-track"><div class="bar-fill" style="width:85.2%"></div></div><div class="bar-value">69.5% · 22 runs</div></div></div></div>
+      <div><h3>Live run accuracy</h3><div class="chart"><div class="bar-row"><div class="bar-label">no_gesture_static</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · knn / open_set_policy</div></div><div class="bar-row"><div class="bar-label">no_gesture_static</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · sequence_mlp / open_set_policy</div></div><div class="bar-row"><div class="bar-label">no_gesture_static</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · dynamic_landmark_lstm_backbone / open_set_policy</div></div><div class="bar-row"><div class="bar-label">swipe_left</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · knn / none</div></div><div class="bar-row"><div class="bar-label">swipe_left</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · sequence_knn / open_set_policy</div></div><div class="bar-row"><div class="bar-label">swipe_up</div><div class="bar-track"><div class="bar-fill warn" style="width:100.0%"></div></div><div class="bar-value">100.0% · sequence_knn / open_set_policy</div></div><div class="bar-row"><div class="bar-label">swipe_left</div><div class="bar-track"><div class="bar-fill warn" style="width:97.5%"></div></div><div class="bar-value">97.5% · sequence_mlp / open_set_policy</div></div><div class="bar-row"><div class="bar-label">no_gesture_static</div><div class="bar-track"><div class="bar-fill warn" style="width:80.0%"></div></div><div class="bar-value">80.0% · knn / none</div></div></div></div>
+    </div>
+    <table><thead><tr><th>Reject method</th><th>Runs</th><th>Safety</th><th>Negative FP</th><th>Static FP</th><th>Static hijack</th><th>Wrong dir</th></tr></thead><tbody><tr><td>open_set_policy</td><td>269</td><td>81.6%</td><td>7.4%</td><td>0.0%</td><td>18.4%</td><td>9.4%</td></tr>
+<tr><td>none</td><td>22</td><td>69.5%</td><td>4.5%</td><td>0.0%</td><td>18.2%</td><td>11.8%</td></tr></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Training Model Leaderboard</h2>
+    <p class="muted">Rank score favors CV/Optuna/test metrics; train-only accuracy is discounted so overfit runs do not dominate the presentation.</p>
+    <table><thead><tr><th>Approach</th><th>Runs</th><th>Score</th><th>Rank</th><th>Metric</th><th>Samples</th><th>Classes</th><th>Dim</th><th>Started</th></tr></thead><tbody><tr><td>intent_gate_mlp + default_features</td><td>2</td><td>94.8%</td><td>94.8%</td><td>macro_f1</td><td>731</td><td>0</td><td>25</td><td>2026-06-29 18:33</td></tr>
+<tr><td>sequence_lstm_backbone + dynamic_sequence</td><td>1</td><td>91.7%</td><td>91.7%</td><td>sequence_lstm_optuna_best_score</td><td>190</td><td>9</td><td>1 584</td><td>2026-07-05 13:12</td></tr>
+<tr><td>sequence_gru_backbone + dynamic_sequence</td><td>1</td><td>85.4%</td><td>85.4%</td><td>sequence_gru_optuna_best_score</td><td>190</td><td>9</td><td>1 584</td><td>2026-07-05 12:45</td></tr>
+<tr><td>extra_trees + static_craft_full_stats</td><td>5</td><td>72.6%</td><td>72.6%</td><td>extra_trees_optuna_best_score</td><td>300</td><td>10</td><td>1 377</td><td>2026-07-05 18:59</td></tr>
+<tr><td>knn + static_mean</td><td>3</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>221</td><td>11</td><td>63</td><td>2026-06-27 19:11</td></tr>
+<tr><td>knn + dynamic_sequence</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>210</td><td>9</td><td>1 584</td><td>2026-06-29 18:54</td></tr>
+<tr><td>sequence_ensemble + dynamic_sequence</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>190</td><td>9</td><td>1 584</td><td>2026-07-02 16:58</td></tr>
+<tr><td>sequence_shapelet + dynamic_sequence_72</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>190</td><td>9</td><td>3 168</td><td>2026-06-30 20:20</td></tr>
+<tr><td>sequence_shapelet + dynamic_sequence</td><td>2</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>190</td><td>9</td><td>1 584</td><td>2026-06-30 19:43</td></tr>
+<tr><td>sequence_mlp + dynamic_sequence</td><td>6</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>178</td><td>10</td><td>2 340</td><td>2026-06-29 19:06</td></tr>
+<tr><td>sequence_sprocket + dynamic_sequence</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>170</td><td>8</td><td>1 584</td><td>2026-06-30 17:28</td></tr>
+<tr><td>sequence_multirocket + dynamic_sequence</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>170</td><td>8</td><td>1 584</td><td>2026-06-30 17:28</td></tr>
+<tr><td>sequence_rocket + dynamic_sequence</td><td>1</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>170</td><td>8</td><td>1 584</td><td>2026-06-30 16:06</td></tr>
+<tr><td>sequence_knn + dynamic_sequence</td><td>2</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>170</td><td>8</td><td>1 584</td><td>2026-06-29 16:07</td></tr>
+<tr><td>knn + dynamic_stats</td><td>4</td><td>100.0%</td><td>72.0%</td><td>train_accuracy</td><td>170</td><td>8</td><td>271</td><td>2026-06-29 14:40</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone + dynamic_landmark_image</td><td>4</td><td>67.5%</td><td>67.5%</td><td>sequence_lstm_optuna_best_score</td><td>220</td><td>7</td><td>4 752</td><td>2026-07-06 23:50</td></tr></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Recent MLflow Timeline</h2>
+    <table><thead><tr><th>Started</th><th>Kind</th><th>Run</th><th>Status</th><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>2026-07-07 20:33</td><td>binding_agent_pipeline</td><td>binding-agent-zoom-mute_toggle</td><td>FINISHED</td><td></td><td></td></tr>
+<tr><td>2026-07-07 20:21</td><td>binding_agent_pipeline</td><td>binding-agent-hand-volume_up</td><td>FINISHED</td><td></td><td></td></tr>
+<tr><td>2026-07-07 20:13</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>90.0%</td></tr>
+<tr><td>2026-07-07 20:12</td><td>training</td><td>dynamic_landmark_lstm_backbone-dynamic_landmark_image</td><td>FINISHED</td><td>train_accuracy</td><td>93.6%</td></tr>
+<tr><td>2026-07-07 13:43</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>80.0%</td></tr>
+<tr><td>2026-07-07 13:35</td><td>training</td><td>dynamic_landmark_lstm_backbone-dynamic_landmark_image</td><td>FINISHED</td><td>train_accuracy</td><td>86.2%</td></tr>
+<tr><td>2026-07-07 13:33</td><td>training</td><td>sequence_mlp-dynamic_sequence</td><td>FINISHED</td><td>train_accuracy</td><td>100.0%</td></tr>
+<tr><td>2026-07-07 13:22</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>80.0%</td></tr>
+<tr><td>2026-07-07 12:57</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>80.0%</td></tr>
+<tr><td>2026-07-07 12:55</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>0.0%</td></tr>
+<tr><td>2026-07-07 12:55</td><td>training</td><td>sequence_mlp-dynamic_sequence</td><td>FINISHED</td><td>train_accuracy</td><td>85.0%</td></tr>
+<tr><td>2026-07-07 12:45</td><td>live_evaluation</td><td>live-swipeleft-auto-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr>
+<tr><td>2026-07-07 00:02</td><td>binding_agent_pipeline</td><td>binding-agent-swipeleft-no_action</td><td>FINISHED</td><td></td><td></td></tr>
+<tr><td>2026-07-06 23:51</td><td>dynamic_prototype_experiment</td><td>dynamic-prototype-prototype_distance</td><td>FINISHED</td><td>positive_recall</td><td>80.0%</td></tr>
+<tr><td>2026-07-06 23:50</td><td>training</td><td>dynamic_landmark_lstm_backbone-dynamic_landmark_image</td><td>FINISHED</td><td>sequence_lstm_optuna_best_score</td><td>67.5%</td></tr>
+<tr><td>2026-07-06 15:57</td><td>training</td><td>extra_trees-static_craft_full_stats</td><td>FINISHED</td><td>extra_trees_optuna_best_score</td><td>70.1%</td></tr>
+<tr><td>2026-07-06 15:54</td><td>training</td><td>extra_trees-static_craft_full_stats</td><td>FINISHED</td><td>extra_trees_optuna_best_score</td><td>70.1%</td></tr>
+<tr><td>2026-07-06 15:50</td><td>live_evaluation</td><td>live-swipe_up-auto-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr>
+<tr><td>2026-07-06 15:50</td><td>live_evaluation</td><td>live-no_command-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>50.0%</td></tr>
+<tr><td>2026-07-06 15:50</td><td>live_evaluation</td><td>live-no_gesture_static-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>100.0%</td></tr>
+<tr><td>2026-07-06 15:50</td><td>live_evaluation</td><td>live-swipe_down-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr>
+<tr><td>2026-07-06 15:50</td><td>live_evaluation</td><td>live-swipe_down-dynamic-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>33.3%</td></tr>
+<tr><td>2026-07-06 15:49</td><td>live_evaluation</td><td>live-swipe_up-auto-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr>
+<tr><td>2026-07-06 15:49</td><td>live_evaluation</td><td>live-no_command-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>50.0%</td></tr>
+<tr><td>2026-07-06 15:49</td><td>live_evaluation</td><td>live-no_gesture_static-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>100.0%</td></tr>
+<tr><td>2026-07-06 15:49</td><td>live_evaluation</td><td>live-swipe_down-static-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr>
+<tr><td>2026-07-06 15:49</td><td>live_evaluation</td><td>live-swipe_down-dynamic-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>33.3%</td></tr>
+<tr><td>2026-07-06 13:22</td><td>live_evaluation</td><td>live-swipe_up-auto-dynamic_landmark_lstm_backbone-open_set_policy</td><td>FINISHED</td><td>live_accuracy</td><td>0.0%</td></tr></tbody></table>
+  </section>
+
 
   <section class="panel">
     <h2>Runtime</h2>
     <table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>mode</td><td>auto</td></tr>
-<tr><td>dynamic profile</td><td>knn</td></tr>
+<tr><td>dynamic profile</td><td>dynamic_landmark_lstm_backbone</td></tr>
 <tr><td>target FPS</td><td>30</td></tr>
-<tr><td>inference avg ms</td><td>28.527</td></tr>
-<tr><td>inference p95 ms</td><td>52.938</td></tr>
-<tr><td>FPS capacity</td><td>35.05</td></tr>
+<tr><td>inference avg ms</td><td>25.929</td></tr>
+<tr><td>inference p95 ms</td><td>91.821</td></tr>
+<tr><td>FPS capacity</td><td>38.57</td></tr>
 <tr><td>shared detection rate</td><td>1.0</td></tr></tbody></table>
   </section>
 
   <section class="panel">
+    <h2>Live Usage</h2>
+    <p class="muted">
+      Source: <span class="mono">/Users/remi/.dplm/logs/live_usage_events.jsonl</span>
+    </p>
+    <div class="two-col">
+      <div>
+        <h3>Event Types</h3>
+        <table><thead><tr><th>Event</th><th>Count</th></tr></thead><tbody><tr><td>command_executed</td><td>4</td></tr></tbody></table>
+      </div>
+      <div>
+        <h3>Recognized Labels</h3>
+        <table><thead><tr><th>Label</th><th>Count</th></tr></thead><tbody><tr><td>zoom</td><td>4</td></tr></tbody></table>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <h3>Routes</h3>
+        <table><thead><tr><th>Route</th><th>Count</th></tr></thead><tbody><tr><td>dynamic</td><td>4</td></tr></tbody></table>
+      </div>
+      <div>
+        <h3>Latest Event</h3>
+        <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>event</td><td>command_executed</td></tr>
+<tr><td>label</td><td>zoom</td></tr>
+<tr><td>confidence</td><td>100.0%</td></tr>
+<tr><td>route</td><td>dynamic</td></tr>
+<tr><td>executed</td><td>yes</td></tr>
+<tr><td>reason</td><td>mute_toggle</td></tr>
+<tr><td>command</td><td>mute_toggle</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Live Evaluation By Label</h2>
-    <table><thead><tr><th>Expected</th><th>Attempts</th><th>Correct</th><th>Wrong</th><th>Missed</th><th>Accuracy</th></tr></thead><tbody><tr><td>swipe_down</td><td>61</td><td>22</td><td>27</td><td>2</td><td>36.1%</td></tr>
-<tr><td>swipe_left</td><td>22</td><td>11</td><td>10</td><td>1</td><td>50.0%</td></tr>
-<tr><td>swipe_up</td><td>20</td><td>12</td><td>8</td><td>0</td><td>60.0%</td></tr></tbody></table>
+    <table><thead><tr><th>Expected</th><th>Attempts</th><th>Correct</th><th>Wrong</th><th>Missed</th><th>Accuracy</th></tr></thead><tbody><tr><td>SwipeLeft</td><td>10</td><td>0</td><td>10</td><td>0</td><td>0.0%</td></tr>
+<tr><td>UpAndLeft</td><td>19</td><td>0</td><td>16</td><td>3</td><td>0.0%</td></tr>
+<tr><td>no_command</td><td>10</td><td>10</td><td>0</td><td>0</td><td>100.0%</td></tr>
+<tr><td>no_gesture_static</td><td>15</td><td>0</td><td>15</td><td>0</td><td>0.0%</td></tr>
+<tr><td>r</td><td>6</td><td>0</td><td>6</td><td>0</td><td>0.0%</td></tr>
+<tr><td>swipe_down</td><td>125</td><td>52</td><td>55</td><td>8</td><td>41.6%</td></tr>
+<tr><td>swipe_left</td><td>115</td><td>91</td><td>12</td><td>12</td><td>79.1%</td></tr>
+<tr><td>swipe_up</td><td>144</td><td>109</td><td>29</td><td>6</td><td>75.7%</td></tr>
+<tr><td>t</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0.0%</td></tr></tbody></table>
   </section>
 
   <section class="panel">
     <h2>Routes And Decisions</h2>
-    <table><thead><tr><th>Route</th><th>Count</th></tr></thead><tbody><tr><td>dynamic</td><td>34</td></tr>
-<tr><td>static</td><td>7</td></tr>
+    <table><thead><tr><th>Route</th><th>Count</th></tr></thead><tbody><tr><td>dynamic</td><td>327</td></tr>
+<tr><td>none</td><td>36</td></tr>
+<tr><td>static</td><td>20</td></tr>
 <tr><td>unknown</td><td>62</td></tr></tbody></table>
-    <table><thead><tr><th>Dynamic decision source</th><th>Count</th></tr></thead><tbody><tr><td>motion_and_model_agree</td><td>19</td></tr>
-<tr><td>unknown</td><td>84</td></tr></tbody></table>
+    <table><thead><tr><th>Dynamic decision source</th><th>Count</th></tr></thead><tbody><tr><td>motion_and_model_agree</td><td>205</td></tr>
+<tr><td>motion_and_prototype_agree</td><td>27</td></tr>
+<tr><td>motion_over_prototype_reject</td><td>79</td></tr>
+<tr><td>prototype_accepted</td><td>1</td></tr>
+<tr><td>unknown</td><td>133</td></tr></tbody></table>
+    <table><thead><tr><th>Static rejection method</th><th>Count</th></tr></thead><tbody><tr><td>open_set_policy</td><td>271</td></tr>
+<tr><td>unknown</td><td>174</td></tr></tbody></table>
+    <table><thead><tr><th>Static decision source</th><th>Count</th></tr></thead><tbody><tr><td>accepted</td><td>15</td></tr>
+<tr><td>finger_count_rejected</td><td>1</td></tr>
+<tr><td>margin_rejected</td><td>2</td></tr>
+<tr><td>negative_rejected</td><td>109</td></tr>
+<tr><td>prototype_rejected</td><td>4</td></tr>
+<tr><td>unknown</td><td>314</td></tr></tbody></table>
+    <table><thead><tr><th>Static rejection reason</th><th>Count</th></tr></thead><tbody><tr><td>far_from_prototype</td><td>4</td></tr>
+<tr><td>finger_count_mismatch</td><td>1</td></tr>
+<tr><td>low_confidence</td><td>1</td></tr>
+<tr><td>low_margin</td><td>2</td></tr>
+<tr><td>negative_class</td><td>109</td></tr>
+<tr><td>no_label</td><td>157</td></tr>
+<tr><td>none</td><td>171</td></tr></tbody></table>
   </section>
 
   <section class="panel">
     <h2>Dataset</h2>
-    <table><thead><tr><th>Gesture type</th><th>Count</th></tr></thead><tbody><tr><td>dynamic</td><td>70</td></tr>
-<tr><td>negative</td><td>100</td></tr>
-<tr><td>static</td><td>121</td></tr></tbody></table>
-    <table><thead><tr><th>Label</th><th>Type</th><th>Samples</th></tr></thead><tbody><tr><td>CTRLZ</td><td>static</td><td>21</td></tr>
-<tr><td>Hend</td><td>static</td><td>20</td></tr>
-<tr><td>Newest</td><td>static</td><td>0</td></tr>
-<tr><td>Open</td><td>static</td><td>0</td></tr>
-<tr><td>UP</td><td>static</td><td>20</td></tr>
+    <table><thead><tr><th>Gesture type</th><th>Count</th></tr></thead><tbody><tr><td>negative</td><td>100</td></tr>
+<tr><td>static</td><td>140</td></tr></tbody></table>
+    <table><thead><tr><th>Label</th><th>Type</th><th>Samples</th></tr></thead><tbody><tr><td>2Finger</td><td>static</td><td>20</td></tr>
+<tr><td>Like</td><td>static</td><td>20</td></tr>
+<tr><td>OneFInger</td><td>static</td><td>20</td></tr>
+<tr><td>SwipeLeft</td><td>static</td><td>20</td></tr>
 <tr><td>gun</td><td>static</td><td>20</td></tr>
-<tr><td>hello</td><td>static</td><td>0</td></tr>
+<tr><td>hand</td><td>static</td><td>20</td></tr>
 <tr><td>no_gesture_static</td><td>negative</td><td>20</td></tr>
-<tr><td>palm</td><td>static</td><td>0</td></tr>
 <tr><td>partial_swipe</td><td>negative</td><td>20</td></tr>
-<tr><td>peace_sign</td><td>static</td><td>0</td></tr>
 <tr><td>random_motion</td><td>negative</td><td>20</td></tr>
 <tr><td>return_motion</td><td>negative</td><td>20</td></tr>
-<tr><td>sh3</td><td>static</td><td>20</td></tr>
-<tr><td>swipe_down</td><td>dynamic</td><td>20</td></tr>
-<tr><td>swipe_left</td><td>dynamic</td><td>30</td></tr>
-<tr><td>swipe_right</td><td>dynamic</td><td>0</td></tr>
-<tr><td>swipe_up</td><td>dynamic</td><td>20</td></tr>
-<tr><td>test_gesture</td><td>static</td><td>0</td></tr>
-<tr><td>three</td><td>static</td><td>20</td></tr>
-<tr><td>thumbs_up</td><td>static</td><td>0</td></tr>
 <tr><td>wrong_axis_motion</td><td>negative</td><td>20</td></tr>
-<tr><td>ываы</td><td>static</td><td>0</td></tr></tbody></table>
+<tr><td>zoom</td><td>static</td><td>20</td></tr></tbody></table>
   </section>
 
   <section class="panel">
     <h2>Model Artifacts</h2>
-    <table><thead><tr><th>Name</th><th>Bytes</th><th>SHA256</th><th>Modified</th></tr></thead><tbody><tr><td>classes.json</td><td>60</td><td>d1b381dd0c4d30a4</td><td>2026-06-18 20:35:29</td></tr>
-<tr><td>dynamic_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-27 16:33:00</td></tr>
+    <table><thead><tr><th>Name</th><th>Bytes</th><th>SHA256</th><th>Modified</th></tr></thead><tbody><tr><td>classes.json</td><td>162</td><td>0ef78ef3156b2a3a</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_classes.json</td><td>160</td><td>17b9c4627b4b04cf</td><td>2026-07-07 13:33:33</td></tr>
 <tr><td>dynamic_extra_trees.pkl</td><td>5365737</td><td>9637f8e783a7eb5b</td><td>2026-06-25 20:20:34</td></tr>
-<tr><td>dynamic_feature_dim.txt</td><td>3</td><td>3635a91e3da857f7</td><td>2026-06-27 16:33:00</td></tr>
-<tr><td>dynamic_feature_mode.txt</td><td>13</td><td>aae36efb497a8d46</td><td>2026-06-27 16:33:00</td></tr>
-<tr><td>dynamic_knn.pkl</td><td>186491</td><td>26a843dfdf6da1f9</td><td>2026-06-27 16:33:00</td></tr>
+<tr><td>dynamic_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_knn.pkl</td><td>186491</td><td>90bc7532d07402b5</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_knn_rejection.json</td><td>67114</td><td>ce0a5d78a7483946</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone.pkl</td><td>285510</td><td>3ecae6ea0616c5e3</td><td>2026-07-07 20:12:32</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_classes.json</td><td>130</td><td>25e3f65b067084f5</td><td>2026-07-07 20:12:32</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_feature_dim.txt</td><td>4</td><td>11b6d5d62c0c8d75</td><td>2026-07-07 20:12:32</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_feature_mode.txt</td><td>22</td><td>f80e072e4c19d034</td><td>2026-07-07 20:12:32</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_optuna.json</td><td>339</td><td>94dc26388161d032</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_prototypes.json</td><td>8060396</td><td>e8696621a163dcf9</td><td>2026-07-07 20:13:17</td></tr>
+<tr><td>dynamic_landmark_lstm_backbone_rejection.json</td><td>847561</td><td>4c0c32dd69d279fe</td><td>2026-07-07 20:12:32</td></tr>
+<tr><td>dynamic_prototypes.json</td><td>3447011</td><td>e649981c8eba466f</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-29 16:07:33</td></tr>
+<tr><td>dynamic_sequence_ensemble.pkl</td><td>818638</td><td>6b624110ee8fdbef</td><td>2026-07-02 16:58:10</td></tr>
+<tr><td>dynamic_sequence_ensemble_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-07-02 16:58:10</td></tr>
+<tr><td>dynamic_sequence_ensemble_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-07-02 16:58:10</td></tr>
+<tr><td>dynamic_sequence_ensemble_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-07-02 16:58:10</td></tr>
+<tr><td>dynamic_sequence_ensemble_prototypes.json</td><td>3850860</td><td>0d1e9afcd7f3cdfc</td><td>2026-07-02 17:01:38</td></tr>
+<tr><td>dynamic_sequence_ensemble_rejection.json</td><td>414676</td><td>608c748d21320d93</td><td>2026-07-02 16:58:10</td></tr>
+<tr><td>dynamic_sequence_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-29 16:07:33</td></tr>
+<tr><td>dynamic_sequence_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-29 16:07:33</td></tr>
+<tr><td>dynamic_sequence_gru_backbone.pkl</td><td>1786568</td><td>aa0af2e2a649df4d</td><td>2026-07-05 12:45:20</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-07-05 12:45:20</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-07-05 12:45:20</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-07-05 12:45:20</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_optuna.json</td><td>352</td><td>f4bf3cfe0de96aba</td><td>2026-07-05 12:45:13</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_prototypes.json</td><td>3851116</td><td>1b9a9b8f584668df</td><td>2026-07-05 12:45:55</td></tr>
+<tr><td>dynamic_sequence_gru_backbone_rejection.json</td><td>414680</td><td>efb293d31c97c0db</td><td>2026-07-05 12:45:20</td></tr>
+<tr><td>dynamic_sequence_knn.pkl</td><td>1079331</td><td>cd5185b110f9c2a7</td><td>2026-06-29 16:07:33</td></tr>
+<tr><td>dynamic_sequence_knn_rejection.json</td><td>369106</td><td>5aa1367706fe49c4</td><td>2026-06-29 16:07:33</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone.pkl</td><td>154806</td><td>a15145da07e2804a</td><td>2026-07-05 13:12:47</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-07-05 13:12:47</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-07-05 13:12:47</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-07-05 13:12:47</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_optuna.json</td><td>352</td><td>1f6c4b791f9b8458</td><td>2026-07-05 13:12:41</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_prototypes.json</td><td>3851116</td><td>1b9a9b8f584668df</td><td>2026-07-05 13:13:06</td></tr>
+<tr><td>dynamic_sequence_lstm_backbone_rejection.json</td><td>414681</td><td>51f31e3723e0f297</td><td>2026-07-05 13:12:47</td></tr>
+<tr><td>dynamic_sequence_mlp.pkl</td><td>3766769</td><td>57b2d1103992d0c3</td><td>2026-07-07 13:33:48</td></tr>
+<tr><td>dynamic_sequence_mlp_classes.json</td><td>120</td><td>68b72d618eaf2429</td><td>2026-07-07 13:33:48</td></tr>
+<tr><td>dynamic_sequence_mlp_feature_dim.txt</td><td>4</td><td>f15a3a5d34619f23</td><td>2026-07-07 13:33:48</td></tr>
+<tr><td>dynamic_sequence_mlp_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-07-07 13:33:48</td></tr>
+<tr><td>dynamic_sequence_mlp_prototypes.json</td><td>3447011</td><td>e649981c8eba466f</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_mlp_rejection.json</td><td>352256</td><td>4bb13464a5694db8</td><td>2026-07-07 13:33:48</td></tr>
+<tr><td>dynamic_sequence_multirocket.pkl</td><td>243752</td><td>8b268d7113c0493c</td><td>2026-06-30 17:27:58</td></tr>
+<tr><td>dynamic_sequence_multirocket_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-30 17:27:58</td></tr>
+<tr><td>dynamic_sequence_multirocket_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-30 17:27:58</td></tr>
+<tr><td>dynamic_sequence_multirocket_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-30 17:27:58</td></tr>
+<tr><td>dynamic_sequence_multirocket_prototypes.json</td><td>3446755</td><td>198860f89df7e4eb</td><td>2026-06-30 17:29:00</td></tr>
+<tr><td>dynamic_sequence_multirocket_rejection.json</td><td>369115</td><td>7ccbf9095e72b7c4</td><td>2026-06-30 17:27:58</td></tr>
+<tr><td>dynamic_sequence_phase_hmm.pkl</td><td>86535</td><td>73a0829a44e11ff2</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_phase_hmm_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_phase_hmm_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-30 19:44:23</td></tr>
+<tr><td>dynamic_sequence_phase_hmm_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-30 19:44:23</td></tr>
+<tr><td>dynamic_sequence_phase_hmm_prototypes.json</td><td>3851116</td><td>427a94d941ff2ab7</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_phase_hmm_rejection.json</td><td>414677</td><td>cf43e3dc2c1cedec</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_prototypes.json</td><td>3446755</td><td>198860f89df7e4eb</td><td>2026-06-29 16:44:54</td></tr>
+<tr><td>dynamic_sequence_rocket.pkl</td><td>126760</td><td>0373f481d203e6ad</td><td>2026-06-30 16:06:55</td></tr>
+<tr><td>dynamic_sequence_rocket_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-30 16:06:55</td></tr>
+<tr><td>dynamic_sequence_rocket_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-30 16:06:55</td></tr>
+<tr><td>dynamic_sequence_rocket_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-30 16:06:55</td></tr>
+<tr><td>dynamic_sequence_rocket_prototypes.json</td><td>3447011</td><td>e649981c8eba466f</td><td>2026-06-30 16:07:15</td></tr>
+<tr><td>dynamic_sequence_rocket_rejection.json</td><td>369110</td><td>0f3e5df5332603de</td><td>2026-06-30 16:06:55</td></tr>
+<tr><td>dynamic_sequence_shapelet.pkl</td><td>142144</td><td>95a02993655ba7c0</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_shapelet_72.pkl</td><td>142144</td><td>978627c6b37507c9</td><td>2026-06-30 20:20:08</td></tr>
+<tr><td>dynamic_sequence_shapelet_72_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-06-30 20:20:08</td></tr>
+<tr><td>dynamic_sequence_shapelet_72_feature_dim.txt</td><td>4</td><td>4fdc8d7d404bc073</td><td>2026-06-30 20:20:08</td></tr>
+<tr><td>dynamic_sequence_shapelet_72_feature_mode.txt</td><td>19</td><td>1292ac738b7ec29b</td><td>2026-06-30 20:20:08</td></tr>
+<tr><td>dynamic_sequence_shapelet_72_prototypes.json</td><td>7714328</td><td>ba6131f7735ff1db</td><td>2026-06-30 20:20:31</td></tr>
+<tr><td>dynamic_sequence_shapelet_72_rejection.json</td><td>826273</td><td>cd26f50a19af3741</td><td>2026-06-30 20:20:08</td></tr>
+<tr><td>dynamic_sequence_shapelet_classes.json</td><td>166</td><td>4ca997883e93543b</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_shapelet_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-30 19:43:56</td></tr>
+<tr><td>dynamic_sequence_shapelet_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-30 19:43:56</td></tr>
+<tr><td>dynamic_sequence_shapelet_prototypes.json</td><td>3851116</td><td>427a94d941ff2ab7</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_shapelet_rejection.json</td><td>414677</td><td>6b9cbd6cc7a6db57</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>dynamic_sequence_sprocket.pkl</td><td>303592</td><td>9d9248800527c1d0</td><td>2026-06-30 17:28:33</td></tr>
+<tr><td>dynamic_sequence_sprocket_classes.json</td><td>151</td><td>40a04edb3e1a07d5</td><td>2026-06-30 17:28:33</td></tr>
+<tr><td>dynamic_sequence_sprocket_feature_dim.txt</td><td>4</td><td>9ea3f4147c0d763c</td><td>2026-06-30 17:28:33</td></tr>
+<tr><td>dynamic_sequence_sprocket_feature_mode.txt</td><td>16</td><td>acced00262833d29</td><td>2026-06-30 17:28:33</td></tr>
+<tr><td>dynamic_sequence_sprocket_prototypes.json</td><td>3446755</td><td>198860f89df7e4eb</td><td>2026-06-30 17:29:33</td></tr>
+<tr><td>dynamic_sequence_sprocket_rejection.json</td><td>369111</td><td>f6c7bb559306fa22</td><td>2026-06-30 17:28:33</td></tr>
 <tr><td>dynamic_svm.pkl</td><td>432029</td><td>666633a9acfbe08f</td><td>2026-06-25 20:20:25</td></tr>
-<tr><td>feature_dim.txt</td><td>2</td><td>73475cb40a568e8d</td><td>2026-06-18 20:35:29</td></tr>
-<tr><td>knn.pkl</td><td>22123</td><td>a0e5de114fb37c9e</td><td>2026-06-18 20:35:29</td></tr></tbody></table>
+<tr><td>feature_dim.txt</td><td>4</td><td>2a1d1388f992dbca</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>feature_mode.txt</td><td>23</td><td>73e279c56676289d</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>gesture_rejection.json</td><td>395752</td><td>dcfa98f40300b61d</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>intent_gate_metadata.json</td><td>193</td><td>f1a7bf953c666cc6</td><td>2026-06-29 18:32:52</td></tr>
+<tr><td>intent_gate_mlp.pkl</td><td>74435</td><td>b2648d26c73c0297</td><td>2026-06-29 18:32:52</td></tr>
+<tr><td>knn.pkl</td><td>2259641</td><td>d1a2a5277128bf57</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>knn_optuna.json</td><td>389</td><td>83297b566f5c9c8d</td><td>2026-07-07 13:33:33</td></tr>
+<tr><td>static_rejection_verifiers.pkl</td><td>1917679</td><td>41558e4b1b59d35c</td><td>2026-06-28 10:07:39</td></tr></tbody></table>
   </section>
 </main>
 </body>

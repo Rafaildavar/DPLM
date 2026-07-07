@@ -75,4 +75,6 @@ def test_sync_db_commands_to_executor(memory_session):
 
 def test_action_spec_schema_has_known_actions():
     assert "open_app" in ACTION_SPEC_SCHEMA
+    assert "open_path" in ACTION_SPEC_SCHEMA
     assert "scroll" in ACTION_SPEC_SCHEMA
+    assert "sequence" in ACTION_SPEC_SCHEMA

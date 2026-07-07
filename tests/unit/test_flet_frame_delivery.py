@@ -80,6 +80,19 @@ class _InspectorController:
         return _Path()
 
 
+class _RecognitionLabelsController:
+    def list_recognition_labels(self):
+        return ["FreshGesture"]
+
+
+class _ToggleController:
+    def __init__(self):
+        self.toggle_calls = 0
+
+    def toggle_recognition(self):
+        self.toggle_calls += 1
+
+
 def _frame_view(view_type):
     view = object.__new__(view_type)
     view._page = _QueuedPage()
@@ -89,6 +102,31 @@ def _frame_view(view_type):
     view._frame_update_pending = False
     view._camera_image = _Image()
     return view
+
+
+def test_home_expected_label_options_do_not_add_stale_swipe_fallbacks():
+    view = object.__new__(HomeView)
+    view._controller = _RecognitionLabelsController()
+
+    labels = view._recognition_label_options()
+
+    assert labels == ["no_command", "FreshGesture"]
+    assert "swipe_down" not in labels
+    assert "swipe_left" not in labels
+
+
+def test_home_toggle_runs_recognition_change_off_ui_handler():
+    view = object.__new__(HomeView)
+    view._page = _QueuedPage()
+    view._controller = _ToggleController()
+
+    view._on_toggle(None)
+
+    assert view._controller.toggle_calls == 0
+    assert len(view._page.calls) == 1
+    callback, args = view._page.calls.pop()
+    callback(*args)
+    assert view._controller.toggle_calls == 1
 
 
 def _gesture_view():

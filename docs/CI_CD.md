@@ -1,4 +1,4 @@
-# GestureFlow CI/CD
+# GestureBind CI/CD
 
 ## Status
 
@@ -38,7 +38,7 @@ make docker-ml-smoke
 make docker-ci
 ```
 
-Builds the local `gestureflow-runtime:local` image and runs the same checks in a
+Builds the local `gesturebind-runtime:local` image and runs the same checks in a
 clean Linux container. This validates the project outside the developer's macOS
 virtualenv and makes CD more realistic.
 
@@ -68,7 +68,7 @@ Starts an MLflow UI service from the Docker runtime image on
 make macos-app
 ```
 
-Builds a macOS `GestureFlow.app` archive through
+Builds a macOS `GestureBind.app` archive through
 `packaging/macos/build_app.sh`. This target is intended for macOS machines and
 GitHub-hosted macOS runners.
 
@@ -147,7 +147,7 @@ Trigger:
 
 Checks:
 
-- build `gestureflow-runtime:<sha>` from `Dockerfile`;
+- build `gesturebind-runtime:<sha>` from `Dockerfile`;
 - run `make ml-smoke` inside the container;
 - upload Docker image metadata as artifact.
 
@@ -166,7 +166,7 @@ Trigger:
 
 Output:
 
-- `gestureflow-<version>.tar.gz`;
+- `gesturebind-<version>.tar.gz`;
 - draft GitHub Release for tag builds.
 
 Current release is a handoff bundle, not yet a native installer. It contains
@@ -186,7 +186,7 @@ Checks:
 - install project dependencies on a macOS runner;
 - run `scripts.ml_smoke` before packaging;
 - pre-bundle the Flet desktop client archive when available;
-- build `GestureFlow.app` with PyInstaller/Flet;
+- build `GestureBind.app` with PyInstaller/Flet;
 - add macOS camera/microphone/automation usage descriptions to `Info.plist`;
 - ad-hoc sign the app;
 - upload a `.zip` artifact and attach it to draft releases on tags.
@@ -199,7 +199,7 @@ Purpose:
 
 ## Desktop Deployment Logic
 
-GestureFlow is currently a desktop Flet application with local camera access and
+GestureBind is currently a desktop Flet application with local camera access and
 local model files. CI cannot honestly test a real webcam stream on GitHub-hosted
 runners, so the pipeline is split:
 

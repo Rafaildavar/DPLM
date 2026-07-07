@@ -1,6 +1,6 @@
 """
-Тестовый пакет для проекта DPLM
-Test package for DPLM project
+Тестовый пакет для проекта GestureBind
+Test package for GestureBind project
 
 Структура тестов / Test structure:
 - tests/unit/ — юнит-тесты (изолированные тесты функций)
@@ -15,4 +15,3 @@ Test package for DPLM project
 Требования к покрытию кода: >90%
 Code coverage requirement: >90%
 """
-

@@ -21,6 +21,7 @@ from app.flet_app.controller import (
     DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_GESTURE_CONFIRM_FRAMES,
+    DYNAMIC_RECOGNITION_LONG_WINDOW,
     DYNAMIC_RECOGNITION_WINDOW,
     GESTURE_CONFIRM_FRAMES,
     LIVE_EVAL_NO_COMMAND_LABEL,
@@ -104,6 +105,42 @@ def test_runtime_performance_writes_aggregated_jsonl(monkeypatch, tmp_path):
     assert rows[-1]["shared_detection_rate"] == 1.0
     assert rows[-1]["inference_ms_avg"] == 20.0
     assert rows[-1]["inference_fps_capacity"] == 50.0
+    summary = json.loads((tmp_path / "live_usage_summary.json").read_text())
+    assert summary["latest_runtime"]["inference_ms_avg"] == 20.0
+
+
+def test_live_usage_event_writes_jsonl_and_summary(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE
+    controller._static_rejection_method = "open_set_policy"
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    controller._record_live_usage_event(
+        "command_executed",
+        "zoom",
+        0.96,
+        executed=True,
+        route_metadata={
+            "route": "dynamic",
+            "selected_reason": "dynamic_accepted",
+        },
+        command_info="zoom: Open App",
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "live_usage_events.jsonl").read_text().splitlines()
+    ]
+    summary = json.loads((tmp_path / "live_usage_summary.json").read_text())
+    assert rows[-1]["label"] == "zoom"
+    assert rows[-1]["event_type"] == "command_executed"
+    assert rows[-1]["route"] == "dynamic"
+    assert summary["total_events"] == 1
+    assert summary["command_attempts"] == 1
+    assert summary["executed_events"] == 1
+    assert summary["command_success_rate"] == 1.0
+    assert summary["label_counts"]["zoom"] == 1
 
 
 def test_list_commands_includes_action_category_and_config():
@@ -152,7 +189,7 @@ def test_build_training_command_filters_to_active_db_labels(monkeypatch, tmp_pat
         expect_dim=42,
     )
 
-    assert "--lowercase-labels" in cmd
+    assert "--lowercase-labels" not in cmd
     assert cmd.count("--include-label") == 2
     assert cmd[cmd.index("--include-label") + 1] == "new"
     assert cmd[cmd.index("--include-label", cmd.index("--include-label") + 1) + 1] == "new2"
@@ -273,7 +310,68 @@ def test_build_dynamic_prototype_training_command_uses_external_negatives(
     assert cmd[cmd.index("--mlflow-tracking-uri") + 1] == "sqlite:///tmp_mlflow.db"
 
 
-def test_build_legacy_sequence_prototype_training_command_uses_sequence_mlp_output(
+def test_build_dynamic_prototype_training_command_passes_active_user_labels(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+    monkeypatch.setattr(
+        controller,
+        "_training_labels_for_scope",
+        lambda scope: ["SwipeLeft", "random_motion"]
+        if scope == "dynamic,negative"
+        else [],
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_landmark_lstm_backbone.pkl"),
+    )
+
+    include_values = [
+        cmd[index + 1]
+        for index, item in enumerate(cmd)
+        if item == "--include-label"
+    ]
+    assert include_values == ["SwipeLeft", "random_motion"]
+
+
+def test_build_production_landmark_prototype_training_command_uses_long_window(
+    monkeypatch,
+    tmp_path,
+):
+    controller = AppController.__new__(AppController)
+    model_dir = tmp_path / "models"
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(
+        controller,
+        "_live_evaluation_mlflow_tracking_uri",
+        lambda: "sqlite:///tmp_mlflow.db",
+    )
+
+    cmd = controller._build_dynamic_prototype_training_command(
+        dynamic_model_out_path=str(model_dir / "dynamic_landmark_lstm_backbone.pkl"),
+    )
+
+    assert cmd[cmd.index("--target-frames") + 1] == str(
+        DYNAMIC_RECOGNITION_LONG_WINDOW
+    )
+    assert cmd[cmd.index("--target-dim") + 1] == "65"
+    assert cmd[cmd.index("--production-out") + 1] == str(
+        model_dir / "dynamic_landmark_lstm_backbone_prototypes.json"
+    )
+
+
+def test_build_legacy_sequence_prototype_training_command_uses_production_output(
     monkeypatch,
     tmp_path,
 ):
@@ -292,7 +390,7 @@ def test_build_legacy_sequence_prototype_training_command_uses_sequence_mlp_outp
     )
 
     assert cmd[cmd.index("--production-out") + 1] == str(
-        model_dir / "dynamic_sequence_mlp_prototypes.json"
+        model_dir / "dynamic_landmark_lstm_backbone_prototypes.json"
     )
 
 
@@ -422,6 +520,21 @@ def test_build_training_command_filters_static_scope_with_negative(monkeypatch, 
     assert include_values == ["palm", "no_gesture_static", "hand_left"]
 
 
+def test_infer_training_gesture_type_reads_dynamic_sample_metadata(tmp_path):
+    controller = AppController.__new__(AppController)
+    sample_path = tmp_path / "sample_0000.npy"
+    np.save(sample_path, np.zeros((12, 65), dtype=np.float32))
+    sample_path.with_suffix(".meta.json").write_text(
+        json.dumps({"include_global_motion": True}),
+        encoding="utf-8",
+    )
+
+    assert (
+        controller._infer_training_gesture_type("SwipeLeft", [sample_path])
+        == "dynamic"
+    )
+
+
 def test_build_negative_generation_command_uses_configured_paths(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
 
@@ -508,13 +621,13 @@ def test_embedded_model_paths_switch_to_dynamic(monkeypatch, tmp_path):
         "feature_mode.txt",
     ]
     assert [path.name for path in dynamic_paths] == [
-        "dynamic_sequence_mlp.pkl",
-        "dynamic_sequence_mlp_classes.json",
-        "dynamic_sequence_mlp_feature_dim.txt",
-        "dynamic_sequence_mlp_feature_mode.txt",
+        "dynamic_landmark_lstm_backbone.pkl",
+        "dynamic_landmark_lstm_backbone_classes.json",
+        "dynamic_landmark_lstm_backbone_feature_dim.txt",
+        "dynamic_landmark_lstm_backbone_feature_mode.txt",
     ]
     assert static_window == 30
-    assert dynamic_window == DYNAMIC_RECOGNITION_WINDOW
+    assert dynamic_window == DYNAMIC_RECOGNITION_LONG_WINDOW
 
 
 def test_embedded_dynamic_model_path_normalizes_legacy_profile(monkeypatch, tmp_path):
@@ -529,10 +642,10 @@ def test_embedded_dynamic_model_path_normalizes_legacy_profile(monkeypatch, tmp_
 
     assert controller.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_PRODUCTION
     assert [path.name for path in dynamic_paths] == [
-        "dynamic_sequence_mlp.pkl",
-        "dynamic_sequence_mlp_classes.json",
-        "dynamic_sequence_mlp_feature_dim.txt",
-        "dynamic_sequence_mlp_feature_mode.txt",
+        "dynamic_landmark_lstm_backbone.pkl",
+        "dynamic_landmark_lstm_backbone_classes.json",
+        "dynamic_landmark_lstm_backbone_feature_dim.txt",
+        "dynamic_landmark_lstm_backbone_feature_mode.txt",
     ]
 
 
@@ -1104,6 +1217,35 @@ def test_list_recorded_gestures_marks_only_user_classes_deletable(monkeypatch, t
     assert rows["IMPORTED"]["userRecordedSamples"] == 0
 
 
+def test_list_recognition_labels_ignores_stale_model_classes_by_default(
+    monkeypatch,
+    tmp_path,
+):
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "FreshGesture"
+    label_dir.mkdir(parents=True)
+    np.save(label_dir / "sample_0000.npy", np.zeros((30, 21, 2), dtype=np.float32))
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps(["old_static"]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps(["old_dynamic"]), encoding="utf-8")
+
+    controller = AppController.__new__(AppController)
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: data_root)
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_is_negative_label", lambda _label: False)
+
+    labels = controller.list_recognition_labels()
+
+    assert labels == [LIVE_EVAL_NO_COMMAND_LABEL, "FreshGesture"]
+    assert "old_static" not in labels
+    assert "old_dynamic" not in labels
+    assert "old_static" in controller.list_recognition_labels(
+        include_model_classes=True
+    )
+
+
 def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     controller = AppController.__new__(AppController)
     controller._training_proc = None
@@ -1149,6 +1291,39 @@ def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     assert controller._sample_recording["out_dir"] == tmp_path / "gestures" / "Wave"
     assert controller._status == "Запись жеста: Wave"
     assert any("Встроенная запись" in line for line in lines)
+
+
+def test_completed_training_process_does_not_block_new_recording(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+
+    class DoneProc:
+        def poll(self):
+            return 0
+
+    controller._training_proc = DoneProc()
+    controller._sample_recording = None
+    controller._sample_recording_detector = None
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    controller._is_camera_active = False
+    controller._status = "Idle"
+    controller.status_changed = _Event()
+
+    monkeypatch.setattr(controller, "_configured_data_dir", lambda: tmp_path / "gestures")
+    monkeypatch.setattr(controller, "stop_recognition", lambda: None)
+    monkeypatch.setattr(controller, "stop_embedded_recognition", lambda: None)
+
+    def fake_start_camera():
+        controller._is_camera_active = True
+
+    monkeypatch.setattr(controller, "start_camera", fake_start_camera)
+
+    ok = controller.start_recording(label="zoom", num_samples=1, frames=2)
+
+    assert ok is True
+    assert controller._training_proc is None
+    assert controller._sample_recording is not None
+    assert controller._sample_recording["label"] == "zoom"
 
 
 def test_cancel_sample_recording_closes_session_and_notifies_done():
@@ -2114,12 +2289,87 @@ def test_confirmed_dynamic_event_is_acknowledged_without_full_reset():
     assert controller._embedded_infer.acknowledge_calls == 1
 
 
+def test_auto_dynamic_route_confirms_user_label_immediately():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    states = []
+    executed = []
+    controller.gesture_state_changed.connect(states.append)
+    controller.execute_for_gesture = (
+        lambda label, conf: executed.append((label, conf)) or True
+    )
+    controller._record_recognition_event = lambda *_args: None
+
+    controller._dispatch_infer_result(
+        {
+            "label": "SwipeLeft",
+            "confidence": 0.96,
+            "landmarks_json": "[]",
+            "router": {
+                "route": "dynamic",
+                "selected_reason": "dynamic_accepted",
+            },
+        }
+    )
+
+    assert states[-1]["phase"] == "confirmed"
+    assert states[-1]["frames"] == 1
+    assert states[-1]["requiredFrames"] == DYNAMIC_GESTURE_CONFIRM_FRAMES
+    assert executed == [("SwipeLeft", pytest.approx(0.96))]
+
+
+def test_auto_static_route_waits_for_deliberate_dwell():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
+    states = []
+    executed = []
+    controller.gesture_state_changed.connect(states.append)
+    controller.execute_for_gesture = (
+        lambda label, conf: executed.append((label, conf)) or True
+    )
+    controller._record_recognition_event = lambda *_args: None
+
+    output = {
+        "label": "hand",
+        "confidence": 0.72,
+        "landmarks_json": "[]",
+        "router": {
+            "route": "static",
+            "selected_reason": "static_fallback",
+        },
+    }
+    for _ in range(AUTO_STATIC_GESTURE_CONFIRM_FRAMES - 1):
+        controller._dispatch_infer_result(output)
+
+    assert states[-1]["phase"] == "pending"
+    assert states[-1]["frames"] == AUTO_STATIC_GESTURE_CONFIRM_FRAMES - 1
+    assert states[-1]["requiredFrames"] == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
+    assert executed == []
+
+    controller._dispatch_infer_result(output)
+
+    assert states[-1]["phase"] == "confirmed"
+    assert states[-1]["frames"] == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
+    assert states[-1]["requiredFrames"] == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
+    assert executed == [("hand", pytest.approx(0.72))]
+
+
 def test_auto_static_label_requires_deliberate_dwell():
     controller = _dispatch_controller()
     controller._recognition_model_mode = RECOGNITION_MODEL_AUTO
 
     assert (
         controller._gesture_confirm_frames("gun")
+        == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
+    )
+
+
+def test_static_mode_uses_deliberate_dwell():
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "static"
+
+    assert (
+        controller._gesture_confirm_frames("hand")
         == AUTO_STATIC_GESTURE_CONFIRM_FRAMES
     )
 
@@ -2597,7 +2847,7 @@ def test_live_evaluation_completion_logs_mlflow_metrics(monkeypatch, tmp_path):
     assert calls["experiment"] == "GestureBind"
     assert (
         calls["run_name"]
-        == "live-swipe_left-auto-sequence_mlp-open_set_policy"
+        == "live-swipe_left-auto-dynamic_landmark_lstm_backbone-open_set_policy"
     )
     assert calls["log_system_metrics"] is True
     assert calls["tags"]["run_kind"] == "live_evaluation"

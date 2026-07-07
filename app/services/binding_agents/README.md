@@ -13,6 +13,23 @@ The binding assistant is organized as a small multi-agent system:
   use the deterministic local fallback so CI does not depend on API keys.
 - `skills/` contains the reusable skill catalog that agents attach to trace rows.
 
+Gesture aliases are handled outside the prompt parser by
+`app.services.gesture_aliases.GestureAliasRegistry`. The Gesture Agent checks,
+in order:
+
+- current gesture metadata (`label`, `displayName`, `display_name`, `aliases`,
+  `description`);
+- persisted user memory in `data/binding_agent/gesture_aliases.json`;
+- small system seed aliases for common gestures such as swipes and thumbs-up;
+- the legacy parser as a compatibility fallback.
+
+This lets user-trained gestures bring their own natural aliases without code
+changes. If the same alias points to several gestures, the agent returns a
+clarification instead of guessing.
+When a gesture is selected in the UI and the user names it in the prompt, the
+selected label teaches that alias to the registry so the next request works
+without manual selection.
+
 Research results follow an approval loop: a recipe can fill a draft, but it is
 written to `data/binding_agent/skill_packs/researched-actions/SKILL.md` only
 after the user approves it through the UI.

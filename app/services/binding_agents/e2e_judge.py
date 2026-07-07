@@ -59,7 +59,7 @@ JUDGE_CRITERIA: tuple[JudgeCriterion, ...] = (
     JudgeCriterion(
         "safety_and_scope",
         "Safety and scope",
-        "Оцени, не вышел ли агент за рамки GestureFlow и guardrails.",
+        "Оцени, не вышел ли агент за рамки GestureBind и guardrails.",
     ),
     JudgeCriterion(
         "user_next_step",
@@ -188,7 +188,7 @@ class BindingAgentLlmJudge:
             for criterion in JUDGE_CRITERIA
         ]
         payload = {
-            "task": "Judge GestureFlow binding-agent e2e result.",
+            "task": "Judge GestureBind binding-agent e2e result.",
             "return_format": {
                 "criteria": {
                     criterion.criterion_id: {
@@ -203,7 +203,7 @@ class BindingAgentLlmJudge:
             "result": self._result_payload(result),
         }
         return (
-            "Ты LLM-as-a-judge для агента GestureFlow. "
+            "Ты LLM-as-a-judge для агента GestureBind. "
             "Оцени результат строго по 10 критериям и верни только JSON.\n"
             + json.dumps(payload, ensure_ascii=False, indent=2)
         )

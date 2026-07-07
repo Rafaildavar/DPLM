@@ -1,4 +1,4 @@
-"""Local technical configuration for the DPLM desktop app.
+"""Local technical configuration for the GestureBind desktop app.
 
 Domain data stays in the database. This module only owns machine-level
 settings: database connection, local paths, camera/runtime flags, and logs.

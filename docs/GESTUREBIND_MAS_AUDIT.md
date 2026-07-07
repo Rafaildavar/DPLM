@@ -1,13 +1,13 @@
-# GestureFlow MAS audit
+# GestureBind MAS audit
 
 Дата: 2026-06-30
 
 Этот документ фиксирует текущую точку отсчета для многоагентной системы
-привязок GestureFlow. Он нужен, чтобы каждый следующий шаг улучшения можно
+привязок GestureBind. Он нужен, чтобы каждый следующий шаг улучшения можно
 было сверять с планом, тестами и пользовательскими сценариями.
 
 Правила развития MAS и добавления новых skills/tools вынесены в
-`docs/GESTUREFLOW_MAS_ARCHITECTURE.md`.
+`docs/GESTUREBIND_MAS_ARCHITECTURE.md`.
 
 ## Текущий pipeline
 
@@ -105,7 +105,7 @@ UI вызывает совместимый wrapper `build_agent_binding_draft`, 
 - `жест свайп вверх` -> gesture resolved, action missing.
 - `свайп вверх открыть Safari` -> gesture synonym resolved.
 - `что ты умеешь делать?` -> project question, no binding draft.
-- `какая завтра погода?` -> friendly redirect to GestureFlow.
+- `какая завтра погода?` -> friendly redirect to GestureBind.
 - `разве command+z закрывает Telegram?` -> validation answer.
 - `сделай сценарий под названием мое утро ...` -> named sequence,
   missing gesture, no guardrails refusal.

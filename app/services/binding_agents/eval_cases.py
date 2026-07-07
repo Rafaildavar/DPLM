@@ -1,4 +1,4 @@
-"""Regression/evaluation cases for the GestureFlow binding MAS."""
+"""Regression/evaluation cases for the GestureBind binding MAS."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -54,6 +54,21 @@ BINDING_AGENT_EVAL_CASES: tuple[BindingAgentEvalCase, ...] = (
         expected_mode="single",
         expected_can_apply=False,
         expected_missing=("действие",),
+    ),
+    BindingAgentEvalCase(
+        case_id="video_pause_binding",
+        prompt="привяжи жест свайп влево к поставить на паузу видео",
+        gestures=(
+            {"label": "palm"},
+            {"label": "swipe_left"},
+            {"label": "swipe_up"},
+            {"label": "swipe_down"},
+        ),
+        expected_intent="create_binding",
+        expected_block="binding",
+        expected_mode="single",
+        expected_can_apply=True,
+        expected_action="media_key",
     ),
     BindingAgentEvalCase(
         case_id="capability_question",
@@ -142,4 +157,3 @@ def binding_agent_eval_dataset() -> list[dict[str, Any]]:
         }
         for case in BINDING_AGENT_EVAL_CASES
     ]
-

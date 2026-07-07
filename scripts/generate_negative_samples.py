@@ -20,6 +20,7 @@ from app.services.gesture_taxonomy import (
 )
 from cv.dynamic_motion import resample_sequence
 from cv.gesture_features import sequence_to_matrix
+from cv.gesture_dataset_files import gesture_sample_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_NEGATIVE_LABELS = (
@@ -71,7 +72,7 @@ def load_dynamic_source_samples(
         label = label_dir.name
         if taxonomy.gesture_type_for_label(label) != GESTURE_TYPE_DYNAMIC:
             continue
-        for path in sorted(label_dir.glob("sample_*.npy")):
+        for path in gesture_sample_paths(label_dir):
             try:
                 sequence = _as_dynamic_frame_matrix(np.load(path))
             except Exception:
@@ -94,7 +95,7 @@ def load_static_source_samples(
         gesture_type = taxonomy.gesture_type_for_label(label)
         if gesture_type not in STATIC_SOURCE_TYPES:
             continue
-        for path in sorted(label_dir.glob("sample_*.npy")):
+        for path in gesture_sample_paths(label_dir):
             try:
                 sequence = _as_static_frame_matrix(np.load(path))
             except Exception:

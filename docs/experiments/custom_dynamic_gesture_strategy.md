@@ -6,7 +6,7 @@ Date: `2026-06-28`
 
 ## Core Requirement
 
-GestureFlow must support user-defined dynamic gestures, not only predefined
+GestureBind must support user-defined dynamic gestures, not only predefined
 swipes.
 
 Current swipes are useful for debugging and early evaluation, but they must not
@@ -120,7 +120,7 @@ This detector can be trained with:
 
 ## IPN Hand Role
 
-IPN Hand should not turn GestureFlow into a fixed IPN-class recognizer.
+IPN Hand should not turn GestureBind into a fixed IPN-class recognizer.
 
 Use IPN as:
 
@@ -177,7 +177,7 @@ Required metrics for arbitrary dynamic gestures:
 
 The final contest story should be:
 
-GestureFlow is a personalized gesture-recognition system. Swipes are the first
+GestureBind is a personalized gesture-recognition system. Swipes are the first
 test classes, but the ML pipeline is designed for user-defined static,
 quasi-static and dynamic gestures. Public datasets such as IPN Hand are used to
 improve rejection and robustness, while user-recorded samples define the actual

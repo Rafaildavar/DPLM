@@ -48,13 +48,13 @@ jobs:
 
       - name: Build macOS app zip
         env:
-          GESTUREFLOW_VERSION: ${{ github.ref_name }}
+          GESTUREBIND_VERSION: ${{ github.ref_name }}
         run: bash packaging/macos/build_app.sh
 
       - name: Upload macOS app artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gestureflow-macos-app
+          name: gesturebind-macos-app
           path: outputs/release/*.zip
           if-no-files-found: error
 
@@ -76,6 +76,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             outputs/release/*.zip \
             --draft \
-            --title "GestureFlow ${GITHUB_REF_NAME}" \
+            --title "GestureBind ${GITHUB_REF_NAME}" \
             --notes "macOS app bundle with tracked model artifacts and configs." \
           || gh release upload "${GITHUB_REF_NAME}" outputs/release/*.zip --clobber

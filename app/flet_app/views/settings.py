@@ -1,9 +1,4 @@
-"""
-Экран «Настройки» для Flet-версии DPLM.
-
-Технические настройки пишутся в ``~/.dplm/config.json``. Политика привязок
-R4/R5/R6 остаётся в БД, потому что это доменная настройка жестов и команд.
-"""
+"""Экран пользовательских настроек для Flet-версии GestureBind."""
 from __future__ import annotations
 
 from typing import Any
@@ -20,8 +15,6 @@ from app.flet_app.theme import (
     COLOR_SURFACE_HIGH,
     surface_card,
 )
-from app.services.diagnostics import STATUS_FAIL, STATUS_PASS, STATUS_WARN
-
 
 class SettingsView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
@@ -86,21 +79,21 @@ class SettingsView:
             "", size=13, color=COLOR_SUCCESS, visible=False
         )
 
-        self._camera_index = self._field("Camera index", recognition.get("camera_index"))
-        self._target_fps = self._field("FPS", recognition.get("target_fps"))
+        self._camera_index = self._field("Камера", recognition.get("camera_index"))
+        self._target_fps = self._field("Частота камеры", recognition.get("target_fps"))
         self._two_hands_switch = ft.Switch(
             value=bool(recognition.get("two_hands_mode")),
-            label="Режим двух рук",
+            label="Распознавать жесты двумя руками",
             active_color=COLOR_ACCENT,
         )
         self._auto_execute_switch = ft.Switch(
             value=bool(recognition.get("auto_execute_on_gesture")),
-            label="Авто-выполнение команд по жесту",
+            label="Выполнять команды по жесту",
             active_color=COLOR_ACCENT,
         )
         self._auto_start_switch = ft.Switch(
             value=bool(recognition.get("auto_start_recognition")),
-            label="Автозапуск распознавания при старте приложения",
+            label="Запускать распознавание при старте",
             active_color=COLOR_ACCENT,
         )
         self._pointer_sharpness_slider = ft.Slider(
@@ -127,7 +120,7 @@ class SettingsView:
             on_click=self._on_toggle_recognition,
         )
         self._refresh_btn = ft.OutlinedButton(
-            content=ft.Text("Обновить статус"),
+            content=ft.Text("Обновить"),
             icon=ft.Icons.REFRESH,
             on_click=lambda _e: self._refresh_status(update=True),
         )
@@ -149,7 +142,7 @@ class SettingsView:
             on_click=self._on_run_diagnostics,
         )
         self._save_tech_btn = ft.FilledButton(
-            content=ft.Text("Сохранить технические настройки", weight=ft.FontWeight.BOLD),
+            content=ft.Text("Сохранить настройки", weight=ft.FontWeight.BOLD),
             icon=ft.Icons.SAVE,
             style=ft.ButtonStyle(
                 bgcolor=COLOR_ACCENT,
@@ -185,7 +178,7 @@ class SettingsView:
         )
         self._warn_switch = ft.Switch(
             value=True,
-            label="Предупреждать о привязке опасных действий к одноручным жестам (R6)",
+            label="Предупреждать об опасных действиях",
             active_color=COLOR_ACCENT,
         )
         self._policy_status = ft.Text("", color=COLOR_SUCCESS, size=13, visible=False)
@@ -298,8 +291,9 @@ class SettingsView:
         status = self._controller.get_system_status()
         env = status.get("envOverrides") or {}
         if env:
-            pairs = ", ".join(f"{k} → {v}" for k, v in env.items())
-            self._env_warning.value = f"Значения из окружения сейчас сильнее config.json: {pairs}"
+            self._env_warning.value = (
+                "Часть настроек задана окружением и может быть недоступна для изменения."
+            )
             self._env_warning.visible = True
         else:
             self._env_warning.value = ""
@@ -307,63 +301,52 @@ class SettingsView:
 
         validation_errors = status.get("validationErrors") or []
         validation_warnings = status.get("validationWarnings") or []
+        model_ready = bool(
+            status.get("modelExists")
+            and status.get("classesExists")
+            and status.get("featureDimExists")
+        )
         controls: list[ft.Control] = [
             self._status_line(
-                "Конфиг",
-                str(status["configPath"]),
-                bool(status["configExists"]),
+                "Распознавание",
+                "запущено" if self._controller.is_recognizing else "остановлено",
+                True if self._controller.is_recognizing else None,
+            ),
+            self._status_line(
+                "Камера",
+                f"камера #{status['cameraIndex']}, {status['targetFps']} FPS"
+                if status.get("cv2Available")
+                else "камера недоступна",
+                bool(status.get("cv2Available")),
+            ),
+            self._status_line(
+                "Модель",
+                "готова" if model_ready else "не найдена",
+                model_ready,
             ),
             self._status_line(
                 "База данных",
-                "OK" if status["databaseOk"] else (status["databaseError"] or "не проверена"),
-                bool(status["databaseOk"]),
-            ),
-            self._status_line("DB URL", str(status["databaseUrl"]), None),
-            self._status_line(
-                "Камера",
-                f"index={status['cameraIndex']}, fps={status['targetFps']}, OpenCV={'OK' if status['cv2Available'] else 'нет'}",
-                bool(status["cv2Available"]),
-            ),
-            self._status_line(
-                "Data",
-                str(status["dataDir"]),
-                bool(status["dataDirExists"]),
-            ),
-            self._status_line(
-                "Models",
-                str(status["modelsDir"]),
-                bool(status["modelsDirExists"]),
-            ),
-            self._status_line(
-                "model_path",
-                str(status["modelPath"]),
-                bool(status["modelExists"]),
-            ),
-            self._status_line(
-                "classes_path",
-                str(status["classesPath"]),
-                bool(status["classesExists"]),
-            ),
-            self._status_line(
-                "feature_dim",
-                str(status["featureDimPath"]),
-                bool(status["featureDimExists"]),
-            ),
-            self._status_line(
-                "Логи",
-                str(status["recognitionLog"]),
-                bool(status["logDirExists"]),
+                "готова" if status.get("databaseOk") else "недоступна",
+                bool(status.get("databaseOk")),
             ),
             self._status_line(
                 "Голос",
-                "временно отключён" if not status["voiceAvailable"] else "доступен",
-                False if not status["voiceAvailable"] else True,
+                "доступен" if status.get("voiceAvailable") else "отключён",
+                True if status.get("voiceAvailable") else None,
             ),
         ]
-        for item in validation_errors:
-            controls.append(self._status_line("Ошибка", str(item), False))
-        for item in validation_warnings:
-            controls.append(self._status_line("Предупреждение", str(item), None))
+        if validation_errors:
+            controls.append(
+                self._status_line(
+                    "Настройки", f"ошибок: {len(validation_errors)}", False
+                )
+            )
+        elif validation_warnings:
+            controls.append(
+                self._status_line(
+                    "Настройки", f"предупреждений: {len(validation_warnings)}", None
+                )
+            )
 
         self._system_status.controls = controls
         self._recognition_btn.content.value = self._recognition_btn_text()
@@ -380,25 +363,14 @@ class SettingsView:
         self._cooldown_label.value = self._cooldown_text()
 
     def _payload_from_fields(self) -> dict[str, Any]:
+        config = self._controller.get_app_config()
+        database = dict(config.get("database") or {})
+        paths = dict(config.get("paths") or {})
+        assistant = dict(config.get("assistant") or {})
+        assistant["voice_enabled"] = bool(assistant.get("voice_enabled", False))
         return {
-            "database": {
-                "backend": self._db_backend.value or "sqlite",
-                "host": self._db_host.value or "",
-                "port": self._to_int(self._db_port.value, 5432),
-                "user": self._db_user.value or "",
-                "password": self._db_password.value or "",
-                "name": self._db_name.value or "",
-                "sqlite_path": self._db_sqlite_path.value or "",
-                "url": self._db_url.value or "",
-            },
-            "paths": {
-                "data_dir": self._data_dir.value or "",
-                "models_dir": self._models_dir.value or "",
-                "model_path": self._model_path.value or "",
-                "classes_path": self._classes_path.value or "",
-                "feature_dim_path": self._feature_dim_path.value or "",
-                "log_dir": self._log_dir.value or "",
-            },
+            "database": database,
+            "paths": paths,
             "recognition": {
                 "camera_index": self._to_int(self._camera_index.value, 0),
                 "target_fps": self._to_int(self._target_fps.value, 30),
@@ -409,9 +381,7 @@ class SettingsView:
                     self._pointer_sharpness_slider.value, 0.55
                 ),
             },
-            "assistant": {
-                "voice_enabled": False,
-            },
+            "assistant": assistant,
         }
 
     def _to_int(self, value: Any, default: int) -> int:
@@ -430,12 +400,19 @@ class SettingsView:
         ok, errors, warnings = self._controller.save_app_config(
             self._payload_from_fields()
         )
+        policy_ok = self._controller.set_binding_policy(
+            confidence_threshold=float(self._threshold_slider.value),
+            cooldown_ms=int(self._cooldown_slider.value),
+            warn_two_hands=bool(self._warn_switch.value),
+        )
         if ok:
-            text = f"Сохранено: {self._controller.config_path}"
+            text = "Настройки сохранены"
             if warnings:
                 text += " · " + " · ".join(warnings)
+            if not policy_ok:
+                text += " · предупреждения команд не сохранены"
             self._tech_status.value = text
-            self._tech_status.color = COLOR_SUCCESS
+            self._tech_status.color = COLOR_SUCCESS if policy_ok else "#ffca28"
         else:
             self._tech_status.value = "Не сохранено: " + "; ".join(errors)
             self._tech_status.color = COLOR_DANGER
@@ -473,7 +450,11 @@ class SettingsView:
         self._refresh_status(update=True)
 
     def _on_toggle_recognition(self, _e) -> None:
-        self._controller.toggle_recognition()
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._controller.toggle_recognition)
+        else:
+            self._controller.toggle_recognition()
         self._refresh_status(update=True)
 
     def _on_run_diagnostics(self, _e) -> None:
@@ -481,8 +462,8 @@ class SettingsView:
             check_camera=bool(self._diagnostics_camera_switch.value)
         )
         summary = report.get("summary") or {}
-        failures = int(summary.get(STATUS_FAIL, 0))
-        warnings = int(summary.get(STATUS_WARN, 0))
+        failures = int(summary.get("fail", 0))
+        warnings = int(summary.get("warn", 0))
         if failures:
             self._diagnostics_status.value = f"Самопроверка: ошибок {failures}, предупреждений {warnings}"
             self._diagnostics_status.color = COLOR_DANGER
@@ -497,7 +478,7 @@ class SettingsView:
         controls: list[ft.Control] = []
         for item in report.get("items") or []:
             status = str(item.get("status") or "")
-            ok = True if status == STATUS_PASS else False if status == STATUS_FAIL else None
+            ok = True if status == "pass" else False if status == "fail" else None
             controls.append(
                 self._status_line(
                     str(item.get("label") or item.get("key") or ""),
@@ -574,11 +555,11 @@ class SettingsView:
             spacing=10,
         )
 
-        system_card = surface_card(
+        status_card = surface_card(
             ft.Column(
                 spacing=14,
                 controls=[
-                    self._section_title(ft.Icons.MONITOR_HEART, "Статус системы"),
+                    self._section_title(ft.Icons.MONITOR_HEART, "Состояние"),
                     self._env_warning,
                     self._system_status,
                     ft.Row(
@@ -592,80 +573,30 @@ class SettingsView:
             radius=16,
         )
 
-        diagnostics_card = surface_card(
-            ft.Column(
-                spacing=14,
-                controls=[
-                    self._section_title(ft.Icons.CHECK_CIRCLE, "Самопроверка"),
-                    self._diagnostics_camera_switch,
-                    ft.Row(
-                        controls=[self._diagnostics_btn],
-                        spacing=10,
-                        wrap=True,
-                    ),
-                    self._diagnostics_status,
-                    self._diagnostics_results,
-                ],
-            ),
-            padding=20,
-            radius=16,
-        )
-
-        db_card = surface_card(
-            ft.Column(
-                spacing=14,
-                controls=[
-                    self._section_title(ft.Icons.STORAGE, "Подключение к БД"),
-                    self._responsive(self._db_backend, self._db_url),
-                    self._responsive(self._db_host, self._db_port),
-                    self._responsive(self._db_user, self._db_password),
-                    self._responsive(self._db_name, self._db_sqlite_path),
-                ],
-            ),
-            padding=20,
-            radius=16,
-        )
-
-        paths_card = surface_card(
-            ft.Column(
-                spacing=14,
-                controls=[
-                    self._section_title(ft.Icons.FOLDER_OPEN, "Пути"),
-                    self._responsive(self._model_variant_dd),
-                    ft.Row(
-                        controls=[self._apply_model_variant_btn],
-                        spacing=10,
-                        wrap=True,
-                    ),
-                    self._model_variant_status,
-                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
-                    self._responsive(self._data_dir, self._models_dir),
-                    self._responsive(self._model_path, self._classes_path),
-                    self._responsive(self._feature_dim_path, self._log_dir),
-                ],
-            ),
-            padding=20,
-            radius=16,
-        )
-
         recognition_card = surface_card(
             ft.Column(
                 spacing=14,
                 controls=[
-                    self._section_title(ft.Icons.VIDEOCAM, "Распознавание"),
+                    self._section_title(ft.Icons.VIDEOCAM, "Камера и жесты"),
                     self._responsive(self._camera_index, self._target_fps),
                     self._two_hands_switch,
-                    self._auto_execute_switch,
                     self._auto_start_switch,
                     ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     self._pointer_sharpness_label,
                     self._pointer_sharpness_slider,
-                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
-                    ft.Text(
-                        "Голосовой ассистент временно отключён; точка подключения сохранена для следующего этапа.",
-                        size=12,
-                        color=COLOR_MUTED,
-                    ),
+                ],
+            ),
+            padding=20,
+            radius=16,
+        )
+
+        commands_card = surface_card(
+            ft.Column(
+                spacing=14,
+                controls=[
+                    self._section_title(ft.Icons.TOUCH_APP, "Команды"),
+                    self._auto_execute_switch,
+                    self._warn_switch,
                     ft.Row(
                         controls=[self._save_tech_btn],
                         spacing=10,
@@ -678,47 +609,14 @@ class SettingsView:
             radius=16,
         )
 
-        policy_card = surface_card(
-            ft.Column(
-                spacing=14,
-                controls=[
-                    self._section_title(ft.Icons.RULE, "Политика привязок"),
-                    self._threshold_label,
-                    self._threshold_slider,
-                    ft.Text(
-                        "Жесты с уверенностью ниже порога не вызывают команду.",
-                        size=11,
-                        color=COLOR_MUTED,
-                    ),
-                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
-                    self._cooldown_label,
-                    self._cooldown_slider,
-                    ft.Text(
-                        "Минимальный интервал между двумя выполнениями одного жеста.",
-                        size=11,
-                        color=COLOR_MUTED,
-                    ),
-                    ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
-                    self._warn_switch,
-                    self._save_policy_btn,
-                    self._policy_status,
-                ],
-            ),
-            padding=20,
-            radius=16,
-        )
-
         return ft.Column(
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
             controls=[
                 surface_card(header, padding=16, radius=16),
-                system_card,
-                diagnostics_card,
-                db_card,
-                paths_card,
+                status_card,
                 recognition_card,
-                policy_card,
+                commands_card,
             ],
         )

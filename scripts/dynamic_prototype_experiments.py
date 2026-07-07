@@ -74,15 +74,31 @@ def discover_records(
     external_negative_root: Path | None,
     target_dim: int,
     target_frames: int,
+    include_labels: Iterable[str] | None = None,
 ) -> list[DynamicSequenceRecord]:
     taxonomy = load_gesture_taxonomy()
+    include_keys = {
+        str(label or "").strip().lower()
+        for label in (include_labels or [])
+        if str(label or "").strip()
+    }
     records: list[DynamicSequenceRecord] = []
     for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
         label = label_dir.name
-        gesture_type = taxonomy.gesture_type_for_label(label)
-        if gesture_type not in {GESTURE_TYPE_DYNAMIC, GESTURE_TYPE_NEGATIVE}:
+        if include_keys and label.strip().lower() not in include_keys:
             continue
-        negative = gesture_type == GESTURE_TYPE_NEGATIVE or is_negative_label(label)
+        inferred_type = _infer_label_dir_gesture_type(label_dir)
+        gesture_type = (
+            inferred_type
+            if inferred_type
+            else taxonomy.gesture_type_for_label(label)
+        )
+        if include_keys:
+            negative = gesture_type == GESTURE_TYPE_NEGATIVE or is_negative_label(label)
+        else:
+            if gesture_type not in {GESTURE_TYPE_DYNAMIC, GESTURE_TYPE_NEGATIVE}:
+                continue
+            negative = gesture_type == GESTURE_TYPE_NEGATIVE or is_negative_label(label)
         for sample_path in _sample_paths(label_dir):
             record = _record_from_path(
                 sample_path,
@@ -268,8 +284,10 @@ def evaluate_model(
 
     for record in rows:
         decision = predict_dynamic_prototype(payload, record.sequence)
-        expected = str(record.label or "").strip().lower()
-        predicted = str(decision.get("label") or "").strip().lower()
+        expected = str(record.label or "").strip()
+        predicted = str(decision.get("label") or "").strip()
+        expected_key = expected.lower()
+        predicted_key = predicted.lower()
         reason = str(decision.get("reason") or "")
         distance = float(decision.get("distance") or 0.0)
         threshold = float(decision.get("threshold") or 0.0)
@@ -283,15 +301,15 @@ def evaluate_model(
                 result = "rejected"
         else:
             positive_total += 1
-            expected_sequence.append(expected)
+            expected_sequence.append(expected_key)
             if predicted:
-                predicted_sequence.append(predicted)
+                predicted_sequence.append(predicted_key)
             label_stats = per_label.setdefault(
                 expected,
                 {"total": 0, "correct": 0, "wrong": 0, "rejected": 0},
             )
             label_stats["total"] += 1
-            if predicted == expected:
+            if predicted_key == expected_key:
                 positive_correct += 1
                 label_stats["correct"] += 1
                 result = "correct"
@@ -356,6 +374,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         else None,
         target_dim=args.target_dim,
         target_frames=args.target_frames,
+        include_labels=args.include_label,
     )
     conflict_report = {
         "enabled": False,
@@ -456,6 +475,51 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
 
 def _sample_paths(label_dir: Path) -> list[Path]:
     return gesture_sample_paths(label_dir)
+
+
+def _infer_label_dir_gesture_type(label_dir: Path) -> str:
+    for sample_path in _sample_paths(label_dir)[:8]:
+        inferred = _infer_sample_gesture_type(sample_path)
+        if inferred:
+            return inferred
+    return ""
+
+
+def _infer_sample_gesture_type(sample_path: Path) -> str:
+    meta_path = sample_path.with_suffix(".meta.json")
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            scope = str(
+                meta.get("source_scope") or meta.get("gesture_type") or ""
+            ).strip().lower()
+            if scope in {
+                GESTURE_TYPE_DYNAMIC,
+                GESTURE_TYPE_NEGATIVE,
+                "static",
+                "quasi_static",
+            }:
+                return scope
+            if bool(meta.get("include_global_motion")):
+                return GESTURE_TYPE_DYNAMIC
+            sample_format = str(meta.get("sample_feature_format") or "").lower()
+            if "wrist_xy" in sample_format:
+                return GESTURE_TYPE_DYNAMIC
+            raw_dim = int(meta.get("raw_feature_dim") or 0)
+            if raw_dim in {44, 65, 88, 130}:
+                return GESTURE_TYPE_DYNAMIC
+        except Exception:
+            pass
+
+    try:
+        arr = np.load(sample_path, mmap_mode="r", allow_pickle=False)
+        if arr.ndim >= 2:
+            feature_dim = int(np.prod(arr.shape[1:]))
+            if feature_dim in {44, 65, 88, 130}:
+                return GESTURE_TYPE_DYNAMIC
+    except Exception:
+        pass
+    return ""
 
 
 def _record_from_path(
@@ -676,7 +740,7 @@ def _log_mlflow(
         return
     try:
         mlflow.set_tracking_uri(args.mlflow_tracking_uri)
-        mlflow.set_experiment("GestureFlow")
+        mlflow.set_experiment("GestureBind")
         with mlflow.start_run(run_name=f"dynamic-prototype-{report['method']}"):
             mlflow.set_tags(
                 {
@@ -714,7 +778,7 @@ def _log_mlflow(
             model_path = Path(report["model_path"])
             if model_path.exists():
                 mlflow.log_artifact(str(model_path), artifact_path="model")
-            with tempfile.TemporaryDirectory(prefix="gestureflow-prototype-") as tmp:
+            with tempfile.TemporaryDirectory(prefix="gesturebind-prototype-") as tmp:
                 artifact_dir = Path(tmp) / "dynamic_prototype"
                 _write_dynamic_prototype_artifact_bundle(
                     artifact_dir,
@@ -932,7 +996,7 @@ def _render_dynamic_prototype_html(
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>GestureFlow dynamic prototype - {method}</title>
+  <title>GestureBind dynamic prototype - {method}</title>
   <style>
     body {{ margin: 0; padding: 34px; background: #0d1218; color: #f5f7fb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     h1 {{ margin: 0 0 8px; font-size: 36px; }}
@@ -1024,6 +1088,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report-json", type=Path, default=DEFAULT_REPORT_JSON)
     parser.add_argument("--report-md", type=Path, default=DEFAULT_REPORT_MD)
     parser.add_argument("--mlflow-tracking-uri", default="sqlite:///mlflow.db")
+    parser.add_argument(
+        "--include-label",
+        action="append",
+        default=[],
+        help="Use only this recorded label; non-negative labels become dynamic positives.",
+    )
     return parser.parse_args()
 
 

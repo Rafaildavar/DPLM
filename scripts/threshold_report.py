@@ -1,6 +1,6 @@
 """Build a confidence-threshold report for gesture classifiers.
 
-Offline F1 is not enough for GestureFlow: a wrong high-confidence prediction can
+Offline F1 is not enough for GestureBind: a wrong high-confidence prediction can
 execute an OS command. This report evaluates the trade-off between accepted
 prediction quality and rejected predictions.
 """

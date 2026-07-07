@@ -111,7 +111,7 @@ def fit_dynamic_prototype_model(
     method = _normalize_method(method)
     grouped: dict[str, list[DynamicSequenceRecord]] = {}
     for record in records:
-        label = str(record.label or "").strip().lower()
+        label = str(record.label or "").strip()
         if not label:
             continue
         normalized = DynamicSequenceRecord(
@@ -254,7 +254,7 @@ def predict_dynamic_prototype(
     best_distance, best = ranked[0]
     second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
     raw_label = str(best.get("label") or "").strip()
-    label = raw_label.lower()
+    label = raw_label
     prototype_type = str(best.get("type") or "")
     thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
     threshold_payload = (

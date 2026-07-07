@@ -1,6 +1,6 @@
 # JMLC Experiments
 
-Эта директория хранит воспроизводимые артефакты ML-части GestureFlow.
+Эта директория хранит воспроизводимые артефакты ML-части GestureBind.
 
 Правило: важный ML-вывод не считается готовым, пока рядом нет команды
 воспроизведения и сохраненного отчета.
@@ -22,7 +22,7 @@
   `external_negative_dataset_experiments.md` - отдельные эксперименты с
   публичными датасетами как negative / out-of-distribution evidence.
 - `ipn_conversion_report.json` / `ipn_conversion_report.md` - конвертация IPN
-  Hand в формат GestureFlow landmarks `(frames, 44)`.
+  Hand в формат GestureBind landmarks `(frames, 44)`.
 - `latency_report.json` / `latency_report.md` - задержки ML и live-pipeline.
 - `live_eval.json` / `live_eval.md` - проверка в рабочем приложении: ложные
   срабатывания, успешные команды, ошибки.

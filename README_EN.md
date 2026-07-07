@@ -1,4 +1,4 @@
-# DPLM: Gesture & Voice Assistant
+# GestureBind: Gesture & Voice Assistant
 
 > **Status: In Active Development (Full Redesign)**  
 > Current branch: `redesign`  
@@ -6,26 +6,31 @@
 
 ## Project Description
 
-Intelligent computer control system using gestures and voice commands. Key feature: users train the system with their own gestures and bind them to any commands (opening applications, system actions, custom scripts).
+Intelligent computer control system using gestures and voice commands. Key feature: the project ships with a recorded base gesture library, while users can add their own gestures and bind them to any commands (opening applications, system actions, custom scripts).
 
 ### Main Features
 
-1. **Custom Gesture Training**
+1. **Built-in Base Gesture Library**
+   - Pre-recorded static and dynamic gestures for a fast first run
+   - Negative classes to protect against accidental triggers
+   - Immediate testing of the "gesture -> OS command" scenario
+
+2. **Custom Gesture Training**
    - Intuitive interface for recording gesture samples
    - Automatic machine learning model training
    - Real-time recognition accuracy verification
 
-2. **Command System**
+3. **Command System**
    - Ready-made templates: system, media, custom
    - Bind gestures to any actions
    - Cross-platform execution (Windows + macOS)
 
-3. **Voice Assistant**
+4. **Voice Assistant**
    - Speech recognition (Speech-to-Text)
    - Confirmation and hint vocalization (Text-to-Speech)
    - Contextual dialogues and assistance
 
-4. **Modern Interface**
+5. **Modern Interface**
    - Minimalist panel (transparency, drag&drop)
    - Animated avatar assistant
    - Material Design 3 (QML + Qt Quick)
@@ -34,7 +39,7 @@ Intelligent computer control system using gestures and voice commands. Key featu
 ## Architecture
 
 ```
-DPLM/
+GestureBind/
 ├── app/
 │   ├── qml/                # QML interfaces (Material Design 3)
 │   ├── backend/            # Business logic (commands, ML)
@@ -71,8 +76,8 @@ DPLM/
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/DPLM.git
-cd DPLM
+git clone https://github.com/your-username/GestureBind.git
+cd GestureBind
 
 # Create and activate virtual environment (Python 3.12 recommended)
 python3.12 -m venv .venv
@@ -143,9 +148,9 @@ python -m app.gui_main
    - Click "Add command"
    - Specify name, platform, action (application/script)
 
-2. **Train Gesture**
-   - Select command → "Assign gesture"
-   - Perform gesture 20-30 times in front of camera
+2. **Choose or Train Gesture**
+   - Use a base gesture from the built-in library
+   - Or record your own gesture 20-30 times in front of camera
    - System automatically trains model
    - Verify accuracy in preview mode
 

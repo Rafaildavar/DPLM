@@ -1,10 +1,12 @@
 """
-Корневой Shell Flet-версии DPLM: боковая навигация + хедер + содержимое.
+Корневой Shell Flet-версии GestureBind: боковая навигация + хедер + содержимое.
 
-Аналог QML ``MainWindow.qml``. Структура (5 пунктов):
+Аналог QML ``MainWindow.qml``. Структура:
 
     Главная        — встроенное распознавание (камера + жест + команда).
     Жесты          — список жестов из БД.
+    Датасет        — классы и записи в data/gestures.
+    Обучение       — запись и обучение жестов.
     Привязки       — главная фича: жест → команда ОС.
     Настройки      — политика R4/R5/R6.
 
@@ -31,7 +33,7 @@ from app.flet_app.theme import (
     app_background,
 )
 from app.flet_app.views.bindings import BindingsView
-from app.flet_app.views.gestures import GesturesView
+from app.flet_app.views.gestures import DatasetGesturesView, GesturesView
 from app.flet_app.views.home import HomeView
 from app.flet_app.views.settings import SettingsView
 from app.flet_app.views.training import TrainingView
@@ -63,7 +65,7 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
     )
     status_text = ft.Text(controller.status, size=13, color=COLOR_ON_SURFACE)
     title_text = ft.Text(
-        "GestureFlow — ассистент жестов",
+        "GestureBind — ассистент жестов",
         size=20,
         weight=ft.FontWeight.BOLD,
         color=COLOR_ON_SURFACE,
@@ -94,10 +96,11 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         ),
     )
 
-    # --- Создаём views (5 экранов) ----------------------------------------
+    # --- Создаём views -----------------------------------------------------
 
     home = HomeView(page, controller)
     gestures = GesturesView(page, controller)
+    dataset = DatasetGesturesView(page, controller)
     training = TrainingView(page, controller)
     bindings = BindingsView(page, controller)
     settings = SettingsView(page, controller)
@@ -110,6 +113,10 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         NavItem(
             "gestures", "Жесты", ft.Icons.GESTURE, ft.Icons.GESTURE,
             gestures.build, gestures.on_show, gestures.on_hide,
+        ),
+        NavItem(
+            "dataset", "Датасет", ft.Icons.DATASET, ft.Icons.DATASET,
+            dataset.build, dataset.on_show, dataset.on_hide,
         ),
         NavItem(
             "training", "Обучение", ft.Icons.MODEL_TRAINING, ft.Icons.MODEL_TRAINING,
@@ -152,7 +159,7 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         content=ft.Stack(expand=True, controls=panels),
     )
 
-    state = {"current": 0}
+    state = {"current": 0, "show_token": 0}
 
     def show(index: int) -> None:
         prev = state["current"]
@@ -167,16 +174,29 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         for i, p in enumerate(panels):
             p.visible = i == index
         state["current"] = index
+        state["show_token"] += 1
+        show_token = state["show_token"]
         try:
             page.update()
         except Exception as e:
             print(f"[!] page.update: {e}", flush=True)
         item = nav_items[index]
         if item.on_show:
+            def run_on_show() -> None:
+                try:
+                    item.on_show()
+                except Exception as e:
+                    print(f"[!] on_show({item.key}): {e}", flush=True)
+                if state.get("show_token") == show_token:
+                    try:
+                        page.update()
+                    except Exception:
+                        pass
+
             try:
-                item.on_show()
-            except Exception as e:
-                print(f"[!] on_show({item.key}): {e}", flush=True)
+                page.run_thread(run_on_show)
+            except Exception:
+                run_on_show()
 
     def on_nav_change(e) -> None:
         ctrl = getattr(e, "control", None)

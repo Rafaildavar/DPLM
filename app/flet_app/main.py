@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Точка входа Flet-версии DPLM.
+Точка входа Flet-версии GestureBind.
 
 Запуск:
     python -m app.flet_app.main
@@ -22,7 +22,7 @@ from app.flet_app.views.shell import build_shell
 
 
 def _configure_page(page: ft.Page) -> None:
-    page.title = "DPLM — Gesture & Voice Assistant"
+    page.title = "GestureBind — Gesture & Voice Assistant"
     page.padding = 0
     page.bgcolor = COLOR_BG_TOP
     page.theme_mode = ft.ThemeMode.DARK
@@ -46,7 +46,7 @@ def main(page: ft.Page) -> None:
     page.add(build_shell(page, controller))
     if controller.auto_start_recognition:
         page.run_thread(controller.toggle_recognition)
-    print("[✓] Flet DPLM запущен")
+    print("[✓] Flet GestureBind запущен")
 
 
 if __name__ == "__main__":

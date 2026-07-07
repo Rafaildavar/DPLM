@@ -1,6 +1,6 @@
 #!/bin/bash
-# Исправленный скрипт запуска приложения DPLM
-# Fixed launch script for DPLM application
+# Исправленный скрипт запуска приложения GestureBind
+# Fixed launch script for GestureBind application
 
 cd "$(dirname "$0")/.."
 
@@ -32,5 +32,5 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # Запуск приложения
-echo "Запуск DPLM..."
+echo "Запуск GestureBind..."
 python3 -m app.main

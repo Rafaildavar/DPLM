@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import threading
 import time
 from typing import Any
@@ -43,6 +44,10 @@ from app.services.binding_agent import (
     binding_agent_provider_label,
     build_agent_binding_draft as _multiagent_binding_draft,
 )
+from app.services.binding_agents.action_ontology import (
+    ACTION_START_PATTERN,
+    parse_action_intent,
+)
 from app.services.binding_agents.research import approve_research_proposal
 
 SEQUENCE_STEP_ACTIONS: list[dict[str, str]] = [
@@ -50,7 +55,7 @@ SEQUENCE_STEP_ACTIONS: list[dict[str, str]] = [
         "action": "open_path",
         "label": "Открыть файл или папку",
         "value_label": "Путь к файлу или папке",
-        "hint": "/Users/remi/Documents/DPLM Demo/Задание.pdf",
+        "hint": "/Users/remi/Documents/GestureBind Demo/Задание.pdf",
     },
     {
         "action": "open_app",
@@ -90,9 +95,9 @@ SEQUENCE_STEP_ACTIONS: list[dict[str, str]] = [
     },
     {
         "action": "media_key",
-        "label": "Управлять музыкой",
-        "value_label": "play_pause, next или prev",
-        "hint": "play_pause",
+        "label": "Управлять медиа",
+        "value_label": "play, pause, play_pause, next или prev",
+        "hint": "pause",
     },
     {
         "action": "volume_up",
@@ -145,7 +150,7 @@ AGENT_ACTION_LABELS: dict[str, str] = {
     "scroll": "Прокрутка",
     "wait": "Подождать",
     "notify": "Показать уведомление",
-    "media_key": "Управлять музыкой",
+    "media_key": "Управлять медиа",
     "volume_up": "Увеличить громкость",
     "volume_down": "Уменьшить громкость",
     "mute_toggle": "Включить/выключить звук",
@@ -172,6 +177,39 @@ _COMMON_APP_NAMES = (
     "Calendar",
     "Reminders",
     "System Settings",
+)
+
+_HOTKEY_PRESETS: tuple[tuple[str, str], ...] = (
+    ("command+space", "Spotlight: Command + Space"),
+    ("command+z", "Отменить: Command + Z"),
+    ("command+shift+z", "Повторить: Command + Shift + Z"),
+    ("command+c", "Копировать: Command + C"),
+    ("command+v", "Вставить: Command + V"),
+    ("command+f", "Поиск: Command + F"),
+    ("ctrl+left", "Рабочий стол влево: Ctrl + Left"),
+    ("ctrl+right", "Рабочий стол вправо: Ctrl + Right"),
+    ("custom", "Своя комбинация"),
+)
+
+_PRESS_KEY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("pagedown", "Page Down"),
+    ("pageup", "Page Up"),
+    ("down", "Стрелка вниз"),
+    ("up", "Стрелка вверх"),
+    ("left", "Стрелка влево"),
+    ("right", "Стрелка вправо"),
+    ("space", "Пробел"),
+    ("enter", "Enter"),
+    ("escape", "Escape"),
+    ("tab", "Tab"),
+)
+
+_MEDIA_KEY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("pause", "Пауза"),
+    ("play", "Воспроизвести"),
+    ("play_pause", "Пауза / воспроизведение"),
+    ("next", "Следующий трек"),
+    ("prev", "Предыдущий трек"),
 )
 
 _KEY_ALIASES: dict[str, str] = {
@@ -455,6 +493,10 @@ def _agent_parse_action(text: str) -> dict[str, Any] | None:
     if keys:
         return {"action": "key_combination", "platform": "macos", "keys": keys}
 
+    ontology_action = parse_action_intent(text)
+    if ontology_action:
+        return ontology_action
+
     if any(marker in lower for marker in ("заблок", "lock screen", "lock_screen")):
         return {"action": "lock_screen", "platform": "macos"}
     if any(marker in lower for marker in ("скрин", "screenshot", "снимок экрана")):
@@ -509,7 +551,7 @@ def _agent_parse_action(text: str) -> dict[str, Any] | None:
         return {
             "action": "notify",
             "platform": "macos",
-            "title": "DPLM",
+            "title": "GestureBind",
             "message": message or "Готово",
         }
 
@@ -556,8 +598,7 @@ def _agent_split_sequence(text: str) -> list[str]:
     )
     body = re.sub(
         (
-            r"\s+и\s+(?=откр|запуст|покаж|уведом|подожд|нажм"
-            r"|сделай|увелич|уменьш|заблок|скрин)"
+            rf"\s+и\s+(?={ACTION_START_PATTERN})"
         ),
         ";",
         body,
@@ -584,6 +625,16 @@ def _agent_action_title(spec: dict[str, Any]) -> str:
         return f"Нажать {spec.get('key') or 'клавишу'}"
     if action == "notify":
         return "Уведомление"
+    if action == "media_key":
+        kind = str(spec.get("kind") or "play_pause")
+        return {
+            "play_pause": "Пауза/воспроизведение медиа",
+            "play": "Запустить воспроизведение",
+            "pause": "Поставить медиа на паузу",
+            "next": "Следующий медиа-трек",
+            "prev": "Предыдущий медиа-трек",
+            "previous": "Предыдущий медиа-трек",
+        }.get(kind, "Управлять медиа")
     if action == "sequence":
         return f"Сценарий из {len(spec.get('steps') or [])} шагов"
     return AGENT_ACTION_LABELS.get(action, action or "Команда")
@@ -675,12 +726,12 @@ class BindingsView:
         )
         self._step_value_field = ft.TextField(
             label="Путь к файлу или папке",
-            hint_text="/Users/remi/Documents/DPLM Demo/Задание.pdf",
+            hint_text="/Users/remi/Documents/GestureBind Demo/Задание.pdf",
             border_color=COLOR_SURFACE_HIGH,
         )
         self._step_title_field = ft.TextField(
             label="Заголовок уведомления",
-            value="DPLM",
+            value="GestureBind",
             border_color=COLOR_SURFACE_HIGH,
             visible=False,
         )
@@ -715,11 +766,127 @@ class BindingsView:
             border_color=COLOR_SURFACE_HIGH,
             text_style=ft.TextStyle(font_family="Menlo", size=13),
         )
+        self._params_field.visible = False
+        self._action_form_summary = ft.Text(
+            "Выберите действие, и здесь появятся понятные поля.",
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._action_fields_panel = ft.Column(spacing=12)
+        self._param_app_field = ft.Dropdown(
+            label="Приложение",
+            hint_text="Например Safari",
+            editable=True,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key=name, text=name) for name in _COMMON_APP_NAMES
+            ],
+            on_select=self._on_action_form_changed,
+            on_text_change=self._on_action_form_changed,
+        )
+        self._param_url_field = ft.TextField(
+            label="Сайт",
+            hint_text="https://example.com",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_path_field = ft.TextField(
+            label="Файл или папка",
+            hint_text="/Users/remi/Documents",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_notify_title_field = ft.TextField(
+            label="Заголовок",
+            value="GestureBind",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_notify_message_field = ft.TextField(
+            label="Текст уведомления",
+            hint_text="Готово",
+            multiline=True,
+            min_lines=2,
+            max_lines=3,
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_scroll_direction_dd = ft.Dropdown(
+            label="Направление",
+            value="down",
+            editable=False,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key="down", text="Вниз"),
+                ft.DropdownOption(key="up", text="Вверх"),
+            ],
+            on_select=self._on_action_form_changed,
+        )
+        self._param_scroll_amount_field = ft.TextField(
+            label="Сила прокрутки",
+            value="5",
+            hint_text="5",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_press_key_dd = ft.Dropdown(
+            label="Клавиша",
+            value="pagedown",
+            editable=True,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key=value, text=label)
+                for value, label in _PRESS_KEY_OPTIONS
+            ],
+            on_select=self._on_action_form_changed,
+            on_text_change=self._on_action_form_changed,
+        )
+        self._param_media_kind_dd = ft.Dropdown(
+            label="Медиа-команда",
+            value="pause",
+            editable=False,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key=value, text=label)
+                for value, label in _MEDIA_KEY_OPTIONS
+            ],
+            on_select=self._on_action_form_changed,
+        )
+        self._param_hotkey_preset_dd = ft.Dropdown(
+            label="Готовое сочетание",
+            value="command+space",
+            editable=False,
+            border_color=COLOR_SURFACE_HIGH,
+            options=[
+                ft.DropdownOption(key=value, text=label)
+                for value, label in _HOTKEY_PRESETS
+            ],
+            on_select=self._on_hotkey_preset_changed,
+        )
+        self._param_hotkey_custom_field = ft.TextField(
+            label="Клавиши",
+            value="command + space",
+            hint_text="command + space",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_script_path_field = ft.TextField(
+            label="Python-скрипт",
+            hint_text="/Users/remi/Developer/GUAP/DPLM/scripts/demo_prepare_pr.py",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
+        self._param_script_args_field = ft.TextField(
+            label="Аргументы",
+            hint_text="--dry-run",
+            border_color=COLOR_SURFACE_HIGH,
+            on_change=self._on_action_form_changed,
+        )
         self._name_field = ft.TextField(
             label="Имя команды",
             hint_text="Например: Открыть Safari",
             border_color=COLOR_SURFACE_HIGH,
-            on_change=lambda _e: self._refresh_overwrite_hint(),
+            on_change=self._on_name_changed,
         )
 
         self._field_hints = ft.Text("", size=12, color=COLOR_MUTED)
@@ -758,7 +925,7 @@ class BindingsView:
         )
 
         self._test_btn = ft.OutlinedButton(
-            content=ft.Text("Тестовый запуск"),
+            content=ft.Text("Проверить запуск"),
             icon=ft.Icons.PLAY_ARROW,
             on_click=self._on_test_click,
         )
@@ -767,6 +934,33 @@ class BindingsView:
             icon=ft.Icons.REFRESH,
             tooltip="Обновить список жестов из БД",
             on_click=lambda _e: self._refresh_all_lists(),
+        )
+        self._flow_gesture_value = ft.Text(
+            "Жест не выбран",
+            size=15,
+            weight=ft.FontWeight.W_600,
+            color=COLOR_ON_SURFACE,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self._flow_mode_value = ft.Text(
+            "Одна команда",
+            size=15,
+            weight=ft.FontWeight.W_600,
+            color=COLOR_ON_SURFACE,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self._flow_command_value = ft.Text(
+            "Команда не задана",
+            size=15,
+            weight=ft.FontWeight.W_600,
+            color=COLOR_MUTED,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self._flow_detail_value = ft.Text(
+            "Выберите жест и действие",
+            size=12,
+            color=COLOR_MUTED,
+            overflow=ft.TextOverflow.ELLIPSIS,
         )
         self._bindings_total_value = ft.Text(
             "0",
@@ -857,8 +1051,10 @@ class BindingsView:
         self._agent_status = ft.Text("", size=12, color=COLOR_MUTED)
         self._style_form_controls()
         self._configure_mode_panels()
+        self._render_action_form()
         self._render_sequence_steps()
         self._set_agent_empty_state()
+        self._refresh_flow_preview()
 
     # ---- Жизненный цикл ---------------------------------------------------
 
@@ -873,6 +1069,19 @@ class BindingsView:
             self._step_value_field,
             self._step_title_field,
             self._params_field,
+            self._param_app_field,
+            self._param_url_field,
+            self._param_path_field,
+            self._param_notify_title_field,
+            self._param_notify_message_field,
+            self._param_scroll_direction_dd,
+            self._param_scroll_amount_field,
+            self._param_press_key_dd,
+            self._param_media_kind_dd,
+            self._param_hotkey_preset_dd,
+            self._param_hotkey_custom_field,
+            self._param_script_path_field,
+            self._param_script_args_field,
             self._name_field,
         )
         for control in controls:
@@ -964,6 +1173,172 @@ class BindingsView:
                         controls=[
                             value,
                             ft.Text(label, size=11, color=COLOR_MUTED),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    def _section_label(self, icon: str, title: str, *, color: str = COLOR_ACCENT) -> ft.Control:
+        return ft.Row(
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(
+                    width=28,
+                    height=28,
+                    border_radius=8,
+                    bgcolor="#1B1D21",
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Icon(icon, color=color, size=16),
+                ),
+                ft.Text(
+                    title,
+                    size=14,
+                    weight=ft.FontWeight.W_600,
+                    color=COLOR_ON_SURFACE,
+                ),
+            ],
+        )
+
+    def _flow_token(
+        self,
+        label: str,
+        value: ft.Text,
+        icon: str,
+        color: str,
+    ) -> ft.Control:
+        return ft.Container(
+            height=82,
+            padding=ft.Padding(12, 11, 12, 11),
+            border_radius=8,
+            bgcolor="#1B1D21",
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            content=ft.Row(
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(
+                        width=34,
+                        height=34,
+                        border_radius=8,
+                        bgcolor="#17191D",
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Icon(icon, color=color, size=18),
+                    ),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text(label, size=11, color=COLOR_MUTED),
+                            value,
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    def _refresh_flow_preview(self) -> None:
+        gesture = self._selected_gesture()
+        gesture_label = str((gesture or {}).get("label") or "").strip()
+        bound = str((gesture or {}).get("boundCommandName") or "").strip()
+        name = (self._name_field.value or "").strip()
+        sequence = self._is_sequence_mode()
+
+        if sequence:
+            mode = "Сценарий"
+            detail = f"{len(self._sequence_steps)} шагов"
+            command = name or "Сценарий без имени"
+        else:
+            action = self._selected_action()
+            action_label = (
+                AGENT_ACTION_LABELS.get(str(action.get("action") or ""), "")
+                if action
+                else ""
+            )
+            mode = "Одна команда"
+            detail = action_label or "Действие не выбрано"
+            command = name or action_label or bound or "Команда не задана"
+
+        self._flow_gesture_value.value = gesture_label or "Жест не выбран"
+        self._flow_gesture_value.color = COLOR_ON_SURFACE if gesture_label else COLOR_MUTED
+        self._flow_mode_value.value = mode
+        self._flow_command_value.value = command
+        self._flow_command_value.color = (
+            COLOR_ON_SURFACE
+            if command not in {"Команда не задана", "Сценарий без имени"}
+            else COLOR_MUTED
+        )
+        self._flow_detail_value.value = detail
+        self._flow_detail_value.color = COLOR_MUTED if detail else COLOR_WARNING
+
+        for control in (
+            self._flow_gesture_value,
+            self._flow_mode_value,
+            self._flow_command_value,
+            self._flow_detail_value,
+        ):
+            try:
+                control.update()
+            except Exception:
+                pass
+
+    def _build_binding_flow_panel(self) -> ft.Control:
+        return ft.Container(
+            padding=14,
+            border_radius=8,
+            bgcolor="#17191D",
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            content=ft.Column(
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.ACCOUNT_TREE, color=COLOR_ACCENT, size=18),
+                            ft.Text(
+                                "Маршрут привязки",
+                                size=13,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                            ),
+                            ft.Container(expand=True),
+                            self._flow_detail_value,
+                        ],
+                    ),
+                    ft.ResponsiveRow(
+                        spacing=10,
+                        run_spacing=10,
+                        controls=[
+                            ft.Container(
+                                col={"xs": 12, "md": 4},
+                                content=self._flow_token(
+                                    "Жест",
+                                    self._flow_gesture_value,
+                                    ft.Icons.BACK_HAND,
+                                    COLOR_ACCENT,
+                                ),
+                            ),
+                            ft.Container(
+                                col={"xs": 12, "md": 4},
+                                content=self._flow_token(
+                                    "Тип запуска",
+                                    self._flow_mode_value,
+                                    ft.Icons.ROUTE,
+                                    COLOR_WARNING,
+                                ),
+                            ),
+                            ft.Container(
+                                col={"xs": 12, "md": 4},
+                                content=self._flow_token(
+                                    "Команда",
+                                    self._flow_command_value,
+                                    ft.Icons.TERMINAL,
+                                    COLOR_SUCCESS,
+                                ),
+                            ),
                         ],
                     ),
                 ],
@@ -1083,6 +1458,7 @@ class BindingsView:
                 )
             ]
         self._bindings_chips_row.controls = chips
+        self._refresh_flow_preview()
 
         for control in (
             self._bindings_total_value,
@@ -1168,15 +1544,360 @@ class BindingsView:
         cat_id = self._category_dd.value or ""
         self._actions = self._controller.get_actions_for_category(cat_id)
         self._action_dd.options = [
-            ft.DropdownOption(key=a["action"], text=a["action"]) for a in self._actions
+            ft.DropdownOption(
+                key=a["action"],
+                text=AGENT_ACTION_LABELS.get(str(a["action"]), str(a["action"])),
+            )
+            for a in self._actions
         ]
         self._action_dd.value = None
         self._field_hints.value = ""
+        self._render_action_form()
         try:
             self._action_dd.update()
             self._field_hints.update()
         except Exception:
             pass
+        self._refresh_flow_preview()
+
+    def _field_text(self, control: ft.Control) -> str:
+        return str(
+            getattr(control, "value", "")
+            or getattr(control, "text", "")
+            or ""
+        ).strip()
+
+    def _form_hint_box(
+        self,
+        icon: str,
+        title: str,
+        text: str,
+        *,
+        color: str = COLOR_ACCENT,
+    ) -> ft.Control:
+        return ft.Container(
+            padding=12,
+            border_radius=8,
+            bgcolor="#17191D",
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            content=ft.Row(
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                controls=[
+                    ft.Container(
+                        width=34,
+                        height=34,
+                        border_radius=8,
+                        bgcolor="#1B1D21",
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Icon(icon, color=color, size=18),
+                    ),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                title,
+                                color=COLOR_ON_SURFACE,
+                                size=13,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Text(text, color=COLOR_MUTED, size=12),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    def _two_column_fields(
+        self,
+        left: ft.Control,
+        right: ft.Control,
+        *,
+        left_col: int = 6,
+        right_col: int = 6,
+    ) -> ft.Control:
+        return ft.ResponsiveRow(
+            spacing=12,
+            run_spacing=12,
+            controls=[
+                ft.Container(col={"xs": 12, "md": left_col}, content=left),
+                ft.Container(col={"xs": 12, "md": right_col}, content=right),
+            ],
+        )
+
+    def _render_action_form(self) -> None:
+        action = self._selected_action()
+        action_name = str((action or {}).get("action") or "")
+        controls: list[ft.Control] = []
+
+        if not action_name:
+            self._action_form_summary.value = (
+                "Выберите действие, и здесь появятся понятные поля."
+            )
+            controls = [
+                self._form_hint_box(
+                    ft.Icons.TOUCH_APP,
+                    "Настройки появятся после выбора действия",
+                    "JSON больше не нужно писать вручную.",
+                    color=COLOR_MUTED,
+                )
+            ]
+        elif action_name == "open_app":
+            self._action_form_summary.value = "Укажите приложение, которое откроет жест."
+            controls = [self._param_app_field]
+        elif action_name == "open_url":
+            self._action_form_summary.value = "Вставьте адрес сайта. https:// можно не писать."
+            controls = [self._param_url_field]
+        elif action_name == "open_path":
+            self._action_form_summary.value = "Укажите путь к файлу или папке."
+            controls = [self._param_path_field]
+        elif action_name == "notify":
+            self._action_form_summary.value = "Текст, который появится в уведомлении."
+            controls = [
+                self._param_notify_message_field,
+                self._param_notify_title_field,
+            ]
+        elif action_name == "scroll":
+            self._action_form_summary.value = "Настройте направление и силу прокрутки."
+            controls = [
+                self._two_column_fields(
+                    self._param_scroll_direction_dd,
+                    self._param_scroll_amount_field,
+                )
+            ]
+        elif action_name == "press":
+            self._action_form_summary.value = "Выберите одну клавишу для нажатия."
+            controls = [self._param_press_key_dd]
+        elif action_name == "media_key":
+            self._action_form_summary.value = "Выберите действие для плеера."
+            controls = [self._param_media_kind_dd]
+        elif action_name == "key_combination":
+            self._action_form_summary.value = (
+                "Выберите пресет или впишите свою комбинацию через +."
+            )
+            controls = [
+                self._two_column_fields(
+                    self._param_hotkey_preset_dd,
+                    self._param_hotkey_custom_field,
+                    left_col=5,
+                    right_col=7,
+                )
+            ]
+        elif action_name == "run_script":
+            self._action_form_summary.value = (
+                "Укажите существующий .py файл. Аргументы необязательны."
+            )
+            controls = [
+                self._param_script_path_field,
+                self._param_script_args_field,
+            ]
+        else:
+            label = AGENT_ACTION_LABELS.get(action_name, action_name)
+            self._action_form_summary.value = f"Действие «{label}» не требует настроек."
+            controls = [
+                self._form_hint_box(
+                    ft.Icons.CHECK_CIRCLE_OUTLINE,
+                    "Готово к сохранению",
+                    "Для этого действия дополнительных полей нет.",
+                    color=COLOR_SUCCESS,
+                )
+            ]
+
+        self._action_fields_panel.controls = controls
+        self._sync_params_field_from_form()
+        for control in (self._action_form_summary, self._action_fields_panel):
+            try:
+                control.update()
+            except Exception:
+                pass
+
+    def _parse_hotkey_keys(self, raw: str) -> list[str]:
+        keys = _agent_hotkey_from_text(raw)
+        if keys:
+            return keys
+        parts = [
+            part
+            for part in re.split(r"\s*(?:\+|,)\s*", raw or "")
+            if part.strip()
+        ]
+        keys = [_agent_normalize_key(part) for part in parts]
+        return [key for key in keys if key]
+
+    def _args_from_text(self, raw: str) -> list[str]:
+        clean = (raw or "").strip()
+        if not clean:
+            return []
+        try:
+            return shlex.split(clean)
+        except ValueError:
+            return [part for part in clean.split() if part]
+
+    def _friendly_action_hint(self, action_name: str) -> str:
+        return {
+            "open_app": "Пример: Safari, Telegram, Preview или Terminal.",
+            "open_url": "Можно вставить example.com — приложение добавит https:// само.",
+            "open_path": "Поддерживаются абсолютные пути и пути через ~.",
+            "notify": "Уведомление появится после распознавания жеста.",
+            "scroll": "Обычно 3-7 шагов достаточно для комфортной прокрутки.",
+            "press": "Подходит для Page Down, стрелок, Enter, Space и похожих клавиш.",
+            "media_key": "Работает с активным медиаплеером, если ОС принимает медиа-клавиши.",
+            "key_combination": "Можно выбрать пресет или ввести, например: command + shift + z.",
+            "run_script": "Только существующий .py файл; для beta лучше использовать проверенные скрипты.",
+            "volume_up": "Дополнительные настройки не нужны.",
+            "volume_down": "Дополнительные настройки не нужны.",
+            "mute_toggle": "Дополнительные настройки не нужны.",
+            "brightness_up": "Дополнительные настройки не нужны.",
+            "brightness_down": "Дополнительные настройки не нужны.",
+            "lock_screen": "Опасное действие: лучше привязать к двуручному жесту.",
+            "screenshot": "Снимок будет сохранен на рабочий стол.",
+        }.get(action_name, "Заполните поля ниже и сохраните привязку.")
+
+    def _build_action_spec_from_form(self, action_name: str) -> dict | str:
+        spec: dict[str, Any] = {"action": action_name, "platform": "macos"}
+
+        if action_name == "open_app":
+            app = self._field_text(self._param_app_field)
+            if not app:
+                return "Укажите приложение"
+            spec["app"] = app
+        elif action_name == "open_url":
+            url = self._field_text(self._param_url_field)
+            if not url:
+                return "Укажите сайт"
+            if url and not url.startswith(("http://", "https://")):
+                url = f"https://{url}"
+            spec["url"] = url
+        elif action_name == "open_path":
+            path = self._field_text(self._param_path_field)
+            if not path:
+                return "Укажите путь к файлу или папке"
+            spec["path"] = path
+        elif action_name == "notify":
+            message = self._field_text(self._param_notify_message_field)
+            if not message:
+                return "Укажите текст уведомления"
+            spec["message"] = message
+            title = self._field_text(self._param_notify_title_field)
+            if title:
+                spec["title"] = title
+        elif action_name == "scroll":
+            direction = self._field_text(self._param_scroll_direction_dd) or "down"
+            try:
+                amount = abs(int(float(self._field_text(self._param_scroll_amount_field) or "5")))
+            except ValueError:
+                return "Сила прокрутки должна быть числом"
+            spec["clicks"] = amount if direction == "up" else -amount
+        elif action_name == "press":
+            key = self._field_text(self._param_press_key_dd)
+            if not key:
+                return "Выберите клавишу"
+            spec["key"] = key
+        elif action_name == "media_key":
+            spec["kind"] = self._field_text(self._param_media_kind_dd) or "pause"
+        elif action_name == "key_combination":
+            keys = self._parse_hotkey_keys(
+                self._field_text(self._param_hotkey_custom_field)
+            )
+            if not keys:
+                return "Укажите сочетание клавиш, например command + space"
+            spec["keys"] = keys
+        elif action_name == "run_script":
+            script_path = self._field_text(self._param_script_path_field)
+            if not script_path:
+                return "Укажите путь к Python-скрипту"
+            spec["script_path"] = script_path
+            args = self._args_from_text(self._field_text(self._param_script_args_field))
+            if args:
+                spec["args"] = args
+
+        return spec
+
+    def _sync_params_field_from_form(self) -> None:
+        action = self._selected_action()
+        action_name = str((action or {}).get("action") or "")
+        if not action_name:
+            self._params_field.value = "{}"
+            return
+        spec = self._build_action_spec_from_form(action_name)
+        if isinstance(spec, dict):
+            params = dict(spec)
+            params.pop("action", None)
+            params.pop("platform", None)
+            self._params_field.value = json.dumps(params, ensure_ascii=False)
+        else:
+            self._params_field.value = "{}"
+
+    def _update_action_form_controls(self) -> None:
+        for control in (
+            self._params_field,
+            self._param_app_field,
+            self._param_url_field,
+            self._param_path_field,
+            self._param_notify_title_field,
+            self._param_notify_message_field,
+            self._param_scroll_direction_dd,
+            self._param_scroll_amount_field,
+            self._param_press_key_dd,
+            self._param_media_kind_dd,
+            self._param_hotkey_preset_dd,
+            self._param_hotkey_custom_field,
+            self._param_script_path_field,
+            self._param_script_args_field,
+            self._action_form_summary,
+            self._action_fields_panel,
+        ):
+            try:
+                control.update()
+            except Exception:
+                pass
+
+    def _set_action_form_values(self, spec: dict[str, Any]) -> None:
+        action = str(spec.get("action") or "")
+        if action == "open_app":
+            self._param_app_field.value = str(spec.get("app") or "")
+        elif action == "open_url":
+            self._param_url_field.value = str(spec.get("url") or "")
+        elif action == "open_path":
+            self._param_path_field.value = str(spec.get("path") or "")
+        elif action == "notify":
+            self._param_notify_title_field.value = str(
+                spec.get("title") or "GestureBind"
+            )
+            self._param_notify_message_field.value = str(spec.get("message") or "")
+        elif action == "scroll":
+            clicks = spec.get("clicks", -5)
+            try:
+                clicks_int = int(clicks)
+            except (TypeError, ValueError):
+                clicks_int = -5
+            self._param_scroll_direction_dd.value = "up" if clicks_int > 0 else "down"
+            self._param_scroll_amount_field.value = str(abs(clicks_int) or 5)
+        elif action == "press":
+            self._param_press_key_dd.value = str(spec.get("key") or "pagedown")
+        elif action == "media_key":
+            self._param_media_kind_dd.value = str(spec.get("kind") or "pause")
+        elif action == "key_combination":
+            keys = spec.get("keys") or []
+            if isinstance(keys, str):
+                keys = self._parse_hotkey_keys(keys)
+            key_text = " + ".join(str(key) for key in keys if str(key).strip())
+            self._param_hotkey_custom_field.value = key_text or "command + space"
+            preset_value = key_text.replace(" + ", "+")
+            allowed = {value for value, _label in _HOTKEY_PRESETS}
+            self._param_hotkey_preset_dd.value = (
+                preset_value if preset_value in allowed else "custom"
+            )
+        elif action == "run_script":
+            self._param_script_path_field.value = str(spec.get("script_path") or "")
+            args = spec.get("args") or []
+            if isinstance(args, list):
+                self._param_script_args_field.value = " ".join(str(arg) for arg in args)
+            else:
+                self._param_script_args_field.value = str(args)
+
+        self._sync_params_field_from_form()
+        self._update_action_form_controls()
 
     # ---- Обработчики ------------------------------------------------------
 
@@ -1201,16 +1922,36 @@ class BindingsView:
     def _is_sequence_mode(self) -> bool:
         return (self._mode_dd.value or "single") == "sequence"
 
+    def _on_name_changed(self, _e) -> None:
+        self._refresh_overwrite_hint()
+        self._refresh_flow_preview()
+
+    def _on_action_form_changed(self, _e) -> None:
+        self._sync_params_field_from_form()
+        self._refresh_flow_preview()
+
+    def _on_hotkey_preset_changed(self, _e) -> None:
+        preset = self._field_text(self._param_hotkey_preset_dd)
+        if preset and preset != "custom":
+            self._param_hotkey_custom_field.value = preset.replace("+", " + ")
+            try:
+                self._param_hotkey_custom_field.update()
+            except Exception:
+                pass
+        self._on_action_form_changed(_e)
+
     def _on_gesture_changed(self, _e) -> None:
         self._refresh_overwrite_hint()
         self._refresh_warn_two_hands()
         self._refresh_bindings_overview()
+        self._refresh_flow_preview()
 
     def _on_mode_changed(self, _e) -> None:
         self._refresh_mode_visibility()
         if self._is_sequence_mode() and not (self._name_field.value or "").strip():
             self._name_field.value = "Сценарий: подготовить рабочее место"
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
         try:
             self._name_field.update()
         except Exception:
@@ -1219,6 +1960,7 @@ class BindingsView:
     def _on_category_changed(self, _e) -> None:
         self._refresh_actions()
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
 
     def _on_default_command_changed(self, _e) -> None:
         name = (self._default_command_dd.value or "").strip()
@@ -1248,6 +1990,7 @@ class BindingsView:
                 pass
             self._refresh_overwrite_hint()
             self._refresh_warn_two_hands()
+            self._refresh_flow_preview()
             return
 
         self._mode_dd.value = "single"
@@ -1258,30 +2001,24 @@ class BindingsView:
         if action:
             self._action_dd.value = action
 
-        params = config
-        params.pop("action", None)
-        params.pop("platform", None)
-        self._params_field.value = json.dumps(params, ensure_ascii=False)
+        spec = dict(config)
+        spec["action"] = action
+        self._render_action_form()
+        self._set_action_form_values(spec)
         self._name_field.value = name
 
-        selected = self._selected_action()
-        hints = selected.get("fieldHints") if selected else {}
-        self._field_hints.value = (
-            "\n".join(f"• {k}: {v}" for k, v in hints.items())
-            if hints
-            else "Готовая команда: параметры уже подставлены"
-        )
+        self._field_hints.value = self._friendly_action_hint(action)
         try:
             self._category_dd.update()
             self._action_dd.update()
             self._mode_dd.update()
-            self._params_field.update()
             self._name_field.update()
             self._field_hints.update()
         except Exception:
             pass
         self._refresh_overwrite_hint()
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
 
     def _on_step_action_changed(self, _e) -> None:
         self._refresh_step_fields()
@@ -1302,6 +2039,7 @@ class BindingsView:
         self._step_value_field.value = ""
         self._render_sequence_steps()
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
         try:
             self._step_value_field.update()
         except Exception:
@@ -1311,31 +2049,26 @@ class BindingsView:
         self._sequence_steps = []
         self._render_sequence_steps()
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
 
     def _on_action_changed(self, _e) -> None:
         action = self._selected_action()
         if action is None:
             return
-        # Подставить пример параметров в поле, очищая action/platform.
         example = dict(action.get("example") or {})
-        example.pop("action", None)
-        example.pop("platform", None)
-        self._params_field.value = json.dumps(example, ensure_ascii=False)
+        self._set_action_form_values(example)
         if not (self._name_field.value or "").strip():
-            self._name_field.value = f"User: {action['action']}"
-        # Подсказки по полям.
-        hints = action.get("fieldHints") or {}
-        if hints:
-            self._field_hints.value = "\n".join(f"• {k}: {v}" for k, v in hints.items())
-        else:
-            self._field_hints.value = "Без дополнительных параметров"
+            label = AGENT_ACTION_LABELS.get(str(action["action"]), str(action["action"]))
+            self._name_field.value = label
+        self._field_hints.value = self._friendly_action_hint(str(action["action"]))
+        self._render_action_form()
         try:
-            self._params_field.update()
             self._name_field.update()
             self._field_hints.update()
         except Exception:
             pass
         self._refresh_warn_two_hands()
+        self._refresh_flow_preview()
 
     def _refresh_warn_two_hands(self) -> None:
         g = self._selected_gesture()
@@ -1399,18 +2132,7 @@ class BindingsView:
         a = self._selected_action()
         if a is None:
             return "Выберите действие"
-        spec: dict = {"action": a["action"], "platform": "macos"}
-        raw = (self._params_field.value or "").strip()
-        if raw:
-            try:
-                extra = json.loads(raw)
-            except json.JSONDecodeError as e:
-                return f"Параметры: некорректный JSON: {e}"
-            if isinstance(extra, dict):
-                for k, v in extra.items():
-                    if k not in ("action", "platform"):
-                        spec[k] = v
-        return spec
+        return self._build_action_spec_from_form(str(a["action"]))
 
     def _build_sequence_step(self) -> dict | str:
         action = (self._step_action_dd.value or "").strip()
@@ -1446,11 +2168,11 @@ class BindingsView:
         if action == "notify":
             if not raw:
                 return "Укажите текст уведомления"
-            title = (self._step_title_field.value or "DPLM").strip() or "DPLM"
+            title = (self._step_title_field.value or "GestureBind").strip() or "GestureBind"
             return {"action": action, "title": title, "message": raw}
         if action == "media_key":
             if not raw:
-                return "Укажите play_pause, next или prev"
+                return "Укажите play, pause, play_pause, next или prev"
             return {"action": action, "kind": raw}
         if action == "run_script":
             if not raw:
@@ -1520,23 +2242,45 @@ class BindingsView:
             self._sequence_steps[index],
         )
         self._render_sequence_steps()
+        self._refresh_flow_preview()
 
     def _remove_sequence_step(self, index: int) -> None:
         if 0 <= index < len(self._sequence_steps):
             self._sequence_steps.pop(index)
             self._render_sequence_steps()
             self._refresh_warn_two_hands()
+            self._refresh_flow_preview()
 
     def _render_sequence_steps(self) -> None:
         if not self._sequence_steps:
             self._steps_column.controls = [
                 ft.Container(
-                    content=ft.Text(
-                        "Пока нет шагов. Добавьте действие выше.",
-                        color=COLOR_MUTED,
-                        size=12,
+                    content=ft.Row(
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(
+                                width=34,
+                                height=34,
+                                border_radius=8,
+                                bgcolor="#1B1D21",
+                                alignment=ft.Alignment.CENTER,
+                                content=ft.Icon(
+                                    ft.Icons.PLAYLIST_ADD,
+                                    color=COLOR_MUTED,
+                                    size=18,
+                                ),
+                            ),
+                            ft.Text(
+                                "Сценарий пока пуст",
+                                color=COLOR_MUTED,
+                                size=12,
+                                expand=True,
+                            ),
+                        ],
                     ),
-                    bgcolor=COLOR_SURFACE_HIGH,
+                    bgcolor="#17191D",
+                    border=ft.Border.all(1, COLOR_SURFACE_HIGH),
                     border_radius=8,
                     padding=12,
                 )
@@ -1547,11 +2291,20 @@ class BindingsView:
                 controls.append(
                     ft.Container(
                         content=ft.Row(
+                            spacing=10,
                             controls=[
-                                ft.Icon(
-                                    ft.Icons.DRAG_INDICATOR,
-                                    color=COLOR_MUTED,
-                                    size=18,
+                                ft.Container(
+                                    width=34,
+                                    height=34,
+                                    border_radius=8,
+                                    bgcolor="#17262A",
+                                    alignment=ft.Alignment.CENTER,
+                                    content=ft.Text(
+                                        str(index + 1),
+                                        color=COLOR_ACCENT,
+                                        size=13,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
                                 ),
                                 ft.Text(
                                     self._step_summary(step, index + 1),
@@ -1580,9 +2333,10 @@ class BindingsView:
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        bgcolor=COLOR_SURFACE_HIGH,
+                        bgcolor="#1B1D21",
+                        border=ft.Border.all(1, COLOR_SURFACE_HIGH),
                         border_radius=8,
-                        padding=8,
+                        padding=ft.Padding(10, 8, 8, 8),
                     )
                 )
             self._steps_column.controls = controls
@@ -1593,37 +2347,60 @@ class BindingsView:
 
     def _configure_mode_panels(self) -> None:
         self._single_mode_panel.controls = [
-            ft.Text(
-                "Готовая команда",
-                size=14,
-                weight=ft.FontWeight.W_600,
-                color=COLOR_ON_SURFACE,
-            ),
+            self._section_label(ft.Icons.BOLT, "Готовая команда", color=COLOR_ACCENT),
             self._default_command_dd,
-            ft.Text(
+            self._section_label(
+                ft.Icons.TUNE,
                 "Категория и действие",
-                size=14,
-                weight=ft.FontWeight.W_600,
-                color=COLOR_ON_SURFACE,
+                color=COLOR_WARNING,
             ),
-            self._category_dd,
-            self._action_dd,
+            ft.ResponsiveRow(
+                spacing=12,
+                run_spacing=12,
+                controls=[
+                    ft.Container(
+                        col={"xs": 12, "md": 6},
+                        content=self._category_dd,
+                    ),
+                    ft.Container(
+                        col={"xs": 12, "md": 6},
+                        content=self._action_dd,
+                    ),
+                ],
+            ),
             self._field_hints,
-            ft.Text(
-                "Параметры",
-                size=14,
-                weight=ft.FontWeight.W_600,
-                color=COLOR_ON_SURFACE,
+            self._section_label(
+                ft.Icons.TUNE,
+                "Настройки действия",
+                color=COLOR_ACCENT,
             ),
-            self._params_field,
+            self._action_form_summary,
+            self._action_fields_panel,
         ]
         self._sequence_panel.controls = [
             self._sequence_hint,
-            self._step_action_dd,
-            self._step_value_field,
-            self._step_title_field,
+            self._section_label(ft.Icons.PLAYLIST_ADD, "Шаг сценария", color=COLOR_ACCENT),
+            ft.ResponsiveRow(
+                spacing=12,
+                run_spacing=12,
+                controls=[
+                    ft.Container(
+                        col={"xs": 12, "md": 5},
+                        content=self._step_action_dd,
+                    ),
+                    ft.Container(
+                        col={"xs": 12, "md": 7},
+                        content=self._step_value_field,
+                    ),
+                    ft.Container(
+                        col={"xs": 12, "md": 7},
+                        content=self._step_title_field,
+                    ),
+                ],
+            ),
             ft.Row(
                 spacing=10,
+                wrap=True,
                 controls=[self._add_step_btn, self._clear_steps_btn],
             ),
             self._steps_column,
@@ -2000,6 +2777,8 @@ class BindingsView:
             return "Выберите жест", COLOR_WARNING
         if "действие" in missing:
             return "Уточните действие", COLOR_WARNING
+        if "шаги сценария" in missing:
+            return "Уточните шаги сценария", COLOR_WARNING
         if missing:
             return "Нужно уточнение", COLOR_WARNING
         if spec.get("action") == "sequence":
@@ -2026,6 +2805,28 @@ class BindingsView:
                 "**Осталось выбрать действие.**\n\n"
                 "Напишите, что должен сделать жест: `открыть Safari`, "
                 "`нажать command+z` или `показать уведомление`."
+            )
+        if "шаги сценария" in missing:
+            unresolved = [
+                item
+                for item in list(draft.get("unresolvedSteps") or [])
+                if isinstance(item, dict)
+            ]
+            if unresolved:
+                lines = "\n".join(
+                    f"- шаг {item.get('index')}: `{item.get('text')}`"
+                    for item in unresolved
+                )
+                return (
+                    "**Нужно уточнить шаги сценария.**\n\n"
+                    "Я не буду сохранять частичный сценарий. Не понял:\n\n"
+                    f"{lines}\n\n"
+                    "Добавьте точный URL, приложение или команду для этих шагов."
+                )
+            return (
+                "**Нужно уточнить шаги сценария.**\n\n"
+                "Я не буду сохранять частичный сценарий. Добавьте точный URL, "
+                "приложение или команду для непонятного шага."
             )
         return (
             "**Добавьте в запрос:** "
@@ -2579,29 +3380,21 @@ class BindingsView:
                 self._category_dd.value = category_id
                 self._refresh_actions()
             self._action_dd.value = action or None
-            params = dict(spec)
-            params.pop("action", None)
-            params.pop("platform", None)
-            self._params_field.value = json.dumps(params, ensure_ascii=False)
-            selected = self._selected_action()
-            hints = selected.get("fieldHints") if selected else {}
-            self._field_hints.value = (
-                "\n".join(f"• {k}: {v}" for k, v in hints.items())
-                if hints
-                else AGENT_ACTION_LABELS.get(action, "Предложение агента")
-            )
+            self._render_action_form()
+            self._set_action_form_values(spec)
+            self._field_hints.value = self._friendly_action_hint(action)
 
         self._name_field.value = str(draft.get("commandName") or "").strip()
         self._refresh_mode_visibility()
         self._refresh_warn_two_hands()
         self._refresh_overwrite_hint()
         self._refresh_bindings_overview()
+        self._refresh_flow_preview()
         for control in (
             self._gesture_dd,
             self._mode_dd,
             self._category_dd,
             self._action_dd,
-            self._params_field,
             self._field_hints,
             self._name_field,
         ):
@@ -2823,17 +3616,41 @@ class BindingsView:
                         expand=True,
                         controls=[
                             ft.Text(
-                                "Привязки",
+                                "Привязки жестов",
                                 size=22,
                                 weight=ft.FontWeight.BOLD,
                                 color=COLOR_ON_SURFACE,
                             ),
                             ft.Text(
-                                "Жесты, команды и сценарии",
+                                "Жест -> команда -> проверка",
                                 color=COLOR_MUTED,
                                 size=12,
                             ),
                         ],
+                    ),
+                    ft.Container(
+                        padding=ft.Padding(10, 6, 10, 6),
+                        border_radius=8,
+                        bgcolor="#17262A",
+                        border=ft.Border.all(1, "#21434A"),
+                        content=ft.Row(
+                            spacing=6,
+                            tight=True,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Icon(
+                                    ft.Icons.ROCKET_LAUNCH,
+                                    color=COLOR_SUCCESS,
+                                    size=15,
+                                ),
+                                ft.Text(
+                                    "Beta QA",
+                                    color=COLOR_ON_SURFACE,
+                                    size=12,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                            ],
+                        ),
                     ),
                     ft.Container(
                         padding=ft.Padding(10, 6, 10, 6),
@@ -2919,6 +3736,7 @@ class BindingsView:
                             ),
                         ],
                     ),
+                    self._build_binding_flow_panel(),
                     ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     self._single_mode_panel,
                     self._sequence_panel,

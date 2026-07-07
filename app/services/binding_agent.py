@@ -17,6 +17,11 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from app.services.binding_agents.action_ontology import (
+    ACTION_START_PATTERN,
+    INLINE_ACTION_START_PATTERN,
+    parse_action_intent,
+)
 from app.services.binding_agents.skills import (
     AgentSkill,
     skill_registry_cards as _skill_registry_cards,
@@ -50,7 +55,7 @@ AGENT_ACTION_LABELS: dict[str, str] = {
     "scroll": "Прокрутка",
     "wait": "Подождать",
     "notify": "Показать уведомление",
-    "media_key": "Управлять музыкой",
+    "media_key": "Управлять медиа",
     "volume_up": "Увеличить громкость",
     "volume_down": "Уменьшить громкость",
     "mute_toggle": "Включить/выключить звук",
@@ -116,6 +121,12 @@ ABSTRACT_WORKFLOW_TARGET_MARKERS: tuple[str, ...] = (
 SITE_ALIASES: dict[str, str] = {
     "chat gpt": "https://chatgpt.com",
     "chatgpt": "https://chatgpt.com",
+    "студент гуап": "https://new.guap.ru/targets/studs",
+    "студента гуап": "https://new.guap.ru/targets/studs",
+    "студенты гуап": "https://new.guap.ru/targets/studs",
+    "студентов гуап": "https://new.guap.ru/targets/studs",
+    "обучающимся гуап": "https://new.guap.ru/targets/studs",
+    "обучающиеся гуап": "https://new.guap.ru/targets/studs",
     "почта рамблер": "https://mail.rambler.ru",
     "почту рамблер": "https://mail.rambler.ru",
     "рамблер почта": "https://mail.rambler.ru",
@@ -243,6 +254,16 @@ class BindingAgentResult:
     research: dict[str, Any] = field(default_factory=dict)
 
     def to_legacy_draft(self) -> dict[str, Any]:
+        unresolved_steps: list[dict[str, Any]] = []
+        for step in self.steps:
+            raw_unresolved = step.data.get("unresolved_steps")
+            if not isinstance(raw_unresolved, list):
+                continue
+            unresolved_steps = [
+                dict(item)
+                for item in raw_unresolved
+                if isinstance(item, dict)
+            ]
         return {
             "ok": self.ok,
             "canApply": self.can_apply,
@@ -257,6 +278,7 @@ class BindingAgentResult:
             "intent": self.intent,
             "intentBlock": self.intent_block,
             "researchProposal": dict(self.research),
+            "unresolvedSteps": unresolved_steps,
             "agentSkills": _skill_registry_cards(),
             "agentSkillPacks": _skill_pack_cards(),
             "agentTrace": [
@@ -586,6 +608,10 @@ def _parse_action(text: str) -> dict[str, Any] | None:
     if keys:
         return {"action": "key_combination", "platform": "macos", "keys": keys}
 
+    ontology_action = parse_action_intent(text)
+    if ontology_action:
+        return ontology_action
+
     if any(marker in lower for marker in ("заблок", "lock screen", "lock_screen")):
         return {"action": "lock_screen", "platform": "macos"}
     if any(marker in lower for marker in ("скрин", "screenshot", "снимок экрана")):
@@ -636,7 +662,7 @@ def _parse_action(text: str) -> dict[str, Any] | None:
         return {
             "action": "notify",
             "platform": "macos",
-            "title": "GestureFlow",
+            "title": "GestureBind",
             "message": message or "Готово",
         }
 
@@ -685,6 +711,16 @@ def _split_sequence(text: str) -> list[str]:
         body,
         flags=re.IGNORECASE,
     )
+    body = re.sub(
+        (
+            r"^\s*(?:жест(?:ом|а)?|gesture)\s*[:=]?\s+"
+            r"[A-Za-zА-Яа-я0-9_.-]+\s+"
+            rf"(?={ACTION_START_PATTERN}\w*)"
+        ),
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
     series_prefix = re.match(
         r"\s*(?:сер(?:и[яию]|ии)|последовательност[ьи])\s+команд\w*",
         body,
@@ -717,6 +753,17 @@ def _split_sequence(text: str) -> list[str]:
             body,
             flags=re.IGNORECASE,
         )
+    body = re.sub(
+        (
+            r"^\s*(?:сделай|создай|добавь|собери|подготовь)\s+"
+            rf"(?:(?!{ACTION_START_PATTERN}\w*).){{1,80}}"
+            r"[:—-]\s*"
+            rf"(?={ACTION_START_PATTERN}\w*)"
+        ),
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
     body = re.sub(
         (
             r"\b(?:перв(?:ый|ым|ое)?(?:\s+шаг)?|1\s*[-.]?\s*шаг|"
@@ -769,19 +816,13 @@ def _split_sequence(text: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"\s+и\s+(?=откр|запуст|покаж|уведом|подожд|нажм"
-            r"|сделай|увелич|уменьш|заблок|скрин)"
-        ),
+        rf"\s+и\s+(?={ACTION_START_PATTERN})",
         ";",
         body,
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"[,]\s*(?=(?:откр|запуст|включ|покаж|уведом|подожд|нажм|"
-            r"сделай|увелич|уменьш|заблок|скрин|сайт)\w*)"
-        ),
+        rf"[,]\s*(?={ACTION_START_PATTERN}\w*)",
         ";",
         body,
         flags=re.IGNORECASE,
@@ -793,10 +834,7 @@ def _split_sequence(text: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"\s+(?=(?:откр|запуст|включ|покаж|уведом|подожд|нажм|"
-            r"сделай|увелич|уменьш|заблок|скрин)\w*)"
-        ),
+        rf"\s+(?={INLINE_ACTION_START_PATTERN}\w*)",
         ";",
         body,
         flags=re.IGNORECASE,
@@ -846,6 +884,16 @@ def _action_title(spec: dict[str, Any]) -> str:
         return f"Нажать {spec.get('key') or 'клавишу'}"
     if action == "notify":
         return "Уведомление"
+    if action == "media_key":
+        kind = str(spec.get("kind") or "play_pause")
+        return {
+            "play_pause": "Пауза/воспроизведение медиа",
+            "play": "Запустить воспроизведение",
+            "pause": "Поставить медиа на паузу",
+            "next": "Следующий медиа-трек",
+            "prev": "Предыдущий медиа-трек",
+            "previous": "Предыдущий медиа-трек",
+        }.get(kind, "Управлять медиа")
     if action == "sequence":
         name = str(spec.get("name") or "").strip()
         if name:
@@ -995,8 +1043,9 @@ def _mlflow_tracking_uri() -> str:
 def _mlflow_experiment() -> str:
     return str(
         os.getenv(BINDING_AGENT_MLFLOW_EXPERIMENT_ENV)
+        or os.getenv("GESTUREBIND_MLFLOW_EXPERIMENT")
         or os.getenv("GESTUREFLOW_MLFLOW_EXPERIMENT")
-        or "GestureFlow"
+        or "GestureBind"
     ).strip()
 
 
@@ -1120,7 +1169,7 @@ def _has_project_scope(text: str) -> bool:
         marker in lower
         for marker in (
             "dplm",
-            "gestureflow",
+            "gesturebind",
             "проект",
             "прилож",
             "система",
@@ -1236,7 +1285,7 @@ def _history_mentions_scope_redirect(history: list[dict[str, str]]) -> bool:
                 "остан",
                 "контекст",
                 "общие вопросы",
-                "gestureflow",
+                "gesturebind",
                 "рамк",
             )
         ):
@@ -1249,9 +1298,9 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
     title = _pick_variant(
         seed + "|title",
         (
-            "**Почему я держусь GestureFlow**",
-            "**Держу фокус на GestureFlow**",
-            "**Остаюсь в рабочем контуре GestureFlow**",
+            "**Почему я держусь GestureBind**",
+            "**Держу фокус на GestureBind**",
+            "**Остаюсь в рабочем контуре GestureBind**",
         ),
     )
     prefix = ""
@@ -1261,14 +1310,14 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
             (
                 "Да, вижу предыдущий ответ и держу его в памяти. ",
                 "Да, я помню прошлую реплику и продолжаю ту же линию. ",
-                "Вижу контекст выше: я всё ещё аккуратно держу рамку GestureFlow. ",
+                "Вижу контекст выше: я всё ещё аккуратно держу рамку GestureBind. ",
             ),
         )
     intro = _pick_variant(
         seed + "|intro",
         (
             "Ха-ха, понимаю желание получить ответ на всё сразу, но давай не будем уводить агента в соседние темы.",
-            "Ха-ха, соблазн уйти в общий чат понятен, но здесь лучше держать руль на GestureFlow.",
+            "Ха-ха, соблазн уйти в общий чат понятен, но здесь лучше держать руль на GestureBind.",
             "Ха-ха, можно было бы развернуться в обычный чат, но тогда агент начнёт мешать привязки с посторонними задачами.",
         ),
     )
@@ -1276,7 +1325,7 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
         seed + "|help",
         (
             "Зато здесь я могу быть очень полезным:",
-            "Внутри GestureFlow я как раз полезен вот где:",
+            "Внутри GestureBind я как раз полезен вот где:",
             "Лучше потрачу внимание на то, что реально помогает в приложении:",
         ),
     )
@@ -1290,7 +1339,7 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
     )
     return (
         f"{title}\n\n"
-        f"{prefix}{intro} Я держусь рамок GestureFlow, чтобы не смешивать "
+        f"{prefix}{intro} Я держусь рамок GestureBind, чтобы не смешивать "
         "настройку жестов, команд и сценариев с обычным чатом.\n\n"
         f"{help_intro}\n"
         "- разобрать фразу и собрать привязку жеста;\n"
@@ -1334,7 +1383,7 @@ def _project_answer_text(
         )
     gestures = ", ".join(labels[:8]) if labels else "список жестов пока не загружен"
     return (
-        "**GestureFlow**\n\n"
+        "**GestureBind**\n\n"
         "- Основная задача: связать распознанный жест с командой macOS или сценарием.\n"
         "- Агент принимает обычную фразу, находит жест, действие и недостающие поля.\n"
         "- Ручная форма остаётся рядом, чтобы пользователь мог проверить и сохранить результат.\n"
@@ -1351,9 +1400,9 @@ def _unsupported_answer_text(
     title = _pick_variant(
         seed + "|title",
         (
-            "**Останемся в GestureFlow**",
-            "**Верну нас к GestureFlow**",
-            "**Держим фокус на GestureFlow**",
+            "**Останемся в GestureBind**",
+            "**Верну нас к GestureBind**",
+            "**Держим фокус на GestureBind**",
         ),
     )
     intro = _pick_variant(
@@ -1367,16 +1416,16 @@ def _unsupported_answer_text(
     boundary = _pick_variant(
         seed + "|boundary",
         (
-            "На общие вопросы вне GestureFlow я лучше мягко сверну разговор, чтобы не смешивать настройку привязок с посторонними темами.",
+            "На общие вопросы вне GestureBind я лучше мягко сверну разговор, чтобы не смешивать настройку привязок с посторонними темами.",
             "Я не буду разворачивать постороннюю тему, чтобы не путать диалог агента с настройкой жестов, команд и сценариев.",
-            "Так мы не потеряем контекст: агент остаётся помощником по GestureFlow, а не универсальным собеседником.",
+            "Так мы не потеряем контекст: агент остаётся помощником по GestureBind, а не универсальным собеседником.",
         ),
     )
     help_intro = _pick_variant(
         seed + "|help",
         (
             "Зато я могу помочь здесь:",
-            "А вот внутри GestureFlow я полезен:",
+            "А вот внутри GestureBind я полезен:",
             "Лучше направим это в действие по приложению:",
         ),
     )
@@ -1448,11 +1497,11 @@ def _guardrail_answer_text(reason: str) -> str:
         )
     if reason == "prompt_injection":
         return (
-            "**Останемся в GestureFlow**\n\n"
+            "**Останемся в GestureBind**\n\n"
             "Ха-ха, понимаю ход, но правила агента я не переписываю из сообщения. "
             "Guardrails остановили часть запроса, где предлагается не слушать "
             "предыдущие инструкции.\n\n"
-            "Зато я спокойно помогу в рамках GestureFlow: привязки, жесты, "
+            "Зато я спокойно помогу в рамках GestureBind: привязки, жесты, "
             "команды, сценарии и наблюдаемость пайплайна."
         )
     if reason == "prompt_too_long":
@@ -1464,7 +1513,7 @@ def _guardrail_answer_text(reason: str) -> str:
     return (
         "**Ответ остановлен guardrails**\n\n"
         "Я не могу безопасно выдать этот результат. Переформулируйте запрос "
-        "в рамках GestureFlow: жест, команда, сценарий или вопрос по проекту."
+        "в рамках GestureBind: жест, команда, сценарий или вопрос по проекту."
     )
 
 
@@ -1604,6 +1653,28 @@ def _gesture_query_from_text(text: str) -> str:
     )
     if match:
         return _clean_value(match.group("value"))
+    generic_bind_match = re.search(
+        (
+            r"(?:привяж\w*|привяз\w*|сохрани\w*|назнач\w*)\s+"
+            r"(?P<value>.+?)(?=\s+(?:к|на|для)\s+)"
+        ),
+        raw,
+        re.IGNORECASE,
+    )
+    if generic_bind_match:
+        value = _clean_value(generic_bind_match.group("value"))
+        if _normalize_gesture_phrase(value) not in {
+            "this",
+            "eto",
+            "это",
+            "этот",
+            "эту",
+            "текущий",
+            "текущии",
+            "выбранный",
+            "выбранныи",
+        }:
+            return value
     return _clean_value(raw)
 
 
@@ -1778,7 +1849,7 @@ class BindingAgentMlflowLogger:
                 mlflow.set_tags(
                     {
                         "run_kind": "binding_agent_pipeline",
-                        "source": "gestureflow_flet",
+                        "source": "gesturebind_flet",
                         "provider": provider,
                         "model": model,
                         "result": "ok" if result.ok else "needs_review",
@@ -2526,6 +2597,19 @@ class BindingAgentOrchestrator:
         policy_step = self.policy_agent.run(gesture, action_spec)
         steps.append(policy_step)
         missing = list(policy_step.data.get("missing") or [])
+        unresolved_steps = []
+        if intent == "build_sequence":
+            for step in reversed(steps):
+                if step.agent != "Scenario Agent":
+                    continue
+                raw_unresolved = step.data.get("unresolved_steps")
+                if isinstance(raw_unresolved, list):
+                    unresolved_steps = [
+                        item for item in raw_unresolved if isinstance(item, dict)
+                    ]
+                break
+        if unresolved_steps:
+            missing = _unique_missing([*missing, "шаги сценария"])
 
         validation_step = self.validation_agent.run(gesture, action_spec)
         steps.append(validation_step)
@@ -2919,6 +3003,12 @@ class BindingAgentOrchestrator:
         if error:
             return f"Локальный агент: не смог разобрать запрос. {error}."
         if missing:
+            if "шаги сценария" in missing:
+                return (
+                    "Я собрал только понятные части сценария, но часть шагов не "
+                    "разобрал. Уточните непонятный шаг: например дайте точный URL, "
+                    "название приложения или команду."
+                )
             if "действие" in missing:
                 return (
                     "Я понял жест. Уточните, какую команду к нему привязать: "

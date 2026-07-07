@@ -6,8 +6,15 @@ from typing import Iterable, List, Optional, Tuple
 
 import joblib
 import numpy as np
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, VotingClassifier
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    RandomForestClassifier,
+    StackingClassifier,
+    VotingClassifier,
+)
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.neural_network import MLPClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
@@ -15,23 +22,30 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    DYNAMIC_SEQUENCE_TARGET_FRAMES,
     FEATURE_STATIC_MEAN,
     SUPPORTED_FEATURE_MODES,
     build_feature_vector,
     feature_vector_size,
 )
-from cv.gesture_dataset_files import gesture_sample_paths
+from cv.gesture_dataset_files import augmented_sample_paths, gesture_sample_paths
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
 from cv.sequence_gru_backbone import (
     TorchGRUBackboneClassifier,
     TorchLSTMBackboneClassifier,
+    make_dynamic_landmark_lstm_backbone_classifier,
     tune_gru_backbone_hyperparameters,
     tune_lstm_backbone_hyperparameters,
 )
 from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
+from cv.static_landmark_cnn import (
+    KerasStaticLandmarkCNNClassifier,
+    make_dynamic_landmark_cnn_classifier,
+)
 
 SUPPORTED_MODEL_TYPES = (
     "knn",
@@ -45,8 +59,12 @@ SUPPORTED_MODEL_TYPES = (
     "sequence_ensemble",
     "sequence_gru_backbone",
     "sequence_lstm_backbone",
+    "dynamic_landmark_lstm_backbone",
     "svm",
     "extra_trees",
+    "static_stacking",
+    "static_landmark_cnn",
+    "dynamic_landmark_cnn",
     "rf",
     "logreg",
 )
@@ -98,6 +116,26 @@ DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION = 0.20
 DEFAULT_SEQUENCE_LSTM_PATIENCE = 28
 DEFAULT_SEQUENCE_LSTM_OPTUNA_TRIALS = 0
 DEFAULT_SEQUENCE_LSTM_OPTUNA_MAX_EPOCHS = 70
+DEFAULT_EXTRA_TREES_N_ESTIMATORS = 250
+DEFAULT_EXTRA_TREES_MAX_DEPTH = None
+DEFAULT_EXTRA_TREES_MIN_SAMPLES_SPLIT = 2
+DEFAULT_EXTRA_TREES_MIN_SAMPLES_LEAF = 1
+DEFAULT_EXTRA_TREES_MAX_FEATURES = "sqrt"
+DEFAULT_EXTRA_TREES_CRITERION = "gini"
+DEFAULT_EXTRA_TREES_BOOTSTRAP = False
+DEFAULT_EXTRA_TREES_OPTUNA_TRIALS = 0
+DEFAULT_EXTRA_TREES_OPTUNA_CV_FOLDS = 3
+DEFAULT_STATIC_STACKING_CV_FOLDS = 3
+DEFAULT_STATIC_CNN_MAX_EPOCHS = 120
+DEFAULT_STATIC_CNN_BATCH_SIZE = 16
+DEFAULT_STATIC_CNN_VALIDATION_FRACTION = 0.20
+DEFAULT_STATIC_CNN_PATIENCE = 18
+DEFAULT_STATIC_CNN_LEARNING_RATE = 1e-3
+DEFAULT_STATIC_CNN_DROPOUT = 0.20
+DEFAULT_STATIC_CNN_LABEL_SMOOTHING = 0.05
+DEFAULT_CLASS_BALANCE = "auto"
+DEFAULT_CLASS_BOOST_LABELS = ("hend", "gun")
+DEFAULT_CLASS_BOOST_FACTOR = 1.5
 
 
 # --------------------------------------------------
@@ -137,10 +175,12 @@ def load_dataset(
         label = raw_label.lower() if lowercase_labels else raw_label
         if canonical_include and label not in canonical_include and raw_label not in raw_include:
             continue
-        sample_files = gesture_sample_paths(
-            label_dir,
-            include_augmented=bool(include_augmented),
-        )
+        sample_files = gesture_sample_paths(label_dir)
+        if include_augmented:
+            sample_files = [
+                *sample_files,
+                *_gislr_augmented_sample_paths(label_dir),
+            ]
         if not sample_files:
             print(f"[i] Пропуск: нет семплов в {label_dir}")
             continue
@@ -206,6 +246,26 @@ def load_dataset(
     return X, y, classes
 
 
+def _gislr_augmented_sample_paths(label_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for sample_path in augmented_sample_paths(label_dir):
+        metadata_path = sample_path.with_suffix(".meta.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        transform = str(metadata.get("transform") or "")
+        transform_metadata = metadata.get("transform_metadata")
+        policy = (
+            str(transform_metadata.get("policy") or "")
+            if isinstance(transform_metadata, dict)
+            else ""
+        )
+        if transform == "gislr_landmark_v1" or policy == "gislr_landmark_v1":
+            paths.append(sample_path)
+    return paths
+
+
 def build_classifier(
     model_type: str,
     *,
@@ -263,6 +323,21 @@ def build_classifier(
     sequence_lstm_batch_size: int = DEFAULT_SEQUENCE_LSTM_BATCH_SIZE,
     sequence_lstm_validation_fraction: float = DEFAULT_SEQUENCE_LSTM_VALIDATION_FRACTION,
     sequence_lstm_patience: int = DEFAULT_SEQUENCE_LSTM_PATIENCE,
+    extra_trees_n_estimators: int = DEFAULT_EXTRA_TREES_N_ESTIMATORS,
+    extra_trees_max_depth: int | None = DEFAULT_EXTRA_TREES_MAX_DEPTH,
+    extra_trees_min_samples_split: int = DEFAULT_EXTRA_TREES_MIN_SAMPLES_SPLIT,
+    extra_trees_min_samples_leaf: int = DEFAULT_EXTRA_TREES_MIN_SAMPLES_LEAF,
+    extra_trees_max_features: str | float | None = DEFAULT_EXTRA_TREES_MAX_FEATURES,
+    extra_trees_criterion: str = DEFAULT_EXTRA_TREES_CRITERION,
+    extra_trees_bootstrap: bool = DEFAULT_EXTRA_TREES_BOOTSTRAP,
+    static_stacking_cv_folds: int = DEFAULT_STATIC_STACKING_CV_FOLDS,
+    static_cnn_max_epochs: int = DEFAULT_STATIC_CNN_MAX_EPOCHS,
+    static_cnn_batch_size: int = DEFAULT_STATIC_CNN_BATCH_SIZE,
+    static_cnn_validation_fraction: float = DEFAULT_STATIC_CNN_VALIDATION_FRACTION,
+    static_cnn_patience: int = DEFAULT_STATIC_CNN_PATIENCE,
+    static_cnn_learning_rate: float = DEFAULT_STATIC_CNN_LEARNING_RATE,
+    static_cnn_dropout: float = DEFAULT_STATIC_CNN_DROPOUT,
+    static_cnn_label_smoothing: float = DEFAULT_STATIC_CNN_LABEL_SMOOTHING,
 ):
     model = str(model_type or "knn").strip().lower()
     if model in {"knn", "sequence_knn"}:
@@ -478,6 +553,24 @@ def build_classifier(
             patience=max(1, int(sequence_lstm_patience)),
             random_state=int(random_state),
         )
+    if model == "dynamic_landmark_lstm_backbone":
+        return make_dynamic_landmark_lstm_backbone_classifier(
+            backbone_dim=max(4, int(sequence_lstm_backbone_dim)),
+            hidden_dim=max(4, int(sequence_lstm_hidden_dim)),
+            num_layers=max(1, int(sequence_lstm_layers)),
+            dropout=max(0.0, float(sequence_lstm_dropout)),
+            use_bidirectional=bool(sequence_lstm_bidirectional),
+            learning_rate=max(1e-6, float(sequence_lstm_learning_rate)),
+            weight_decay=max(0.0, float(sequence_lstm_weight_decay)),
+            max_epochs=max(1, int(sequence_lstm_max_epochs)),
+            batch_size=max(1, int(sequence_lstm_batch_size)),
+            validation_fraction=max(
+                0.0,
+                min(0.50, float(sequence_lstm_validation_fraction)),
+            ),
+            patience=max(1, int(sequence_lstm_patience)),
+            random_state=int(random_state),
+        )
     if model == "sequence_rocket":
         return make_pipeline(
             RandomConvolutionSequenceTransformer(
@@ -509,10 +602,121 @@ def build_classifier(
             ),
         )
     if model == "extra_trees":
+        max_depth = (
+            None
+            if extra_trees_max_depth in {None, 0}
+            else max(1, int(extra_trees_max_depth))
+        )
+        criterion = str(extra_trees_criterion or DEFAULT_EXTRA_TREES_CRITERION)
+        if criterion not in {"gini", "entropy", "log_loss"}:
+            criterion = DEFAULT_EXTRA_TREES_CRITERION
         return ExtraTreesClassifier(
-            n_estimators=250,
+            n_estimators=max(10, int(extra_trees_n_estimators)),
+            criterion=criterion,
+            max_depth=max_depth,
+            min_samples_split=max(2, int(extra_trees_min_samples_split)),
+            min_samples_leaf=max(1, int(extra_trees_min_samples_leaf)),
+            max_features=extra_trees_max_features,
+            bootstrap=bool(extra_trees_bootstrap),
             random_state=int(random_state),
             class_weight="balanced",
+            n_jobs=-1,
+        )
+    if model == "static_stacking":
+        cv_folds = max(2, int(static_stacking_cv_folds))
+        return StackingClassifier(
+            estimators=[
+                (
+                    "extra_trees",
+                    ExtraTreesClassifier(
+                        n_estimators=max(80, int(extra_trees_n_estimators)),
+                        criterion=str(
+                            extra_trees_criterion or DEFAULT_EXTRA_TREES_CRITERION
+                        ),
+                        max_depth=extra_trees_max_depth,
+                        min_samples_split=max(
+                            2,
+                            int(extra_trees_min_samples_split),
+                        ),
+                        min_samples_leaf=max(1, int(extra_trees_min_samples_leaf)),
+                        max_features=extra_trees_max_features,
+                        bootstrap=bool(extra_trees_bootstrap),
+                        random_state=int(random_state),
+                        class_weight="balanced",
+                        n_jobs=-1,
+                    ),
+                ),
+                (
+                    "rf",
+                    RandomForestClassifier(
+                        n_estimators=180,
+                        random_state=int(random_state) + 1,
+                        class_weight="balanced",
+                        n_jobs=-1,
+                    ),
+                ),
+                (
+                    "svm",
+                    make_pipeline(
+                        StandardScaler(),
+                        SVC(
+                            kernel="rbf",
+                            C=2.0,
+                            gamma="scale",
+                            class_weight="balanced",
+                            probability=True,
+                            random_state=int(random_state) + 2,
+                        ),
+                    ),
+                ),
+                (
+                    "logreg",
+                    make_pipeline(
+                        StandardScaler(),
+                        LogisticRegression(
+                            max_iter=2000,
+                            class_weight="balanced",
+                            random_state=int(random_state) + 3,
+                        ),
+                    ),
+                ),
+            ],
+            final_estimator=LogisticRegression(
+                max_iter=2000,
+                class_weight="balanced",
+                random_state=int(random_state) + 4,
+            ),
+            stack_method="predict_proba",
+            cv=cv_folds,
+            n_jobs=-1,
+        )
+    if model == "static_landmark_cnn":
+        return KerasStaticLandmarkCNNClassifier(
+            max_epochs=max(1, int(static_cnn_max_epochs)),
+            batch_size=max(1, int(static_cnn_batch_size)),
+            validation_fraction=max(
+                0.0,
+                min(0.50, float(static_cnn_validation_fraction)),
+            ),
+            patience=max(1, int(static_cnn_patience)),
+            learning_rate=max(1e-6, float(static_cnn_learning_rate)),
+            dropout=max(0.0, float(static_cnn_dropout)),
+            label_smoothing=max(0.0, float(static_cnn_label_smoothing)),
+            random_state=int(random_state),
+        )
+    if model == "dynamic_landmark_cnn":
+        return make_dynamic_landmark_cnn_classifier(
+            max_epochs=max(1, int(static_cnn_max_epochs)),
+            batch_size=max(1, int(static_cnn_batch_size)),
+            validation_fraction=max(
+                0.0,
+                min(0.50, float(static_cnn_validation_fraction)),
+            ),
+            patience=max(1, int(static_cnn_patience)),
+            learning_rate=max(1e-6, float(static_cnn_learning_rate)),
+            dropout=max(0.0, float(static_cnn_dropout)),
+            label_smoothing=max(0.0, float(static_cnn_label_smoothing)),
+            random_state=int(random_state),
         )
     if model == "rf":
         return RandomForestClassifier(
@@ -546,6 +750,319 @@ def can_use_sequence_mlp_validation_split(
     validation_count = int(np.ceil(float(y.size) * float(validation_fraction)))
     train_count = int(y.size) - validation_count
     return validation_count >= class_count and train_count >= class_count
+
+
+def model_uses_internal_class_balance(model_type: str) -> bool:
+    model = str(model_type or "knn").strip().lower()
+    return model in {
+        "sequence_rocket",
+        "sequence_multirocket",
+        "sequence_sprocket",
+        "sequence_shapelet",
+        "sequence_ensemble",
+        "sequence_gru_backbone",
+        "sequence_lstm_backbone",
+        "dynamic_landmark_lstm_backbone",
+        "svm",
+        "extra_trees",
+        "static_stacking",
+        "static_landmark_cnn",
+        "dynamic_landmark_cnn",
+        "rf",
+        "logreg",
+    }
+
+
+def _normalised_label_set(labels: Iterable[str]) -> set[str]:
+    return {str(label).strip().lower() for label in labels if str(label).strip()}
+
+
+def _resolve_class_balance_mode(
+    requested: str,
+    *,
+    model_type: str,
+    has_boosted_labels: bool,
+) -> str:
+    clean = str(requested or DEFAULT_CLASS_BALANCE).strip().lower()
+    if clean == "none":
+        return "none"
+    if clean == "oversample":
+        return "oversample"
+    if clean != "auto":
+        raise ValueError(f"unsupported class balance mode: {requested}")
+    if not model_uses_internal_class_balance(model_type):
+        return "oversample"
+    return "boost_labels" if has_boosted_labels else "none"
+
+
+def balance_training_set(
+    X: np.ndarray,
+    y: np.ndarray,
+    classes: list[str],
+    *,
+    model_type: str,
+    strategy: str = DEFAULT_CLASS_BALANCE,
+    boost_labels: Iterable[str] = DEFAULT_CLASS_BOOST_LABELS,
+    boost_factor: float = DEFAULT_CLASS_BOOST_FACTOR,
+    random_state: int = 42,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Return a fit set with optional GISLR-style weak-class amplification."""
+    labels = [str(label) for label in classes]
+    encoded = np.asarray(y, dtype=np.int64)
+    class_count = len(labels)
+    counts = (
+        np.bincount(encoded, minlength=class_count).astype(np.int64)
+        if class_count > 0
+        else np.zeros(0, dtype=np.int64)
+    )
+    boost_set = _normalised_label_set(boost_labels)
+    boosted_indices = {
+        idx for idx, label in enumerate(labels) if label.strip().lower() in boost_set
+    }
+    present_boosted = {
+        idx for idx in boosted_indices if idx < counts.shape[0] and counts[idx] > 0
+    }
+    mode = _resolve_class_balance_mode(
+        strategy,
+        model_type=model_type,
+        has_boosted_labels=bool(present_boosted) and float(boost_factor) > 1.0,
+    )
+    metadata = {
+        "requested": str(strategy or DEFAULT_CLASS_BALANCE),
+        "effective": mode,
+        "model_type": str(model_type),
+        "boost_labels": sorted(boost_set),
+        "boost_factor": float(boost_factor),
+        "original_samples": int(encoded.shape[0]),
+        "fit_samples": int(encoded.shape[0]),
+        "class_counts": {
+            label: int(counts[idx]) for idx, label in enumerate(labels)
+        },
+        "fit_class_counts": {
+            label: int(counts[idx]) for idx, label in enumerate(labels)
+        },
+    }
+    if mode == "none" or encoded.size == 0 or class_count <= 1:
+        return X, encoded, metadata
+
+    targets = counts.copy()
+    balance_target_count = int(counts.max()) if counts.size else 0
+    if mode == "oversample" and counts.size:
+        targets = np.where(counts > 0, balance_target_count, 0).astype(np.int64)
+
+    factor = max(1.0, float(boost_factor))
+    for class_idx in present_boosted:
+        if mode == "oversample":
+            boosted_target = int(np.ceil(float(max(1, balance_target_count)) * factor))
+        else:
+            boosted_target = int(np.ceil(float(counts[class_idx]) * factor))
+        targets[class_idx] = max(int(targets[class_idx]), boosted_target)
+
+    if np.array_equal(targets, counts):
+        metadata["effective"] = "none"
+        return X, encoded, metadata
+
+    rng = np.random.default_rng(int(random_state))
+    indices = [int(idx) for idx in range(encoded.shape[0])]
+    for class_idx, target_count in enumerate(targets):
+        current_count = int(counts[class_idx]) if class_idx < counts.shape[0] else 0
+        missing = int(target_count) - current_count
+        if missing <= 0:
+            continue
+        class_indices = np.flatnonzero(encoded == class_idx)
+        if class_indices.size <= 0:
+            continue
+        sampled = rng.choice(class_indices, size=missing, replace=True)
+        indices.extend(int(idx) for idx in sampled)
+
+    shuffled = np.asarray(indices, dtype=np.int64)
+    rng.shuffle(shuffled)
+    fit_y = encoded[shuffled]
+    fit_counts = np.bincount(fit_y, minlength=class_count).astype(np.int64)
+    metadata["fit_samples"] = int(fit_y.shape[0])
+    metadata["fit_class_counts"] = {
+        label: int(fit_counts[idx]) for idx, label in enumerate(labels)
+    }
+    return X[shuffled], fit_y, metadata
+
+
+def _extra_trees_default_params() -> dict[str, object]:
+    return {
+        "extra_trees_n_estimators": int(DEFAULT_EXTRA_TREES_N_ESTIMATORS),
+        "extra_trees_max_depth": DEFAULT_EXTRA_TREES_MAX_DEPTH,
+        "extra_trees_min_samples_split": int(DEFAULT_EXTRA_TREES_MIN_SAMPLES_SPLIT),
+        "extra_trees_min_samples_leaf": int(DEFAULT_EXTRA_TREES_MIN_SAMPLES_LEAF),
+        "extra_trees_max_features": DEFAULT_EXTRA_TREES_MAX_FEATURES,
+        "extra_trees_criterion": DEFAULT_EXTRA_TREES_CRITERION,
+        "extra_trees_bootstrap": bool(DEFAULT_EXTRA_TREES_BOOTSTRAP),
+    }
+
+
+def tune_extra_trees_hyperparameters(
+    X: np.ndarray,
+    y: np.ndarray,
+    classes: list[str],
+    *,
+    n_trials: int,
+    cv_folds: int = DEFAULT_EXTRA_TREES_OPTUNA_CV_FOLDS,
+    timeout: int | None = None,
+    random_state: int = 42,
+    class_balance: str = DEFAULT_CLASS_BALANCE,
+    boost_labels: Iterable[str] = DEFAULT_CLASS_BOOST_LABELS,
+    boost_factor: float = DEFAULT_CLASS_BOOST_FACTOR,
+) -> dict[str, object]:
+    """Tune ExtraTrees for static handcrafted features with macro-F1 CV."""
+    try:
+        import optuna
+    except ImportError as exc:  # pragma: no cover - dependency is in requirements
+        raise RuntimeError("Optuna is required for extra_trees tuning") from exc
+
+    matrix = np.asarray(X, dtype=np.float32)
+    labels = np.asarray(y, dtype=np.int64)
+    unique = np.unique(labels)
+    default_params = _extra_trees_default_params()
+    if matrix.ndim != 2 or labels.ndim != 1 or unique.size < 2:
+        return {
+            "best_score": 0.0,
+            "best_params": default_params,
+            "trials": 0,
+            "cv_folds": 0,
+            "used_cv": False,
+            "reason": "not_enough_classes",
+        }
+
+    counts = np.bincount(labels, minlength=len(classes))
+    positive_counts = counts[counts > 0]
+    min_class_count = int(positive_counts.min()) if positive_counts.size else 0
+    folds = min(max(2, int(cv_folds)), min_class_count)
+    used_cv = folds >= 2
+    splitter = (
+        StratifiedKFold(
+            n_splits=folds,
+            shuffle=True,
+            random_state=int(random_state),
+        )
+        if used_cv
+        else None
+    )
+
+    def trial_params(trial) -> dict[str, object]:
+        return {
+            "extra_trees_n_estimators": int(
+                trial.suggest_int("n_estimators", 120, 520, step=40)
+            ),
+            "extra_trees_max_depth": trial.suggest_categorical(
+                "max_depth",
+                [None, 6, 10, 14, 20, 30],
+            ),
+            "extra_trees_min_samples_split": int(
+                trial.suggest_int("min_samples_split", 2, 8)
+            ),
+            "extra_trees_min_samples_leaf": int(
+                trial.suggest_int("min_samples_leaf", 1, 5)
+            ),
+            "extra_trees_max_features": trial.suggest_categorical(
+                "max_features",
+                ["sqrt", "log2", 0.35, 0.50, 0.75, 1.0],
+            ),
+            "extra_trees_criterion": trial.suggest_categorical(
+                "criterion",
+                ["gini", "entropy"],
+            ),
+            "extra_trees_bootstrap": bool(
+                trial.suggest_categorical("bootstrap", [False, True])
+            ),
+        }
+
+    def fit_score(params: dict[str, object], train_idx, valid_idx) -> float:
+        clf = build_classifier(
+            "extra_trees",
+            random_state=int(random_state),
+            **params,
+        )
+        train_X = matrix[train_idx]
+        train_y = labels[train_idx]
+        fit_X, fit_y, _metadata = balance_training_set(
+            train_X,
+            train_y,
+            classes,
+            model_type="extra_trees",
+            strategy=class_balance,
+            boost_labels=boost_labels,
+            boost_factor=boost_factor,
+            random_state=int(random_state),
+        )
+        clf.fit(fit_X, fit_y)
+        pred = clf.predict(matrix[valid_idx])
+        return float(
+            f1_score(
+                labels[valid_idx],
+                pred,
+                average="macro",
+                zero_division=0,
+            )
+        )
+
+    def objective(trial) -> float:
+        params = trial_params(trial)
+        if splitter is None:
+            indices = np.arange(labels.shape[0])
+            return fit_score(params, indices, indices)
+        scores = [
+            fit_score(params, train_idx, valid_idx)
+            for train_idx, valid_idx in splitter.split(matrix, labels)
+        ]
+        return float(np.mean(scores)) if scores else 0.0
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    sampler = optuna.samplers.TPESampler(seed=int(random_state))
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study.optimize(
+        objective,
+        n_trials=max(1, int(n_trials)),
+        timeout=timeout if timeout and timeout > 0 else None,
+        show_progress_bar=False,
+    )
+    raw_best = dict(study.best_trial.params)
+    best_params = {
+        "extra_trees_n_estimators": int(
+            raw_best.get("n_estimators", DEFAULT_EXTRA_TREES_N_ESTIMATORS)
+        ),
+        "extra_trees_max_depth": raw_best.get(
+            "max_depth",
+            DEFAULT_EXTRA_TREES_MAX_DEPTH,
+        ),
+        "extra_trees_min_samples_split": int(
+            raw_best.get(
+                "min_samples_split",
+                DEFAULT_EXTRA_TREES_MIN_SAMPLES_SPLIT,
+            )
+        ),
+        "extra_trees_min_samples_leaf": int(
+            raw_best.get(
+                "min_samples_leaf",
+                DEFAULT_EXTRA_TREES_MIN_SAMPLES_LEAF,
+            )
+        ),
+        "extra_trees_max_features": raw_best.get(
+            "max_features",
+            DEFAULT_EXTRA_TREES_MAX_FEATURES,
+        ),
+        "extra_trees_criterion": str(
+            raw_best.get("criterion", DEFAULT_EXTRA_TREES_CRITERION)
+        ),
+        "extra_trees_bootstrap": bool(
+            raw_best.get("bootstrap", DEFAULT_EXTRA_TREES_BOOTSTRAP)
+        ),
+    }
+    return {
+        "best_score": float(study.best_value),
+        "best_params": best_params,
+        "trials": len(study.trials),
+        "cv_folds": int(folds) if used_cv else 0,
+        "used_cv": bool(used_cv),
+        "reason": "",
+    }
 
 
 def is_negative_label(label: str) -> bool:
@@ -623,7 +1140,7 @@ def default_rejection_metadata_path(out_path: Path) -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Обучение KNN классификатора жестов")
+    p = argparse.ArgumentParser(description="Обучение классификатора жестов")
     p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
     p.add_argument("--out", default="models/knn.pkl", help="Путь для сохранения модели")
     p.add_argument("--classes-out", default=None, help="Путь для сохранения classes.json")
@@ -638,7 +1155,15 @@ def parse_args() -> argparse.Namespace:
         "--feature-mode",
         choices=SUPPORTED_FEATURE_MODES,
         default=FEATURE_STATIC_MEAN,
-        help="Режим признаков: static_mean — текущий production baseline; dynamic_stats/hybrid_stats — JMLC-эксперименты",
+        help=(
+            "Режим признаков: static_mean — production baseline; "
+            "static_craft_full_stats — full hand geometry for static poses; "
+            "static_landmark_image — GISLR-style time x hand points x xyz; "
+            "dynamic_stats/hybrid_stats — dynamic baseline; "
+            "dynamic_craft_stats — light GISLR-style geometry; "
+            "dynamic_craft_full_stats — all 210 hand distances + 15 angles; "
+            "dynamic_landmark_image — экспериментальный time x points x xyz benchmark"
+        ),
     )
     p.add_argument("--neighbors", type=int, default=5, help="Число соседей KNN")
     p.add_argument(
@@ -650,7 +1175,9 @@ def parse_args() -> argparse.Namespace:
             "sequence_rocket, sequence_multirocket, sequence_sprocket, "
             "sequence_shapelet, sequence_phase_hmm, sequence_ensemble, "
             "sequence_gru_backbone, sequence_lstm_backbone, "
-            "svm, extra_trees, rf или logreg"
+            "dynamic_landmark_lstm_backbone, "
+            "svm, extra_trees, static_stacking, static_landmark_cnn, "
+            "dynamic_landmark_cnn, rf или logreg"
         ),
     )
     p.add_argument("--random-state", type=int, default=42, help="Seed для моделей с рандомизацией")
@@ -659,6 +1186,72 @@ def parse_args() -> argparse.Namespace:
         choices=["uniform", "distance"],
         default="distance",
         help="Вес соседей KNN: distance устойчивее для маленьких несбалансированных наборов",
+    )
+    p.add_argument(
+        "--extra-trees-optuna-trials",
+        type=int,
+        default=DEFAULT_EXTRA_TREES_OPTUNA_TRIALS,
+        help="Run Optuna tuning before final extra_trees training.",
+    )
+    p.add_argument(
+        "--extra-trees-optuna-cv-folds",
+        type=int,
+        default=DEFAULT_EXTRA_TREES_OPTUNA_CV_FOLDS,
+        help="Stratified CV folds for extra_trees Optuna tuning.",
+    )
+    p.add_argument(
+        "--extra-trees-optuna-timeout",
+        type=int,
+        default=0,
+        help="Optional ExtraTrees Optuna timeout in seconds; 0 means no timeout.",
+    )
+    p.add_argument(
+        "--static-stacking-cv-folds",
+        type=int,
+        default=DEFAULT_STATIC_STACKING_CV_FOLDS,
+        help="Internal stratified CV folds for static_stacking.",
+    )
+    p.add_argument(
+        "--static-cnn-max-epochs",
+        type=int,
+        default=DEFAULT_STATIC_CNN_MAX_EPOCHS,
+        help="Maximum epochs for static_landmark_cnn.",
+    )
+    p.add_argument(
+        "--static-cnn-batch-size",
+        type=int,
+        default=DEFAULT_STATIC_CNN_BATCH_SIZE,
+        help="Mini-batch size for static_landmark_cnn.",
+    )
+    p.add_argument(
+        "--static-cnn-validation-fraction",
+        type=float,
+        default=DEFAULT_STATIC_CNN_VALIDATION_FRACTION,
+        help="Internal validation split for static_landmark_cnn early stopping.",
+    )
+    p.add_argument(
+        "--static-cnn-patience",
+        type=int,
+        default=DEFAULT_STATIC_CNN_PATIENCE,
+        help="Early-stopping patience for static_landmark_cnn.",
+    )
+    p.add_argument(
+        "--static-cnn-learning-rate",
+        type=float,
+        default=DEFAULT_STATIC_CNN_LEARNING_RATE,
+        help="Adam learning rate for static_landmark_cnn.",
+    )
+    p.add_argument(
+        "--static-cnn-dropout",
+        type=float,
+        default=DEFAULT_STATIC_CNN_DROPOUT,
+        help="Dropout for static_landmark_cnn.",
+    )
+    p.add_argument(
+        "--static-cnn-label-smoothing",
+        type=float,
+        default=DEFAULT_STATIC_CNN_LABEL_SMOOTHING,
+        help="Categorical label smoothing for static_landmark_cnn.",
     )
     p.add_argument(
         "--sequence-mlp-alpha",
@@ -960,8 +1553,33 @@ def parse_args() -> argparse.Namespace:
         help="Включить aug_sample_* в обучение; по умолчанию используется только camera baseline.",
     )
     p.add_argument(
+        "--class-balance",
+        choices=["auto", "none", "oversample"],
+        default=DEFAULT_CLASS_BALANCE,
+        help=(
+            "Политика усиления классов: auto — class_weight/weighted loss там, "
+            "где они есть, и oversampling для KNN/MLP/HMM; oversample — "
+            "дублировать редкие классы для любой модели; none — выключить."
+        ),
+    )
+    p.add_argument(
+        "--boost-label",
+        action="append",
+        default=None,
+        help=(
+            "Дополнительно усилить конкретный класс через oversampling; можно "
+            "передать несколько раз. По умолчанию: hend и gun."
+        ),
+    )
+    p.add_argument(
+        "--boost-factor",
+        type=float,
+        default=DEFAULT_CLASS_BOOST_FACTOR,
+        help="Множитель усиления для --boost-label.",
+    )
+    p.add_argument(
         "--mlflow-experiment",
-        default="GestureFlow",
+        default="GestureBind",
         help="MLflow experiment name; empty disables MLflow logging",
     )
     p.add_argument(
@@ -1014,13 +1632,24 @@ def main() -> None:
         f"режим признаков: {args.feature_mode}; размер признака: {X.shape[1]}; "
         f"модель: {args.model_type}"
     )
+    model_type_clean = str(args.model_type).strip().lower()
+    recurrent_lstm_target_frames = (
+        DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES
+        if model_type_clean == "dynamic_landmark_lstm_backbone"
+        else DYNAMIC_SEQUENCE_TARGET_FRAMES
+    )
+    recurrent_lstm_feature_name = (
+        "dynamic_landmark_image"
+        if model_type_clean == "dynamic_landmark_lstm_backbone"
+        else "dynamic_sequence"
+    )
 
     sequence_mlp_validation_fraction = max(
         0.05,
         min(0.50, float(args.sequence_mlp_validation_fraction)),
     )
     sequence_mlp_early_stopping = bool(args.sequence_mlp_early_stopping)
-    if str(args.model_type).strip().lower() == "sequence_mlp":
+    if model_type_clean == "sequence_mlp":
         if sequence_mlp_validation_fraction != float(args.sequence_mlp_validation_fraction):
             print(
                 "[w] sequence_mlp validation_fraction скорректирован до "
@@ -1039,6 +1668,58 @@ def main() -> None:
     args.sequence_mlp_validation_fraction_effective = sequence_mlp_validation_fraction
     args.sequence_mlp_early_stopping_effective = sequence_mlp_early_stopping
 
+    boost_labels = (
+        list(args.boost_label)
+        if args.boost_label is not None
+        else list(DEFAULT_CLASS_BOOST_LABELS)
+    )
+    extra_trees_params = _extra_trees_default_params()
+    args.extra_trees_optuna_summary = None
+    args.extra_trees_optuna_out = ""
+    if (
+        model_type_clean == "extra_trees"
+        and int(args.extra_trees_optuna_trials) > 0
+    ):
+        trials = max(1, int(args.extra_trees_optuna_trials))
+        print(f"[i] Optuna tuning для extra_trees: trials={trials}")
+        try:
+            tuning = tune_extra_trees_hyperparameters(
+                X,
+                y,
+                classes,
+                n_trials=trials,
+                cv_folds=max(2, int(args.extra_trees_optuna_cv_folds)),
+                timeout=int(args.extra_trees_optuna_timeout) or None,
+                random_state=int(args.random_state),
+                class_balance=str(args.class_balance),
+                boost_labels=boost_labels,
+                boost_factor=float(args.boost_factor),
+            )
+        except RuntimeError as exc:
+            print(
+                "[!] Optuna tuning недоступен: "
+                f"{exc}. Установи зависимости из requirements.txt."
+            )
+            raise SystemExit(2) from exc
+        best_params = dict(tuning.get("best_params") or {})
+        extra_trees_params.update(best_params)
+        args.extra_trees_optuna_summary = tuning
+        args.extra_trees_optuna_out = str(
+            out_path.with_name(f"{out_path.stem}_optuna.json")
+        )
+        Path(args.extra_trees_optuna_out).write_text(
+            json.dumps(args.extra_trees_optuna_summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(
+            "[i] Optuna best: "
+            f"score={float(tuning.get('best_score', 0.0)):.4f}, "
+            f"cv_folds={int(tuning.get('cv_folds', 0))}, "
+            f"params={json.dumps(best_params, ensure_ascii=False)}"
+        )
+    for key, value in extra_trees_params.items():
+        setattr(args, f"{key}_effective", value)
+
     sequence_gru_params = {
         "sequence_gru_backbone_dim": int(args.sequence_gru_backbone_dim),
         "sequence_gru_hidden_dim": int(args.sequence_gru_hidden_dim),
@@ -1055,7 +1736,7 @@ def main() -> None:
     args.sequence_gru_optuna_summary = None
     args.sequence_gru_optuna_out = ""
     if (
-        str(args.model_type).strip().lower() == "sequence_gru_backbone"
+        model_type_clean == "sequence_gru_backbone"
         and int(args.sequence_gru_optuna_trials) > 0
     ):
         trials = max(1, int(args.sequence_gru_optuna_trials))
@@ -1063,7 +1744,8 @@ def main() -> None:
         tuning = tune_gru_backbone_hyperparameters(
             X,
             y,
-            target_frames=36,
+            target_frames=DYNAMIC_SEQUENCE_TARGET_FRAMES,
+            feature_name="dynamic_sequence",
             n_trials=trials,
             timeout=int(args.sequence_gru_optuna_timeout) or None,
             random_state=int(args.random_state),
@@ -1158,15 +1840,17 @@ def main() -> None:
     args.sequence_lstm_optuna_summary = None
     args.sequence_lstm_optuna_out = ""
     if (
-        str(args.model_type).strip().lower() == "sequence_lstm_backbone"
+        model_type_clean
+        in {"sequence_lstm_backbone", "dynamic_landmark_lstm_backbone"}
         and int(args.sequence_lstm_optuna_trials) > 0
     ):
         trials = max(1, int(args.sequence_lstm_optuna_trials))
-        print(f"[i] Optuna tuning для sequence_lstm_backbone: trials={trials}")
+        print(f"[i] Optuna tuning для {model_type_clean}: trials={trials}")
         tuning = tune_lstm_backbone_hyperparameters(
             X,
             y,
-            target_frames=36,
+            target_frames=recurrent_lstm_target_frames,
+            feature_name=recurrent_lstm_feature_name,
             n_trials=trials,
             timeout=int(args.sequence_lstm_optuna_timeout) or None,
             random_state=int(args.random_state),
@@ -1281,8 +1965,52 @@ def main() -> None:
         ),
         **sequence_gru_params,
         **sequence_lstm_params,
+        **extra_trees_params,
+        static_stacking_cv_folds=int(args.static_stacking_cv_folds),
+        static_cnn_max_epochs=int(args.static_cnn_max_epochs),
+        static_cnn_batch_size=int(args.static_cnn_batch_size),
+        static_cnn_validation_fraction=float(args.static_cnn_validation_fraction),
+        static_cnn_patience=int(args.static_cnn_patience),
+        static_cnn_learning_rate=float(args.static_cnn_learning_rate),
+        static_cnn_dropout=float(args.static_cnn_dropout),
+        static_cnn_label_smoothing=float(args.static_cnn_label_smoothing),
     )
-    clf.fit(X, y)
+    X_fit, y_fit, class_balance_metadata = balance_training_set(
+        X,
+        y,
+        classes,
+        model_type=str(args.model_type),
+        strategy=str(args.class_balance),
+        boost_labels=boost_labels,
+        boost_factor=float(args.boost_factor),
+        random_state=int(args.random_state),
+    )
+    args.class_balance_effective = str(class_balance_metadata.get("effective", "none"))
+    args.class_balance_original_samples = int(
+        class_balance_metadata.get("original_samples", X.shape[0])
+    )
+    args.class_balance_fit_samples = int(
+        class_balance_metadata.get("fit_samples", X_fit.shape[0])
+    )
+    args.class_balance_fit_class_counts = dict(
+        class_balance_metadata.get("fit_class_counts", {})
+    )
+    args.boost_label_effective = boost_labels
+    if X_fit.shape[0] != X.shape[0]:
+        print(
+            "[i] Балансировка классов: "
+            f"{class_balance_metadata['effective']}, "
+            f"{X.shape[0]} -> {X_fit.shape[0]} fit-семплов; "
+            f"counts={class_balance_metadata['fit_class_counts']}"
+        )
+    else:
+        print(
+            "[i] Балансировка классов: "
+            f"{class_balance_metadata['effective']} "
+            f"(fit-семплов: {X_fit.shape[0]})"
+        )
+
+    clf.fit(X_fit, y_fit)
     train_accuracy = float(clf.score(X, y))
 
     joblib.dump(clf, out_path)
@@ -1319,6 +2047,7 @@ def main() -> None:
         min_margin=float(args.reject_min_margin),
         distance_multiplier=float(args.reject_distance_multiplier),
     )
+    rejection_metadata["training_class_balance"] = class_balance_metadata
     classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
     feature_dim_out.write_text(str(X.shape[1]))
     feature_mode_out.write_text(str(args.feature_mode))
@@ -1429,6 +2158,22 @@ def _log_mlflow_run(
                 DEFAULT_SEQUENCE_MLP_N_ITER_NO_CHANGE,
             )
         )
+        class_balance = str(getattr(args, "class_balance", DEFAULT_CLASS_BALANCE))
+        class_balance_effective = str(
+            getattr(args, "class_balance_effective", "none")
+        )
+        class_balance_original_samples = int(
+            getattr(args, "class_balance_original_samples", sample_count)
+        )
+        class_balance_fit_samples = int(
+            getattr(args, "class_balance_fit_samples", sample_count)
+        )
+        boost_factor = float(getattr(args, "boost_factor", DEFAULT_CLASS_BOOST_FACTOR))
+        boost_labels = getattr(args, "boost_label_effective", None)
+        if boost_labels is None:
+            boost_labels = getattr(args, "boost_label", None)
+        if boost_labels is None:
+            boost_labels = list(DEFAULT_CLASS_BOOST_LABELS)
         sequence_rocket_kernels = int(
             getattr(
                 args,
@@ -1532,6 +2277,91 @@ def _log_mlflow_run(
                 args,
                 "sequence_phase_hmm_variance_regularization",
                 DEFAULT_SEQUENCE_PHASE_HMM_VARIANCE_REGULARIZATION,
+            )
+        )
+        extra_trees_n_estimators = int(
+            getattr(args, "extra_trees_n_estimators_effective", DEFAULT_EXTRA_TREES_N_ESTIMATORS)
+        )
+        extra_trees_max_depth = getattr(
+            args,
+            "extra_trees_max_depth_effective",
+            DEFAULT_EXTRA_TREES_MAX_DEPTH,
+        )
+        extra_trees_min_samples_split = int(
+            getattr(
+                args,
+                "extra_trees_min_samples_split_effective",
+                DEFAULT_EXTRA_TREES_MIN_SAMPLES_SPLIT,
+            )
+        )
+        extra_trees_min_samples_leaf = int(
+            getattr(
+                args,
+                "extra_trees_min_samples_leaf_effective",
+                DEFAULT_EXTRA_TREES_MIN_SAMPLES_LEAF,
+            )
+        )
+        extra_trees_max_features = getattr(
+            args,
+            "extra_trees_max_features_effective",
+            DEFAULT_EXTRA_TREES_MAX_FEATURES,
+        )
+        extra_trees_criterion = str(
+            getattr(
+                args,
+                "extra_trees_criterion_effective",
+                DEFAULT_EXTRA_TREES_CRITERION,
+            )
+        )
+        extra_trees_bootstrap = bool(
+            getattr(
+                args,
+                "extra_trees_bootstrap_effective",
+                DEFAULT_EXTRA_TREES_BOOTSTRAP,
+            )
+        )
+        extra_trees_optuna_trials = int(
+            getattr(
+                args,
+                "extra_trees_optuna_trials",
+                DEFAULT_EXTRA_TREES_OPTUNA_TRIALS,
+            )
+        )
+        extra_trees_optuna_summary = getattr(args, "extra_trees_optuna_summary", None)
+        static_stacking_cv_folds = int(
+            getattr(args, "static_stacking_cv_folds", DEFAULT_STATIC_STACKING_CV_FOLDS)
+        )
+        static_cnn_max_epochs = int(
+            getattr(args, "static_cnn_max_epochs", DEFAULT_STATIC_CNN_MAX_EPOCHS)
+        )
+        static_cnn_batch_size = int(
+            getattr(args, "static_cnn_batch_size", DEFAULT_STATIC_CNN_BATCH_SIZE)
+        )
+        static_cnn_validation_fraction = float(
+            getattr(
+                args,
+                "static_cnn_validation_fraction",
+                DEFAULT_STATIC_CNN_VALIDATION_FRACTION,
+            )
+        )
+        static_cnn_patience = int(
+            getattr(args, "static_cnn_patience", DEFAULT_STATIC_CNN_PATIENCE)
+        )
+        static_cnn_learning_rate = float(
+            getattr(
+                args,
+                "static_cnn_learning_rate",
+                DEFAULT_STATIC_CNN_LEARNING_RATE,
+            )
+        )
+        static_cnn_dropout = float(
+            getattr(args, "static_cnn_dropout", DEFAULT_STATIC_CNN_DROPOUT)
+        )
+        static_cnn_label_smoothing = float(
+            getattr(
+                args,
+                "static_cnn_label_smoothing",
+                DEFAULT_STATIC_CNN_LABEL_SMOOTHING,
             )
         )
         sequence_gru_backbone_dim = int(
@@ -1750,6 +2580,12 @@ def _log_mlflow_run(
                     "neighbors": int(args.neighbors),
                     "weights": str(args.weights),
                     "random_state": int(getattr(args, "random_state", 42)),
+                    "class_balance": class_balance,
+                    "class_balance_effective": class_balance_effective,
+                    "class_balance_original_samples": class_balance_original_samples,
+                    "class_balance_fit_samples": class_balance_fit_samples,
+                    "boost_labels": ",".join(str(label) for label in boost_labels),
+                    "boost_factor": boost_factor,
                     "sequence_mlp_alpha": sequence_mlp_alpha,
                     "sequence_mlp_early_stopping": sequence_mlp_early_stopping,
                     "sequence_mlp_early_stopping_effective": (
@@ -1789,6 +2625,30 @@ def _log_mlflow_run(
                     "sequence_phase_hmm_variance_regularization": (
                         sequence_phase_hmm_variance_regularization
                     ),
+                    "extra_trees_n_estimators_effective": extra_trees_n_estimators,
+                    "extra_trees_max_depth_effective": (
+                        "" if extra_trees_max_depth is None else int(extra_trees_max_depth)
+                    ),
+                    "extra_trees_min_samples_split_effective": (
+                        extra_trees_min_samples_split
+                    ),
+                    "extra_trees_min_samples_leaf_effective": (
+                        extra_trees_min_samples_leaf
+                    ),
+                    "extra_trees_max_features_effective": str(
+                        extra_trees_max_features
+                    ),
+                    "extra_trees_criterion_effective": extra_trees_criterion,
+                    "extra_trees_bootstrap_effective": extra_trees_bootstrap,
+                    "extra_trees_optuna_trials": extra_trees_optuna_trials,
+                    "static_stacking_cv_folds": static_stacking_cv_folds,
+                    "static_cnn_max_epochs": static_cnn_max_epochs,
+                    "static_cnn_batch_size": static_cnn_batch_size,
+                    "static_cnn_validation_fraction": static_cnn_validation_fraction,
+                    "static_cnn_patience": static_cnn_patience,
+                    "static_cnn_learning_rate": static_cnn_learning_rate,
+                    "static_cnn_dropout": static_cnn_dropout,
+                    "static_cnn_label_smoothing": static_cnn_label_smoothing,
                     "sequence_gru_backbone_dim": sequence_gru_backbone_dim,
                     "sequence_gru_hidden_dim": sequence_gru_hidden_dim,
                     "sequence_gru_layers": sequence_gru_layers,
@@ -1843,6 +2703,7 @@ def _log_mlflow_run(
             negative_labels = rejection_metadata.get("negative_labels") or []
             metrics = {
                 "sample_count": float(sample_count),
+                "fit_sample_count": float(class_balance_fit_samples),
                 "class_count": float(len(classes)),
                 "feature_dim": float(feature_dim),
                 "train_accuracy": float(train_accuracy),
@@ -1854,6 +2715,13 @@ def _log_mlflow_run(
                 )
                 metrics["sequence_gru_optuna_trials_done"] = float(
                     sequence_gru_optuna_summary.get("trials", 0)
+                )
+            if isinstance(extra_trees_optuna_summary, dict):
+                metrics["extra_trees_optuna_best_score"] = float(
+                    extra_trees_optuna_summary.get("best_score", 0.0)
+                )
+                metrics["extra_trees_optuna_trials_done"] = float(
+                    extra_trees_optuna_summary.get("trials", 0)
                 )
             if isinstance(sequence_lstm_optuna_summary, dict):
                 metrics["sequence_lstm_optuna_best_score"] = float(
@@ -1877,6 +2745,13 @@ def _log_mlflow_run(
                 optuna_out = Path(optuna_out_value)
                 if optuna_out.exists():
                     mlflow.log_artifact(str(optuna_out))
+            extra_trees_optuna_out_value = str(
+                getattr(args, "extra_trees_optuna_out", "") or ""
+            ).strip()
+            if extra_trees_optuna_out_value:
+                extra_trees_optuna_out = Path(extra_trees_optuna_out_value)
+                if extra_trees_optuna_out.exists():
+                    mlflow.log_artifact(str(extra_trees_optuna_out))
             lstm_optuna_out_value = str(
                 getattr(args, "sequence_lstm_optuna_out", "") or ""
             ).strip()

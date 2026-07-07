@@ -1,9 +1,9 @@
-# GestureFlow macOS Bundle
+# GestureBind macOS Bundle
 
 ## Run
 
 1. Unzip the release artifact.
-2. Open `GestureFlow.app`.
+2. Open `GestureBind.app`.
 3. If macOS blocks the first launch, use right click -> Open.
 4. Allow camera access when macOS asks for permission.
 
@@ -21,7 +21,7 @@
 ## Troubleshooting
 
 If the app does not see the camera, check macOS Settings -> Privacy & Security
--> Camera and allow `GestureFlow`.
+-> Camera and allow `GestureBind`.
 
 If the app is blocked by Gatekeeper, open it with right click -> Open. For a
 production build, the next CD step is Developer ID signing and notarization.

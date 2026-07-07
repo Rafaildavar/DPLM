@@ -1,5 +1,5 @@
 """
-Flet-версия GUI для DPLM (замена PySide6 + QML).
+Flet-версия GUI для GestureBind (замена PySide6 + QML).
 
 Точка входа: ``python -m app.flet_app.main``.
 

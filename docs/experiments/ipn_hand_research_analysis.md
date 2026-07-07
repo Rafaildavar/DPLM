@@ -1,4 +1,4 @@
-# IPN Hand Research Analysis For GestureFlow
+# IPN Hand Research Analysis For GestureBind
 
 Status: `research accepted`
 
@@ -18,7 +18,7 @@ Sources:
 
 ## Why IPN Hand Matters
 
-IPN Hand is much closer to GestureFlow than language-sign datasets or large
+IPN Hand is much closer to GestureBind than language-sign datasets or large
 static image datasets. It is designed for real-time continuous hand gesture
 recognition from RGB video, with non-gesture intervals and start/end frame
 annotations.
@@ -33,7 +33,7 @@ Dataset details from the project README:
   - 4218 gesture instances;
   - 1431 non-gesture instances.
 
-The important match for GestureFlow:
+The important match for GestureBind:
 
 - IPN contains directional dynamic gestures:
   `Throw up`, `Throw down`, `Throw left`, `Throw right`;
@@ -46,14 +46,14 @@ The important match for GestureFlow:
 
 Use IPN as external evidence for dynamic reject-layer:
 
-| IPN class | GestureFlow role |
+| IPN class | GestureBind role |
 |---|---|
 | `D0X Non-gesture` | `negative_external_ipn_dynamic` |
 | `Open twice`, `Double click`, `Zoom in/out` | other dynamic motion negatives |
 | `Pointing one/two fingers` | hold/static-ish negatives for dynamic model |
 | `Throw up/down/left/right` | optional validation/pretraining, not production positives by default |
 
-Do not import all IPN classes as new GestureFlow commands. The raw class label
+Do not import all IPN classes as new GestureBind commands. The raw class label
 should be preserved in metadata, but the training label should be mapped to a
 controlled negative or experimental auxiliary class.
 
@@ -63,7 +63,7 @@ IPN annotations contain gesture intervals. We should use them to build
 automatic samples instead of manually deciding where a dynamic gesture begins
 and ends.
 
-GestureFlow conversion target:
+GestureBind conversion target:
 
 ```text
 data/external/ipn_hand/<ipn_label>/sample_0000.npy
@@ -86,7 +86,7 @@ Where:
 IPN uses a detector model as a switch and a classifier model only while the
 detector is active.
 
-GestureFlow equivalent:
+GestureBind equivalent:
 
 ```text
 hand landmarks
@@ -116,7 +116,7 @@ Their online test config uses:
 - classifier moving-average queue: `16`;
 - stride: `1`.
 
-GestureFlow adaptation:
+GestureBind adaptation:
 
 - keep our natural swipe segmenter;
 - add smoothed detector confidence over a short queue;
@@ -128,7 +128,7 @@ GestureFlow adaptation:
 IPN accumulates classifier evidence while a gesture is active and supports early
 prediction if the leading class is far enough ahead.
 
-GestureFlow adaptation:
+GestureBind adaptation:
 
 - for every active dynamic segment, accumulate:
   - motion direction confidence;
@@ -143,7 +143,7 @@ GestureFlow adaptation:
 
 IPN evaluates predicted gesture sequences with Levenshtein distance.
 
-GestureFlow should add a live continuous-session metric:
+GestureBind should add a live continuous-session metric:
 
 ```text
 expected sequence: swipe_up, swipe_left, swipe_down
@@ -256,5 +256,5 @@ Priority:
 4. Add IPN-style smoothing and cumulative evidence.
 5. Add sequence-level live metrics in MLflow.
 
-This gives GestureFlow a stronger ML story without abandoning the personalized
+This gives GestureBind a stronger ML story without abandoning the personalized
 MediaPipe-landmark pipeline.

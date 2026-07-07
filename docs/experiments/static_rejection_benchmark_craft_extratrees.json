@@ -1,0 +1,473 @@
+{
+  "generated_at": 1783270945.9847832,
+  "dataset": {
+    "data_root": "/Users/remi/Developer/GUAP/DPLM/data/gestures",
+    "scope": "static",
+    "feature_mode": "static_craft_full_stats",
+    "candidate_model": "extra_trees",
+    "target_dim": 63,
+    "sample_count": 260,
+    "class_count": 10,
+    "positive_labels": [
+      "2finger",
+      "gun",
+      "hand",
+      "like",
+      "onefinger"
+    ],
+    "negative_labels": [
+      "no_gesture_static",
+      "partial_swipe",
+      "random_motion",
+      "return_motion",
+      "wrong_axis_motion"
+    ],
+    "class_counts": {
+      "2finger": 40,
+      "gun": 20,
+      "hand": 20,
+      "like": 40,
+      "no_gesture_static": 20,
+      "onefinger": 40,
+      "partial_swipe": 20,
+      "random_motion": 20,
+      "return_motion": 20,
+      "wrong_axis_motion": 20
+    },
+    "folds": 5,
+    "include_augmented": true
+  },
+  "methods": [
+    {
+      "method": "negative_classes",
+      "status": "ok",
+      "overall_success": 1.0,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.6154,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 160,
+      "positive_rejected": 0,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    },
+    {
+      "method": "confidence_threshold",
+      "status": "ok",
+      "overall_success": 0.9885,
+      "positive_recall": 0.9812,
+      "positive_reject_rate": 0.0187,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.6038,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 157,
+      "positive_rejected": 3,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "low_confidence": 3,
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    },
+    {
+      "method": "open_set_policy",
+      "status": "ok",
+      "overall_success": 1.0,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.6154,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 160,
+      "positive_rejected": 0,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    },
+    {
+      "method": "one_vs_rest_logreg",
+      "status": "ok",
+      "overall_success": 1.0,
+      "positive_recall": 1.0,
+      "positive_reject_rate": 0.0,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.6154,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 160,
+      "positive_rejected": 0,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    },
+    {
+      "method": "local_outlier_factor",
+      "status": "ok",
+      "overall_success": 0.8731,
+      "positive_recall": 0.7937,
+      "positive_reject_rate": 0.2062,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.4885,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 127,
+      "positive_rejected": 33,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "local_outlier_factor_outlier": 33,
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    },
+    {
+      "method": "isolation_forest",
+      "status": "ok",
+      "overall_success": 0.9038,
+      "positive_recall": 0.8438,
+      "positive_reject_rate": 0.1562,
+      "negative_reject_rate": 1.0,
+      "negative_false_positive_rate": 0.0,
+      "accepted_accuracy": 1.0,
+      "coverage": 0.5192,
+      "total": 260,
+      "positive_total": 160,
+      "negative_total": 100,
+      "positive_correct": 135,
+      "positive_rejected": 25,
+      "negative_rejected": 100,
+      "negative_false_positive": 0,
+      "wrong_accept": 0,
+      "reject_reasons": {
+        "isolation_forest_outlier": 25,
+        "negative_class": 100
+      },
+      "false_positive_predictions": {},
+      "negative_label_metrics": [
+        {
+          "label": "no_gesture_static",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "partial_swipe",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "random_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "return_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        },
+        {
+          "label": "wrong_axis_motion",
+          "total": 20,
+          "rejected": 20,
+          "false_positive": 0,
+          "reject_rate": 1.0,
+          "false_positive_rate": 0.0,
+          "false_positive_predictions": {}
+        }
+      ],
+      "error": ""
+    }
+  ],
+  "best_method": "negative_classes",
+  "recommendation": "Use `negative_classes` first: overall_success=1.0000, positive_recall=1.0000, negative_false_positive_rate=0.0000."
+}

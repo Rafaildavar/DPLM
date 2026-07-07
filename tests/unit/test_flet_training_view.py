@@ -304,7 +304,7 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
 
     view._dyn_model_out.value = ""
     view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
-    view._dyn_model_type.value = "sequence_mlp"
+    view._dyn_model_type.value = _DEFAULT_DYNAMIC_MODEL_TYPE
     view._dyn_tr_neighbors.value = ""
 
     view._on_train_start(None, mode="dynamic")
@@ -316,16 +316,20 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert training_call["expect_dim"] is None
     assert training_call["model_type"] == _DEFAULT_DYNAMIC_MODEL_TYPE
     assert training_call["feature_mode"] == _DEFAULT_DYNAMIC_FEATURE_MODE
-    assert training_call["classes_out_path"] == "models/dynamic_sequence_mlp_classes.json"
+    assert (
+        training_call["classes_out_path"]
+        == "models/dynamic_landmark_lstm_backbone_classes.json"
+    )
     assert (
         training_call["feature_dim_out_path"]
-        == "models/dynamic_sequence_mlp_feature_dim.txt"
+        == "models/dynamic_landmark_lstm_backbone_feature_dim.txt"
     )
     assert (
         training_call["feature_mode_out_path"]
-        == "models/dynamic_sequence_mlp_feature_mode.txt"
+        == "models/dynamic_landmark_lstm_backbone_feature_mode.txt"
     )
     assert training_call["training_scope"] == _DYNAMIC_TRAINING_SCOPE
+    assert "--sequence-lstm-optuna-trials" in training_call["extra_args"]
 
 
 def test_developer_negative_flow_generates_samples_automatically():
@@ -342,7 +346,7 @@ def test_developer_negative_flow_generates_samples_automatically():
     assert generation_call["seed"] == _DEFAULT_NEGATIVE_SEED
 
 
-def test_dynamic_model_type_keeps_production_sequence_mlp_output_path():
+def test_dynamic_model_type_keeps_production_landmark_lstm_output_path():
     controller = _DummyController()
     view = TrainingView(_DummyPage(), controller)
 
@@ -351,6 +355,13 @@ def test_dynamic_model_type_keeps_production_sequence_mlp_output_path():
     view._on_dynamic_model_type_changed(None)
 
     assert view._dyn_model_out.value == _DEFAULT_DYNAMIC_MODEL_OUT
+    assert view._dyn_feature_mode.value == "dynamic_landmark_image"
+
+    view._dyn_model_type.value = "sequence_mlp"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._on_dynamic_model_type_changed(None)
+
+    assert view._dyn_model_out.value == "models/dynamic_sequence_mlp.pkl"
     assert view._dyn_feature_mode.value == "dynamic_sequence"
 
     view._dyn_model_type.value = "sequence_rocket"
@@ -381,7 +392,7 @@ def test_developer_dynamic_flow_can_train_sequence_rocket_candidate():
     training_call = controller.training_calls[-1]
     assert training_call["out_path"] == "models/dynamic_sequence_rocket.pkl"
     assert training_call["model_type"] == "sequence_rocket"
-    assert training_call["feature_mode"] == _DEFAULT_DYNAMIC_FEATURE_MODE
+    assert training_call["feature_mode"] == "dynamic_sequence"
     assert training_call["classes_out_path"] == "models/dynamic_sequence_rocket_classes.json"
     assert (
         training_call["feature_dim_out_path"]
@@ -394,12 +405,23 @@ def test_developer_dynamic_flow_can_train_sequence_rocket_candidate():
     assert training_call["training_scope"] == _DYNAMIC_TRAINING_SCOPE
 
 
-def test_legacy_dynamic_model_type_falls_back_to_sequence_mlp_paths():
+def test_legacy_dynamic_model_type_falls_back_to_production_landmark_lstm_paths():
     assert _dynamic_model_out_for_type("sequence_knn") == _DEFAULT_DYNAMIC_MODEL_OUT
     assert _dynamic_metadata_out_for_type("sequence_knn") == (
-        "models/dynamic_sequence_mlp_classes.json",
-        "models/dynamic_sequence_mlp_feature_dim.txt",
-        "models/dynamic_sequence_mlp_feature_mode.txt",
+        "models/dynamic_landmark_lstm_backbone_classes.json",
+        "models/dynamic_landmark_lstm_backbone_feature_dim.txt",
+        "models/dynamic_landmark_lstm_backbone_feature_mode.txt",
+    )
+
+
+def test_dynamic_landmark_lstm_backbone_uses_own_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("dynamic_landmark_lstm_backbone") == (
+        "models/dynamic_landmark_lstm_backbone.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("dynamic_landmark_lstm_backbone") == (
+        "models/dynamic_landmark_lstm_backbone_classes.json",
+        "models/dynamic_landmark_lstm_backbone_feature_dim.txt",
+        "models/dynamic_landmark_lstm_backbone_feature_mode.txt",
     )
 
 
@@ -539,6 +561,17 @@ def test_sequence_lstm_backbone_uses_own_sequence_model_and_metadata_paths():
     )
 
 
+def test_dynamic_landmark_cnn_uses_own_model_and_metadata_paths():
+    assert _dynamic_model_out_for_type("dynamic_landmark_cnn") == (
+        "models/dynamic_landmark_cnn.pkl"
+    )
+    assert _dynamic_metadata_out_for_type("dynamic_landmark_cnn") == (
+        "models/dynamic_landmark_cnn_classes.json",
+        "models/dynamic_landmark_cnn_feature_dim.txt",
+        "models/dynamic_landmark_cnn_feature_mode.txt",
+    )
+
+
 def test_developer_dynamic_flow_can_train_sequence_ensemble_candidate():
     controller = _DummyController()
     view = TrainingView(_DummyPage(), controller)
@@ -623,3 +656,60 @@ def test_developer_dynamic_flow_can_train_sequence_lstm_backbone_candidate():
         == "models/dynamic_sequence_lstm_backbone_feature_mode.txt"
     )
     assert "--sequence-lstm-optuna-trials" in training_call["extra_args"]
+
+
+def test_developer_dynamic_flow_can_train_dynamic_landmark_lstm_backbone_candidate():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+    view._dyn_model_type.value = "dynamic_landmark_lstm_backbone"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
+    view._dyn_tr_neighbors.value = ""
+
+    view._on_train_start(None, mode="dynamic")
+
+    training_call = controller.training_calls[-1]
+    assert training_call["out_path"] == "models/dynamic_landmark_lstm_backbone.pkl"
+    assert training_call["model_type"] == "dynamic_landmark_lstm_backbone"
+    assert training_call["feature_mode"] == "dynamic_landmark_image"
+    assert (
+        training_call["classes_out_path"]
+        == "models/dynamic_landmark_lstm_backbone_classes.json"
+    )
+    assert (
+        training_call["feature_dim_out_path"]
+        == "models/dynamic_landmark_lstm_backbone_feature_dim.txt"
+    )
+    assert (
+        training_call["feature_mode_out_path"]
+        == "models/dynamic_landmark_lstm_backbone_feature_mode.txt"
+    )
+    assert "--sequence-lstm-optuna-trials" in training_call["extra_args"]
+
+
+def test_developer_dynamic_flow_can_train_dynamic_landmark_cnn_candidate():
+    controller = _DummyController()
+    view = TrainingView(_DummyPage(), controller)
+    view._dyn_model_type.value = "dynamic_landmark_cnn"
+    view._dyn_model_out.value = _DEFAULT_DYNAMIC_MODEL_OUT
+    view._dyn_feature_mode.value = _DEFAULT_DYNAMIC_FEATURE_MODE
+    view._dyn_tr_neighbors.value = ""
+
+    view._on_train_start(None, mode="dynamic")
+
+    training_call = controller.training_calls[-1]
+    assert training_call["out_path"] == "models/dynamic_landmark_cnn.pkl"
+    assert training_call["model_type"] == "dynamic_landmark_cnn"
+    assert training_call["feature_mode"] == "dynamic_landmark_image"
+    assert (
+        training_call["classes_out_path"]
+        == "models/dynamic_landmark_cnn_classes.json"
+    )
+    assert (
+        training_call["feature_dim_out_path"]
+        == "models/dynamic_landmark_cnn_feature_dim.txt"
+    )
+    assert (
+        training_call["feature_mode_out_path"]
+        == "models/dynamic_landmark_cnn_feature_mode.txt"
+    )

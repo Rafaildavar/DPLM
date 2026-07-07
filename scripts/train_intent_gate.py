@@ -410,7 +410,7 @@ def _log_mlflow(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train GestureFlow intent gate")
+    parser = argparse.ArgumentParser(description="Train GestureBind intent gate")
     parser.add_argument("--data-root", default="data/gestures")
     parser.add_argument("--taxonomy", default=str(PROJECT_ROOT / "configs" / "gesture_taxonomy.json"))
     parser.add_argument("--external-negative-root", default=str(PROJECT_ROOT / "data" / "external"))
@@ -441,7 +441,7 @@ def parse_args() -> argparse.Namespace:
         "--report-svg",
         default=str(PROJECT_ROOT / "docs" / "experiments" / "intent_gate_confusion_matrix.svg"),
     )
-    parser.add_argument("--mlflow-experiment", default="GestureFlow")
+    parser.add_argument("--mlflow-experiment", default="GestureBind")
     parser.add_argument("--mlflow-tracking-uri", default="sqlite:///mlflow.db")
     parser.add_argument("--mlflow-run-name", default="intent-gate-mlp")
     return parser.parse_args()

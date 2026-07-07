@@ -92,7 +92,7 @@ E2E_CASES = (
         expected_block="unsupported_general",
         expected_mode="answer",
         expected_can_apply=False,
-        required_response_markers=("GestureFlow", "привяз"),
+        required_response_markers=("GestureBind", "привяз"),
         gestures=GESTURES,
         notes="Проверяет guardrails области ответственности без сухого отказа.",
     ),

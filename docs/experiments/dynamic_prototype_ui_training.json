@@ -1,60 +1,77 @@
 {
-  "generated_at": 1782731864.9567082,
+  "generated_at": 1783444397.764118,
   "data_root": "data/gestures",
   "external_negative_root": "data/external",
   "include_external_negatives": true,
-  "train_count": 457,
-  "test_count": 153,
+  "train_count": 433,
+  "test_count": 145,
   "records_by_label": {
-    "negative_external_ipn_dynamic": 440,
+    "SwipeLeft": 20,
+    "negative_external_ipn_dynamic": 438,
     "no_gesture_static": 20,
     "partial_swipe": 20,
     "random_motion": 20,
     "return_motion": 20,
-    "swipe_down": 20,
-    "swipe_left": 30,
-    "swipe_up": 20,
-    "wrong_axis_motion": 20
+    "wrong_axis_motion": 20,
+    "zoom": 20
   },
   "train_by_label": {
-    "negative_external_ipn_dynamic": 330,
+    "SwipeLeft": 15,
+    "negative_external_ipn_dynamic": 328,
     "no_gesture_static": 15,
     "partial_swipe": 15,
     "random_motion": 15,
     "return_motion": 15,
-    "swipe_down": 15,
-    "swipe_left": 22,
-    "swipe_up": 15,
-    "wrong_axis_motion": 15
+    "wrong_axis_motion": 15,
+    "zoom": 15
   },
   "test_by_label": {
+    "SwipeLeft": 5,
     "negative_external_ipn_dynamic": 110,
     "no_gesture_static": 5,
     "partial_swipe": 5,
     "random_motion": 5,
     "return_motion": 5,
-    "swipe_down": 5,
-    "swipe_left": 8,
-    "swipe_up": 5,
-    "wrong_axis_motion": 5
+    "wrong_axis_motion": 5,
+    "zoom": 5
   },
   "negative_conflict_filter": {
     "enabled": true,
     "method": "prototype_distance",
     "conflict_margin": 1.2,
     "external_negative_root": "/Users/remi/Developer/GUAP/DPLM/data/external",
-    "positive_count": 70,
+    "positive_count": 40,
     "external_negative_total": 440,
-    "safe_external_negative_count": 440,
-    "conflict_count": 0,
-    "conflict_rate": 0.0,
+    "safe_external_negative_count": 438,
+    "conflict_count": 2,
+    "conflict_rate": 0.004545454545454545,
     "nearest_positive_labels": {
-      "swipe_down": 1,
-      "swipe_left": 414,
-      "swipe_up": 25
+      "SwipeLeft": 398,
+      "zoom": 42
     },
-    "conflicting_negative_labels": {},
-    "conflicts": [],
+    "conflicting_negative_labels": {
+      "negative_external_ipn_dynamic": 2
+    },
+    "conflicts": [
+      {
+        "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0234.npy",
+        "negative_label": "negative_external_ipn_dynamic",
+        "nearest_positive_label": "zoom",
+        "distance": 0.13088996708393097,
+        "threshold": 0.15583077311515808,
+        "distance_ratio": 0.8399494173541961,
+        "reason": "accepted"
+      },
+      {
+        "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0237.npy",
+        "negative_label": "negative_external_ipn_dynamic",
+        "nearest_positive_label": "zoom",
+        "distance": 0.1426135003566742,
+        "threshold": 0.15583077311515808,
+        "distance_ratio": 0.9151818829216974,
+        "reason": "accepted"
+      }
+    ],
     "status": "ok"
   },
   "best_method": "prototype_distance",
@@ -62,31 +79,25 @@
     {
       "method": "prototype_distance",
       "metrics": {
-        "total": 153,
-        "positive_total": 18,
+        "total": 145,
+        "positive_total": 10,
         "negative_total": 135,
-        "positive_recall": 0.9444444444444444,
-        "positive_reject_rate": 0.05555555555555555,
+        "positive_recall": 0.9,
+        "positive_reject_rate": 0.1,
         "positive_wrong_rate": 0.0,
         "negative_reject_rate": 1.0,
         "negative_false_positive_rate": 0.0,
-        "overall_success": 0.9934640522875817,
+        "overall_success": 0.993103448275862,
         "sequence_edit_distance": 1,
-        "sequence_accuracy": 0.9444444444444444,
+        "sequence_accuracy": 0.9,
         "per_label": {
-          "swipe_down": {
+          "SwipeLeft": {
             "total": 5,
-            "correct": 5,
-            "wrong": 0,
-            "rejected": 0
-          },
-          "swipe_left": {
-            "total": 8,
-            "correct": 7,
+            "correct": 4,
             "wrong": 0,
             "rejected": 1
           },
-          "swipe_up": {
+          "zoom": {
             "total": 5,
             "correct": 5,
             "wrong": 0,
@@ -94,122 +105,77 @@
           }
         }
       },
-      "model_path": "models/experiments/dynamic_prototype/prototype_distance/dynamic_prototypes.json",
+      "model_path": "models/experiments/dynamic_prototype/prototype_distance/dynamic_landmark_lstm_backbone_prototypes.json",
       "attempts": [
         {
-          "expected": "negative_external_ipn_dynamic",
+          "expected": "SwipeLeft",
           "predicted": "",
           "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.14796629548072815,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_229_0012.npy"
+          "reason": "far_from_prototype",
+          "distance": 0.03769119828939438,
+          "threshold": 0.030331425645935998,
+          "path": "data/gestures/SwipeLeft/sample_0019.npy"
+        },
+        {
+          "expected": "SwipeLeft",
+          "predicted": "SwipeLeft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.01974555291235447,
+          "threshold": 0.030331425645935998,
+          "path": "data/gestures/SwipeLeft/sample_0005.npy"
+        },
+        {
+          "expected": "SwipeLeft",
+          "predicted": "SwipeLeft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.024544941261410713,
+          "threshold": 0.030331425645935998,
+          "path": "data/gestures/SwipeLeft/sample_0014.npy"
+        },
+        {
+          "expected": "SwipeLeft",
+          "predicted": "SwipeLeft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.029513945803046227,
+          "threshold": 0.030331425645935998,
+          "path": "data/gestures/SwipeLeft/sample_0004.npy"
+        },
+        {
+          "expected": "SwipeLeft",
+          "predicted": "SwipeLeft",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.022019783034920692,
+          "threshold": 0.030331425645935998,
+          "path": "data/gestures/SwipeLeft/sample_0009.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.5093218088150024,
+          "distance": 0.3956821858882904,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0113.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0151.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.22434145212173462,
+          "distance": 0.14473414421081543,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_83_0043.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_11_r_1_0215.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.19884417951107025,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_11_r_1_0206.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.35962629318237305,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_8_r_86_0080.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.772951066493988,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_159_0197.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.18226809799671173,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_11_r_206_0102.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.6848832964897156,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0184.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.1291385143995285,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_7_r_84_0057.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.26793667674064636,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_205_0076.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.37086790800094604,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0073.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.34990084171295166,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0149.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.45950964093208313,
+          "distance": 0.3647478222846985,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0158.npy"
         },
@@ -218,241 +184,7 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.2724073827266693,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_81_0009.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.16537900269031525,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_8_r_88_0119.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.20772245526313782,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_230_0024.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.23859594762325287,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_8_r_85_0076.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2742564380168915,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0041.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.1709185689687729,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_81_0013.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.19675633311271667,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_1cv12_7_r_82_0027.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.3556489944458008,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0015.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.15902674198150635,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm1_4_r_231_0034.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.18140755593776703,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_230_0022.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.20617564022541046,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0125.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2812175452709198,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0137.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.38264474272727966,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_53_0140.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.32967594265937805,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_1cv12_7_r_83_0035.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.32180580496788025,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0055.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21253280341625214,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_205_0068.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.4592437148094177,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0171.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.185995414853096,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0145.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2235182821750641,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_231_0036.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2564266622066498,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_7_r_81_0010.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.3293769955635071,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_85_0077.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.16438761353492737,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_157_0165.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.381546288728714,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0008.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.20775339007377625,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_4cm11_10_r_55_0169.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.27923765778541565,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0084.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21374137699604034,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_7_r_84_0048.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.16468000411987305,
+          "distance": 0.13920116424560547,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_12_r_158_0173.npy"
         },
@@ -461,241 +193,70 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.415614515542984,
+          "distance": 0.26700979471206665,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0107.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_1cv12_7_r_82_0018.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.18751059472560883,
+          "distance": 0.17057132720947266,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm1_4_r_229_0010.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm1_4_r_230_0017.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.382998526096344,
+          "distance": 0.15670780837535858,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0189.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_157_0165.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.27254608273506165,
+          "distance": 0.5448811650276184,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0018.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0184.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.3519185781478882,
+          "distance": 0.1942518949508667,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_7_r_84_0052.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_82_0019.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.15956567227840424,
+          "distance": 0.3103650212287903,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_8_r_87_0111.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_53_0140.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.18314260244369507,
+          "distance": 0.2785421311855316,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_11_r_1_0199.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0149.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 1.3745743036270142,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_205_0077.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.4230153262615204,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0171.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.215226411819458,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_206_0096.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 11.308953285217285,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_205_0085.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.28204718232154846,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0051.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2815861105918884,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0060.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.23983502388000488,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0129.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.18597692251205444,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_158_0182.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.1951581984758377,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_8_r_87_0101.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.42083540558815,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0023.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.28171250224113464,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0025.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.46800827980041504,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_1_0208.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 2.4902002811431885,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0131.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.22188101708889008,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_10_r_54_0151.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21164657175540924,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_1cv12_8_r_87_0108.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.1781836450099945,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_208_0139.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.6518538594245911,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0175.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.2311639040708542,
-          "threshold": 0.059330566849346,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0237.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21879327297210693,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_84_0061.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.09851975739002228,
+          "distance": 0.09704255312681198,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0127.npy"
         },
@@ -704,124 +265,7 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.4126775860786438,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_86_0084.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2577212154865265,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_205_0074.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21644720435142517,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_10_r_55_0167.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.18507708609104156,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_4cm11_10_r_54_0161.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.27775445580482483,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_4cm11_10_r_54_0165.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2682783007621765,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_207_0112.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.1277460902929306,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g11_1cv12_7_r_81_0014.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.7050076127052307,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_157_0152.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.19437147676944733,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0147.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.380666583776474,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_85_0069.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.41153591871261597,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0103.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2310694009065628,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0047.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.6343115568161011,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_54_0158.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.3296865224838257,
+          "distance": 0.23982717096805573,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_232_0058.npy"
         },
@@ -830,115 +274,34 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.08328792452812195,
+          "distance": 0.13785268366336823,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_7_r_83_0039.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm1_4_r_231_0034.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.22294478118419647,
+          "distance": 0.18585418164730072,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_11_r_2_0231.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_87_0103.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.16552621126174927,
+          "distance": 1.2069143056869507,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g11_1cv12_7_r_84_0046.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0131.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.4100278913974762,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_53_0142.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2207953929901123,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_82_0026.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.37484145164489746,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0122.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.34303152561187744,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0070.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.31122052669525146,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0138.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.21859057247638702,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_83_0038.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.41014590859413147,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_158_0179.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.4096817374229431,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0110.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.9156156182289124,
-          "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_159_0190.npy"
-        },
-        {
-          "expected": "negative_external_ipn_dynamic",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.28855252265930176,
+          "distance": 0.18012075126171112,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_11_r_208_0128.npy"
         },
@@ -947,61 +310,88 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.3360595703125,
+          "distance": 0.12774254381656647,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_88_0121.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm42_12_r_157_0163.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.7003238201141357,
+          "distance": 0.16381949186325073,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_158_0170.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0051.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.20176644623279572,
+          "distance": 0.1575395166873932,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_11_r_2_0220.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm42_11_r_207_0115.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.2559531331062317,
+          "distance": 0.19518248736858368,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_207_0113.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_10_r_56_0182.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.2508087456226349,
+          "distance": 0.1703788787126541,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_206_0091.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_207_0121.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.3080528676509857,
+          "distance": 0.22741612792015076,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_12_r_159_0189.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0060.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.21331201493740082,
+          "distance": 0.1481371372938156,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_4cm11_10_r_56_0192.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15160787105560303,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_4cm11_11_r_1_0206.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3934085965156555,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0072.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16654802858829498,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g01_1cm1_4_r_230_0031.npy"
         },
@@ -1010,43 +400,214 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.1594538539648056,
+          "distance": 0.1703035682439804,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0040.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_11_r_2_0220.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.40166133642196655,
+          "distance": 0.3314162790775299,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_53_0133.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g02_1cm42_12_r_158_0179.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.46762076020240784,
+          "distance": 0.15203474462032318,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_86_0096.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_12_r_157_0154.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.23806726932525635,
+          "distance": 0.21049323678016663,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0054.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0025.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.4134162962436676,
+          "distance": 8.93921184539795,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_205_0085.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12228202819824219,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_10_r_55_0176.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16708165407180786,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g07_1cm42_11_r_208_0139.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.07905762642621994,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm42_12_r_158_0186.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2537332773208618,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0084.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12102772295475006,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm1_4_r_231_0036.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20859231054782867,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_230_0018.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23945187032222748,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_1cv12_7_r_83_0035.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15664589405059814,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_8_r_85_0062.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10403262078762054,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_12_r_158_0166.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.19304391741752625,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_208_0137.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10509328544139862,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm42_11_r_207_0124.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3382629156112671,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0008.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24327024817466736,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0073.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6152511835098267,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_159_0197.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5588281154632568,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_12_r_158_0170.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2568454146385193,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_229_0015.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.25961926579475403,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0030.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1598719209432602,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0147.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.34795117378234863,
           "threshold": 0.0,
           "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_159_0199.npy"
         },
@@ -1055,43 +616,538 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.3969974219799042,
+          "distance": 0.20509450137615204,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_86_0088.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_81_0015.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.17447106540203094,
+          "distance": 0.32150647044181824,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g01_1cv12_7_r_82_0030.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_158_0171.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.23071351647377014,
+          "distance": 0.14853079617023468,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_11_r_2_0222.npy"
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0145.npy"
         },
         {
           "expected": "negative_external_ipn_dynamic",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.17071157693862915,
+          "distance": 0.1502760797739029,
           "threshold": 0.0,
-          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g08_1cv12_8_r_87_0097.npy"
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_4cm11_11_r_1_0204.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13983316719532013,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_81_0004.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15206566452980042,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_10_r_53_0132.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17576207220554352,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g11_4cm11_10_r_55_0181.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18563790619373322,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm1_4_r_230_0019.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13329246640205383,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_206_0096.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3369807302951813,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_1cv12_8_r_86_0087.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 1.169287919998169,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_205_0077.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16517671942710876,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_207_0112.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31949523091316223,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_56_0194.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16714826226234436,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_4cm11_10_r_54_0157.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16117924451828003,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g09_1cm1_4_r_229_0012.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2227594405412674,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_231_0041.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.30325886607170105,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm1_4_r_230_0023.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.34806087613105774,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_56_0186.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16586343944072723,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_7_r_81_0000.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.23679868876934052,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_88_0124.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1856716275215149,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_1cv12_7_r_81_0008.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16111113131046295,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_205_0069.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5750856399536133,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_55_0168.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15220366418361664,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_1cv12_7_r_83_0045.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1473332643508911,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g10_1cm1_4_r_232_0064.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1413159966468811,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0125.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13977208733558655,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_1cv12_7_r_81_0017.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.852725088596344,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g11_1cm42_11_r_208_0142.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17143061757087708,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm42_11_r_208_0129.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.30623859167099,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_56_0191.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24969172477722168,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_85_0070.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3260152339935303,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_10_r_54_0153.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.42235252261161804,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_11_r_2_0225.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.15933142602443695,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_7_r_83_0032.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3294309675693512,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_2_0227.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24048103392124176,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_87_0105.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.10985769331455231,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_d0x_1cm42_11_r_206_0098.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.18013347685337067,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_g08_1cm42_11_r_205_0076.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13105981051921844,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_4cm11_10_r_54_0163.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.22265011072158813,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_8_r_86_0095.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.5118532180786133,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_54_0158.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14994627237319946,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_7_r_84_0058.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.24514378607273102,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0055.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.31976255774497986,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0178.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.3689455986022949,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0171.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1648896336555481,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_7_r_82_0022.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.34915539622306824,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_4cm11_10_r_55_0180.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2792028486728668,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_11_r_207_0116.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1565295308828354,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g09_4cm11_10_r_53_0139.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.37860071659088135,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0a_1cm42_12_r_157_0164.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1545514315366745,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_81_0009.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.2170102298259735,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0a_1cv12_8_r_86_0084.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.17040374875068665,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_1cv12_7_r_82_0026.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.1661805510520935,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g07_1cv12_7_r_81_0001.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.16778723895549774,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_231_0047.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.6198952794075012,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_b0b_4cm11_11_r_2_0229.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.12454290688037872,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g02_1cv12_8_r_86_0085.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.14638030529022217,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand/negative_external_ipn_dynamic/sample_ipn_b0b_1cm1_4_r_232_0061.npy"
+        },
+        {
+          "expected": "negative_external_ipn_dynamic",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.20945100486278534,
+          "threshold": 0.0,
+          "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_g10_4cm11_10_r_53_0145.npy"
         },
         {
           "expected": "no_gesture_static",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.2956426739692688,
+          "distance": 0.2724112868309021,
           "threshold": 0.0,
           "path": "data/gestures/no_gesture_static/sample_auto_0019.npy"
         },
@@ -1100,7 +1156,7 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.012390077114105225,
+          "distance": 0.4461236298084259,
           "threshold": 0.0,
           "path": "data/gestures/no_gesture_static/sample_auto_0001.npy"
         },
@@ -1109,52 +1165,34 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.3912404179573059,
-          "threshold": 0.0,
-          "path": "data/gestures/no_gesture_static/sample_auto_0008.npy"
-        },
-        {
-          "expected": "no_gesture_static",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.2553318738937378,
-          "threshold": 0.0,
-          "path": "data/gestures/no_gesture_static/sample_auto_0009.npy"
-        },
-        {
-          "expected": "no_gesture_static",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.006604019086807966,
+          "distance": 0.0664951354265213,
           "threshold": 0.0,
           "path": "data/gestures/no_gesture_static/sample_auto_0015.npy"
         },
         {
-          "expected": "partial_swipe",
+          "expected": "no_gesture_static",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.4030996561050415,
+          "distance": 0.14567941427230835,
           "threshold": 0.0,
-          "path": "data/gestures/partial_swipe/sample_auto_0019.npy"
+          "path": "data/gestures/no_gesture_static/sample_auto_0004.npy"
+        },
+        {
+          "expected": "no_gesture_static",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.155951589345932,
+          "threshold": 0.0,
+          "path": "data/gestures/no_gesture_static/sample_auto_0008.npy"
         },
         {
           "expected": "partial_swipe",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 3.3105757236480713,
-          "threshold": 0.0,
-          "path": "data/gestures/partial_swipe/sample_auto_0001.npy"
-        },
-        {
-          "expected": "partial_swipe",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 6.442770957946777,
+          "distance": 4.577317237854004,
           "threshold": 0.0,
           "path": "data/gestures/partial_swipe/sample_auto_0015.npy"
         },
@@ -1163,88 +1201,88 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 8.232234954833984,
+          "distance": 0.896040141582489,
           "threshold": 0.0,
-          "path": "data/gestures/partial_swipe/sample_auto_0004.npy"
+          "path": "data/gestures/partial_swipe/sample_auto_0012.npy"
         },
         {
           "expected": "partial_swipe",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 1.3284368515014648,
+          "distance": 0.6256755590438843,
           "threshold": 0.0,
-          "path": "data/gestures/partial_swipe/sample_auto_0008.npy"
+          "path": "data/gestures/partial_swipe/sample_auto_0018.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.557899534702301,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0011.npy"
+        },
+        {
+          "expected": "partial_swipe",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.7694008946418762,
+          "threshold": 0.0,
+          "path": "data/gestures/partial_swipe/sample_auto_0016.npy"
         },
         {
           "expected": "random_motion",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.017802996560931206,
-          "threshold": 0.0,
-          "path": "data/gestures/random_motion/sample_auto_0015.npy"
-        },
-        {
-          "expected": "random_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.0808059498667717,
-          "threshold": 0.0,
-          "path": "data/gestures/random_motion/sample_auto_0012.npy"
-        },
-        {
-          "expected": "random_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.022988922894001007,
-          "threshold": 0.0,
-          "path": "data/gestures/random_motion/sample_auto_0018.npy"
-        },
-        {
-          "expected": "random_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.06924494355916977,
-          "threshold": 0.0,
-          "path": "data/gestures/random_motion/sample_auto_0011.npy"
-        },
-        {
-          "expected": "random_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 0.08822941035032272,
+          "distance": 0.07259072363376617,
           "threshold": 0.0,
           "path": "data/gestures/random_motion/sample_auto_0016.npy"
         },
         {
-          "expected": "return_motion",
+          "expected": "random_motion",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.7583903670310974,
+          "distance": 0.07129468023777008,
           "threshold": 0.0,
-          "path": "data/gestures/return_motion/sample_auto_0016.npy"
+          "path": "data/gestures/random_motion/sample_auto_0007.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.014536036178469658,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0003.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.026990097016096115,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0017.npy"
+        },
+        {
+          "expected": "random_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.050305671989917755,
+          "threshold": 0.0,
+          "path": "data/gestures/random_motion/sample_auto_0004.npy"
         },
         {
           "expected": "return_motion",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.6051555871963501,
-          "threshold": 0.0,
-          "path": "data/gestures/return_motion/sample_auto_0007.npy"
-        },
-        {
-          "expected": "return_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "nearest_negative",
-          "distance": 2.8475191593170166,
+          "distance": 3.366307258605957,
           "threshold": 0.0,
           "path": "data/gestures/return_motion/sample_auto_0003.npy"
         },
@@ -1253,248 +1291,142 @@
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.875438392162323,
+          "distance": 1.0500540733337402,
           "threshold": 0.0,
-          "path": "data/gestures/return_motion/sample_auto_0017.npy"
+          "path": "data/gestures/return_motion/sample_auto_0001.npy"
         },
         {
           "expected": "return_motion",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.5733267068862915,
+          "distance": 0.603581964969635,
           "threshold": 0.0,
-          "path": "data/gestures/return_motion/sample_auto_0004.npy"
+          "path": "data/gestures/return_motion/sample_auto_0005.npy"
         },
         {
-          "expected": "swipe_down",
-          "predicted": "swipe_down",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.051456354558467865,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/swipe_down/sample_0003.npy"
-        },
-        {
-          "expected": "swipe_down",
-          "predicted": "swipe_down",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.03492914140224457,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/swipe_down/sample_0001.npy"
-        },
-        {
-          "expected": "swipe_down",
-          "predicted": "swipe_down",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.037292495369911194,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/swipe_down/sample_0005.npy"
-        },
-        {
-          "expected": "swipe_down",
-          "predicted": "swipe_down",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.04561910405755043,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/swipe_down/sample_0007.npy"
-        },
-        {
-          "expected": "swipe_down",
-          "predicted": "swipe_down",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.07031156122684479,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/swipe_down/sample_0011.npy"
-        },
-        {
-          "expected": "swipe_left",
+          "expected": "return_motion",
           "predicted": "",
           "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.09141899645328522,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0007.npy"
+          "reason": "nearest_negative",
+          "distance": 0.49899590015411377,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0007.npy"
         },
         {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.018960721790790558,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0027.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.03723646700382233,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0022.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.03548324108123779,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0000.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.04612267017364502,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0012.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.018827758729457855,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0026.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.05003351718187332,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0011.npy"
-        },
-        {
-          "expected": "swipe_left",
-          "predicted": "swipe_left",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.03196663409471512,
-          "threshold": 0.059330566849346,
-          "path": "data/gestures/swipe_left/sample_0004.npy"
-        },
-        {
-          "expected": "swipe_up",
-          "predicted": "swipe_up",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.0570744127035141,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/swipe_up/sample_0008.npy"
-        },
-        {
-          "expected": "swipe_up",
-          "predicted": "swipe_up",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.06252535432577133,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/swipe_up/sample_0004.npy"
-        },
-        {
-          "expected": "swipe_up",
-          "predicted": "swipe_up",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.04360331594944,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/swipe_up/sample_0005.npy"
-        },
-        {
-          "expected": "swipe_up",
-          "predicted": "swipe_up",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.04247482866048813,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/swipe_up/sample_0001.npy"
-        },
-        {
-          "expected": "swipe_up",
-          "predicted": "swipe_up",
-          "result": "correct",
-          "reason": "accepted",
-          "distance": 0.03917397931218147,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/swipe_up/sample_0009.npy"
-        },
-        {
-          "expected": "wrong_axis_motion",
+          "expected": "return_motion",
           "predicted": "",
           "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.10243453085422516,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/wrong_axis_motion/sample_auto_0000.npy"
-        },
-        {
-          "expected": "wrong_axis_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.08827283978462219,
-          "threshold": 0.08336290897132288,
-          "path": "data/gestures/wrong_axis_motion/sample_auto_0019.npy"
-        },
-        {
-          "expected": "wrong_axis_motion",
-          "predicted": "",
-          "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.1157454326748848,
-          "threshold": 0.08760402095980838,
-          "path": "data/gestures/wrong_axis_motion/sample_auto_0015.npy"
+          "reason": "nearest_negative",
+          "distance": 1.1051222085952759,
+          "threshold": 0.0,
+          "path": "data/gestures/return_motion/sample_auto_0011.npy"
         },
         {
           "expected": "wrong_axis_motion",
           "predicted": "",
           "result": "rejected",
           "reason": "nearest_negative",
-          "distance": 0.09829465299844742,
+          "distance": 0.05432974547147751,
           "threshold": 0.0,
-          "path": "data/gestures/wrong_axis_motion/sample_auto_0016.npy"
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0013.npy"
         },
         {
           "expected": "wrong_axis_motion",
           "predicted": "",
           "result": "rejected",
-          "reason": "far_from_prototype",
-          "distance": 0.1335054188966751,
-          "threshold": 0.08760402095980838,
+          "reason": "nearest_negative",
+          "distance": 0.08151113986968994,
+          "threshold": 0.0,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0012.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.13999463617801666,
+          "threshold": 0.0,
           "path": "data/gestures/wrong_axis_motion/sample_auto_0006.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.020044950768351555,
+          "threshold": 0.0,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0011.npy"
+        },
+        {
+          "expected": "wrong_axis_motion",
+          "predicted": "",
+          "result": "rejected",
+          "reason": "nearest_negative",
+          "distance": 0.0934005156159401,
+          "threshold": 0.0,
+          "path": "data/gestures/wrong_axis_motion/sample_auto_0015.npy"
+        },
+        {
+          "expected": "zoom",
+          "predicted": "zoom",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.05731034651398659,
+          "threshold": 0.20357124038040636,
+          "path": "data/gestures/zoom/sample_0016.npy"
+        },
+        {
+          "expected": "zoom",
+          "predicted": "zoom",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.09460576623678207,
+          "threshold": 0.20357124038040636,
+          "path": "data/gestures/zoom/sample_0012.npy"
+        },
+        {
+          "expected": "zoom",
+          "predicted": "zoom",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.10818027704954147,
+          "threshold": 0.20357124038040636,
+          "path": "data/gestures/zoom/sample_0005.npy"
+        },
+        {
+          "expected": "zoom",
+          "predicted": "zoom",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.07168987393379211,
+          "threshold": 0.20357124038040636,
+          "path": "data/gestures/zoom/sample_0004.npy"
+        },
+        {
+          "expected": "zoom",
+          "predicted": "zoom",
+          "result": "correct",
+          "reason": "accepted",
+          "distance": 0.08165794610977173,
+          "threshold": 0.20357124038040636,
+          "path": "data/gestures/zoom/sample_0019.npy"
         }
       ],
       "thresholds": {
-        "swipe_down": {
-          "threshold": 0.08760402095980838,
-          "positive_radius": 0.08760402095980838,
-          "positive_distance_mean": 0.04316505504151185,
-          "positive_distance_p95": 0.06509315744042393,
-          "impostor_distance_p10": 0.2966616123914719
+        "SwipeLeft": {
+          "threshold": 0.030331425645935998,
+          "positive_radius": 0.030331425645935998,
+          "positive_distance_mean": 0.02103349268436432,
+          "positive_distance_p95": 0.023177058994770048,
+          "impostor_distance_p10": 0.1995507150888443
         },
-        "swipe_left": {
-          "threshold": 0.059330566849346,
-          "positive_radius": 0.059330566849346,
-          "positive_distance_mean": 0.031596207144585525,
-          "positive_distance_p95": 0.043043256551027295,
-          "impostor_distance_p10": 0.25799926519393923
-        },
-        "swipe_up": {
-          "threshold": 0.08336290897132288,
-          "positive_radius": 0.08336290897132288,
-          "positive_distance_mean": 0.043118717273076375,
-          "positive_distance_p95": 0.06463531926274298,
-          "impostor_distance_p10": 0.33655821084976195
+        "zoom": {
+          "threshold": 0.20357124038040636,
+          "positive_radius": 0.36717467157700534,
+          "positive_distance_mean": 0.12710576752821603,
+          "positive_distance_p95": 0.28813000619411466,
+          "impostor_distance_p10": 0.23949557691812515
         }
       },
       "negative_conflict_filter": {
@@ -1502,21 +1434,41 @@
         "method": "prototype_distance",
         "conflict_margin": 1.2,
         "external_negative_root": "/Users/remi/Developer/GUAP/DPLM/data/external",
-        "positive_count": 70,
+        "positive_count": 40,
         "external_negative_total": 440,
-        "safe_external_negative_count": 440,
-        "conflict_count": 0,
-        "conflict_rate": 0.0,
+        "safe_external_negative_count": 438,
+        "conflict_count": 2,
+        "conflict_rate": 0.004545454545454545,
         "nearest_positive_labels": {
-          "swipe_down": 1,
-          "swipe_left": 414,
-          "swipe_up": 25
+          "SwipeLeft": 398,
+          "zoom": 42
         },
-        "conflicting_negative_labels": {},
-        "conflicts": [],
+        "conflicting_negative_labels": {
+          "negative_external_ipn_dynamic": 2
+        },
+        "conflicts": [
+          {
+            "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0234.npy",
+            "negative_label": "negative_external_ipn_dynamic",
+            "nearest_positive_label": "zoom",
+            "distance": 0.13088996708393097,
+            "threshold": 0.15583077311515808,
+            "distance_ratio": 0.8399494173541961,
+            "reason": "accepted"
+          },
+          {
+            "path": "data/external/ipn_hand_frames04/negative_external_ipn_dynamic/sample_ipn_d0x_4cm11_11_r_3_0237.npy",
+            "negative_label": "negative_external_ipn_dynamic",
+            "nearest_positive_label": "zoom",
+            "distance": 0.1426135003566742,
+            "threshold": 0.15583077311515808,
+            "distance_ratio": 0.9151818829216974,
+            "reason": "accepted"
+          }
+        ],
         "status": "ok"
       }
     }
   ],
-  "production_out": "models/dynamic_prototypes.json"
+  "production_out": "models/dynamic_landmark_lstm_backbone_prototypes.json"
 }

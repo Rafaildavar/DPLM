@@ -12,6 +12,7 @@ mlflow
 psutil
 torch
 optuna
+tensorflow
 
 # Voice Assistant
 pyttsx3

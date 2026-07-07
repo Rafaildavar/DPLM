@@ -20,15 +20,6 @@ import flet as ft
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
 )
@@ -291,51 +282,10 @@ class HomeView:
         self._dynamic_profile_dd = ft.Dropdown(
             label="Dynamic",
             value=controller.dynamic_model_profile,
-            width=170,
+            width=240,
             dense=True,
             visible=controller.recognition_model_mode in {"auto", "dynamic"},
-            options=[
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_PRODUCTION,
-                    text="dynamic_sequence_mlp.pkl",
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
-                ),
-            ],
+            options=self._dynamic_profile_options(),
             on_select=self._on_dynamic_profile_changed,
         )
         self._static_rejection_dd = ft.Dropdown(
@@ -423,6 +373,7 @@ class HomeView:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
         self._visible = True
+        self._sync_dynamic_profile_dropdown()
         self._apply_model_variant(self._controller.model_variant)
         self._refresh_eval_labels()
         self._refresh_activity()
@@ -440,10 +391,9 @@ class HomeView:
             labels = self._controller.list_recognition_labels()
         except Exception:
             labels = []
-        fallback = ["swipe_up", "swipe_down", "swipe_left", "swipe_right"]
         out: list[str] = []
         seen: set[str] = set()
-        for label in [LIVE_EVAL_NO_COMMAND_LABEL, *labels, *fallback]:
+        for label in [LIVE_EVAL_NO_COMMAND_LABEL, *labels]:
             clean = str(label or "").strip()
             key = clean.lower()
             if clean and key not in seen:
@@ -464,6 +414,64 @@ class HomeView:
             for item in variants
             if str(item.get("key") or "").strip()
         ]
+
+    def _dynamic_profile_rows(self) -> list[dict]:
+        try:
+            profiles = self._controller.list_dynamic_model_profiles()
+        except Exception:
+            profiles = []
+        rows = [row for row in profiles if bool(row.get("quick_selectable"))]
+        if not any(
+            str(row.get("key") or "") == DYNAMIC_MODEL_PROFILE_PRODUCTION
+            for row in rows
+        ):
+            production = next(
+                (
+                    row
+                    for row in profiles
+                    if str(row.get("key") or "") == DYNAMIC_MODEL_PROFILE_PRODUCTION
+                ),
+                None,
+            )
+            if production is not None:
+                rows.insert(0, production)
+        if not rows:
+            rows = [
+                {
+                    "key": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                    "label": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                }
+            ]
+        return rows
+
+    def _dynamic_profile_options(
+        self,
+        rows: list[dict] | None = None,
+    ) -> list[ft.DropdownOption]:
+        return [
+            ft.DropdownOption(
+                key=str(item.get("key") or ""),
+                text=str(item.get("label") or item.get("key") or ""),
+            )
+            for item in (rows if rows is not None else self._dynamic_profile_rows())
+            if str(item.get("key") or "").strip()
+        ]
+
+    def _sync_dynamic_profile_dropdown(self, *, update: bool = False) -> None:
+        rows = self._dynamic_profile_rows()
+        allowed = {str(row.get("key") or "") for row in rows}
+        current = self._controller.dynamic_model_profile
+        if current not in allowed:
+            current = DYNAMIC_MODEL_PROFILE_PRODUCTION
+            self._controller.set_dynamic_model_profile(current)
+        self._dynamic_profile_dd.options = self._dynamic_profile_options(rows)
+        if self._dynamic_profile_dd.value != current:
+            self._dynamic_profile_dd.value = current
+        if update:
+            try:
+                self._dynamic_profile_dd.update()
+            except Exception:
+                pass
 
     def _refresh_eval_labels(self) -> None:
         labels = self._recognition_label_options()
@@ -511,7 +519,11 @@ class HomeView:
         # ВАЖНО: используем встроенный пайплайн (embedded), а не subprocess
         # ``realtime_infer.py``. Это требование пользователя — «камера
         # должна быть встроена в GUI».
-        self._controller.toggle_recognition()
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._controller.toggle_recognition)
+        else:
+            self._controller.toggle_recognition()
 
     def _on_landmarks_toggle(self, _e) -> None:
         self._controller.set_show_landmark_overlay(
@@ -1228,9 +1240,11 @@ class HomeView:
     def _on_dynamic_profile(self, value: str) -> None:
         self._page.run_thread(self._apply_dynamic_profile, value)
 
-    def _apply_dynamic_profile(self, value: str) -> None:
-        if self._dynamic_profile_dd.value != value:
-            self._dynamic_profile_dd.value = value
+    def _apply_dynamic_profile(self, _value: str) -> None:
+        self._sync_dynamic_profile_dropdown()
+        current = self._controller.dynamic_model_profile
+        if self._dynamic_profile_dd.value != current:
+            self._dynamic_profile_dd.value = current
         self._dynamic_profile_dd.visible = (
             self._controller.recognition_model_mode in {"auto", "dynamic"}
         )
@@ -1244,6 +1258,7 @@ class HomeView:
 
     def _apply_model_variant(self, value: str) -> None:
         self._model_variant_dd.options = self._model_variant_options()
+        self._sync_dynamic_profile_dropdown()
         if self._model_variant_dd.value != value:
             self._model_variant_dd.value = value
         try:

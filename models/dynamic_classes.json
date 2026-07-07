@@ -6,5 +6,6 @@
   "swipe_down",
   "swipe_left",
   "swipe_up",
+  "tap",
   "wrong_axis_motion"
 ]

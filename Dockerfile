@@ -33,8 +33,8 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 FROM base AS runtime
 
-LABEL org.opencontainers.image.title="GestureFlow Runtime"
-LABEL org.opencontainers.image.description="Headless GestureFlow ML/runtime image for CI, smoke tests and release validation"
+LABEL org.opencontainers.image.title="GestureBind Runtime"
+LABEL org.opencontainers.image.description="Headless GestureBind ML/runtime image for CI, smoke tests and release validation"
 LABEL org.opencontainers.image.source="https://github.com/Rafaildavar/DPLM"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

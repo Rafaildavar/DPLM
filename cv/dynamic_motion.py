@@ -8,7 +8,12 @@ from typing import Deque
 
 import numpy as np
 
-from cv.gesture_features import sequence_to_matrix, trajectory_features
+from cv.gesture_features import (
+    global_trajectory_xy,
+    global_wrist_slices,
+    sequence_to_matrix,
+    trajectory_features,
+)
 
 
 @dataclass(frozen=True)
@@ -78,19 +83,20 @@ def normalize_global_trajectory(
     """Remove screen position and projected motion amplitude from wrist paths."""
     seq = sequence_to_matrix(sequence).copy()
     dims = int(seq.shape[1])
-    if dims < 44 or dims % 44 != 0:
+    wrist_slices = global_wrist_slices(dims)
+    if not wrist_slices:
         return seq
 
     target = max(1e-6, float(reference_displacement))
-    for offset in range(0, dims, 44):
-        wrist = seq[:, offset + 42 : offset + 44]
+    for start, end in wrist_slices:
+        wrist = seq[:, start:end]
         if not np.any(np.abs(wrist) > 1e-6):
             continue
         delta = wrist[-1] - wrist[0]
         displacement = float(np.linalg.norm(delta))
         if displacement <= 1e-6:
             continue
-        seq[:, offset + 42 : offset + 44] = (wrist - wrist[0]) * (target / displacement)
+        seq[:, start:end] = (wrist - wrist[0]) * (target / displacement)
     return seq.astype(np.float32, copy=False)
 
 
@@ -392,22 +398,4 @@ class DynamicMotionSegmenter:
 
 
 def _global_points(sequence: np.ndarray) -> np.ndarray:
-    seq = sequence_to_matrix(sequence)
-    dims = int(seq.shape[1])
-    if dims >= 44 and dims % 44 == 0:
-        wrists: list[np.ndarray] = []
-        for offset in range(0, dims, 44):
-            wrist = seq[:, offset + 42 : offset + 44]
-            if np.any(np.abs(wrist) > 1e-6):
-                wrists.append(wrist)
-        if wrists:
-            return np.mean(np.stack(wrists, axis=0), axis=0).astype(
-                np.float32,
-                copy=False,
-            )
-
-    usable = (dims // 2) * 2
-    if usable >= 2:
-        points = seq[:, :usable].reshape(seq.shape[0], usable // 2, 2)
-        return points.mean(axis=1).astype(np.float32, copy=False)
-    return np.zeros((seq.shape[0], 2), dtype=np.float32)
+    return global_trajectory_xy(sequence)

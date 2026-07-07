@@ -1,4 +1,4 @@
-DPLM: Gesture Assistant — Отчёт по проекту
+GestureBind: Gesture Assistant — Отчёт по проекту
 Этап 3 — Базовая классификация жестов (KNN)
 
 Цели этапа:

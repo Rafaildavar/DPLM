@@ -1,8 +1,8 @@
 # Dynamic Prototype Comparison
 
 - Best method: `prototype_distance`
-- Train samples: `457`
-- Test samples: `153`
+- Train samples: `433`
+- Test samples: `145`
 - External negatives: `True`
 
 ## Negative Conflict Filter
@@ -11,15 +11,19 @@
 - Method: `prototype_distance`
 - Conflict margin: `1.20`
 - External negatives: `440`
-- Safe external negatives: `440`
-- Conflicts removed: `0`
-- Conflict rate: `0.0000`
+- Safe external negatives: `438`
+- Conflicts removed: `2`
+- Conflict rate: `0.0045`
+
+| Negative label | Conflicts |
+|---|---:|
+| `negative_external_ipn_dynamic` | 2 |
 
 ## Method Metrics
 
 | Method | Overall | Positive recall | Negative reject | Negative FP | Sequence accuracy | Edit distance |
 |---|---:|---:|---:|---:|---:|---:|
-| `prototype_distance` | 0.9935 | 0.9444 | 1.0000 | 0.0000 | 0.9444 | 1 |
+| `prototype_distance` | 0.9931 | 0.9000 | 1.0000 | 0.0000 | 0.9000 | 1 |
 
 ## Per-Class Recall
 
@@ -27,9 +31,8 @@
 
 | Label | Total | Correct | Wrong | Rejected |
 |---|---:|---:|---:|---:|
-| `swipe_down` | 5 | 5 | 0 | 0 |
-| `swipe_left` | 8 | 7 | 0 | 1 |
-| `swipe_up` | 5 | 5 | 0 | 0 |
+| `SwipeLeft` | 5 | 4 | 0 | 1 |
+| `zoom` | 5 | 5 | 0 | 0 |
 
 ## Interpretation
 

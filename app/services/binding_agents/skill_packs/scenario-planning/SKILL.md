@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Convert a natural language routine into a GestureFlow `sequence` action.
+Convert a natural language routine into a GestureBind `sequence` action.
 
 ## Inputs
 

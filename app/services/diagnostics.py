@@ -13,6 +13,7 @@ from app.services.app_config import (
     database_url_from_config,
     resolve_config_path,
 )
+from cv.gesture_dataset_files import gesture_sample_paths
 
 
 STATUS_PASS = "pass"
@@ -185,13 +186,13 @@ def _check_dataset(config: AppConfig, add) -> None:
     if not data_dir.exists():
         return
     labels = [p for p in sorted(data_dir.iterdir()) if p.is_dir()]
-    sample_count = sum(len(list(label_dir.glob("sample_*.npy"))) for label_dir in labels)
+    sample_count = sum(len(gesture_sample_paths(label_dir)) for label_dir in labels)
     if labels and sample_count:
         add(
             "dataset_samples",
             "Датасет",
             STATUS_PASS,
-            f"{len(labels)} жестов, {sample_count} sample_*.npy",
+            f"{len(labels)} жестов, {sample_count} обучающих .npy",
         )
     elif labels:
         add("dataset_samples", "Датасет", STATUS_WARN, f"{len(labels)} папок без sample_*.npy")

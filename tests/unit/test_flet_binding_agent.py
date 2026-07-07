@@ -49,8 +49,12 @@ GESTURES = [
 ]
 
 GESTURES_WITH_GUN = [*GESTURES, {"label": "gun"}]
+GESTURES_WITH_HAND = [*GESTURES, {"label": "hand"}]
+GESTURES_WITH_LIKE = [*GESTURES, {"label": "like"}]
+GESTURES_WITH_THUMBS_UP = [*GESTURES, {"label": "thumbs_up"}]
 GESTURES_WITH_SWIPE_LEFT = [*GESTURES, {"label": "swipe_left"}]
 GESTURES_WITH_SH3 = [*GESTURES, {"label": "sh3"}]
+GESTURES_WITH_ZOOM = [*GESTURES_WITH_HAND, {"label": "zoom"}]
 
 
 def test_binding_agents_are_importable_from_dedicated_package():
@@ -229,7 +233,7 @@ def test_binding_agent_redirects_unsupported_general_question():
     assert draft["mode"] == "answer"
     assert draft["intentBlock"] == "unsupported_general"
     assert draft["actionSpec"] == {}
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Ха-ха" in draft["agentReply"]
     assert draft["agentTrace"][-1]["agent"] == "Reviewer Agent"
     assert draft["agentTrace"][-1]["data"]["relevance"] == 1.0
@@ -241,8 +245,8 @@ def test_binding_agent_redirect_answer_varies_by_prompt():
 
     assert weather["intentBlock"] == "unsupported_general"
     assert currency["intentBlock"] == "unsupported_general"
-    assert "GestureFlow" in weather["agentReply"]
-    assert "GestureFlow" in currency["agentReply"]
+    assert "GestureBind" in weather["agentReply"]
+    assert "GestureBind" in currency["agentReply"]
     assert weather["agentReply"] != currency["agentReply"]
 
 
@@ -258,7 +262,7 @@ def test_binding_agent_scope_question_is_not_binding_with_selected_gesture():
     assert draft["mode"] == "answer"
     assert draft["intentBlock"] == "project_question"
     assert draft["gestureLabel"] == ""
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Ха-ха" in draft["agentReply"]
 
 
@@ -275,7 +279,7 @@ def test_binding_agent_blocks_instruction_override_prompt():
     assert draft["intentBlock"] == "guardrails"
     assert draft["intent"] == "guardrail_block"
     assert draft["actionSpec"] == {}
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Guardrails" in draft["agentReply"]
     assert draft["agentTrace"][0]["status"] == "blocked"
     assert draft["agentTrace"][0]["data"]["decision"] == "block"
@@ -327,6 +331,78 @@ def test_binding_agent_uses_explicit_typed_gesture_from_prompt():
     }
     assert "Gesture Agent" in {item["agent"] for item in draft["agentTrace"]}
     assert draft["agentReply"].startswith("Локальный агент: понял")
+
+
+def test_binding_agent_prompt_gesture_beats_selected_dropdown_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи zoom к повышение звука",
+        GESTURES_WITH_ZOOM,
+        current_gesture="hand",
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "zoom"
+    assert draft["actionSpec"] == {
+        "action": "volume_up",
+        "platform": "macos",
+    }
+    gesture_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
+    )
+    assert gesture_step["data"]["source"] == "label"
+
+
+def test_binding_agent_typed_unknown_gesture_does_not_fallback_to_selected():
+    draft = build_agent_binding_draft(
+        "привяжи zoom к повышение звука",
+        GESTURES_WITH_HAND,
+        current_gesture="hand",
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "zoom"
+    assert draft["actionSpec"] == {
+        "action": "volume_up",
+        "platform": "macos",
+    }
+    gesture_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
+    )
+    assert gesture_step["data"]["source"] == "typed_query"
+
+
+def test_binding_agent_resolves_russian_like_alias_to_like_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи лайк к открытию телеграм",
+        GESTURES_WITH_LIKE,
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "like"
+    assert draft["missing"] == []
+    assert draft["actionSpec"] == {
+        "action": "open_app",
+        "platform": "macos",
+        "app": "Telegram",
+    }
+
+
+def test_binding_agent_resolves_like_alias_to_thumbs_up_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи лайк к открытию телеграм",
+        GESTURES_WITH_THUMBS_UP,
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "thumbs_up"
+    assert draft["missing"] == []
+    assert draft["actionSpec"]["app"] == "Telegram"
 
 
 def test_binding_agent_does_not_treat_workday_goal_as_application():
@@ -452,7 +528,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
                         {
                             "message": {
                                 "content": (
-                                    "**Вернёмся к GestureFlow**\n\n"
+                                    "**Вернёмся к GestureBind**\n\n"
                                     "Ха-ха, вопрос понял, но здесь лучше держать фокус "
                                     "на жестах и привязках.\n\n"
                                     "- могу собрать привязку;\n"
@@ -475,7 +551,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
         assert "Интент: unsupported_general_question" in payload["messages"][1]["content"]
         assert "Локальная задача для LLM" in payload["messages"][1]["content"]
         assert "Локальный черновик ответа" in payload["messages"][1]["content"]
-        assert "GestureFlow" in payload["messages"][1]["content"]
+        assert "GestureBind" in payload["messages"][1]["content"]
         assert "Верни только markdown-текст" in payload["messages"][0]["content"]
         assert timeout == 25.0
         return FakeResponse()
@@ -493,7 +569,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
 
     assert result.ok is True
     assert result.intent_block == "unsupported_general"
-    assert result.response_text.startswith("**Вернёмся к GestureFlow**")
+    assert result.response_text.startswith("**Вернёмся к GestureBind**")
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["purpose"] == "answer_rewrite"
     assert mistral_step.data["temperature"] == 0.72
@@ -510,7 +586,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
                         {
                             "message": {
                                 "content": (
-                                    "**Про GestureFlow коротко**\n\n"
+                                    "**Про GestureBind коротко**\n\n"
                                     "Я помогу собрать привязку из обычной фразы, "
                                     "проверить hotkey и объяснить, что видно в MLflow."
                                 )
@@ -529,7 +605,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
         assert payload["temperature"] == 0.72
         assert "Интент: project_question" in payload["messages"][1]["content"]
         assert "Блок: project_question" in payload["messages"][1]["content"]
-        assert "Перефразируй ответ по проекту GestureFlow" in payload["messages"][1]["content"]
+        assert "Перефразируй ответ по проекту GestureBind" in payload["messages"][1]["content"]
         assert timeout == 25.0
         return FakeResponse()
 
@@ -546,7 +622,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
 
     assert result.ok is True
     assert result.intent_block == "project_question"
-    assert result.response_text.startswith("**Про GestureFlow коротко**")
+    assert result.response_text.startswith("**Про GestureBind коротко**")
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["purpose"] == "answer_rewrite"
 
@@ -836,7 +912,7 @@ def test_binding_agent_builds_sequence_draft():
         "steps": [
             {"action": "open_app", "app": "Preview"},
             {"action": "wait", "seconds": 1.0},
-            {"action": "notify", "title": "GestureFlow", "message": "Готово"},
+            {"action": "notify", "title": "GestureBind", "message": "Готово"},
         ],
     }
 
@@ -909,6 +985,63 @@ def test_binding_agent_builds_named_command_series_with_transliterated_gesture()
             {"action": "open_app", "app": "Telegram"},
         ],
     }
+
+
+def test_binding_agent_sequence_keeps_three_requested_steps_with_site_alias():
+    draft = build_agent_binding_draft(
+        (
+            "привяжи жест hand к сценарию открыть телеграм, "
+            "открыть рамблер почту и открыть сайт студента гуап"
+        ),
+        GESTURES_WITH_HAND,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "hand"
+    assert draft["commandName"] == "hand: Сценарий из 3 шагов"
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "steps": [
+            {"action": "open_app", "app": "Telegram"},
+            {"action": "open_url", "url": "https://mail.rambler.ru"},
+            {"action": "open_url", "url": "https://new.guap.ru/targets/studs"},
+        ],
+    }
+    scenario_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Scenario Agent"
+    )
+    assert scenario_step["data"]["expected_steps_count"] == 3
+    assert scenario_step["data"]["steps_count"] == 3
+    assert draft["unresolvedSteps"] == []
+
+
+def test_binding_agent_sequence_does_not_drop_unresolved_steps():
+    draft = build_agent_binding_draft(
+        (
+            "привяжи жест hand к сценарию открыть телеграм, "
+            "открыть сайт неизвестной кафедры"
+        ),
+        GESTURES_WITH_HAND,
+        provider="local",
+    )
+
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["missing"] == ["шаги сценария"]
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "steps": [{"action": "open_app", "app": "Telegram"}],
+    }
+    assert draft["unresolvedSteps"] == [
+        {"index": 2, "text": "открыть сайт неизвестной кафедры"}
+    ]
+    assert "часть шагов не" in draft["agentReply"]
 
 
 def test_mistral_draft_drops_stale_missing_when_contract_fields_exist():
@@ -1049,6 +1182,85 @@ def test_binding_agent_maps_macos_space_left_navigation():
         "platform": "macos",
         "keys": ["ctrl", "left"],
     }
+
+
+def test_binding_agent_maps_video_pause_phrase_to_media_key():
+    draft = build_agent_binding_draft(
+        "привяжи жест свайп влево к поставить на паузу видео",
+        GESTURES_WITH_SWIPE_LEFT,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "swipe_left"
+    assert draft["mode"] == "single"
+    assert draft["missing"] == []
+    assert draft["actionSpec"] == {
+        "action": "media_key",
+        "platform": "macos",
+        "kind": "pause",
+    }
+
+
+def test_binding_agent_media_action_aliases_cover_video_playback_phrases():
+    cases = (
+        (
+            "привяжи свайп влево к остановить видео",
+            "pause",
+        ),
+        (
+            "привяжи swipeleft к продолжить воспроизведение видео",
+            "play",
+        ),
+        (
+            "привяжи swipe left к пауза или продолжить музыку",
+            "play_pause",
+        ),
+        (
+            "привяжи жест свайп влево к следующий трек",
+            "next",
+        ),
+        (
+            "привяжи жест свайп влево к предыдущий трек",
+            "prev",
+        ),
+    )
+
+    for prompt, kind in cases:
+        draft = build_agent_binding_draft(
+            prompt,
+            GESTURES_WITH_SWIPE_LEFT,
+            provider="local",
+        )
+        assert draft["ok"] is True, prompt
+        assert draft["canApply"] is True, prompt
+        assert draft["gestureLabel"] == "swipe_left", prompt
+        assert draft["actionSpec"] == {
+            "action": "media_key",
+            "platform": "macos",
+            "kind": kind,
+        }, prompt
+
+
+def test_binding_agent_keeps_wait_when_phrase_is_duration_pause():
+    draft = build_agent_binding_draft(
+        (
+            "жест palm сценарий: открыть Safari, "
+            "пауза 2 секунды, показать уведомление Готово"
+        ),
+        GESTURES,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"]["steps"] == [
+        {"action": "open_app", "app": "Safari"},
+        {"action": "wait", "seconds": 2.0},
+        {"action": "notify", "title": "GestureBind", "message": "Готово"},
+    ]
 
 
 def test_mistral_sequence_step_key_string_is_normalized_before_ui():
@@ -1452,7 +1664,7 @@ def test_binding_agent_answer_text_stays_in_dialog_memory_for_follow_up():
     view._on_agent_parse_click(None)
 
     assert view._agent_dialog_messages[-1]["role"] == "agent"
-    assert "GestureFlow" in view._agent_dialog_messages[-1]["text"]
+    assert "GestureBind" in view._agent_dialog_messages[-1]["text"]
 
     view._agent_input.value = "почему ты остаешься в рамках?"
     view._on_agent_parse_click(None)

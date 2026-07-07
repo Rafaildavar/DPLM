@@ -93,7 +93,7 @@
           }
         }
       },
-      "model_path": "/private/tmp/gestureflow_conflict_filter_models/prototype_distance/dynamic_prototypes.json",
+      "model_path": "/private/tmp/gesturebind_conflict_filter_models/prototype_distance/dynamic_prototypes.json",
       "attempts": [
         {
           "expected": "negative_external_ipn_dynamic",

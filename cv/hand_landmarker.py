@@ -97,7 +97,7 @@ def resolve_hand_landmarker_task_path() -> Path:
         print(f"[i] Загрузка Hand Landmarker → {cache}")
         req = urllib.request.Request(
             _HAND_TASK_URL,
-            headers={"User-Agent": "DPLM/1.0 (cv.hand_landmarker)"},
+            headers={"User-Agent": "GestureBind/1.0 (cv.hand_landmarker)"},
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = resp.read()

@@ -10,7 +10,7 @@ Evaluate whether the final agent result fits the selected intent block.
 - Binding contract completeness.
 - Safety and guardrail compliance.
 - UI usefulness: the user sees next action, not internal implementation noise.
-- Tone of voice: warm, GestureFlow-specific, not dry or generic.
+- Tone of voice: warm, GestureBind-specific, not dry or generic.
 
 ## Verdicts
 

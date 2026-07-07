@@ -115,7 +115,7 @@ class CommandExecutor:
                 "clicks": 5,
                 "platform": "macos"
             })
-            self.register_command("пауза или продолжить музыку", {
+            self.register_command("пауза или продолжить медиа", {
                 "action": "media_key",
                 "kind": "play_pause",
                 "platform": "macos"
@@ -233,7 +233,7 @@ class CommandExecutor:
         if action == "notify":
             return self._notify(
                 str(config.get("message") or ""),
-                title=str(config.get("title") or "GestureFlow"),
+                title=str(config.get("title") or "GestureBind"),
             )
 
         if action == "mute_toggle":
@@ -473,9 +473,9 @@ class CommandExecutor:
     def _applescript_string(value: str) -> str:
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def _notify(self, message: str, *, title: str = "GestureFlow") -> bool:
+    def _notify(self, message: str, *, title: str = "GestureBind") -> bool:
         message = (message or "").strip()
-        title = (title or "GestureFlow").strip() or "GestureFlow"
+        title = (title or "GestureBind").strip() or "GestureBind"
         if not message:
             logger.error("notify: пустой текст уведомления")
             return False

@@ -1,10 +1,9 @@
 """
-Экран «Жесты» — список жестов из БД (карточки с привязанной командой).
+Экран «Жесты» — список пользовательских жестов из БД.
 
 Аналог QML ``GestureListScreen.qml``. Источник данных — таблица ``gestures``
-через ``AppController.get_db_gestures()``. Здесь показываем только активные
-и обученные жесты: static-классы из ``model_class_id`` и dynamic-классы из
-``models/dynamic_classes.json``.
+через ``AppController.get_db_gestures()``. Здесь показываем только классы,
+которые пользователь записал через приложение.
 """
 from __future__ import annotations
 
@@ -33,6 +32,7 @@ from app.services.gesture_taxonomy import (
     GESTURE_TYPE_STATIC,
     load_gesture_taxonomy,
 )
+from cv.gesture_features import hand_feature_blocks
 
 
 HAND_CONNECTIONS = (
@@ -57,11 +57,13 @@ class GesturesView:
         self._page = page
         self._controller = controller
         self._rows: list[dict] = []
+        self._dataset_rows: list[dict] = []
         self._selected_id: int | None = None
         self._filter = "all"
         self._command_help_open = False
         self._preview_cache: dict[str, str | None] = {}
         self._gesture_type_cache: dict[str, str] = {}
+        self._pending_delete_label = ""
         try:
             self._taxonomy = load_gesture_taxonomy()
         except Exception:
@@ -73,6 +75,15 @@ class GesturesView:
         self._summary_dynamic = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_ACCENT)
         self._summary_bound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_SUCCESS)
         self._summary_unbound = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=COLOR_WARNING)
+        self._dataset_standard = ft.Text("0", size=18, weight=ft.FontWeight.BOLD, color=COLOR_ACCENT)
+        self._dataset_custom = ft.Text("0", size=18, weight=ft.FontWeight.BOLD, color=COLOR_SUCCESS)
+        self._dataset_samples = ft.Text("0", size=18, weight=ft.FontWeight.BOLD, color=COLOR_ON_SURFACE)
+        self._dataset_augmented = ft.Text("0", size=18, weight=ft.FontWeight.BOLD, color=COLOR_WARNING)
+        self._dataset_column = ft.Column(
+            spacing=8,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
         self._detail_body = ft.Column(
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
@@ -85,7 +96,7 @@ class GesturesView:
             color=COLOR_ON_SURFACE,
         )
         self._empty_hint = ft.Text(
-            "Записанные классы появятся здесь после импорта.",
+            "Записанные классы появятся здесь после записи на вкладке «Обучение».",
             size=12,
             color=COLOR_MUTED,
             text_align=ft.TextAlign.CENTER,
@@ -152,10 +163,6 @@ class GesturesView:
         )
 
     def on_show(self) -> None:
-        try:
-            self._controller.sync_dataset_to_db()
-        except Exception as exc:
-            print(f"[w] gestures auto-sync failed: {exc}", flush=True)
         self._refresh()
 
     def on_hide(self) -> None:
@@ -186,7 +193,9 @@ class GesturesView:
             self._empty_hint.value = "Измени поиск или фильтр."
         else:
             self._empty_title.value = "Жестов пока нет"
-            self._empty_hint.value = "Записанные классы появятся здесь после импорта."
+            self._empty_hint.value = (
+                "Записанные классы появятся здесь после записи на вкладке «Обучение»."
+            )
         self._empty_state.visible = not has_rows
         self._list_column.visible = has_rows
         self._render_detail()
@@ -225,6 +234,180 @@ class GesturesView:
         elif mode == "two_hands":
             rows = [row for row in rows if row.get("isTwoHands")]
         return rows
+
+    def _visible_dataset_rows(self) -> list[dict]:
+        return [row for row in self._dataset_rows if not bool(row.get("systemClass"))]
+
+    def _dataset_role(self, row: dict) -> str:
+        if bool(row.get("systemClass")):
+            return "system"
+        try:
+            user_samples = int(row.get("userRecordedSamples") or 0)
+        except (TypeError, ValueError):
+            user_samples = 0
+        if bool(row.get("canDelete")) or user_samples > 0:
+            return "custom"
+        return "standard"
+
+    def _dataset_role_chip(self, role: str) -> ft.Container:
+        if role == "custom":
+            return self._chip("мой", COLOR_SUCCESS, icon=ft.Icons.EDIT)
+        if role == "standard":
+            return self._chip("стандартный", COLOR_ACCENT, icon=ft.Icons.STAR)
+        return self._chip("служебный", COLOR_MUTED, icon=ft.Icons.LOCK_OUTLINE)
+
+    def _render_dataset_manager(self) -> None:
+        rows = self._visible_dataset_rows()
+        standard = sum(1 for row in rows if self._dataset_role(row) == "standard")
+        custom = sum(1 for row in rows if self._dataset_role(row) == "custom")
+        samples = 0
+        augmented = 0
+        for row in rows:
+            try:
+                samples += int(row.get("realSamples") or row.get("samples") or 0)
+            except (TypeError, ValueError):
+                pass
+            try:
+                augmented += int(row.get("augmentedSamples") or 0)
+            except (TypeError, ValueError):
+                pass
+
+        self._dataset_standard.value = str(standard)
+        self._dataset_custom.value = str(custom)
+        self._dataset_samples.value = str(samples)
+        self._dataset_augmented.value = str(augmented)
+        if rows:
+            self._dataset_column.controls = [self._dataset_row_card(row) for row in rows]
+        else:
+            self._dataset_column.controls = [
+                ft.Container(
+                    bgcolor="#171A1D",
+                    border_radius=8,
+                    padding=14,
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Text(
+                        "Пока нет записанных жестов.",
+                        size=12,
+                        color=COLOR_MUTED,
+                    ),
+                )
+            ]
+
+    def _dataset_row_card(self, row: dict) -> ft.Container:
+        label = str(row.get("label") or "").strip() or "gesture"
+        role = self._dataset_role(row)
+        can_delete = bool(row.get("canDelete")) and role == "custom"
+        pending_delete = self._pending_delete_label.lower() == label.lower() and can_delete
+        try:
+            real_samples = int(row.get("realSamples") or row.get("samples") or 0)
+        except (TypeError, ValueError):
+            real_samples = 0
+        try:
+            augmented_samples = int(row.get("augmentedSamples") or 0)
+        except (TypeError, ValueError):
+            augmented_samples = 0
+
+        if pending_delete:
+            actions: list[ft.Control] = [
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_FOREVER,
+                    icon_color=COLOR_DANGER,
+                    tooltip=f"Удалить записи {label}",
+                    on_click=lambda _e, value=label: self._delete_samples(value),
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    icon_color=COLOR_MUTED,
+                    tooltip="Отмена",
+                    on_click=lambda _e: self._cancel_delete_samples(),
+                ),
+            ]
+        elif can_delete:
+            actions = [
+                ft.IconButton(
+                    icon=ft.Icons.DELETE,
+                    icon_color=COLOR_DANGER,
+                    tooltip=f"Удалить мои записи {label}",
+                    on_click=lambda _e, value=label: self._request_delete_samples(value),
+                )
+            ]
+        else:
+            actions = [
+                ft.IconButton(
+                    icon=ft.Icons.LOCK_OUTLINE,
+                    icon_color=COLOR_MUTED,
+                    tooltip="Стандартные записи нельзя удалить отсюда",
+                    disabled=True,
+                )
+            ]
+
+        return ft.Container(
+            bgcolor="#171A1D",
+            border=self._border(COLOR_SURFACE_HIGH),
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=9),
+            content=ft.Row(
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.FOLDER, size=18, color=COLOR_ACCENT),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                label,
+                                size=13,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                                no_wrap=True,
+                            ),
+                            ft.Text(
+                                f"{real_samples} записей · {augmented_samples} аугм.",
+                                size=11,
+                                color=COLOR_MUTED,
+                                no_wrap=True,
+                            ),
+                        ],
+                    ),
+                    self._dataset_role_chip(role),
+                    *actions,
+                ],
+            ),
+        )
+
+    def _request_delete_samples(self, label: str) -> None:
+        self._pending_delete_label = label
+        self._render_dataset_manager()
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _cancel_delete_samples(self) -> None:
+        self._pending_delete_label = ""
+        self._render_dataset_manager()
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _delete_samples(self, label: str) -> None:
+        self._pending_delete_label = ""
+        delete_recorded = getattr(self._controller, "delete_recorded_samples", None)
+        if not callable(delete_recorded):
+            self._info_text.value = "Удаление записей недоступно."
+            self._info_text.color = COLOR_DANGER
+            self._render()
+            return
+        summary = delete_recorded(label)
+        if summary.get("ok"):
+            self._info_text.value = f"Удалены записи «{label}». Переобучи модель после изменений."
+            self._info_text.color = COLOR_SUCCESS
+        else:
+            self._info_text.value = str(summary.get("error") or "Не удалось удалить записи.")
+            self._info_text.color = COLOR_DANGER
+        self._refresh()
 
     def _on_filters_changed(self, _e) -> None:
         self._filter = str(self._filter_dd.value or "all")
@@ -287,6 +470,10 @@ class GesturesView:
         label = self._label(row)
         if self._taxonomy is not None:
             try:
+                explicit_types = getattr(self._taxonomy, "label_to_type", {})
+                explicit_type = explicit_types.get(str(label or "").strip().lower())
+                if explicit_type:
+                    return explicit_type
                 gesture_type = self._taxonomy.gesture_type_for_label(label)
                 if gesture_type and gesture_type != GESTURE_TYPE_STATIC:
                     return gesture_type
@@ -307,11 +494,17 @@ class GesturesView:
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 scope = str(meta.get("source_scope") or meta.get("gesture_type") or "").lower()
+                feature_format = str(meta.get("sample_feature_format") or "").lower()
+                raw_feature_dim = int(meta.get("raw_feature_dim") or 0)
                 if bool(meta.get("include_global_motion")) or scope == GESTURE_TYPE_DYNAMIC:
                     gesture_type = GESTURE_TYPE_DYNAMIC
                 elif scope == GESTURE_TYPE_NEGATIVE:
                     gesture_type = GESTURE_TYPE_NEGATIVE
-                elif int(meta.get("raw_feature_dim") or 0) >= 44:
+                elif scope in {GESTURE_TYPE_STATIC, GESTURE_TYPE_QUASI_STATIC}:
+                    gesture_type = scope
+                elif "wrist_xy" in feature_format:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+                elif self._looks_like_dynamic_feature_dim(raw_feature_dim):
                     gesture_type = GESTURE_TYPE_DYNAMIC
             except Exception:
                 pass
@@ -322,13 +515,20 @@ class GesturesView:
 
                 arr = np.load(sample_path, mmap_mode="r", allow_pickle=False)
                 shape = tuple(int(item) for item in arr.shape)
-                if len(shape) >= 2 and shape[-1] >= 44:
+                if len(shape) >= 2 and self._looks_like_dynamic_feature_dim(shape[-1]):
                     gesture_type = GESTURE_TYPE_DYNAMIC
             except Exception:
                 pass
 
         self._gesture_type_cache[cache_key] = gesture_type
         return gesture_type
+
+    @staticmethod
+    def _looks_like_dynamic_feature_dim(feature_dim: int) -> bool:
+        # Legacy dynamic samples: 21 * xy + wrist_xy = 44 per hand.
+        # New dynamic samples: 21 * xyz + wrist_xy = 65 per hand.
+        # Static xyz samples are 63/126, so a generic ">= 44" check is wrong.
+        return int(feature_dim or 0) in {44, 65, 88, 130}
 
     def _gesture_type_label(self, gesture_type: str) -> str:
         return {
@@ -418,15 +618,24 @@ class GesturesView:
                 ]
                 if nonzero:
                     idx = nonzero[len(nonzero) // 2]
-                if is_dynamic and flat_seq.shape[1] >= 44:
+                blocks = hand_feature_blocks(flat_seq.shape[1])
+                if is_dynamic and blocks:
                     block_candidates = []
-                    for offset in range(0, flat_seq.shape[1] - 43, 44):
-                        pose_flat = flat_seq[:, offset : offset + 42]
-                        if pose_flat.shape[1] < 42:
+                    for block in blocks:
+                        pose_flat = flat_seq[:, block.start : block.pose_end]
+                        if pose_flat.shape[1] < block.pose_dim:
                             continue
-                        pose_frames = pose_flat.reshape(flat_seq.shape[0], 21, 2)
+                        pose_frames_full = pose_flat.reshape(
+                            flat_seq.shape[0],
+                            21,
+                            block.coords_per_point,
+                        )
+                        pose_frames = pose_frames_full[:, :, :2]
                         pose_signal = float(np.nanmean(np.abs(pose_flat)))
-                        wrist = flat_seq[:, offset + 42 : offset + 44]
+                        if block.global_start is not None:
+                            wrist = flat_seq[:, block.global_start : block.global_start + 2]
+                        else:
+                            wrist = pose_frames[:, 0, :2]
                         wrist_finite = wrist[np.isfinite(wrist).all(axis=1)]
                         wrist_displacement = (
                             float(np.linalg.norm(wrist_finite[-1] - wrist_finite[0]))
@@ -447,14 +656,14 @@ class GesturesView:
                         if flat.shape[0] < 42:
                             return None
                         points = flat[:42].reshape(21, 2)
-                        trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+                        trail = None
                         frames = flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
                 else:
                     flat = flat_seq[idx]
                     if flat.shape[0] < 42:
                         return None
                     points = flat[:42].reshape(21, 2)
-                    trail = flat_seq[:, 42:44] if flat_seq.shape[1] >= 44 else None
+                    trail = None
                     frames = (
                         flat_seq[:, :42].reshape(flat_seq.shape[0], 21, 2)
                         if is_dynamic and flat_seq.shape[0] > 1
@@ -1559,43 +1768,113 @@ class GesturesView:
             )
         ]
 
-    def _on_import_click(self, _e) -> None:
-        summary = self._controller.sync_dataset_to_db()
-        if summary["total"] == 0:
+    def _build_dataset_manager_card(self) -> ft.Control:
+        metrics = ft.ResponsiveRow(
+            spacing=10,
+            run_spacing=10,
+            controls=[
+                ft.Container(
+                    content=self._metric_tile(
+                        "Стандартные",
+                        self._dataset_standard,
+                        ft.Icons.STAR,
+                        COLOR_ACCENT,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        "Мои",
+                        self._dataset_custom,
+                        ft.Icons.EDIT,
+                        COLOR_SUCCESS,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        "Записи",
+                        self._dataset_samples,
+                        ft.Icons.DATA_ARRAY,
+                        COLOR_ON_SURFACE,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+                ft.Container(
+                    content=self._metric_tile(
+                        "Аугментации",
+                        self._dataset_augmented,
+                        ft.Icons.AUTO_FIX_HIGH,
+                        COLOR_WARNING,
+                    ),
+                    col={"xs": 6, "md": 3},
+                ),
+            ],
+        )
+        card = surface_card(
+            ft.Column(
+                spacing=12,
+                expand=True,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    ft.Row(
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.DATASET, size=18, color=COLOR_ACCENT),
+                            ft.Text(
+                                "Данные жестов",
+                                size=15,
+                                weight=ft.FontWeight.W_600,
+                                color=COLOR_ON_SURFACE,
+                                expand=True,
+                            ),
+                        ],
+                    ),
+                    metrics,
+                    ft.Container(
+                        content=self._dataset_column,
+                        expand=True,
+                    ),
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+        card.expand = True
+        return card
+
+    def _on_sync_click(self, _e) -> None:
+        self._controller.sync_dataset_to_db()
+        self._refresh()
+        total = len(self._rows)
+        samples = sum(int(row.get("sampleCount") or 0) for row in self._rows)
+        if total == 0:
             self._info_text.value = (
-                "В папке data/gestures/ нет ни одного класса с записанными "
-                "примерами. Запиши хотя бы один жест на вкладке «Обучение»."
+                "Пока нет пользовательских записей. Запиши жест на вкладке «Обучение»."
             )
             self._info_text.color = COLOR_MUTED
         else:
             self._info_text.value = (
-                f"✓ Синхронизировано: добавлено {summary['created']}, "
-                f"обновлено {summary['updated']}, классов: {summary['total']}, "
-                f"сэмплов: {summary.get('samples', 0)}"
+                f"✓ Обновлено: пользовательских жестов {total}, сэмплов {samples}"
             )
             self._info_text.color = COLOR_SUCCESS
         try:
             self._info_text.update()
         except Exception:
             pass
-        self._refresh()
 
     def build(self) -> ft.Control:
-        import_btn = ft.FilledButton(
-            content=ft.Text("Импорт", weight=ft.FontWeight.BOLD),
-            icon=ft.Icons.CLOUD_UPLOAD,
+        sync_btn = ft.FilledButton(
+            content=ft.Text("Обновить", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.SYNC,
             style=ft.ButtonStyle(
                 bgcolor=COLOR_ACCENT,
                 color=ft.Colors.WHITE,
                 padding=ft.Padding.symmetric(horizontal=16, vertical=12),
             ),
-            on_click=self._on_import_click,
-            tooltip="Создать строки в таблице gestures для всех папок с npy",
-        )
-        refresh_btn = ft.IconButton(
-            icon=ft.Icons.REFRESH,
-            tooltip="Обновить",
-            on_click=lambda _e: self._refresh(),
+            on_click=self._on_sync_click,
+            tooltip="Обновить список записанных жестов",
         )
 
         header = surface_card(
@@ -1628,7 +1907,7 @@ class GesturesView:
                                             color=COLOR_ON_SURFACE,
                                         ),
                                         ft.Text(
-                                            "активные обученные жесты",
+                                            "стандартные и свои жесты",
                                             size=12,
                                             color=COLOR_MUTED,
                                         ),
@@ -1650,7 +1929,7 @@ class GesturesView:
                         spacing=8,
                         alignment=ft.MainAxisAlignment.END,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        controls=[import_btn, refresh_btn],
+                        controls=[sync_btn],
                     ),
                 ],
             ),
@@ -1735,5 +2014,93 @@ class GesturesView:
                 tools,
                 self._info_text,
                 ft.Container(content=library, expand=True),
+            ],
+        )
+
+
+class DatasetGesturesView(GesturesView):
+    """Separate screen for gesture dataset classes and user-recorded samples."""
+
+    def _refresh(self) -> None:
+        try:
+            self._rows = self._controller.get_db_gestures()
+        except Exception:
+            self._rows = []
+        list_recorded = getattr(self._controller, "list_recorded_gestures", None)
+        if callable(list_recorded):
+            try:
+                self._dataset_rows = list_recorded()
+            except Exception:
+                self._dataset_rows = []
+        else:
+            self._dataset_rows = []
+        self._render()
+
+    def _render(self) -> None:
+        self._render_dataset_manager()
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def build(self) -> ft.Control:
+        sync_btn = ft.FilledButton(
+            content=ft.Text("Обновить", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.SYNC,
+            style=ft.ButtonStyle(
+                bgcolor=COLOR_ACCENT,
+                color=ft.Colors.WHITE,
+                padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+            ),
+            on_click=self._on_sync_click,
+            tooltip="Обновить список записанных жестов",
+        )
+        header = surface_card(
+            ft.Row(
+                spacing=14,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(
+                        width=40,
+                        height=40,
+                        border_radius=8,
+                        bgcolor="#171A1D",
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Icon(ft.Icons.DATASET, color=COLOR_ACCENT, size=22),
+                    ),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text(
+                                "Данные жестов",
+                                size=20,
+                                weight=ft.FontWeight.BOLD,
+                                color=COLOR_ON_SURFACE,
+                            ),
+                            ft.Text(
+                                "классы, записи и пользовательские сэмплы",
+                                size=12,
+                                color=COLOR_MUTED,
+                            ),
+                        ],
+                    ),
+                    sync_btn,
+                ],
+            ),
+            padding=14,
+            radius=8,
+        )
+        return ft.Column(
+            spacing=12,
+            expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            controls=[
+                header,
+                ft.Container(
+                    content=self._build_dataset_manager_card(),
+                    expand=True,
+                ),
+                self._info_text,
             ],
         )

@@ -186,7 +186,7 @@ direction compatibility проверкой.
 | `docs/mlops_dashboard/summary.json` | Dataset/model/live/runtime snapshot | Версионируемый MLOps-снимок |
 | `docs/experiments/negative_sampling_manifest.json` | Generated negative summary | Контроль synthetic negative данных |
 | `mlflow.db` | MLflow tracking backend | Параметры, метрики и история training/live запусков |
-| MLflow `GestureFlow` live runs | `live_accuracy`, `live_recall`, `live_static_hijack_rate`, `live_wrong_dynamic_direction_rate`, `live_negative_false_positive_rate` | Сравнение реальных live-тестов без терминала |
+| MLflow `GestureBind` live runs | `live_accuracy`, `live_recall`, `live_static_hijack_rate`, `live_wrong_dynamic_direction_rate`, `live_negative_false_positive_rate` | Сравнение реальных live-тестов без терминала |
 | `mlruns/` | MLflow artifacts | Артефакты моделей из MLflow runs |
 
 ## 9. Что уже проверено

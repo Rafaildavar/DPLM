@@ -1,0 +1,1685 @@
+{
+  "dataset": {
+    "data_root": "data/gestures",
+    "sample_count": 260,
+    "class_count": 10,
+    "class_counts": {
+      "2finger": 40,
+      "gun": 20,
+      "hand": 20,
+      "like": 40,
+      "no_gesture_static": 20,
+      "onefinger": 40,
+      "partial_swipe": 20,
+      "random_motion": 20,
+      "return_motion": 20,
+      "wrong_axis_motion": 20
+    },
+    "raw_feature_dims": [
+      42,
+      44,
+      63
+    ],
+    "target_dim": 63,
+    "cv_folds": 5,
+    "motion_threshold": 0.015,
+    "motion_profiles": [
+      {
+        "label": "2finger",
+        "sample_count": 40,
+        "mean_motion_energy": 0.002114,
+        "median_motion_energy": 0.001075,
+        "mean_displacement": 0.004605,
+        "median_displacement": 0.002067,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "gun",
+        "sample_count": 20,
+        "mean_motion_energy": 0.004503,
+        "median_motion_energy": 0.004452,
+        "mean_displacement": 0.009666,
+        "median_displacement": 0.009521,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "hand",
+        "sample_count": 20,
+        "mean_motion_energy": 0.001658,
+        "median_motion_energy": 0.0008,
+        "mean_displacement": 0.002478,
+        "median_displacement": 0.001496,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "like",
+        "sample_count": 40,
+        "mean_motion_energy": 0.003681,
+        "median_motion_energy": 0.003314,
+        "mean_displacement": 0.018118,
+        "median_displacement": 0.009445,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "no_gesture_static",
+        "sample_count": 20,
+        "mean_motion_energy": 0.022087,
+        "median_motion_energy": 0.007885,
+        "mean_displacement": 0.036076,
+        "median_displacement": 0.01583,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "onefinger",
+        "sample_count": 40,
+        "mean_motion_energy": 0.002593,
+        "median_motion_energy": 0.001435,
+        "mean_displacement": 0.007173,
+        "median_displacement": 0.003787,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "partial_swipe",
+        "sample_count": 20,
+        "mean_motion_energy": 0.003628,
+        "median_motion_energy": 0.003633,
+        "mean_displacement": 0.003627,
+        "median_displacement": 0.003638,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "random_motion",
+        "sample_count": 20,
+        "mean_motion_energy": 0.003612,
+        "median_motion_energy": 0.003609,
+        "mean_displacement": 0.003492,
+        "median_displacement": 0.003486,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "return_motion",
+        "sample_count": 20,
+        "mean_motion_energy": 0.003884,
+        "median_motion_energy": 0.003939,
+        "mean_displacement": 0.003531,
+        "median_displacement": 0.003519,
+        "suggested_type": "static_like"
+      },
+      {
+        "label": "wrong_axis_motion",
+        "sample_count": 20,
+        "mean_motion_energy": 0.003641,
+        "median_motion_energy": 0.00362,
+        "mean_displacement": 0.032283,
+        "median_displacement": 0.031189,
+        "suggested_type": "static_like"
+      }
+    ],
+    "include_augmented": true
+  },
+  "results": [
+    {
+      "feature_mode": "static_craft_full_stats",
+      "model_name": "extra_trees",
+      "accuracy": 0.7769,
+      "macro_f1": 0.7045,
+      "macro_precision": 0.7018,
+      "macro_recall": 0.71,
+      "macro_false_positive_rate": 0.0242,
+      "static_like_macro_f1": 0.7045,
+      "dynamic_like_macro_f1": null,
+      "latency_ms_per_sample": 0.095,
+      "threshold": {
+        "threshold": 0.8,
+        "coverage": 0.6654,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 87
+      },
+      "per_class": [
+        {
+          "label": "2finger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "gun",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "hand",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "like",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "no_gesture_static",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "onefinger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "partial_swipe",
+          "precision": 0.25,
+          "recall": 0.25,
+          "f1": 0.25,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "random_motion",
+          "precision": 0.4074,
+          "recall": 0.55,
+          "f1": 0.4681,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "return_motion",
+          "precision": 0.125,
+          "recall": 0.1,
+          "f1": 0.1111,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "wrong_axis_motion",
+          "precision": 0.2353,
+          "recall": 0.2,
+          "f1": 0.2162,
+          "support": 20,
+          "motion_type": "static_like"
+        }
+      ],
+      "confusion_matrix": [
+        [
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          5,
+          6,
+          4
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          11,
+          2,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          7,
+          2,
+          7
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6,
+          4,
+          6,
+          4
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_craft_full_stats",
+      "model_name": "static_stacking",
+      "accuracy": 0.7577,
+      "macro_f1": 0.6856,
+      "macro_precision": 0.6866,
+      "macro_recall": 0.685,
+      "macro_false_positive_rate": 0.0263,
+      "static_like_macro_f1": 0.6856,
+      "dynamic_like_macro_f1": null,
+      "latency_ms_per_sample": 0.487,
+      "threshold": {
+        "threshold": 0.45,
+        "coverage": 0.6769,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 84
+      },
+      "per_class": [
+        {
+          "label": "2finger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "gun",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "hand",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "like",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "no_gesture_static",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "onefinger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "partial_swipe",
+          "precision": 0.2941,
+          "recall": 0.25,
+          "f1": 0.2703,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "random_motion",
+          "precision": 0.2857,
+          "recall": 0.3,
+          "f1": 0.2927,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "return_motion",
+          "precision": 0.15,
+          "recall": 0.15,
+          "f1": 0.15,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "wrong_axis_motion",
+          "precision": 0.1364,
+          "recall": 0.15,
+          "f1": 0.1429,
+          "support": 20,
+          "motion_type": "static_like"
+        }
+      ],
+      "confusion_matrix": [
+        [
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          4,
+          6,
+          5
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          6,
+          4,
+          6
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          5,
+          3,
+          8
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          6,
+          7,
+          3
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_landmark_image",
+      "model_name": "extra_trees",
+      "accuracy": 0.8,
+      "macro_f1": 0.7389,
+      "macro_precision": 0.7388,
+      "macro_recall": 0.74,
+      "macro_false_positive_rate": 0.0217,
+      "static_like_macro_f1": 0.7389,
+      "dynamic_like_macro_f1": null,
+      "latency_ms_per_sample": 0.096,
+      "threshold": {
+        "threshold": 0.9,
+        "coverage": 0.5962,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 105
+      },
+      "per_class": [
+        {
+          "label": "2finger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "gun",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "hand",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "like",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "no_gesture_static",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "onefinger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "partial_swipe",
+          "precision": 0.45,
+          "recall": 0.45,
+          "f1": 0.45,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "random_motion",
+          "precision": 0.375,
+          "recall": 0.45,
+          "f1": 0.4091,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "return_motion",
+          "precision": 0.2105,
+          "recall": 0.2,
+          "f1": 0.2051,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "wrong_axis_motion",
+          "precision": 0.3529,
+          "recall": 0.3,
+          "f1": 0.3243,
+          "support": 20,
+          "motion_type": "static_like"
+        }
+      ],
+      "confusion_matrix": [
+        [
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          9,
+          4,
+          6,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          9,
+          4,
+          4
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          5,
+          4,
+          6
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          6,
+          5,
+          6
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_landmark_image",
+      "model_name": "static_stacking",
+      "accuracy": 0.7577,
+      "macro_f1": 0.6861,
+      "macro_precision": 0.6892,
+      "macro_recall": 0.685,
+      "macro_false_positive_rate": 0.0263,
+      "static_like_macro_f1": 0.6861,
+      "dynamic_like_macro_f1": null,
+      "latency_ms_per_sample": 0.568,
+      "threshold": {
+        "threshold": 0.45,
+        "coverage": 0.6962,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 79
+      },
+      "per_class": [
+        {
+          "label": "2finger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "gun",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "hand",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "like",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "no_gesture_static",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "onefinger",
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "partial_swipe",
+          "precision": 0.3529,
+          "recall": 0.3,
+          "f1": 0.3243,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "random_motion",
+          "precision": 0.2,
+          "recall": 0.15,
+          "f1": 0.1714,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "return_motion",
+          "precision": 0.1905,
+          "recall": 0.2,
+          "f1": 0.1951,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "wrong_axis_motion",
+          "precision": 0.1481,
+          "recall": 0.2,
+          "f1": 0.1702,
+          "support": 20,
+          "motion_type": "static_like"
+        }
+      ],
+      "confusion_matrix": [
+        [
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6,
+          5,
+          4,
+          5
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          3,
+          5,
+          9
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          2,
+          4,
+          9
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          5,
+          8,
+          4
+        ]
+      ]
+    },
+    {
+      "feature_mode": "static_landmark_image",
+      "model_name": "static_landmark_cnn",
+      "accuracy": 0.5923,
+      "macro_f1": 0.4599,
+      "macro_precision": 0.6802,
+      "macro_recall": 0.5,
+      "macro_false_positive_rate": 0.0462,
+      "static_like_macro_f1": 0.4599,
+      "dynamic_like_macro_f1": null,
+      "latency_ms_per_sample": 5.683,
+      "threshold": {
+        "threshold": 0.55,
+        "coverage": 0.0538,
+        "accepted_accuracy": 1.0,
+        "rejected_count": 246
+      },
+      "per_class": [
+        {
+          "label": "2finger",
+          "precision": 0.4878,
+          "recall": 1.0,
+          "f1": 0.6557,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "gun",
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "hand",
+          "precision": 1.0,
+          "recall": 0.05,
+          "f1": 0.0952,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "like",
+          "precision": 0.7547,
+          "recall": 1.0,
+          "f1": 0.8602,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "no_gesture_static",
+          "precision": 1.0,
+          "recall": 0.95,
+          "f1": 0.9744,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "onefinger",
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235,
+          "support": 40,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "partial_swipe",
+          "precision": 1.0,
+          "recall": 0.05,
+          "f1": 0.0952,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "random_motion",
+          "precision": 0.3333,
+          "recall": 0.05,
+          "f1": 0.087,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "return_motion",
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 20,
+          "motion_type": "static_like"
+        },
+        {
+          "label": "wrong_axis_motion",
+          "precision": 0.2258,
+          "recall": 0.7,
+          "f1": 0.3415,
+          "support": 20,
+          "motion_type": "static_like"
+        }
+      ],
+      "confusion_matrix": [
+        [
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          10,
+          0,
+          10,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          19,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          40,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1,
+          19,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          10,
+          0,
+          0,
+          2,
+          0,
+          28,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          15
+        ],
+        [
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          15
+        ],
+        [
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          18
+        ],
+        [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          14
+        ]
+      ]
+    }
+  ],
+  "best_overall": {
+    "feature_mode": "static_landmark_image",
+    "model_name": "extra_trees",
+    "accuracy": 0.8,
+    "macro_f1": 0.7389,
+    "macro_precision": 0.7388,
+    "macro_recall": 0.74,
+    "macro_false_positive_rate": 0.0217,
+    "static_like_macro_f1": 0.7389,
+    "dynamic_like_macro_f1": null,
+    "latency_ms_per_sample": 0.096,
+    "threshold": {
+      "threshold": 0.9,
+      "coverage": 0.5962,
+      "accepted_accuracy": 1.0,
+      "rejected_count": 105
+    },
+    "per_class": [
+      {
+        "label": "2finger",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "gun",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "hand",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "like",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "no_gesture_static",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "onefinger",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "partial_swipe",
+        "precision": 0.45,
+        "recall": 0.45,
+        "f1": 0.45,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "random_motion",
+        "precision": 0.375,
+        "recall": 0.45,
+        "f1": 0.4091,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "return_motion",
+        "precision": 0.2105,
+        "recall": 0.2,
+        "f1": 0.2051,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "wrong_axis_motion",
+        "precision": 0.3529,
+        "recall": 0.3,
+        "f1": 0.3243,
+        "support": 20,
+        "motion_type": "static_like"
+      }
+    ],
+    "confusion_matrix": [
+      [
+        40,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        40,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        40,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        9,
+        4,
+        6,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        9,
+        4,
+        4
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        5,
+        4,
+        6
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        6,
+        5,
+        6
+      ]
+    ]
+  },
+  "best_static_like": {
+    "feature_mode": "static_landmark_image",
+    "model_name": "extra_trees",
+    "accuracy": 0.8,
+    "macro_f1": 0.7389,
+    "macro_precision": 0.7388,
+    "macro_recall": 0.74,
+    "macro_false_positive_rate": 0.0217,
+    "static_like_macro_f1": 0.7389,
+    "dynamic_like_macro_f1": null,
+    "latency_ms_per_sample": 0.096,
+    "threshold": {
+      "threshold": 0.9,
+      "coverage": 0.5962,
+      "accepted_accuracy": 1.0,
+      "rejected_count": 105
+    },
+    "per_class": [
+      {
+        "label": "2finger",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "gun",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "hand",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "like",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "no_gesture_static",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "onefinger",
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 40,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "partial_swipe",
+        "precision": 0.45,
+        "recall": 0.45,
+        "f1": 0.45,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "random_motion",
+        "precision": 0.375,
+        "recall": 0.45,
+        "f1": 0.4091,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "return_motion",
+        "precision": 0.2105,
+        "recall": 0.2,
+        "f1": 0.2051,
+        "support": 20,
+        "motion_type": "static_like"
+      },
+      {
+        "label": "wrong_axis_motion",
+        "precision": 0.3529,
+        "recall": 0.3,
+        "f1": 0.3243,
+        "support": 20,
+        "motion_type": "static_like"
+      }
+    ],
+    "confusion_matrix": [
+      [
+        40,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        40,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        20,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        40,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        9,
+        4,
+        6,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        9,
+        4,
+        4
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        5,
+        4,
+        6
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        6,
+        5,
+        6
+      ]
+    ]
+  },
+  "best_dynamic_like": null,
+  "recommendation": "Текущий датасет выглядит static-like по выбранному motion threshold. Пока рано доказывать отдельную dynamic-модель: нужно записать жесты с выраженным движением и повторить benchmark.",
+  "notes": [
+    "Активные классы в сравнении: 2finger, gun, hand, like, no_gesture_static, onefinger, partial_swipe, random_motion, return_motion, wrong_axis_motion",
+    "CV folds: 5; минимальный размер класса: 20",
+    "Augmented samples: included",
+    "Пропущены несовместимые пары feature/model: `static_craft_full_stats+static_landmark_cnn`",
+    "Обнаружены разные исходные размерности признаков; benchmark выравнивает семплы до target_dim 63."
+  ]
+}

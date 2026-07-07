@@ -153,7 +153,7 @@ class IntentAgent:
         return AgentStep(
             self.name,
             "need_clarification",
-            "Маршрут не относится к привязкам GestureFlow.",
+            "Маршрут не относится к привязкам GestureBind.",
             {
                 "intent": "unsupported_general_question",
                 "block": "unsupported_general",

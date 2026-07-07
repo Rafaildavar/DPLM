@@ -109,7 +109,11 @@ class AssistantWidgetView:
         )
 
     def _toggle_recognition(self) -> None:
-        self._controller.toggle_recognition()
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._controller.toggle_recognition)
+        else:
+            self._controller.toggle_recognition()
 
     def _apply_compact_window(self) -> None:
         page = self._page
@@ -331,7 +335,7 @@ class AssistantWidgetView:
                 controls=[
                     ft.Icon(ft.Icons.SMART_TOY, color=ft.Colors.WHITE, size=58),
                     ft.Text(
-                        "GestureFlow",
+                        "GestureBind",
                         size=16,
                         color=ft.Colors.WHITE,
                         weight=ft.FontWeight.BOLD,

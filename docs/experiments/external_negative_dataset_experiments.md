@@ -5,7 +5,7 @@ Generated at: `1782683216.768`
 ## Goal
 
 Проверить, улучшают ли публичные датасеты качество reject-layer без
-подмены персонального датасета GestureFlow. Внешние данные используются
+подмены персонального датасета GestureBind. Внешние данные используются
 как negative / out-of-distribution evidence.
 
 ## Variants
@@ -53,5 +53,5 @@ Then use Live Evaluation exactly like the existing rejection protocol.
 ## Notes
 
 - hagrid_external: skipped - variant requires external sources, but none were imported
-- External datasets are treated as negative/rejection data, not as replacement for personalized GestureFlow samples.
+- External datasets are treated as negative/rejection data, not as replacement for personalized GestureBind samples.
 - Live validation still decides whether an external variant is useful for the user's camera and gesture style.

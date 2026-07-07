@@ -27,6 +27,7 @@ import threading
 import time
 import json
 import zlib
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
@@ -212,9 +213,14 @@ DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM = "sequence_phase_hmm"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE = "sequence_ensemble"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE = "sequence_gru_backbone"
 DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE = "sequence_lstm_backbone"
-DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP
+DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_LSTM_BACKBONE = (
+    "dynamic_landmark_lstm_backbone"
+)
+DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN = "dynamic_landmark_cnn"
+DYNAMIC_MODEL_PROFILE_PRODUCTION = DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_LSTM_BACKBONE
 DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
@@ -224,9 +230,11 @@ DYNAMIC_MODEL_PROFILES = (
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
     DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
+    DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN,
 )
 DYNAMIC_MODEL_FILENAMES = {
-    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp.pkl",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_landmark_lstm_backbone.pkl",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET: "dynamic_sequence_multirocket.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET: "dynamic_sequence_sprocket.pkl",
@@ -236,9 +244,11 @@ DYNAMIC_MODEL_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE: "dynamic_sequence_ensemble.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE: "dynamic_sequence_gru_backbone.pkl",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE: "dynamic_sequence_lstm_backbone.pkl",
+    DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN: "dynamic_landmark_cnn.pkl",
 }
 DYNAMIC_METADATA_PREFIXES = {
-    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_landmark_lstm_backbone",
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET: "dynamic_sequence_multirocket",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET: "dynamic_sequence_sprocket",
@@ -248,9 +258,13 @@ DYNAMIC_METADATA_PREFIXES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE: "dynamic_sequence_ensemble",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE: "dynamic_sequence_gru_backbone",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE: "dynamic_sequence_lstm_backbone",
+    DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN: "dynamic_landmark_cnn",
 }
 DYNAMIC_PROTOTYPE_FILENAMES = {
-    DYNAMIC_MODEL_PROFILE_PRODUCTION: "dynamic_sequence_mlp_prototypes.json",
+    DYNAMIC_MODEL_PROFILE_PRODUCTION: (
+        "dynamic_landmark_lstm_backbone_prototypes.json"
+    ),
+    DYNAMIC_MODEL_PROFILE_SEQUENCE_MLP: "dynamic_sequence_mlp_prototypes.json",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET: "dynamic_sequence_rocket_prototypes.json",
     DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET: (
         "dynamic_sequence_multirocket_prototypes.json"
@@ -276,6 +290,9 @@ DYNAMIC_PROTOTYPE_FILENAMES = {
     DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE: (
         "dynamic_sequence_lstm_backbone_prototypes.json"
     ),
+    DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN: (
+        "dynamic_landmark_cnn_prototypes.json"
+    ),
 }
 INTENT_GATE_MODEL_FILENAME = "intent_gate_mlp.pkl"
 MODEL_VARIANT_PRODUCTION = "production"
@@ -284,8 +301,15 @@ MODEL_VARIANT_DIRS = {
     "baseline_internal": "models/experiments/external_negative/baseline_internal",
     "ipn_external": "models/experiments/external_negative/ipn_external",
     "combined_external": "models/experiments/external_negative/combined_external",
+    "static_landmark_cnn": "models/experiments/static_landmark_cnn",
+    "static_landmark_image_extra_trees": (
+        "models/experiments/static_landmark_image_extra_trees"
+    ),
     "prototype_distance": "models/experiments/dynamic_prototype/prototype_distance",
     "prototype_dtw": "models/experiments/dynamic_prototype/prototype_dtw",
+}
+MODEL_VARIANT_STATIC_MODEL_FILENAMES = {
+    "static_landmark_cnn": "static_landmark_cnn.pkl",
 }
 DYNAMIC_ONLY_MODEL_VARIANTS = {
     "prototype_distance",
@@ -296,9 +320,18 @@ MODEL_VARIANT_LABELS = {
     "baseline_internal": "baseline_internal",
     "ipn_external": "ipn_external",
     "combined_external": "combined_external",
+    "static_landmark_cnn": "static_landmark_cnn",
+    "static_landmark_image_extra_trees": "static_landmark_image_extra_trees",
     "prototype_distance": "prototype_distance",
     "prototype_dtw": "prototype_dtw",
 }
+
+
+def _static_model_filename_for_variant(variant: str) -> str:
+    clean = str(variant or MODEL_VARIANT_PRODUCTION).strip()
+    return MODEL_VARIANT_STATIC_MODEL_FILENAMES.get(clean, "knn.pkl")
+
+
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
 STATIC_REJECTION_CONFIDENCE_THRESHOLD = "confidence_threshold"
 STATIC_REJECTION_OPEN_SET_POLICY = "open_set_policy"
@@ -321,6 +354,7 @@ STATIC_REJECTION_METHODS = (
 )
 DYNAMIC_RECOGNITION_WINDOW = 36
 DYNAMIC_RECOGNITION_LONG_WINDOW = 72
+DYNAMIC_PROTOTYPE_DEFAULT_TARGET_DIM = 65
 DYNAMIC_GESTURE_CONFIRM_FRAMES = 1
 LIVE_EVAL_NO_COMMAND_LABEL = "no_command"
 LIVE_GESTURE_IDLE_HOLD_SECONDS = 1.15
@@ -351,6 +385,21 @@ DYNAMIC_OPPOSITE_LABELS = {
     "swipe_left": {"swipe_right"},
     "swipe_right": {"swipe_left"},
 }
+
+
+def _is_dynamic_rejection_label(label: str) -> bool:
+    clean = str(label or "").strip().lower()
+    return (
+        clean.startswith("negative_")
+        or clean.startswith("background_")
+        or clean.startswith("no_gesture")
+        or clean.startswith("random_")
+        or clean.startswith("partial_")
+        or clean.startswith("return_")
+        or clean.startswith("wrong_axis_")
+    )
+
+
 SAMPLE_RECORDING_READY_FRAMES = 6
 SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
@@ -371,6 +420,8 @@ CAMERA_PREVIEW_MAX_FPS = 30.0
 CAMERA_PREVIEW_JPEG_QUALITY = 62
 CAMERA_PREVIEW_DISABLE_ENV = "DPLM_DISABLE_CAMERA_PREVIEW"
 RUNTIME_PERFORMANCE_FLUSH_SECONDS = 5.0
+LIVE_USAGE_SUMMARY_WINDOW_SECONDS = 300.0
+LIVE_USAGE_EVENTS_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -522,6 +573,8 @@ class AppController:
         self._target_fps = int(self._config.recognition.target_fps)
         self._runtime_inference_samples: list[dict[str, Any]] = []
         self._runtime_perf_last_flush = time.monotonic()
+        self._live_usage_events: list[dict[str, Any]] = []
+        self._live_usage_latest_runtime: dict[str, Any] = {}
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
@@ -561,6 +614,28 @@ class AppController:
         if self._is_recognition_pid_active():
             self._is_recognizing = True
             self._status = "Recognizing in background"
+
+    def _active_training_process(self) -> Optional[subprocess.Popen]:
+        proc = self._training_proc
+        if proc is None:
+            return None
+        try:
+            if proc.poll() is None:
+                return proc
+        except Exception:
+            return proc
+        self._training_proc = None
+        return None
+
+    def _clear_training_process(self, proc: subprocess.Popen) -> None:
+        if self._training_proc is proc:
+            self._training_proc = None
+
+    def _live_usage_log_dir(self) -> Path | None:
+        try:
+            return self._configured_log_dir()
+        except Exception:
+            return None
 
     # ----------------------------------------------------------------------
     # Свойства / геттеры
@@ -725,6 +800,7 @@ class AppController:
         variants: list[dict[str, Any]] = []
         for key, rel_dir in MODEL_VARIANT_DIRS.items():
             models_dir = resolve_config_path(rel_dir)
+            static_model_filename = _static_model_filename_for_variant(key)
             variants.append(
                 {
                     "key": key,
@@ -732,7 +808,10 @@ class AppController:
                     "models_dir": str(models_dir),
                     "exists": models_dir.exists(),
                     "selected": key == current,
-                    "static_model_exists": (models_dir / "knn.pkl").exists(),
+                    "static_model_exists": (
+                        models_dir / static_model_filename
+                    ).exists(),
+                    "static_model_filename": static_model_filename,
                     "dynamic_model_exists": any(
                         (models_dir / filename).exists()
                         for filename in DYNAMIC_MODEL_FILENAMES.values()
@@ -740,6 +819,51 @@ class AppController:
                 }
             )
         return variants
+
+    def list_dynamic_model_profiles(self) -> list[dict[str, Any]]:
+        dataset_labels = self._dataset_labels_with_real_samples()
+        profiles: list[dict[str, Any]] = []
+        for profile in DYNAMIC_MODEL_PROFILES:
+            model_path = self._dynamic_model_path_for_profile(profile)
+            classes_path = self._dynamic_classes_path_for_profile(profile)
+            feature_dim_path = self._dynamic_feature_dim_path_for_profile(profile)
+            feature_mode_path = self._dynamic_feature_mode_path_for_profile(profile)
+            classes = self._read_json_string_list(classes_path)
+            positive_labels = [
+                label for label in classes if not _is_dynamic_rejection_label(label)
+            ]
+            missing_dataset_labels = [
+                label
+                for label in positive_labels
+                if dataset_labels and label.lower() not in dataset_labels
+            ]
+            exists = (
+                model_path.exists()
+                and classes_path.exists()
+                and feature_dim_path.exists()
+                and feature_mode_path.exists()
+            )
+            stale = bool(missing_dataset_labels)
+            profiles.append(
+                {
+                    "key": profile,
+                    "label": self._dynamic_model_profile_label(
+                        profile,
+                        exists=exists,
+                        stale=stale,
+                    ),
+                    "model_path": str(model_path),
+                    "classes_path": str(classes_path),
+                    "exists": exists,
+                    "selected": profile == self.dynamic_model_profile,
+                    "classes": classes,
+                    "positive_labels": positive_labels,
+                    "missing_dataset_labels": missing_dataset_labels,
+                    "stale": stale,
+                    "quick_selectable": bool(exists and not stale),
+                }
+            )
+        return profiles
 
     def apply_model_variant(self, variant: str) -> tuple[bool, list[str], list[str]]:
         target = str(variant or "").strip()
@@ -758,12 +882,17 @@ class AppController:
             if target in DYNAMIC_ONLY_MODEL_VARIANTS
             else models_dir
         )
+        static_model_filename = (
+            "knn.pkl"
+            if target in DYNAMIC_ONLY_MODEL_VARIANTS
+            else _static_model_filename_for_variant(target)
+        )
         raw = self.get_app_config()
         paths = dict(raw.get("paths") or {})
         paths.update(
             {
                 "models_dir": models_dir,
-                "model_path": f"{static_models_dir}/knn.pkl",
+                "model_path": f"{static_models_dir}/{static_model_filename}",
                 "classes_path": f"{static_models_dir}/classes.json",
                 "feature_dim_path": f"{static_models_dir}/feature_dim.txt",
             }
@@ -915,6 +1044,76 @@ class AppController:
         fallback = self._production_models_dir() / filename
         return fallback if fallback.exists() else configured
 
+    def _dynamic_model_path_for_profile(self, profile: str) -> Path:
+        filename = DYNAMIC_MODEL_FILENAMES.get(
+            str(profile or "").strip(),
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION],
+        )
+        return self._configured_dynamic_artifact_path(filename)
+
+    def _dynamic_metadata_prefix_for_profile(self, profile: str) -> str:
+        return DYNAMIC_METADATA_PREFIXES.get(str(profile or "").strip(), "dynamic")
+
+    def _dynamic_classes_path_for_profile(self, profile: str) -> Path:
+        prefix = self._dynamic_metadata_prefix_for_profile(profile)
+        return self._configured_dynamic_artifact_path(f"{prefix}_classes.json")
+
+    def _dynamic_feature_dim_path_for_profile(self, profile: str) -> Path:
+        prefix = self._dynamic_metadata_prefix_for_profile(profile)
+        return self._configured_dynamic_artifact_path(f"{prefix}_feature_dim.txt")
+
+    def _dynamic_feature_mode_path_for_profile(self, profile: str) -> Path:
+        prefix = self._dynamic_metadata_prefix_for_profile(profile)
+        return self._configured_dynamic_artifact_path(f"{prefix}_feature_mode.txt")
+
+    def _dynamic_model_profile_label(
+        self,
+        profile: str,
+        *,
+        exists: bool,
+        stale: bool,
+    ) -> str:
+        if profile == DYNAMIC_MODEL_PROFILE_PRODUCTION:
+            suffix = "актуальная"
+        elif stale:
+            suffix = "устаревшая"
+        elif not exists:
+            suffix = "нет модели"
+        else:
+            suffix = "готова"
+        return f"{profile} ({suffix})"
+
+    def _read_json_string_list(self, path: Path) -> list[str]:
+        if not path.exists():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        for item in raw:
+            clean = str(item or "").strip()
+            if clean:
+                out.append(clean)
+        return out
+
+    def _dataset_labels_with_real_samples(self) -> set[str]:
+        root = self._configured_data_dir()
+        if not root.exists():
+            return set()
+        labels: set[str] = set()
+        for label_dir in root.iterdir():
+            if not label_dir.is_dir():
+                continue
+            try:
+                if real_sample_paths(label_dir):
+                    labels.add(label_dir.name.lower())
+            except Exception:
+                continue
+        return labels
+
     def _configured_data_dir(self) -> Path:
         return self._configured_path(self._config.paths.data_dir)
 
@@ -995,23 +1194,16 @@ class AppController:
             self._set_status(self._live_recognition_status())
 
     def _dynamic_model_path(self) -> Path:
-        filename = DYNAMIC_MODEL_FILENAMES.get(
-            self.dynamic_model_profile,
-            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION],
-        )
-        return self._configured_dynamic_artifact_path(filename)
+        return self._dynamic_model_path_for_profile(self.dynamic_model_profile)
 
     def _dynamic_classes_path(self) -> Path:
-        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_dynamic_artifact_path(f"{prefix}_classes.json")
+        return self._dynamic_classes_path_for_profile(self.dynamic_model_profile)
 
     def _dynamic_feature_dim_path(self) -> Path:
-        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_dynamic_artifact_path(f"{prefix}_feature_dim.txt")
+        return self._dynamic_feature_dim_path_for_profile(self.dynamic_model_profile)
 
     def _dynamic_feature_mode_path(self) -> Path:
-        prefix = DYNAMIC_METADATA_PREFIXES.get(self.dynamic_model_profile, "dynamic")
-        return self._configured_dynamic_artifact_path(f"{prefix}_feature_mode.txt")
+        return self._dynamic_feature_mode_path_for_profile(self.dynamic_model_profile)
 
     def _dynamic_prototypes_path(self) -> Path:
         filename = DYNAMIC_PROTOTYPE_FILENAMES.get(
@@ -1048,7 +1240,11 @@ class AppController:
         return 30
 
     def _dynamic_recognition_window(self) -> int:
-        if self.dynamic_model_profile == DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72:
+        if self.dynamic_model_profile in {
+            DYNAMIC_MODEL_PROFILE_PRODUCTION,
+            DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN,
+            DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
+        }:
             return DYNAMIC_RECOGNITION_LONG_WINDOW
         return DYNAMIC_RECOGNITION_WINDOW
 
@@ -1245,11 +1441,22 @@ class AppController:
         except Exception:
             return False
 
-    def _gesture_confirm_frames(self, label: str = "") -> int:
+    def _gesture_confirm_frames(
+        self,
+        label: str = "",
+        route_metadata: dict[str, Any] | None = None,
+    ) -> int:
         if label and self._is_negative_label(label):
             return DYNAMIC_GESTURE_CONFIRM_FRAMES
+        route = str((route_metadata or {}).get("route") or "").strip().lower()
+        if route == "dynamic":
+            return DYNAMIC_GESTURE_CONFIRM_FRAMES
+        if route == "static":
+            return AUTO_STATIC_GESTURE_CONFIRM_FRAMES
         if self.recognition_model_mode == RECOGNITION_MODEL_DYNAMIC:
             return DYNAMIC_GESTURE_CONFIRM_FRAMES
+        if self.recognition_model_mode == RECOGNITION_MODEL_STATIC:
+            return AUTO_STATIC_GESTURE_CONFIRM_FRAMES
         if self.recognition_model_mode == RECOGNITION_MODEL_AUTO and label:
             try:
                 if self._gesture_type_for_label(label) == GESTURE_TYPE_DYNAMIC:
@@ -1277,7 +1484,10 @@ class AppController:
         confirmed, avg_conf, snapshot = state.observe(
             clean,
             confidence,
-            required_frames=self._gesture_confirm_frames(clean),
+            required_frames=self._gesture_confirm_frames(
+                clean,
+                route_metadata=metadata,
+            ),
             route=route,
             reason=reason,
         )
@@ -1431,6 +1641,7 @@ class AppController:
         *,
         include_negative: bool = False,
         include_no_command: bool = True,
+        include_model_classes: bool = False,
     ) -> list[str]:
         labels: list[str] = []
         seen: set[str] = set()
@@ -1448,18 +1659,19 @@ class AppController:
                 labels.append(clean)
                 seen.add(key)
 
-        for path in (
-            self._dynamic_classes_path(),
-            self._configured_classes_path(),
-        ):
-            try:
-                if path.exists():
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                    if isinstance(data, list):
-                        for item in data:
-                            add(str(item))
-            except Exception as e:
-                print(f"[w] list_recognition_labels {path}: {e}", flush=True)
+        if include_model_classes:
+            for path in (
+                self._dynamic_classes_path(),
+                self._configured_classes_path(),
+            ):
+                try:
+                    if path.exists():
+                        data = json.loads(path.read_text(encoding="utf-8"))
+                        if isinstance(data, list):
+                            for item in data:
+                                add(str(item))
+                except Exception as e:
+                    print(f"[w] list_recognition_labels {path}: {e}", flush=True)
 
         for row in self.list_recorded_gestures():
             add(str(row.get("label") or ""))
@@ -4403,6 +4615,149 @@ class AppController:
         elif self._status.startswith("Запись"):
             self._set_status("Camera: streaming" if self._is_camera_active else "Idle")
 
+    def _append_jsonl_log(self, filename: str, row: dict[str, Any]) -> None:
+        log_dir = self._live_usage_log_dir()
+        if log_dir is None:
+            return
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with (log_dir / filename).open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                fh.write("\n")
+        except Exception as exc:
+            print(f"[w] {filename} write failed: {exc}", flush=True)
+
+    def _write_json_log(self, filename: str, payload: dict[str, Any]) -> None:
+        log_dir = self._live_usage_log_dir()
+        if log_dir is None:
+            return
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / filename).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            print(f"[w] {filename} write failed: {exc}", flush=True)
+
+    @staticmethod
+    def _live_usage_counter(events: list[dict[str, Any]], key: str) -> dict[str, int]:
+        counter = Counter(str(item.get(key) or "unknown") for item in events)
+        return dict(sorted(counter.items()))
+
+    def _write_live_usage_summary(self) -> None:
+        events = list(getattr(self, "_live_usage_events", []) or [])
+        now = time.time()
+        window_start = now - LIVE_USAGE_SUMMARY_WINDOW_SECONDS
+        window_events = [
+            event
+            for event in events
+            if float(event.get("recorded_at") or 0.0) >= window_start
+        ]
+        if window_events != events:
+            self._live_usage_events = window_events[-LIVE_USAGE_EVENTS_LIMIT:]
+            events = list(self._live_usage_events)
+
+        executed = sum(1 for item in events if bool(item.get("executed")))
+        command_events = [
+            item
+            for item in events
+            if str(item.get("event_type") or "")
+            in {"command_executed", "command_rejected", "command_cooldown"}
+        ]
+        rejected = sum(
+            1
+            for item in events
+            if str(item.get("event_type") or "") in {
+                "gesture_rejected",
+                "command_rejected",
+            }
+        )
+        suppressed = sum(
+            1
+            for item in events
+            if str(item.get("event_type") or "") == "gesture_suppressed"
+        )
+        cooldown = sum(
+            1
+            for item in events
+            if str(item.get("event_type") or "") == "command_cooldown"
+        )
+        confidence_values = [
+            float(item.get("confidence") or 0.0)
+            for item in events
+            if float(item.get("confidence") or 0.0) > 0.0
+        ]
+        total = len(events)
+        payload = {
+            "generated_at": now,
+            "window_seconds": LIVE_USAGE_SUMMARY_WINDOW_SECONDS,
+            "total_events": total,
+            "command_attempts": len(command_events),
+            "executed_events": executed,
+            "rejected_events": rejected,
+            "suppressed_events": suppressed,
+            "cooldown_events": cooldown,
+            "command_success_rate": (
+                executed / len(command_events) if command_events else 0.0
+            ),
+            "avg_confidence": (
+                sum(confidence_values) / len(confidence_values)
+                if confidence_values
+                else 0.0
+            ),
+            "label_counts": self._live_usage_counter(events, "label"),
+            "route_counts": self._live_usage_counter(events, "route"),
+            "event_type_counts": self._live_usage_counter(events, "event_type"),
+            "latest_event": events[-1] if events else {},
+            "latest_runtime": dict(
+                getattr(self, "_live_usage_latest_runtime", {}) or {}
+            ),
+        }
+        self._write_json_log("live_usage_summary.json", payload)
+
+    def _record_live_usage_event(
+        self,
+        event_type: str,
+        label: str,
+        confidence: float,
+        *,
+        executed: bool = False,
+        route_metadata: dict[str, Any] | None = None,
+        reason: str = "",
+        command_info: str = "",
+    ) -> None:
+        metadata = route_metadata if isinstance(route_metadata, dict) else {}
+        route_fields = self._live_evaluation_route_fields(metadata)
+        now = time.time()
+        row: dict[str, Any] = {
+            "recorded_at": now,
+            "event_type": str(event_type or ""),
+            "label": str(label or "").strip(),
+            "confidence": float(confidence or 0.0),
+            "executed": bool(executed),
+            "reason": str(reason or ""),
+            "command_info": str(command_info or ""),
+            "recognition_model_mode": self.recognition_model_mode,
+            "dynamic_model_profile": self.dynamic_model_profile,
+            "static_rejection_method": self.static_rejection_method,
+            "gesture_mode": bool(getattr(self, "_gesture_mode", False)),
+            "pointer_mode": bool(getattr(self, "_pointer_mode", False)),
+            "auto_execute": bool(
+                getattr(self, "_auto_execute_on_gesture", False)
+            ),
+        }
+        row.update(route_fields)
+        events = getattr(self, "_live_usage_events", None)
+        if not isinstance(events, list):
+            events = []
+            self._live_usage_events = events
+        events.append(row)
+        del events[:-LIVE_USAGE_EVENTS_LIMIT]
+        self._append_jsonl_log("live_usage_events.jsonl", row)
+        self._write_live_usage_summary()
+
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
         self._update_live_evaluation_timeout()
         performance = out.get("performance")
@@ -4457,6 +4812,14 @@ class AppController:
                 )
                 self._set_status(f"Rejected gesture evidence: {label}")
                 self._record_recognition_event(label, stable_conf, False)
+                self._record_live_usage_event(
+                    "gesture_rejected",
+                    label,
+                    stable_conf,
+                    executed=False,
+                    route_metadata=route_metadata,
+                    reason="negative_label",
+                )
                 return
 
             suppressed_reason = self._dynamic_return_guard_active(
@@ -4480,6 +4843,14 @@ class AppController:
                     flush=True,
                 )
                 self._set_status(f"Suppressed return motion: {label}")
+                self._record_live_usage_event(
+                    "gesture_suppressed",
+                    label,
+                    stable_conf,
+                    executed=False,
+                    route_metadata=route_metadata,
+                    reason=suppressed_reason,
+                )
                 return
 
             print(
@@ -4509,8 +4880,8 @@ class AppController:
             # диплома.
             if self._auto_execute_on_gesture and not evaluation_active:
                 executed = self.execute_for_gesture(label, stable_conf)
+                info = str(getattr(self, "_last_execute_info", "") or "")
                 if not executed:
-                    info = str(getattr(self, "_last_execute_info", "") or "")
                     marker = (
                         self._ensure_live_gesture_state().mark_cooldown
                         if info == "cooldown"
@@ -4524,6 +4895,22 @@ class AppController:
                             route=route,
                         )
                     )
+                event_type = (
+                    "command_executed"
+                    if executed
+                    else "command_cooldown"
+                    if info == "cooldown"
+                    else "command_rejected"
+                )
+                self._record_live_usage_event(
+                    event_type,
+                    label,
+                    stable_conf,
+                    executed=executed,
+                    route_metadata=route_metadata,
+                    reason=info or "",
+                    command_info=info,
+                )
             else:
                 executed = False
                 reason = (
@@ -4532,6 +4919,14 @@ class AppController:
                     else "auto-execute выключен"
                 )
                 print(f"[ctrl.gesture] {reason} — команда не запускается", flush=True)
+                self._record_live_usage_event(
+                    "gesture_confirmed",
+                    label,
+                    stable_conf,
+                    executed=False,
+                    route_metadata=route_metadata,
+                    reason=reason,
+                )
             self._record_recognition_event(label, stable_conf, executed)
 
     def _record_runtime_performance(self, performance: dict[str, Any]) -> None:
@@ -4760,6 +5155,7 @@ class AppController:
             ),
             "inference_fps_capacity": round(1000.0 / average_ms, 2),
         }
+        self._live_usage_latest_runtime = dict(row)
         try:
             path = self._configured_log_dir() / "runtime_performance.jsonl"
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -4767,6 +5163,7 @@ class AppController:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         except Exception as exc:
             print(f"[w] runtime performance log write failed: {exc}", flush=True)
+        self._write_live_usage_summary()
         samples.clear()
 
     # ----------------------------------------------------------------------
@@ -5871,11 +6268,10 @@ class AppController:
                     continue
                 raw_label = label_dir.name
                 label_key = raw_label.lower()
-                # Тренировка всегда запускается с --lowercase-labels, поэтому
-                # БД тоже хранит каноническую метку в нижнем регистре. Так
-                # распознанный класс "ctrlz" совпадает с жестом, записанным в
-                # папку "CTRLZ".
-                label = class_label_by_lower.get(label_key, label_key)
+                # Если модель уже обучена, берём точное имя класса из
+                # classes.json. До обучения сохраняем пользовательское имя
+                # папки, чтобы жесты и команды не зависели от общих алиасов.
+                label = class_label_by_lower.get(label_key, raw_label)
                 model_class_id = class_idx_by_lower.get(label_key)
 
                 if label not in seen_labels:
@@ -6193,14 +6589,175 @@ class AppController:
         finally:
             session.close()
 
+    def _active_training_label_profiles_from_db(self) -> list[tuple[str, str]]:
+        if (
+            not BINDING_SERVICES_AVAILABLE
+            or DbGesture is None
+            or DbGestureSample is None
+            or not getattr(self, "_db_initialized", False)
+        ):
+            return []
+        try:
+            session = get_db_session()
+        except Exception as e:
+            print(f"[w] training label profiles from DB: {e}")
+            return []
+
+        try:
+            profiles: list[tuple[str, str]] = []
+            gestures = (
+                session.query(DbGesture)
+                .filter(DbGesture.is_active.is_(True))
+                .order_by(DbGesture.label)
+                .all()
+            )
+            for gesture in gestures:
+                label = str(getattr(gesture, "label", "") or "").strip()
+                if not label:
+                    continue
+
+                sample_paths: list[Path] = []
+                rows = (
+                    session.query(DbGestureSample.features_path)
+                    .filter(DbGestureSample.gesture_id == gesture.id)
+                    .order_by(DbGestureSample.sample_index)
+                    .limit(8)
+                    .all()
+                )
+                for row in rows:
+                    raw_path = str(row[0] or "").strip()
+                    if raw_path:
+                        sample_paths.append(resolve_config_path(raw_path))
+
+                samples_path = str(getattr(gesture, "samples_path", "") or "").strip()
+                if samples_path and len(sample_paths) < 8:
+                    sample_dir = resolve_config_path(samples_path)
+                    if sample_dir.exists():
+                        for sample_path in gesture_sample_paths(sample_dir)[:8]:
+                            if sample_path not in sample_paths:
+                                sample_paths.append(sample_path)
+
+                profiles.append(
+                    (label, self._infer_training_gesture_type(label, sample_paths))
+                )
+            return profiles
+        finally:
+            session.close()
+
+    def _infer_training_gesture_type(self, label: str, sample_paths: list[Path]) -> str:
+        clean = str(label or "").strip().lower()
+        if _is_dynamic_rejection_label(clean):
+            return GESTURE_TYPE_NEGATIVE
+
+        for sample_path in sample_paths:
+            inferred = self._infer_training_gesture_type_from_sample(sample_path)
+            if inferred:
+                return inferred
+
+        try:
+            return self._gesture_type_for_label(label)
+        except Exception:
+            return "static"
+
+    @staticmethod
+    def _infer_training_gesture_type_from_sample(sample_path: Path) -> str:
+        meta_path = sample_path.with_suffix(".meta.json")
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                scope = str(
+                    meta.get("source_scope") or meta.get("gesture_type") or ""
+                ).strip().lower()
+                if scope in {
+                    "static",
+                    "quasi_static",
+                    GESTURE_TYPE_DYNAMIC,
+                    GESTURE_TYPE_NEGATIVE,
+                }:
+                    return scope
+                if bool(meta.get("include_global_motion")):
+                    return GESTURE_TYPE_DYNAMIC
+                sample_format = str(meta.get("sample_feature_format") or "").lower()
+                if "wrist_xy" in sample_format:
+                    return GESTURE_TYPE_DYNAMIC
+                raw_dim = int(meta.get("raw_feature_dim") or 0)
+                if raw_dim in {44, 65, 88, 130}:
+                    return GESTURE_TYPE_DYNAMIC
+            except Exception:
+                pass
+
+        raw_dim = AppController._sample_raw_feature_dim(sample_path)
+        if raw_dim in {44, 65, 88, 130}:
+            return GESTURE_TYPE_DYNAMIC
+        return ""
+
+    @staticmethod
+    def _sample_raw_feature_dim(sample_path: Path) -> int:
+        meta_path = sample_path.with_suffix(".meta.json")
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                raw_dim = int(meta.get("raw_feature_dim") or 0)
+                if raw_dim > 0:
+                    return raw_dim
+            except Exception:
+                pass
+
+        try:
+            import numpy as np
+
+            arr = np.load(sample_path, mmap_mode="r", allow_pickle=False)
+            if arr.ndim >= 2:
+                return int(np.prod(arr.shape[1:]))
+        except Exception:
+            pass
+        return 0
+
+    def _dynamic_prototype_target_dim(
+        self,
+        data_root: str | Path,
+        include_labels: list[str] | None = None,
+    ) -> int:
+        root = resolve_config_path(data_root)
+        include_keys = {
+            str(label or "").strip().lower()
+            for label in (include_labels or [])
+            if str(label or "").strip()
+        }
+        if not root.exists():
+            return DYNAMIC_PROTOTYPE_DEFAULT_TARGET_DIM
+
+        supported_dims = {44, 65, 88, 130}
+        for label_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            if include_keys and label_dir.name.strip().lower() not in include_keys:
+                continue
+            for sample_path in gesture_sample_paths(label_dir)[:8]:
+                raw_dim = self._sample_raw_feature_dim(sample_path)
+                if raw_dim in supported_dims:
+                    return raw_dim
+        return DYNAMIC_PROTOTYPE_DEFAULT_TARGET_DIM
+
     def _training_labels_for_scope(self, training_scope: str = "") -> list[str]:
         labels = self._active_training_labels_from_db()
         scope = str(training_scope or "").strip()
         if not scope:
             return labels
+        selected = set(parse_gesture_type_scope(scope))
+        profiles = self._active_training_label_profiles_from_db()
+        if profiles:
+            out: list[str] = []
+            seen: set[str] = set()
+            for label, gesture_type in profiles:
+                clean = str(label or "").strip()
+                key = clean.lower()
+                if not clean or key in seen or gesture_type not in selected:
+                    continue
+                out.append(clean)
+                seen.add(key)
+            return out
         return labels_for_gesture_types(
             labels,
-            parse_gesture_type_scope(scope),
+            selected,
             taxonomy_path=self._configured_taxonomy_path(),
         )
 
@@ -6223,7 +6780,7 @@ class AppController:
         клавиатурного управления. Теперь сэмплы собираются в текущем camera
         loop, а прогресс выводится в журнал вкладки «Обучение».
         """
-        if self._training_proc is not None and self._training_proc.poll() is None:
+        if self._active_training_process() is not None:
             return False
         with self._sample_recording_lock:
             if self._sample_recording is not None:
@@ -6232,13 +6789,6 @@ class AppController:
         clean = (label or "").strip()
         if not clean:
             return False
-
-        if include_global_motion:
-            try:
-                self._ensure_dynamic_label_in_taxonomy(clean, on_line=on_line)
-            except Exception as e:
-                if on_line:
-                    on_line(f"[w] Не удалось обновить dynamic taxonomy: {e}")
 
         camera_was_active = bool(self._is_camera_active)
         self.stop_recognition()
@@ -6391,7 +6941,7 @@ class AppController:
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """Запустить ``cv/train_classifier.py`` как subprocess."""
-        if self._training_proc is not None and self._training_proc.poll() is None:
+        if self._active_training_process() is not None:
             return False
         project_root = Path(__file__).resolve().parents[2]
         try:
@@ -6466,6 +7016,7 @@ class AppController:
             finally:
                 code = proc.wait()
                 final_code = int(code)
+                self._clear_training_process(proc)
                 # После успешного обучения синхронизируем словарь жестов в БД,
                 # чтобы экран «Привязки» сразу увидел новые/обновлённые классы.
                 if final_code == 0:
@@ -6549,6 +7100,7 @@ class AppController:
         except Exception:
             pass
         code = int(proc.wait())
+        self._clear_training_process(proc)
         if code == 0:
             try:
                 self._reset_embedded_infer_after_model_change()
@@ -6569,7 +7121,7 @@ class AppController:
         on_done: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """Generate reproducible synthetic negative samples as a subprocess."""
-        if self._training_proc is not None and self._training_proc.poll() is None:
+        if self._active_training_process() is not None:
             return False
         with self._sample_recording_lock:
             if self._sample_recording is not None:
@@ -6611,6 +7163,7 @@ class AppController:
                 pass
             finally:
                 code = proc.wait()
+                self._clear_training_process(proc)
                 if int(code) == 0:
                     try:
                         summary = self.sync_dataset_to_db()
@@ -6704,7 +7257,6 @@ class AppController:
             str(model_type or "knn"),
             "--neighbors",
             str(int(neighbors)),
-            "--lowercase-labels",
         ]
         for label in self._training_labels_for_scope(training_scope):
             cmd += ["--include-label", label]
@@ -6731,11 +7283,15 @@ class AppController:
             )
         dynamic_model_dir = dynamic_model_path.parent if dynamic_model_path.parent else Path(".")
         production_prototypes = dynamic_model_dir / "dynamic_prototypes.json"
+        long_window_filenames = {
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_PRODUCTION],
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_DYNAMIC_LANDMARK_CNN],
+            DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72],
+        }
         target_frames = (
             DYNAMIC_RECOGNITION_LONG_WINDOW
-            if dynamic_model_path.name
-            == DYNAMIC_MODEL_FILENAMES[DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72]
-            else self._dynamic_recognition_window()
+            if dynamic_model_path.name in long_window_filenames
+            else DYNAMIC_RECOGNITION_WINDOW
         )
         for profile, filename in DYNAMIC_MODEL_FILENAMES.items():
             if dynamic_model_path.name == filename:
@@ -6749,8 +7305,19 @@ class AppController:
                 production_prototypes = (
                     dynamic_model_dir / f"{dynamic_model_path.stem}_prototypes.json"
                 )
+        include_labels: list[str] = []
+        if getattr(self, "_db_initialized", False):
+            try:
+                include_labels = self._training_labels_for_scope("dynamic,negative")
+            except Exception as e:
+                print(f"[w] dynamic prototype include labels: {e}")
+                include_labels = []
+        target_dim = self._dynamic_prototype_target_dim(
+            actual_data_root,
+            include_labels,
+        )
         external_root = project_root / "data" / "external"
-        return [
+        cmd = [
             sys.executable,
             "-u",
             "-m",
@@ -6764,6 +7331,8 @@ class AppController:
             "prototype_distance",
             "--target-frames",
             str(target_frames),
+            "--target-dim",
+            str(target_dim),
             "--base-models-dir",
             str(dynamic_model_dir),
             "--variant-root",
@@ -6778,16 +7347,16 @@ class AppController:
             "--mlflow-tracking-uri",
             self._live_evaluation_mlflow_tracking_uri(),
         ]
+        for label in include_labels:
+            cmd += ["--include-label", label]
+        return cmd
 
     def cancel_training(self) -> None:
         """Прервать текущий тренировочный subprocess (если запущен)."""
         if self.cancel_sample_recording():
             return
-        proc = self._training_proc
+        proc = self._active_training_process()
         if proc is None:
-            return
-        if proc.poll() is not None:
-            self._training_proc = None
             return
         try:
             proc.terminate()
@@ -6797,8 +7366,9 @@ class AppController:
     @property
     def is_training_active(self) -> bool:
         return (
-            self._training_proc is not None and self._training_proc.poll() is None
-        ) or self.is_sample_recording_active
+            self._active_training_process() is not None
+            or self.is_sample_recording_active
+        )
 
     @property
     def is_sample_recording_active(self) -> bool:

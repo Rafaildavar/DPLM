@@ -1,4 +1,4 @@
-"""PyInstaller entrypoint for the macOS GestureFlow bundle."""
+"""PyInstaller entrypoint for the macOS GestureBind bundle."""
 from __future__ import annotations
 
 import os

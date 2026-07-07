@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke self-test for the DPLM Flet assistant.
+"""Smoke self-test for the GestureBind Flet assistant.
 
 Usage:
     python -m scripts.dplm_smoke
@@ -21,7 +21,7 @@ from app.services.diagnostics import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="DPLM assistant smoke self-test")
+    parser = argparse.ArgumentParser(description="GestureBind assistant smoke self-test")
     parser.add_argument("--camera", action="store_true", help="Open the configured camera")
     parser.add_argument("--no-db", action="store_true", help="Skip database healthcheck")
     parser.add_argument("--json", action="store_true", help="Print raw JSON report")
@@ -49,7 +49,7 @@ def _print_report(report: dict) -> None:
         STATUS_INFO: "INFO",
     }
     summary = report["summary"]
-    print("DPLM smoke self-test")
+    print("GestureBind smoke self-test")
     print(f"Database URL: {report['databaseUrl']}")
     print(
         "Summary: "

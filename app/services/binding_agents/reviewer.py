@@ -35,7 +35,7 @@ class RelevanceReviewerAgent:
                 issues.append("project_answer_contains_binding_draft")
             if not any(
                 marker in response
-                for marker in ("gestureflow", "жест", "привяз", "команд", "mlflow", "mistral")
+                for marker in ("gesturebind", "жест", "привяз", "команд", "mlflow", "mistral")
             ):
                 issues.append("project_context_missing")
         elif block == "binding":
@@ -46,7 +46,7 @@ class RelevanceReviewerAgent:
         elif block == "unsupported_general":
             if result.can_apply or result.action_spec:
                 issues.append("unsupported_question_created_binding")
-            if not any(marker in response for marker in ("gestureflow", "привяз", "жест", "проект")):
+            if not any(marker in response for marker in ("gesturebind", "привяз", "жест", "проект")):
                 issues.append("safe_redirect_missing")
         elif block == "guardrails":
             if result.can_apply or result.action_spec:
