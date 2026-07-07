@@ -160,6 +160,27 @@ def test_execute_config_mute_toggle(monkeypatch):
     assert pressed == ["volumemute"]
 
 
+def test_execute_config_mute_toggle_macos_uses_osascript(monkeypatch):
+    ex = ce.CommandExecutor()
+    monkeypatch.setattr(ce.CommandExecutor, "_host_platform_tag", lambda self: "macos")
+    monkeypatch.setattr(ex, "system", "darwin")
+
+    captured = {"args": None}
+
+    class FakeProc:
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        return FakeProc()
+
+    monkeypatch.setattr(ce.subprocess, "run", fake_run)
+    ok = ex.execute_config({"action": "mute_toggle", "platform": "macos"})
+    assert ok is True
+    assert captured["args"][0] == "osascript"
+    assert "output muted" in " ".join(captured["args"])
+
+
 def test_execute_config_brightness_up_uses_osascript(monkeypatch):
     ex = ce.CommandExecutor()
     monkeypatch.setattr(ce.CommandExecutor, "_host_platform_tag", lambda self: "macos")
