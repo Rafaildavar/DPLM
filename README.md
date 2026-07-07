@@ -11,16 +11,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/figures/fig_4_3_home_recognition.png" alt="GestureBind recognition screen" width="900">
-</p>
-
-<p align="center">
   <b>Train personal gestures, evaluate live quality, and bind reliable camera gestures to safe desktop actions.</b>
 </p>
 
 <p align="center">
   <a href="#что-это">Overview</a> ·
-  <a href="#скриншоты">Screenshots</a> ·
   <a href="#ml-pipeline">ML Pipeline</a> ·
   <a href="#command-binding">Command Binding</a> ·
   <a href="#быстрый-старт">Quick Start</a>
@@ -99,35 +94,6 @@ flowchart LR
 5. Смотрит accuracy, missed events, wrong labels, confidence и rejection.
 6. Привязывает надежный жест к команде или sequence.
 7. Команда выполняется только после routing и safety policy.
-
-## Скриншоты
-
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/figures/fig_4_3_home_recognition.png" alt="Live recognition">
-    </td>
-    <td width="50%">
-      <img src="docs/figures/fig_4_4_training_screen.png" alt="Training workflow">
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><b>Live recognition</b></td>
-    <td align="center"><b>Training workflow</b></td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img src="docs/figures/fig_4_5_gesture_dictionary.png" alt="Gesture library">
-    </td>
-    <td width="50%">
-      <img src="docs/figures/fig_4_5_bindings_screen.png" alt="Command bindings">
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><b>Gesture library</b></td>
-    <td align="center"><b>Command bindings</b></td>
-  </tr>
-</table>
 
 ## Архитектура
 

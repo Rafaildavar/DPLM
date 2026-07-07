@@ -32,8 +32,44 @@ app/data/
 # Models (trained ML models)
 models/*.pkl
 models/*.joblib
+models/*_classes.json
+models/*_feature_dim.txt
+models/*_feature_mode.txt
+models/*_prototypes.json
+models/*_rejection.json
+models/*_optuna.json
 models/experiments/
 models/user_gestures/
+
+# Runtime/demo artifacts intentionally kept in git for CI smoke and quick start
+!models/knn.pkl
+!models/classes.json
+!models/feature_dim.txt
+!models/feature_mode.txt
+!models/gesture_rejection.json
+!models/knn_optuna.json
+!models/dynamic_landmark_lstm_backbone.pkl
+!models/dynamic_landmark_lstm_backbone_classes.json
+!models/dynamic_landmark_lstm_backbone_feature_dim.txt
+!models/dynamic_landmark_lstm_backbone_feature_mode.txt
+!models/dynamic_landmark_lstm_backbone_optuna.json
+!models/dynamic_landmark_lstm_backbone_prototypes.json
+!models/dynamic_landmark_lstm_backbone_rejection.json
+!models/dynamic_sequence_mlp.pkl
+!models/dynamic_sequence_mlp_classes.json
+!models/dynamic_sequence_mlp_feature_dim.txt
+!models/dynamic_sequence_mlp_feature_mode.txt
+!models/dynamic_sequence_mlp_prototypes.json
+!models/dynamic_sequence_mlp_rejection.json
+!models/dynamic_sequence_lstm_backbone.pkl
+!models/dynamic_sequence_lstm_backbone_classes.json
+!models/dynamic_sequence_lstm_backbone_feature_dim.txt
+!models/dynamic_sequence_lstm_backbone_feature_mode.txt
+!models/dynamic_sequence_lstm_backbone_optuna.json
+!models/dynamic_sequence_lstm_backbone_prototypes.json
+!models/dynamic_sequence_lstm_backbone_rejection.json
+!models/intent_gate_mlp.pkl
+!models/intent_gate_metadata.json
 
 # Database
 .db_data/
@@ -51,8 +87,13 @@ alembic/versions/__pycache__/
 *.pptx
 docs/articles/assets/
 docs/articles/drafts/
+docs/archive/
+docs/contest/
+docs/DEFENSE_*.md
 docs/diploma/drafts/
 docs/diploma/slides/
+docs/DIPLOMA_DEVELOPMENT_PLAN.md
+docs/JMLC_DEVELOPMENT_PLAN.md
 
 # Temporary files
 *.tmp
