@@ -36,6 +36,8 @@ from cv.gesture_features import (
     feature_vector_size,
     infer_target_dim,
     infer_raw_dim_from_feature_size,
+    normalize_landmark_z_with_xy,
+    normalize_sequence_landmark_z,
     sequence_motion_energy,
     sequence_to_matrix,
     trajectory_features,
@@ -250,6 +252,51 @@ def test_dynamic_landmark_image_flattens_time_points_xyz_tensor():
     assert features.shape == (expected_size,)
     assert expected_size == DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES * 22 * 3
     assert infer_raw_dim_from_feature_size(FEATURE_DYNAMIC_LANDMARK_IMAGE, expected_size) == 65
+
+
+def test_normalize_landmark_z_with_xy_uses_wrist_and_projected_hand_scale():
+    xy = np.zeros((21, 2), dtype=np.float32)
+    xy[8, 1] = 0.5
+    z = np.zeros((21, 1), dtype=np.float32)
+    z[0, 0] = 0.2
+    z[8, 0] = 0.7
+
+    normalized = normalize_landmark_z_with_xy(xy, z)
+
+    assert normalized.shape == (21, 1)
+    assert normalized[0, 0] == 0.0
+    assert np.isclose(normalized[8, 0], 1.0)
+
+
+def test_dynamic_landmark_image_centers_and_scales_z_channel():
+    sequence = np.zeros((4, 65), dtype=np.float32)
+    sequence[:, 8 * 3 + 1] = 0.5
+    sequence[:, 2] = 0.2
+    sequence[:, 8 * 3 + 2] = 0.7
+
+    features = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_LANDMARK_IMAGE,
+        target_dim=65,
+    )
+    image = features.reshape(DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES, 22, 3)
+
+    assert np.allclose(image[:, 0, 2], 0.0)
+    assert np.allclose(image[:, 8, 2], 1.0)
+
+
+def test_normalize_sequence_landmark_z_preserves_global_wrist_xy():
+    sequence = np.zeros((3, 65), dtype=np.float32)
+    sequence[:, 8 * 3 + 1] = 0.5
+    sequence[:, 2] = 0.2
+    sequence[:, 8 * 3 + 2] = 0.7
+    sequence[:, -2:] = [0.4, 0.6]
+
+    normalized = normalize_sequence_landmark_z(sequence)
+
+    assert np.allclose(normalized[:, 0 * 3 + 2], 0.0)
+    assert np.allclose(normalized[:, 8 * 3 + 2], 1.0)
+    assert np.allclose(normalized[:, -2:], [0.4, 0.6])
 
 
 def test_trajectory_features_capture_vertical_direction_from_global_wrist():

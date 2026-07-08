@@ -8,6 +8,7 @@ from cv.dynamic_prototype import (
     METHOD_PROTOTYPE_DTW,
     DynamicSequenceRecord,
     fit_dynamic_prototype_model,
+    normalize_dynamic_sequence,
     predict_dynamic_prototype,
 )
 from scripts.dynamic_prototype_experiments import (
@@ -122,6 +123,18 @@ def test_discover_records_uses_include_labels_as_user_dynamic_scope(tmp_path):
     assert set(by_label) == {"SwipeLeft", "random_motion"}
     assert by_label["SwipeLeft"].is_negative is False
     assert by_label["random_motion"].is_negative is True
+
+
+def test_normalize_dynamic_sequence_normalizes_xyz_z_channel():
+    sequence = np.zeros((4, 65), dtype=np.float32)
+    sequence[:, 8 * 3 + 1] = 0.5
+    sequence[:, 2] = 0.2
+    sequence[:, 8 * 3 + 2] = 0.7
+
+    normalized = normalize_dynamic_sequence(sequence, target_dim=65, target_frames=6)
+
+    assert np.allclose(normalized[:, 0 * 3 + 2], 0.0)
+    assert np.allclose(normalized[:, 8 * 3 + 2], 1.0)
 
 
 def test_prototype_labels_preserve_user_recorded_label_case():

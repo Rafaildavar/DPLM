@@ -220,10 +220,64 @@ def _points_from_block(sequence: np.ndarray, block: _HandFeatureBlock) -> np.nda
     )
 
 
+def normalize_landmark_z_with_xy(
+    landmarks_xy: np.ndarray,
+    z_values: np.ndarray,
+) -> np.ndarray:
+    """Center landmark z on the wrist and scale it by projected hand size.
+
+    MediaPipe image ``z`` uses a camera/image-relative scale. The xy part of
+    our samples is already wrist-scale normalized, so keeping raw z made the
+    landmark-image LSTM more sensitive to camera distance than the xy channels.
+    This helper makes z follow the same wrist/scale convention.
+    """
+    xy = np.asarray(landmarks_xy, dtype=np.float32)
+    z = np.asarray(z_values, dtype=np.float32)
+    squeezed = False
+    if z.ndim >= 1 and z.shape[-1] == 21:
+        z = z[..., None]
+        squeezed = True
+    if xy.shape[-2:] != (21, 2) or z.shape[-2:] != (21, 1):
+        return np.asarray(z_values, dtype=np.float32)
+
+    wrist_xy = xy[..., 0:1, :]
+    distances = np.linalg.norm(xy - wrist_xy, axis=-1)
+    scale = np.max(distances, axis=-1, keepdims=True)
+    scale = np.where(scale < 1e-6, 1.0, scale)[..., None]
+    wrist_z = z[..., 0:1, :]
+    normalized = ((z - wrist_z) / scale).astype(np.float32, copy=False)
+    return normalized[..., 0] if squeezed else normalized
+
+
+def _normalize_points_xyz_z(points: np.ndarray) -> np.ndarray:
+    out = np.asarray(points, dtype=np.float32).copy()
+    if out.shape[-2:] == (21, 3):
+        out[..., 2:3] = normalize_landmark_z_with_xy(out[..., :2], out[..., 2:3])
+    return out.astype(np.float32, copy=False)
+
+
+def normalize_sequence_landmark_z(sequence: np.ndarray) -> np.ndarray:
+    """Normalize z channels inside 63/65/126/130-dim landmark sequences."""
+    seq = sequence_to_matrix(sequence).copy()
+    for block in hand_feature_blocks(seq.shape[1]):
+        if block.coords_per_point != 3:
+            continue
+        points = seq[:, block.start : block.pose_end].reshape(
+            seq.shape[0],
+            21,
+            3,
+        )
+        seq[:, block.start : block.pose_end] = _normalize_points_xyz_z(points).reshape(
+            seq.shape[0],
+            block.pose_dim,
+        )
+    return seq.astype(np.float32, copy=False)
+
+
 def _points_xyz_from_block(sequence: np.ndarray, block: _HandFeatureBlock) -> np.ndarray:
     points = _points_from_block(sequence, block)
     if block.coords_per_point == 3:
-        return points.astype(np.float32, copy=False)
+        return _normalize_points_xyz_z(points)
     zeros = np.zeros((points.shape[0], points.shape[1], 1), dtype=np.float32)
     return np.concatenate([points, zeros], axis=2).astype(np.float32, copy=False)
 

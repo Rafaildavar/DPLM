@@ -18,7 +18,11 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 
 from cv.dynamic_motion import canonical_dynamic_sequence
-from cv.gesture_features import align_sequence, sequence_to_matrix
+from cv.gesture_features import (
+    align_sequence,
+    normalize_sequence_landmark_z,
+    sequence_to_matrix,
+)
 
 METHOD_PROTOTYPE_DISTANCE = "prototype_distance"
 METHOD_PROTOTYPE_DTW = "prototype_dtw"
@@ -58,6 +62,7 @@ def normalize_dynamic_sequence(
     target_frames: int = 36,
 ) -> np.ndarray:
     seq = align_sequence(sequence_to_matrix(sequence), int(target_dim))
+    seq = normalize_sequence_landmark_z(seq)
     return canonical_dynamic_sequence(seq, target_frames=int(target_frames)).astype(
         np.float32,
         copy=False,

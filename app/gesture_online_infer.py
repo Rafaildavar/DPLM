@@ -31,6 +31,7 @@ from cv.gesture_features import (
     FEATURE_STATIC_STATS,
     build_feature_vector,
     infer_raw_dim_from_feature_size,
+    normalize_landmark_z_with_xy,
     trajectory_features,
 )
 from cv.intent_gate import (
@@ -382,7 +383,10 @@ class GestureOnlineInfer:
         if target in {63, 65}:
             xyz = np.asarray(hand.landmarks_xyz or [], dtype=np.float32)
             if xyz.shape == (21, 3):
-                z = xyz[:, 2:3]
+                z = normalize_landmark_z_with_xy(
+                    np.asarray(hand.landmarks, dtype=np.float32),
+                    xyz[:, 2:3],
+                )
             else:
                 z = np.zeros((21, 1), dtype=np.float32)
             pose_xyz = np.concatenate([normalized, z], axis=1).reshape(-1)

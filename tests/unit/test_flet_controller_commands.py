@@ -1511,8 +1511,11 @@ def test_process_static_sample_recording_frame_saves_xyz_features(
     metadata = json.loads(
         (label_dir / "sample_0000.meta.json").read_text(encoding="utf-8")
     )
+    hand_points = np.asarray(FakeHand.landmarks, dtype=np.float32)
+    hand_scale = np.max(np.linalg.norm(hand_points - hand_points[0], axis=1))
+    expected_z = [float(i) / 100.0 / hand_scale for i in range(21)]
     assert sample.shape == (2, 21, 3)
-    assert np.allclose(sample[0, :, 2], [float(i) / 100.0 for i in range(21)])
+    assert np.allclose(sample[0, :, 2], expected_z)
     assert metadata["raw_feature_dim"] == 63
     assert metadata["include_landmark_z"] is True
     assert metadata["include_global_motion"] is False
@@ -1699,8 +1702,11 @@ def test_process_dynamic_sample_recording_frame_saves_xyz_wrist_features(
     metadata = json.loads(
         (label_dir / "sample_0000.meta.json").read_text(encoding="utf-8")
     )
+    hand_points = np.asarray(FakeHand.landmarks, dtype=np.float32)
+    hand_scale = np.max(np.linalg.norm(hand_points - hand_points[0], axis=1))
+    expected_z = [float(i) / 100.0 / hand_scale for i in range(21)]
     assert sample.shape == (2, 65)
-    assert np.allclose(sample[0, 2:63:3], [float(i) / 100.0 for i in range(21)])
+    assert np.allclose(sample[0, 2:63:3], expected_z)
     assert np.allclose(sample[0, -2:], [0.0, 0.0])
     assert metadata["raw_feature_dim"] == 65
     assert metadata["include_landmark_z"] is True

@@ -701,8 +701,12 @@ def test_hand_frame_feature_builds_65_dim_xyz_wrist_layout() -> None:
 
     feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
 
+    hand_scale = np.max(
+        np.linalg.norm(np.asarray(landmarks) - np.asarray(landmarks)[0], axis=1)
+    )
+    expected_z = [float(index) / 100.0 / hand_scale for index in range(21)]
     assert feature.shape == (65,)
-    assert np.allclose(feature[2:63:3], [float(index) / 100.0 for index in range(21)])
+    assert np.allclose(feature[2:63:3], expected_z)
     assert np.allclose(feature[-2:], landmarks[0])
 
 
