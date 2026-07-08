@@ -3991,7 +3991,6 @@ class AppController:
     ) -> Any | None:
         import numpy as np
 
-        from cv.gesture_features import normalize_landmark_z_with_xy
         from cv.hand_landmarker import normalize_landmarks
 
         def hand_feature(hand: Any) -> Any:
@@ -4008,7 +4007,7 @@ class AppController:
                     dtype=np.float32,
                 )
                 if xyz.shape == (21, 3):
-                    z = normalize_landmark_z_with_xy(pts, xyz[:, 2:3])
+                    z = xyz[:, 2:3]
                 else:
                     z = np.zeros((21, 1), dtype=np.float32)
                 pose_xyz = np.concatenate([normalized, z], axis=1)

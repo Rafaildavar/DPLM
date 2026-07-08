@@ -5,6 +5,7 @@ import numpy as np
 
 from app.gesture_online_infer import GestureOnlineInfer
 from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     FEATURE_DYNAMIC_CRAFT_FULL_STATS,
     FEATURE_DYNAMIC_CRAFT_STATS,
     FEATURE_DYNAMIC_LANDMARK_IMAGE,
@@ -12,6 +13,7 @@ from cv.gesture_features import (
     FEATURE_DYNAMIC_SEQUENCE_72,
     FEATURE_STATIC_CRAFT_FULL_STATS,
     FEATURE_STATIC_LANDMARK_IMAGE,
+    build_feature_vector,
     feature_vector_size,
 )
 from cv.hand_landmarker import DetectedHand
@@ -701,13 +703,37 @@ def test_hand_frame_feature_builds_65_dim_xyz_wrist_layout() -> None:
 
     feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
 
-    hand_scale = np.max(
-        np.linalg.norm(np.asarray(landmarks) - np.asarray(landmarks)[0], axis=1)
-    )
-    expected_z = [float(index) / 100.0 / hand_scale for index in range(21)]
     assert feature.shape == (65,)
-    assert np.allclose(feature[2:63:3], expected_z)
+    assert np.allclose(feature[2:63:3], [float(index) / 100.0 for index in range(21)])
     assert np.allclose(feature[-2:], landmarks[0])
+
+
+def test_live_xyz_feature_is_normalized_once_by_landmark_image_features() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    landmarks = _open_hand_landmarks()
+    normalized = np.zeros((21, 2), dtype=np.float32)
+    normalized[8, 1] = 0.5
+    xyz = [(float(point[0]), float(point[1]), 0.2) for point in landmarks]
+    xyz[8] = (float(landmarks[8][0]), float(landmarks[8][1]), 0.7)
+    hand = DetectedHand(
+        landmarks=landmarks,
+        handedness="Right",
+        score=1.0,
+        landmarks_xyz=xyz,
+    )
+
+    feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
+    sequence = np.repeat(feature[None, :], 4, axis=0)
+    image = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_LANDMARK_IMAGE,
+        target_dim=65,
+    ).reshape(DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES, 22, 3)
+
+    assert np.allclose(feature[2], 0.2)
+    assert np.allclose(feature[8 * 3 + 2], 0.7)
+    assert np.allclose(image[:, 0, 2], 0.0)
+    assert np.allclose(image[:, 8, 2], 1.0)
 
 
 def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:
