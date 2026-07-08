@@ -758,7 +758,7 @@ class BindingsView:
         self._single_mode_panel = ft.Column(spacing=12)
         self._sequence_panel = ft.Column(spacing=12, visible=False)
         self._params_field = ft.TextField(
-            label="Параметры (JSON)",
+            label="Технические параметры",
             value="{}",
             multiline=True,
             min_lines=1,
@@ -773,16 +773,11 @@ class BindingsView:
             color=COLOR_MUTED,
         )
         self._action_fields_panel = ft.Column(spacing=12)
-        self._param_app_field = ft.Dropdown(
+        self._param_app_field = ft.TextField(
             label="Приложение",
-            hint_text="Например Safari",
-            editable=True,
+            hint_text="Напишите название приложения, например Safari",
             border_color=COLOR_SURFACE_HIGH,
-            options=[
-                ft.DropdownOption(key=name, text=name) for name in _COMMON_APP_NAMES
-            ],
-            on_select=self._on_action_form_changed,
-            on_text_change=self._on_action_form_changed,
+            on_change=self._on_action_form_changed,
         )
         self._param_url_field = ft.TextField(
             label="Сайт",
@@ -1626,6 +1621,44 @@ class BindingsView:
             ],
         )
 
+    def _set_app_name(self, name: str) -> None:
+        self._param_app_field.value = name
+        self._on_action_form_changed(None)
+        try:
+            self._param_app_field.update()
+        except Exception:
+            pass
+
+    def _app_suggestion_chip(self, name: str) -> ft.Control:
+        return ft.Container(
+            padding=ft.Padding(10, 7, 10, 7),
+            border_radius=8,
+            bgcolor="#1B1D21",
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            ink=True,
+            on_click=lambda _e, value=name: self._set_app_name(value),
+            content=ft.Row(
+                spacing=6,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.APPS, color=COLOR_ACCENT, size=14),
+                    ft.Text(name, color=COLOR_MUTED, size=12),
+                ],
+            ),
+        )
+
+    def _build_app_suggestions(self) -> ft.Control:
+        return ft.Row(
+            spacing=8,
+            run_spacing=8,
+            wrap=True,
+            controls=[
+                self._app_suggestion_chip(name)
+                for name in ("Safari", "Telegram", "Preview", "Chrome", "Terminal", "Notes")
+            ],
+        )
+
     def _render_action_form(self) -> None:
         action = self._selected_action()
         action_name = str((action or {}).get("action") or "")
@@ -1639,13 +1672,13 @@ class BindingsView:
                 self._form_hint_box(
                     ft.Icons.TOUCH_APP,
                     "Настройки появятся после выбора действия",
-                    "JSON больше не нужно писать вручную.",
+                    "Выберите действие выше, затем заполните появившиеся поля.",
                     color=COLOR_MUTED,
                 )
             ]
         elif action_name == "open_app":
             self._action_form_summary.value = "Укажите приложение, которое откроет жест."
-            controls = [self._param_app_field]
+            controls = [self._param_app_field, self._build_app_suggestions()]
         elif action_name == "open_url":
             self._action_form_summary.value = "Вставьте адрес сайта. https:// можно не писать."
             controls = [self._param_url_field]

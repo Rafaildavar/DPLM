@@ -65,7 +65,7 @@ def test_app_controller_status_signal(qtbot):
         controller.status = "Testing"
 
 
-def test_app_controller_start_recognition():
+def test_app_controller_start_recognition(tmp_path):
     """
     Тест метода startRecognition
     Test startRecognition method
@@ -73,15 +73,20 @@ def test_app_controller_start_recognition():
     from app.main import AppController
     
     controller = AppController()
+    controller._recognition_pid_file = tmp_path / "gesture_infer.pid"
+    controller._recognition_log_file = tmp_path / "gesture_infer.log"
     
     # Запуск распознавания / Start recognition
-    controller.startRecognition()
+    with patch("app.main.subprocess.Popen") as popen_mock:
+        popen_mock.return_value.pid = 12345
+        controller.startRecognition()
     
     assert controller.isRecognizing == True
-    assert controller.status in ("Recognizing in background", "Recognition start failed")
+    assert controller.status == "Recognizing in background"
+    assert controller._read_recognition_pid() == 12345
 
 
-def test_app_controller_stop_recognition():
+def test_app_controller_stop_recognition(tmp_path):
     """
     Тест метода stopRecognition
     Test stopRecognition method
@@ -89,15 +94,22 @@ def test_app_controller_stop_recognition():
     from app.main import AppController
     
     controller = AppController()
+    controller._recognition_pid_file = tmp_path / "gesture_infer.pid"
+    controller._recognition_log_file = tmp_path / "gesture_infer.log"
     
     # Сначала запускаем / First start
-    controller.startRecognition()
+    with patch("app.main.subprocess.Popen") as popen_mock:
+        popen_mock.return_value.pid = 12345
+        controller.startRecognition()
     assert controller.isRecognizing == True
     
     # Затем останавливаем / Then stop
-    controller.stopRecognition()
+    with patch("app.main.os.kill") as kill_mock:
+        controller.stopRecognition()
     assert controller.isRecognizing == False
     assert controller.status == "Stopped"
+    kill_mock.assert_called_once()
+    assert not controller._recognition_pid_file.exists()
 
 
 def test_app_controller_start_gesture_training():
@@ -112,7 +124,7 @@ def test_app_controller_start_gesture_training():
     gesture_label = "test_gesture"
     controller.startGestureTraining(gesture_label)
     
-    assert controller.status == f"Training: {gesture_label}"
+    assert controller.status == f"Recording: {gesture_label}"
 
 
 def test_app_controller_execute_command():

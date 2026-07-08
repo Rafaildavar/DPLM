@@ -8,6 +8,7 @@
 [![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml)
 [![Docker Runtime](https://github.com/Rafaildavar/GestureBind/actions/workflows/docker-runtime.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/docker-runtime.yml)
 [![Desktop Release Bundle](https://github.com/Rafaildavar/GestureBind/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/desktop-release.yml)
+[![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
 <p align="center">

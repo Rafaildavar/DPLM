@@ -51,8 +51,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            outputs/release/*.tar.gz \
-            --draft \
-            --title "GestureBind ${GITHUB_REF_NAME}" \
-            --notes "Desktop handoff bundle with source code, tracked model artifacts, configs and documentation."
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" outputs/release/*.tar.gz --clobber
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "GestureBind ${GITHUB_REF_NAME}" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              outputs/release/*.tar.gz \
+              --title "GestureBind ${GITHUB_REF_NAME}" \
+              --notes-file RELEASE_NOTES.md \
+              --latest
+          fi

@@ -6,6 +6,7 @@ Integration test for application launch
 Checks that application launches correctly and loads QML
 """
 import pytest
+import os
 from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtQml import QQmlApplicationEngine
@@ -62,6 +63,10 @@ def test_qml_engine_context_property(qapp):
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    os.environ.get("GESTUREBIND_RUN_LEGACY_QML") != "1",
+    reason="Legacy QML load smoke is opt-in; the current desktop UI is Flet.",
+)
 def test_qml_loading(qapp):
     """
     Тест загрузки главного QML файла
@@ -114,4 +119,3 @@ def test_app_controller_signals_emitted(qapp, qtbot):
     # Test commandExecuted signal
     with qtbot.waitSignal(controller.commandExecuted, timeout=1000):
         controller.commandExecuted.emit("test_command")
-
