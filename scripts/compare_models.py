@@ -1,4 +1,4 @@
-"""Compare gesture feature modes and classifiers for JMLC.
+"""Compare gesture feature modes and classifiers for GestureBind.
 
 This script is deliberately CLI-first: it can run in CI and does not require a
 camera or Flet. The report answers whether a universal model is enough, or

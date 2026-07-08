@@ -1,6 +1,0 @@
-Metric,Value,Unit,Source
-Target FPS,30,fps,app_config
-Frame budget,33.333,ms,derived_from_target_fps
-Baseline inference latency,15,ms,optimization_report
-Optimized inference latency,8,ms,optimization_report
-Latency reserve at 30 FPS,25.333,ms,derived_from_optimized_latency

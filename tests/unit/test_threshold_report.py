@@ -52,6 +52,5 @@ def test_build_threshold_report_for_small_dataset(tmp_path):
     assert report.recommended_candidate.curve
 
     markdown = build_markdown(report)
-    assert "# JMLC Threshold Report" in markdown
+    assert "# GestureBind Threshold Report" in markdown
     assert "Recommended Curve" in markdown
-

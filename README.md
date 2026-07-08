@@ -42,8 +42,6 @@ live-режиме и привязывает надежные жесты к де�
 rejection policy, безопасное исполнение команд, desktop UI, MLflow tracking,
 Docker smoke checks, CI/CD и сборка release-артефактов.
 
-**English version:** [README_EN.md](README_EN.md)
-
 ## Зачем Нужен Проект
 
 Горячие клавиши быстрые, но их нужно помнить. Голосовые команды не всегда
@@ -65,13 +63,13 @@ Docker smoke checks, CI/CD и сборка release-артефактов.
 | Desktop app | Flet UI для recognition, gesture library, training, bindings, settings, diagnostics и assistant panel |
 | Сбор данных | Запись жестов с веб-камеры в `.npy` samples с metadata и quality signals |
 | Static gestures | Hand landmarks, crafted geometry features, ExtraTrees/SVM/KNN baselines, rejection policies |
-| Dynamic gestures | Sequence features, wrist motion, direction-sensitive gestures, prototype и temporal-model experiments |
+| Dynamic gestures | Production `dynamic_landmark_lstm_backbone` over landmark-image sequences |
 | Training loop | Обучение из UI, безопасная GISLR-style augmentation, Optuna support |
 | Live evaluation | Expected-label тесты: correct, wrong, missed, confidence, confusion, JSONL logs |
 | Command binding | Desktop actions, hotkeys, media keys, scroll/navigation, app launch, scripts, multi-step sequences |
 | Safety | Confidence threshold, cooldown, negative classes, open-set policy, command validation, dangerous-action warnings |
-| MLOps | MLflow runs, experiment reports, generated figures, dashboard exports, model smoke checks |
-| Delivery | GitHub Actions, Docker runtime image, release bundle, desktop packaging workflow |
+| MLOps | MLflow runs, JSONL runtime logs, model smoke checks |
+| Delivery | GitHub Actions, Docker runtime image, desktop handoff release bundle |
 
 ## Product Flow
 
@@ -123,9 +121,9 @@ app/gesture_online_infer.py online inference and gesture routing
 app/services/              command execution, config, diagnostics, binding policy
 app/models/                SQLAlchemy models and database access
 cv/                        feature extraction, training, augmentation, sequence models
-scripts/                   experiments, reports, dashboards, smoke checks
-models/                    tracked model artifacts and metadata
-docs/                      architecture, CI/CD, experiments, generated figures
+scripts/                   runtime utilities, smoke checks, reproducible ML commands
+models/                    release model artifacts and metadata
+docs/                      architecture, CI/CD and product documentation
 tests/                     unit and integration tests
 .github/workflows/         CI, ML smoke, Docker runtime, release workflows
 ```
@@ -160,9 +158,9 @@ Training code сохраняет совместимость со старыми 
 ### Модели и признаки
 
 - static landmarks и crafted geometry features;
-- dynamic statistics и wrist trajectory features;
-- KNN, SVM, ExtraTrees, RandomForest, Logistic Regression baselines;
-- sequence MLP, LSTM/GRU backbone, Rocket, MultiRocket, SProcket, Shapelet, PhaseHMM experiments;
+- production dynamic model: `dynamic_landmark_lstm_backbone`;
+- KNN, SVM, ExtraTrees, RandomForest, Logistic Regression training options;
+- sequence research models stay in code for reproducibility, but are not shipped as release artifacts;
 - negative classes и open-set rejection policies;
 - intent gate для routing в `static`, `dynamic` или `none`.
 
@@ -170,11 +168,11 @@ Training code сохраняет совместимость со старыми 
 
 | Отчет | Результат | Почему важно |
 |---|---:|---|
-| [Static CV benchmark](docs/experiments/static_cv_benchmark.md) | `static_landmark_image + extra_trees`: accuracy `0.8000`, macro F1 `0.7389` на `260` samples / `10` classes | Текущий mixed dataset с augmentation и negative-like labels |
-| [Static rejection benchmark](docs/experiments/static_rejection_benchmark_craft_extratrees.md) | `negative_classes`: positive recall `1.0000`, negative FP `0.0000`, accepted accuracy `1.0000` | Для команд ОС важен reject, а не только classification accuracy |
-| [Threshold report](docs/experiments/threshold_report.md) | `static_stats + svm`, threshold `0.50`: accepted accuracy `1.0000`, coverage `0.9587` | Показывает trade-off между точностью и долей принятых предсказаний |
-| [Model comparison](docs/experiments/model_comparison.md) | `dynamic_stats + extra_trees`: macro F1 `0.8136`, dynamic-like F1 `0.9472` | Baseline для direction-sensitive и temporal gestures |
-| [Live evaluation](docs/experiments/live_evaluation_report.md) | `52` attempts, accuracy `0.731`; completed run для `swipe_up` достиг `1.000` | Реальная webcam-метрика отделена от offline CV |
+| Static CV benchmark | `static_landmark_image + extra_trees`: accuracy `0.8000`, macro F1 `0.7389` на `260` samples / `10` classes | Текущий mixed dataset с augmentation и negative-like labels |
+| Static rejection benchmark | `negative_classes`: positive recall `1.0000`, negative FP `0.0000`, accepted accuracy `1.0000` | Для команд ОС важен reject, а не только classification accuracy |
+| Threshold report | `static_stats + svm`, threshold `0.50`: accepted accuracy `1.0000`, coverage `0.9587` | Показывает trade-off между точностью и долей принятых предсказаний |
+| Dynamic model | `dynamic_landmark_lstm_backbone + dynamic_landmark_image` | Основной релизный профиль для временных жестов |
+| Live evaluation | `52` attempts, accuracy `0.731`; completed run для `swipe_up` достиг `1.000` | Реальная webcam-метрика отделена от offline CV |
 
 Проект намеренно хранит и offline, и live metrics. Offline CV полезен для
 сравнения feature/model choices; live evaluation важнее для продукта, потому
@@ -259,22 +257,13 @@ PYTHON=.venv/bin/python make test-unit
 # ML artifact smoke check
 PYTHON=.venv/bin/python make ml-smoke
 
-# Model comparison reports
-PYTHON=.venv/bin/python make compare-models
-PYTHON=.venv/bin/python make threshold-report
-PYTHON=.venv/bin/python make rejection-benchmark
-
-# MLOps dashboard and MLflow
-PYTHON=.venv/bin/python make mlops-dashboard
+# MLflow
 PYTHON=.venv/bin/python make mlflow-ui
 
 # Docker runtime checks
 make docker-build
 make docker-ml-smoke
 make docker-ci
-
-# Desktop release bundle
-make desktop-release
 ```
 
 MLflow UI доступен локально:
@@ -294,9 +283,10 @@ Docker image собирается как `linux/amd64`, потому что ну
 не тянул CUDA-зависимости в webcam/desktop проект.
 
 Для пользовательской доставки есть desktop release workflow: он собирает
-архив приложения и публикует `.zip` artifact. Текущие артефакты предназначены
-для demo/testing; production-релизу еще нужны полноценная подпись, проверка
-установки и понятный onboarding для выдачи разрешений камере.
+handoff-архив `.tar.gz` с исходным кодом, конфигами, документацией и tracked
+model artifacts. Текущие артефакты предназначены для demo/testing;
+production-релизу еще нужны проверка установки и понятный onboarding для
+выдачи разрешений камере.
 
 ## Tech Stack
 
@@ -304,10 +294,10 @@ Docker image собирается как `linux/amd64`, потому что ну
 |---|---|
 | Desktop UI | Flet, legacy PySide/Qt components |
 | Computer vision | OpenCV, MediaPipe Hands |
-| ML | scikit-learn, NumPy, SciPy, PyTorch experiments, Optuna |
+| ML | scikit-learn, NumPy, SciPy, PyTorch LSTM backbone, Optuna |
 | Data and storage | `.npy`, JSON metadata, SQLAlchemy, PostgreSQL, SQLite fallback |
-| MLOps | MLflow, JSONL runtime logs, generated reports, dashboard exports |
-| Automation | Makefile, Docker, GitHub Actions, PyInstaller/Flet packaging |
+| MLOps | MLflow, JSONL runtime logs, model smoke checks |
+| Automation | Makefile, Docker, GitHub Actions |
 | Testing | pytest, unit tests, integration smoke tests, model artifact smoke tests |
 
 ## Документация
@@ -316,7 +306,6 @@ Docker image собирается как `linux/amd64`, потому что ну
 - [Binding Rules](docs/BINDING_RULES.md)
 - [CI/CD](docs/CI_CD.md)
 - [Database Schema](docs/DB_SCHEMA.md)
-- [Experiments Index](docs/experiments/README.md)
 - [Voice Assistant Guide](docs/VOICE_ASSISTANT_GUIDE.md)
 
 ## Roadmap
@@ -325,7 +314,7 @@ Docker image собирается как `linux/amd64`, потому что ну
 - расширить live datasets для direction-sensitive gestures;
 - калибровать thresholds через больше webcam-сессий, а не только offline CV;
 - довести desktop artifact до production-grade signing и release QA;
-- добавить richer release assets с model metrics и dashboard snapshots;
+- добавить richer release assets с model metrics;
 - дальше отделять product UI flows от developer-only diagnostics.
 
 ## Статус Проекта
@@ -337,7 +326,7 @@ Docker image собирается как `linux/amd64`, потому что ну
 - gesture-to-command binding;
 - live evaluation;
 - MLflow и CI smoke checks;
-- static gesture recognition и dynamic baseline experiments;
+- static gesture recognition и production dynamic LSTM backbone;
 - Docker и desktop artifact workflows.
 
 В активной разработке:

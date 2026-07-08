@@ -1,7 +1,7 @@
-"""Analyze dynamic gesture samples and data-processing risks for JMLC.
+"""Analyze dynamic gesture samples and data-processing risks for GestureBind.
 
 The report focuses on dynamic gestures such as ``swipe_up`` and
-``swipe_down``. It connects three layers that matter for the contest:
+``swipe_down``. It connects three layers that matter for the ML pipeline:
 
 * raw recording quality;
 * motion descriptors that explain class separation;
@@ -855,7 +855,7 @@ def build_markdown_report(report: DynamicDataAnalysis) -> str:
     lines.extend(
         [
             "",
-            "## Интерпретация для JMLC",
+            "## Интерпретация для ML pipeline",
             "",
             "- Анализ документирует понимание данных, критерии предобработки, протокол валидации и live/offline mismatch.",
             "- Active-segment preprocessing реализован; следующая измеримая проверка - live-evaluation event-based inference против прежнего sliding-window baseline.",

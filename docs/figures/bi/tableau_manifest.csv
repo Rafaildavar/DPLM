@@ -1,9 +1,0 @@
-File,Rows,UpdatedAt,DataRoot
-dataset_summary.csv,13,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-gesture_class_counts.csv,13,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-gesture_metrics_long.csv,16,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-gesture_metrics_per_class.csv,48,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-gesture_readiness.csv,13,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-monitoring_quality_metrics.csv,9,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-monitoring_runtime_metrics.csv,5,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures
-unit_test_groups.csv,8,2026-06-15T09:15:38+00:00,/Users/remi/Developer/GUAP/DPLM/data/gestures

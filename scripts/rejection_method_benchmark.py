@@ -1,6 +1,6 @@
 """Benchmark rejection methods for GestureBind open-set recognition.
 
-The report answers a practical JMLC question: which strategy rejects random or
+The report answers a practical product question: which strategy rejects random or
 partial gestures without breaking real gestures?
 """
 

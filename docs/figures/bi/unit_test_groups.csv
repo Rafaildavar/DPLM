@@ -1,9 +1,0 @@
-Group,TestCount,Passed,Failed,Skipped,Source,Note
-Конфигурация и диагностика,10,10,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"config, pointer config, diagnostics"
-Правила привязок и безопасность,32,32,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"binding rules, threshold, cooldown, dangerous actions"
-Команды и системные действия,24,24,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"command executor, DB command sync, gesture-command bridge"
-БД и хранение данных,19,19,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"database models, seed, gesture samples"
-"CV, запись и инференс",14,14,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"recording cycle, overlay, train classifier, online inference"
-Flet-контроллер и UI,14,14,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"controller commands, GUI state helpers, friendly UI copy"
-Управление указателем,12,12,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"pointer movement, click, swipe, jitter filtering"
-Голосовой ассистент,12,12,0,0,pytest tests/unit --ignore=tests/unit/test_app_controller.py --no-cov,"wake word, command processing, handlers"
