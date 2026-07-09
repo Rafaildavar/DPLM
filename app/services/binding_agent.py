@@ -10,9 +10,12 @@ import difflib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
+import uuid
 import zlib
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +26,7 @@ from app.services.binding_agents.action_ontology import (
     parse_action_intent,
 )
 from app.services.binding_agents.action_semantics import compile_action_candidate
+from app.services.binding_agents.budget import PipelineBudget
 from app.services.binding_agents.contracts import (
     ActionCandidate,
     AgentStatus,
@@ -42,6 +46,11 @@ from app.services.binding_agents.skills import (
     step_data_with_skills as _step_data_with_skills,
 )
 from app.services.binding_agents.skill_packs import skill_pack_cards as _skill_pack_cards
+from app.services.binding_agents.privacy import (
+    contains_secret,
+    redact_payload,
+    redact_text,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +68,7 @@ BINDING_AGENT_GENAI_TRACES_ENV = "DPLM_BINDING_AGENT_GENAI_TRACES"
 BINDING_AGENT_GENAI_EVAL_ENV = "DPLM_BINDING_AGENT_GENAI_EVAL"
 BINDING_AGENT_LOCAL_FIRST_ENV = "DPLM_BINDING_AGENT_LOCAL_FIRST"
 BINDING_AGENT_REWRITE_ANSWERS_ENV = "DPLM_BINDING_AGENT_REWRITE_ANSWERS"
+BINDING_AGENT_MLFLOW_SYNC_ENV = "DPLM_BINDING_AGENT_MLFLOW_SYNC"
 
 AGENT_ACTION_LABELS: dict[str, str] = {
     "open_app": "Открыть приложение",
@@ -1393,13 +1403,7 @@ def _unsupported_answer_text(
 
 
 def _contains_secret_like(text: str) -> bool:
-    raw = text or ""
-    secret_patterns = (
-        r"(?i)\b(?:api[_-]?key|token|secret|password|пароль|ключ)\s*[:=]\s*\S{6,}",
-        r"\bsk-[A-Za-z0-9_-]{12,}\b",
-        r"\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\b",
-    )
-    return any(re.search(pattern, raw) for pattern in secret_patterns)
+    return contains_secret(text)
 
 
 def _contains_prompt_injection(text: str) -> bool:
@@ -1693,10 +1697,74 @@ def _match_gesture_label_in_text(text: str, labels: list[str]) -> str:
 class BindingAgentMlflowLogger:
     """Logs the binding-agent pipeline as an MLflow run when enabled."""
 
-    def __init__(self, *, enabled: bool | None = None) -> None:
+    _executor = ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="gesturebind-mlflow",
+    )
+
+    def __init__(
+        self,
+        *,
+        enabled: bool | None = None,
+        async_mode: bool | None = None,
+    ) -> None:
         self.enabled = enabled
+        self.async_mode = async_mode
+        self._futures: list[Future] = []
 
     def log(
+        self,
+        context: BindingAgentContext,
+        result: BindingAgentResult,
+        *,
+        provider: str,
+        model: str = "",
+    ) -> dict[str, Any]:
+        _load_project_dotenv()
+        enabled = (
+            _env_flag(BINDING_AGENT_MLFLOW_ENV, default=True)
+            if self.enabled is None
+            else self.enabled
+        )
+        if not enabled:
+            return {}
+        async_mode = (
+            not _env_flag(BINDING_AGENT_MLFLOW_SYNC_ENV, default=False)
+            if self.async_mode is None
+            else self.async_mode
+        )
+        if not async_mode:
+            return self._log_sync(
+                context,
+                result,
+                provider=provider,
+                model=model,
+            )
+        event_id = uuid.uuid4().hex[:12]
+        future = self._executor.submit(
+            self._log_sync,
+            context,
+            result,
+            provider=provider,
+            model=model,
+        )
+        self._futures.append(future)
+        self._futures = [item for item in self._futures if not item.done()]
+        return {
+            "mlflow_queued": True,
+            "mlflow_event_id": event_id,
+            "mlflow_tracking_uri": _mlflow_tracking_uri(),
+            "mlflow_experiment": _mlflow_experiment(),
+        }
+
+    def flush(self, timeout: float = 10.0) -> None:
+        deadline = time.monotonic() + max(0.0, timeout)
+        for future in list(self._futures):
+            remaining = max(0.0, deadline - time.monotonic())
+            future.result(timeout=remaining)
+        self._futures = [item for item in self._futures if not item.done()]
+
+    def _log_sync(
         self,
         context: BindingAgentContext,
         result: BindingAgentResult,
@@ -1749,9 +1817,10 @@ class BindingAgentMlflowLogger:
             "blocked": statuses.count("blocked"),
             "skipped": statuses.count("skipped"),
         }
-        draft = result.to_legacy_draft()
-        payload = {
-            "prompt": context.prompt,
+        draft = redact_payload(result.to_legacy_draft())
+        safe_prompt = redact_text(context.prompt)
+        payload = redact_payload({
+            "prompt": safe_prompt,
             "current_gesture": context.current_gesture,
             "conversation_history": _history_items(context.conversation_history),
             "known_gestures": [
@@ -1774,7 +1843,13 @@ class BindingAgentMlflowLogger:
                 }
                 for index, step in enumerate(result.steps, start=1)
             ],
-        }
+        })
+        step_durations = [
+            float(step.data.get("durationMs") or 0.0)
+            for step in result.steps
+            if isinstance(step.data, dict)
+        ]
+        route_margin = float(intent_data.get("routeMargin") or 0.0)
 
         try:
             mlflow.set_tracking_uri(tracking_uri)
@@ -1802,7 +1877,7 @@ class BindingAgentMlflowLogger:
                     {
                         "provider": provider,
                         "model": model,
-                        "prompt_preview": _short_text(context.prompt),
+                        "prompt_preview": _short_text(safe_prompt),
                         "current_gesture": context.current_gesture,
                         "gesture_label": result.gesture_label,
                         "command_name": _short_text(result.command_name, 180),
@@ -1829,6 +1904,12 @@ class BindingAgentMlflowLogger:
                         "prompt_chars": float(len(context.prompt)),
                         "reviewer_relevance": reviewer_relevance,
                         "intent_semantic_score": semantic_score,
+                        "intent_route_margin": route_margin,
+                        "latency_ms": float(result.telemetry.get("latency_ms") or 0.0),
+                        "network_stage_ms": sum(step_durations),
+                        "requires_confirmation": (
+                            1.0 if result.requires_confirmation else 0.0
+                        ),
                         **{
                             f"reviewer_{name}": value
                             for name, value in reviewer_scores.items()
@@ -1944,11 +2025,11 @@ class BindingAgentMlflowLogger:
             if result.missing
             else "error"
         )
-        output = result.to_legacy_draft()
+        output = redact_payload(result.to_legacy_draft())
         data = [
             {
                 "inputs": {
-                    "prompt": context.prompt,
+                    "prompt": redact_text(context.prompt),
                     "provider": provider,
                     "model": model,
                 },
@@ -2025,12 +2106,18 @@ class BindingAgentMlflowLogger:
             self._set_span_inputs(
                 root_span,
                 {
-                    "prompt": context.prompt,
+                    "prompt": str(payload.get("prompt") or ""),
                     "current_gesture": context.current_gesture,
                     "conversation_history": payload.get("conversation_history", []),
                 },
             )
             for index, step in enumerate(result.steps, start=1):
+                safe_steps = payload.get("steps") or []
+                safe_step = (
+                    safe_steps[index - 1]
+                    if index - 1 < len(safe_steps)
+                    else {}
+                )
                 child = self._start_span(
                     mlflow,
                     step.agent,
@@ -2044,7 +2131,7 @@ class BindingAgentMlflowLogger:
                     self._set_span_inputs(
                         step_span,
                         {
-                            "prompt": context.prompt,
+                            "prompt": str(payload.get("prompt") or ""),
                             "known_gestures_count": len(context.gestures),
                         },
                     )
@@ -2052,8 +2139,8 @@ class BindingAgentMlflowLogger:
                         step_span,
                         {
                             "status": step.status,
-                            "message": step.message,
-                            "data": _step_data_with_skills(step),
+                            "message": safe_step.get("message") or "",
+                            "data": safe_step.get("data") or {},
                         },
                     )
             self._set_span_outputs(
@@ -2063,9 +2150,9 @@ class BindingAgentMlflowLogger:
                     "can_apply": result.can_apply,
                     "missing": list(result.missing),
                     "gesture_label": result.gesture_label,
-                    "command_name": result.command_name,
+                    "command_name": redact_text(result.command_name),
                     "mode": result.mode,
-                    "action_spec": dict(result.action_spec),
+                    "action_spec": redact_payload(dict(result.action_spec)),
                 },
             )
             trace_id = self._span_trace_id(root_span)
@@ -2112,10 +2199,10 @@ class BindingAgentMlflowLogger:
             },
             "metadata": {
                 "gesture_label": result.gesture_label,
-                "command_name": result.command_name,
+                "command_name": redact_text(result.command_name),
                 "mode": result.mode,
                 "action": str(result.action_spec.get("action") or ""),
-                "prompt_preview": _short_text(context.prompt),
+                "prompt_preview": _short_text(redact_text(context.prompt)),
             },
         }
         try:
@@ -2222,6 +2309,7 @@ class BindingAgentOrchestrator:
         session_id: str = "",
         provider: str | None = None,
     ) -> BindingAgentResult:
+        budget = PipelineBudget.start()
         context = BindingAgentContext(
             prompt=(prompt or "").strip(),
             gestures=gestures,
@@ -2230,6 +2318,8 @@ class BindingAgentOrchestrator:
             draft_state=dict(draft_state or {}),
             bindings=[dict(item) for item in (bindings or []) if isinstance(item, dict)],
             session_id=session_id,
+            request_started_at=budget.started_at,
+            request_deadline=budget.deadline,
         )
         steps: list[AgentStep] = []
         provider_name = _provider_name(provider)
@@ -2579,11 +2669,12 @@ class BindingAgentOrchestrator:
             model_draft,
             steps,
         )
-        model_result = self._maybe_research_result(
-            context,
-            model_result,
-            steps,
-        )
+        if not any(step.agent == "Research Agent" for step in steps):
+            model_result = self._maybe_research_result(
+                context,
+                model_result,
+                steps,
+            )
         return model_result, list(model_result.steps)
 
     def _run_local_binding_pipeline(
@@ -2825,12 +2916,20 @@ class BindingAgentOrchestrator:
         if result.task_frame is None and context.task_frame is not None:
             result = replace(result, task_frame=context.task_frame)
         memory_state = self.session_memory_agent.remember(context, result)
-        telemetry: dict[str, Any] = {}
+        budget = PipelineBudget.from_deadline(
+            started_at=context.request_started_at,
+            deadline=context.request_deadline,
+        )
+        telemetry: dict[str, Any] = {
+            "latency_ms": budget.elapsed_ms,
+            "budget_remaining_ms": round(budget.remaining * 1000.0, 1),
+        }
         if memory_state:
             telemetry["session_memory"] = memory_state
+        result_for_log = replace(result, telemetry=dict(telemetry))
         logged = self.mlflow_logger.log(
             context,
-            result,
+            result_for_log,
             provider=provider,
             model=getattr(self.mistral_agent, "model", ""),
         )

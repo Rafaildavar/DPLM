@@ -22,6 +22,7 @@ from app.services.binding_agent import (
     _norm,
 )
 from app.services.binding_agents.action_semantics import compile_action_candidate
+from app.services.binding_agents.budget import PipelineBudget
 from app.services.user_command_sync import validate_action_spec
 
 
@@ -486,7 +487,13 @@ class SourceBackedResearchProvider:
 class AppleWebResearchProvider:
     """Allowlisted web adapter for official Apple action recipes."""
 
-    def __init__(self, *, enabled: bool | None = None, timeout: float = 4.0) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool | None = None,
+        timeout: float = 2.0,
+        max_pages: int = 1,
+    ) -> None:
         self.enabled = (
             str(os.getenv(RESEARCH_WEB_ENV) or "").strip().lower()
             in {"1", "true", "yes", "on"}
@@ -494,6 +501,7 @@ class AppleWebResearchProvider:
             else enabled
         )
         self.timeout = timeout
+        self.max_pages = max(1, min(3, int(max_pages)))
 
     def research(self, context: BindingAgentContext) -> ResearchRecipe | None:
         if not self.enabled:
@@ -501,10 +509,16 @@ class AppleWebResearchProvider:
         query = (
             f"site:support.apple.com macOS keyboard shortcut {context.prompt}"
         )
-        for url in self._search_urls(query)[:3]:
+        search_timeout = self._remaining_timeout(context)
+        if search_timeout <= 0.0:
+            return None
+        for url in self._search_urls(query, timeout=search_timeout)[: self.max_pages]:
             if not self._is_allowed_url(url):
                 continue
-            page = self._fetch_text(url)
+            page_timeout = self._remaining_timeout(context)
+            if page_timeout <= 0.0:
+                break
+            page = self._fetch_text(url, timeout=page_timeout)
             if not page:
                 continue
             recipe = self._recipe_from_page(context, url, page)
@@ -512,11 +526,11 @@ class AppleWebResearchProvider:
                 return recipe
         return None
 
-    def _search_urls(self, query: str) -> list[str]:
+    def _search_urls(self, query: str, *, timeout: float | None = None) -> list[str]:
         search_url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode(
             {"q": query}
         )
-        text = self._fetch_text(search_url)
+        text = self._fetch_text(search_url, timeout=timeout)
         urls: list[str] = []
         for raw in re.findall(r"href=[\"']([^\"']+)[\"']", text):
             value = html.unescape(raw)
@@ -529,13 +543,16 @@ class AppleWebResearchProvider:
                 urls.append(value)
         return urls
 
-    def _fetch_text(self, url: str) -> str:
+    def _fetch_text(self, url: str, *, timeout: float | None = None) -> str:
         try:
             request = urllib.request.Request(
                 url,
                 headers={"User-Agent": "GestureBindResearchAgent/1.0"},
             )
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout if timeout is None else max(0.1, timeout),
+            ) as response:
                 raw = response.read(700_000)
         except Exception:
             return ""
@@ -549,6 +566,15 @@ class AppleWebResearchProvider:
     def _is_allowed_url(self, url: str) -> bool:
         host = urllib.parse.urlparse(url).netloc.lower()
         return host.endswith("support.apple.com") or host.endswith("developer.apple.com")
+
+    def _remaining_timeout(self, context: BindingAgentContext) -> float:
+        if context.request_deadline <= 0.0:
+            return self.timeout
+        budget = PipelineBudget.from_deadline(
+            started_at=context.request_started_at,
+            deadline=context.request_deadline,
+        )
+        return budget.timeout_for(self.timeout)
 
     def _recipe_from_page(
         self,
@@ -672,6 +698,24 @@ class ResearchAgent:
                     "durationMs": _elapsed_ms(started),
                 },
             )
+
+        if context.request_deadline > 0.0:
+            budget = PipelineBudget.from_deadline(
+                started_at=context.request_started_at,
+                deadline=context.request_deadline,
+            )
+            if budget.remaining <= 0.15:
+                return AgentStep(
+                    self.name,
+                    "skipped",
+                    "Бюджет ответа исчерпан до внешнего research.",
+                    {
+                        "action_spec": {},
+                        "source": "research_budget_exhausted",
+                        "researchPipeline": substeps,
+                        "durationMs": _elapsed_ms(started),
+                    },
+                )
 
         recipe = self.provider.research(context)
         validator_step = self.validator.run(

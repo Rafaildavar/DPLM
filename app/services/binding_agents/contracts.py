@@ -155,6 +155,8 @@ class BindingAgentContext:
     task_frame: TaskFrame | None = None
     session_id: str = ""
     session_state: dict[str, Any] = field(default_factory=dict)
+    request_started_at: float = 0.0
+    request_deadline: float = 0.0
 
 
 @dataclass(frozen=True)

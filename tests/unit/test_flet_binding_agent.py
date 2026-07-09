@@ -28,7 +28,11 @@ from app.services.binding_agents.tools import (
     resolve_gesture,
     validate_binding_contract,
 )
-from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
+from app.services.binding_agent import (
+    BindingAgentMlflowLogger,
+    BindingAgentOrchestrator,
+    MistralBindingAgent,
+)
 from app.services.binding_agent import BindingAgentContext
 from app.services.binding_agents.research import (
     ResearchAgent,
@@ -481,7 +485,7 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         assert "intent=create_binding" in payload["messages"][1]["content"]
         assert "жест cntrz" in payload["messages"][1]["content"]
         assert request.get_header("Authorization") == "Bearer test-key"
-        assert timeout == 25.0
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -554,7 +558,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
         assert "Локальный черновик ответа" in payload["messages"][1]["content"]
         assert "GestureBind" in payload["messages"][1]["content"]
         assert "Верни только markdown-текст" in payload["messages"][0]["content"]
-        assert timeout == 25.0
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -607,7 +611,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
         assert "Интент: project_question" in payload["messages"][1]["content"]
         assert "Блок: project_question" in payload["messages"][1]["content"]
         assert "Перефразируй ответ по проекту GestureBind" in payload["messages"][1]["content"]
-        assert timeout == 25.0
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -861,7 +865,12 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
     monkeypatch.setenv("DPLM_BINDING_AGENT_MLFLOW_EXPERIMENT", "AgentFlow")
     monkeypatch.setitem(sys.modules, "mlflow", FakeMlflow)
 
-    result = BindingAgentOrchestrator().run(
+    result = BindingAgentOrchestrator(
+        mlflow_logger=BindingAgentMlflowLogger(
+            enabled=True,
+            async_mode=False,
+        )
+    ).run(
         "жест palm открывает Safari",
         GESTURES,
     )

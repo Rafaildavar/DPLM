@@ -57,6 +57,11 @@ class IntentAgent:
         if task.alternatives:
             data["semanticIntent"] = task.alternatives[0][0]
             data["semanticScore"] = round(task.alternatives[0][1], 4)
+            second_score = task.alternatives[1][1] if len(task.alternatives) > 1 else 0.0
+            data["routeMargin"] = round(
+                max(0.0, task.alternatives[0][1] - second_score),
+                4,
+            )
         return AgentStep(self.name, status, message, data)
 
 

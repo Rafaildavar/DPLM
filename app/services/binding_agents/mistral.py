@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from app.services.binding_agents.budget import PipelineBudget
+from app.services.binding_agents.privacy import redact_payload, redact_text
 from app.services.binding_agent import (
     AGENT_ACTION_LABELS,
     MISTRAL_API_KEY_ENV,
@@ -48,7 +50,7 @@ class MistralBindingAgent:
         api_key: str | None = None,
         model: str | None = None,
         api_url: str | None = None,
-        timeout: float = 25.0,
+        timeout: float = 8.0,
         urlopen: Any = None,
     ) -> None:
         self._load_dotenv()
@@ -81,6 +83,17 @@ class MistralBindingAgent:
             )
 
         payload = self._build_payload(context, intent=intent, block=block)
+        request_timeout = self._request_timeout(context)
+        if request_timeout <= 0.0:
+            return (
+                AgentStep(
+                    self.name,
+                    "skipped",
+                    "Бюджет ответа исчерпан до вызова Mistral.",
+                    {"model": self.model, "durationMs": _elapsed_ms(started)},
+                ),
+                None,
+            )
         request = urllib.request.Request(
             self.api_url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -92,7 +105,7 @@ class MistralBindingAgent:
             method="POST",
         )
         try:
-            response = self.urlopen(request, timeout=self.timeout)
+            response = self.urlopen(request, timeout=request_timeout)
             try:
                 raw = response.read()
             finally:
@@ -105,7 +118,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API вернул HTTP {exc.code}: {detail}",
+                    f"Mistral API вернул HTTP {exc.code}: {redact_text(detail)}",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -115,7 +128,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API недоступен: {exc}",
+                    f"Mistral API недоступен: {redact_text(str(exc))}",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -147,6 +160,7 @@ class MistralBindingAgent:
                     "purpose": "binding_parse",
                     "temperature": payload.get("temperature"),
                     "durationMs": _elapsed_ms(started),
+                    "timeoutMs": round(request_timeout * 1000.0, 1),
                     "localPromptPreview": _short_text(
                         str(payload["messages"][1]["content"]),
                         360,
@@ -188,6 +202,23 @@ class MistralBindingAgent:
             block=block,
             base_answer=base_answer,
         )
+        request_timeout = self._request_timeout(context)
+        if request_timeout <= 0.0:
+            return (
+                AgentStep(
+                    self.name,
+                    "skipped",
+                    "Бюджет ответа исчерпан до перефразирования.",
+                    {
+                        "model": self.model,
+                        "intent": intent,
+                        "block": block,
+                        "purpose": "answer_rewrite",
+                        "durationMs": _elapsed_ms(started),
+                    },
+                ),
+                None,
+            )
         request = urllib.request.Request(
             self.api_url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -199,7 +230,7 @@ class MistralBindingAgent:
             method="POST",
         )
         try:
-            response = self.urlopen(request, timeout=self.timeout)
+            response = self.urlopen(request, timeout=request_timeout)
             try:
                 raw = response.read()
             finally:
@@ -212,7 +243,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API вернул HTTP {exc.code}: {detail}",
+                    f"Mistral API вернул HTTP {exc.code}: {redact_text(detail)}",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -228,7 +259,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API недоступен: {exc}",
+                    f"Mistral API недоступен: {redact_text(str(exc))}",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -287,6 +318,7 @@ class MistralBindingAgent:
                     "purpose": "answer_rewrite",
                     "temperature": payload.get("temperature"),
                     "durationMs": _elapsed_ms(started),
+                    "timeoutMs": round(request_timeout * 1000.0, 1),
                     "localPromptPreview": _short_text(
                         str(payload["messages"][1]["content"]),
                         360,
@@ -311,6 +343,8 @@ class MistralBindingAgent:
         gestures_text = ", ".join(labels) if labels else "нет известных жестов"
         actions_text = ", ".join(sorted(AGENT_ACTION_LABELS))
         local_prompt = self._local_binding_prompt(context, intent=intent, block=block)
+        safe_session_state = redact_payload(context.session_state or {})
+        safe_draft_state = redact_payload(context.draft_state or {})
         system_prompt = (
             "Ты семантический агент GestureBind для привязки жестов к действиям macOS. "
             "Верни только JSON без markdown. Не исполняй команды. "
@@ -329,14 +363,14 @@ class MistralBindingAgent:
             "свайп влево=swipe_left, свайп вправо=swipe_right."
         )
         user_prompt = (
-            f"Локальный перефраз интента для LLM:\n{local_prompt}\n\n"
+            f"Локальный перефраз интента для LLM:\n{redact_text(local_prompt)}\n\n"
             f"Известные жесты: {gestures_text}\n"
             f"Выбранный жест в UI: {context.current_gesture or 'нет'}\n"
             "Структурированная память активной задачи JSON:\n"
-            f"{json.dumps(context.session_state or {}, ensure_ascii=False)}\n"
+            f"{json.dumps(safe_session_state, ensure_ascii=False)}\n"
             "Разрешённый черновик активной задачи JSON:\n"
-            f"{json.dumps(context.draft_state or {}, ensure_ascii=False)}\n"
-            f"Фраза пользователя: {context.prompt}"
+            f"{json.dumps(safe_draft_state, ensure_ascii=False)}\n"
+            f"Фраза пользователя: {redact_text(context.prompt)}"
         )
         return {
             "model": self.model,
@@ -436,11 +470,12 @@ class MistralBindingAgent:
             f"Интент: {intent}\n"
             f"Блок: {block}\n"
             f"Локальная задача для LLM: {task}\n\n"
-            f"Фраза пользователя:\n{context.prompt}\n\n"
-            f"Диалоговая память:\n{_history_text(context.conversation_history) or 'нет'}\n\n"
+            f"Фраза пользователя:\n{redact_text(context.prompt)}\n\n"
+            f"Диалоговая память:\n{redact_text(_history_text(context.conversation_history)) or 'нет'}\n\n"
             "Текущий черновик JSON:\n"
-            f"{json.dumps(context.draft_state or {}, ensure_ascii=False)}\n\n"
-            f"Локальный черновик ответа, который нужно только перефразировать:\n{base_answer}"
+            f"{json.dumps(redact_payload(context.draft_state or {}), ensure_ascii=False)}\n\n"
+            "Локальный черновик ответа, который нужно только перефразировать:\n"
+            f"{redact_text(base_answer)}"
         )
 
     def _temperature(self, env_name: str, default: float) -> float:
@@ -451,6 +486,15 @@ class MistralBindingAgent:
             return max(0.0, min(1.2, float(raw.replace(",", "."))))
         except ValueError:
             return default
+
+    def _request_timeout(self, context: BindingAgentContext) -> float:
+        if context.request_deadline <= 0.0:
+            return max(0.0, self.timeout)
+        budget = PipelineBudget.from_deadline(
+            started_at=context.request_started_at,
+            deadline=context.request_deadline,
+        )
+        return budget.timeout_for(self.timeout)
 
     def _message_content(self, api_response: dict[str, Any]) -> str:
         choice = api_response["choices"][0]
