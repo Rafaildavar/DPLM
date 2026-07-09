@@ -207,7 +207,8 @@ def save_gesture_binding(
         был ли он создан этим вызовом.
 
     Raises:
-        ValueError если жест с такой меткой не найден в БД.
+        ValueError если жест с такой меткой не найден в БД
+        или жест неактивен.
     """
     import json as _json
 
@@ -221,6 +222,10 @@ def save_gesture_binding(
     gesture = session.query(Gesture).filter(Gesture.label == label).first()
     if gesture is None:
         raise ValueError(f"Жест «{label}» не найден в БД")
+    if not bool(gesture.is_active):
+        raise ValueError(
+            f"Жест «{label}» неактивен и недоступен для привязки"
+        )
 
     existing_for_gesture = (
         session.query(Command).filter(Command.gesture_id == gesture.id).first()

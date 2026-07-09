@@ -221,6 +221,7 @@ class BindingAgentResult:
 
         unresolved_steps: list[dict[str, Any]] = []
         alias_proposal: dict[str, Any] = {}
+        unknown_gesture = ""
         for step in self.steps:
             raw_unresolved = step.data.get("unresolved_steps")
             if isinstance(raw_unresolved, list):
@@ -230,6 +231,9 @@ class BindingAgentResult:
             raw_alias = step.data.get("aliasProposal")
             if isinstance(raw_alias, dict) and raw_alias:
                 alias_proposal = dict(raw_alias)
+            raw_unknown = str(step.data.get("unknownGesture") or "").strip()
+            if raw_unknown:
+                unknown_gesture = raw_unknown
         return {
             "ok": self.ok,
             "canApply": self.can_apply,
@@ -249,6 +253,7 @@ class BindingAgentResult:
             "requiresConfirmation": self.requires_confirmation,
             "researchProposal": dict(self.research),
             "gestureAliasProposal": alias_proposal,
+            "unknownGesture": unknown_gesture,
             "unresolvedSteps": unresolved_steps,
             "agentSkills": skill_registry_cards(),
             "agentSkillPacks": skill_pack_cards(),

@@ -522,24 +522,42 @@ def _gesture_correction_target(text: str) -> str:
 def validate_binding_contract(
     gesture: str,
     action_spec: dict[str, Any],
+    *,
+    gesture_known: bool | None = None,
+    requested_gesture: str = "",
 ) -> AgentToolResult:
     missing: list[str] = []
-    if not gesture:
+    clean_gesture = str(gesture or "").strip()
+    clean_requested = str(requested_gesture or clean_gesture).strip()
+    known = bool(gesture_known)
+    unknown_gesture = clean_requested if clean_requested and not known else ""
+    if not clean_gesture or not known:
         missing.append("жест")
     if not action_spec:
         missing.append("действие")
     if missing:
+        if unknown_gesture:
+            message = (
+                f"Жест «{unknown_gesture}» отсутствует в текущем словаре. "
+                "Выберите существующий жест или сначала запишите новый."
+            )
+        else:
+            message = "Нужны уточнения: " + ", ".join(missing) + "."
         return AgentToolResult(
             "validate_binding_contract",
             "need_clarification",
-            "Нужны уточнения: " + ", ".join(missing) + ".",
-            {"missing": missing},
+            message,
+            {
+                "missing": missing,
+                "gestureKnown": known,
+                "unknownGesture": unknown_gesture,
+            },
         )
     return AgentToolResult(
         "validate_binding_contract",
         "ok",
         "Правила локальной политики пройдены.",
-        {"missing": []},
+        {"missing": [], "gestureKnown": True, "unknownGesture": ""},
     )
 
 

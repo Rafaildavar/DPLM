@@ -1575,6 +1575,31 @@ def _known_gesture_labels(context: BindingAgentContext) -> list[str]:
     ]
 
 
+def _canonical_known_gesture(
+    context: BindingAgentContext,
+    value: str,
+) -> str:
+    clean = str(value or "").strip().casefold()
+    if not clean:
+        return ""
+    return next(
+        (
+            label
+            for label in _known_gesture_labels(context)
+            if label.casefold() == clean
+        ),
+        "",
+    )
+
+
+def _unknown_gesture_from_steps(steps: list[AgentStep]) -> str:
+    for step in reversed(steps):
+        value = str(step.data.get("unknownGesture") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _normalize_gesture_phrase(value: str) -> str:
     raw = _norm(value)
     raw = raw.replace("_", " ").replace("-", " ")
@@ -2729,9 +2754,13 @@ class BindingAgentOrchestrator:
         steps = list(steps)
         gesture_step = self.gesture_agent.run(context)
         steps.append(gesture_step)
-        gesture = str(gesture_step.data.get("gesture") or "")
+        requested_gesture = str(gesture_step.data.get("gesture") or "").strip()
+        gesture = _canonical_known_gesture(context, requested_gesture)
+        gesture_known = bool(gesture_step.data.get("known") and gesture)
+        if not gesture_known:
+            gesture = ""
 
-        memory_step = self.memory_agent.run(context, gesture)
+        memory_step = self.memory_agent.run(context, requested_gesture)
         steps.append(memory_step)
 
         action_spec: dict[str, Any] = {}
@@ -2771,7 +2800,12 @@ class BindingAgentOrchestrator:
             action_spec = dict(research_step.data.get("action_spec") or {})
             research = dict(research_step.data.get("research") or {})
 
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         missing = list(policy_step.data.get("missing") or [])
         unresolved_steps = []
@@ -2825,6 +2859,7 @@ class BindingAgentOrchestrator:
             gesture=gesture,
             action_spec=action_spec,
             research=research,
+            unknown_gesture=(requested_gesture if not gesture_known else ""),
         )
         result = BindingAgentResult(
             ok=ok,
@@ -3040,7 +3075,15 @@ class BindingAgentOrchestrator:
         action_spec: dict[str, Any],
         research: dict[str, Any],
     ) -> BindingAgentResult:
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        requested_gesture = gesture or _unknown_gesture_from_steps(steps)
+        gesture = _canonical_known_gesture(context, gesture)
+        gesture_known = bool(gesture)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         missing = list(policy_step.data.get("missing") or [])
 
@@ -3070,6 +3113,7 @@ class BindingAgentOrchestrator:
             gesture=gesture,
             action_spec=action_spec,
             research=research,
+            unknown_gesture=(requested_gesture if not gesture_known else ""),
         )
         return BindingAgentResult(
             ok=ok,
@@ -3092,12 +3136,13 @@ class BindingAgentOrchestrator:
         draft: dict[str, Any],
         steps: list[AgentStep],
     ) -> BindingAgentResult:
-        gesture = str(draft.get("gestureLabel") or "").strip()
+        model_gesture = str(draft.get("gestureLabel") or "").strip()
         gesture_verification = self.gesture_agent.run(context)
         verified_gesture = str(gesture_verification.data.get("gesture") or "")
-        gesture_overridden = bool(verified_gesture and verified_gesture != gesture)
-        if verified_gesture:
-            gesture = verified_gesture
+        requested_gesture = verified_gesture or model_gesture
+        gesture = _canonical_known_gesture(context, requested_gesture)
+        gesture_known = bool(gesture)
+        gesture_overridden = bool(gesture and gesture != model_gesture)
         action_spec = dict(draft.get("actionSpec") or {})
         if action_spec:
             goal, semantic_candidate = compile_action_candidate(
@@ -3119,8 +3164,10 @@ class BindingAgentOrchestrator:
                         "goal": goal.to_dict(),
                         "candidate": semantic_candidate.to_dict(),
                         "gesture": {
-                            "model": str(draft.get("gestureLabel") or ""),
+                            "model": model_gesture,
+                            "requested": requested_gesture,
                             "verified": gesture,
+                            "known": gesture_known,
                             "source": gesture_verification.data.get("source"),
                             "overridden": gesture_overridden,
                         },
@@ -3137,15 +3184,20 @@ class BindingAgentOrchestrator:
             action_spec = {}
             draft = {**draft, "agentReply": ""}
             forced_missing.append("действие")
-        memory_step = self.memory_agent.run(context, gesture)
+        memory_step = self.memory_agent.run(context, requested_gesture)
         steps.append(memory_step)
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         model_missing = _normalize_missing(draft.get("missing"))
         missing = _unique_missing(
             model_missing + forced_missing + list(policy_step.data.get("missing") or [])
         )
-        if gesture:
+        if gesture_known:
             missing = [
                 item for item in missing if _norm(item) not in {"жест", "gesture"}
             ]
@@ -3163,8 +3215,10 @@ class BindingAgentOrchestrator:
             else ""
         )
 
-        command_name = str(draft.get("commandName") or "").strip()
-        if not command_name:
+        command_name = (
+            str(draft.get("commandName") or "").strip() if gesture_known else ""
+        )
+        if gesture_known and not command_name:
             command_name = str(validation_step.data.get("command_name") or "")
         if validation_error:
             error = validation_error
@@ -3179,8 +3233,8 @@ class BindingAgentOrchestrator:
         mode = str(draft.get("mode") or "").strip().lower()
         if mode not in {"single", "sequence"}:
             mode = "sequence" if action_spec.get("action") == "sequence" else "single"
-        summary = _normalize_summary(draft.get("summary"))
-        if not summary and action_spec:
+        summary = _normalize_summary(draft.get("summary")) if gesture_known else []
+        if (not summary or gesture_overridden) and action_spec:
             summary = [
                 f"Жест: {gesture or 'не выбран'}",
                 f"Команда: {command_name or _action_title(action_spec)}",
@@ -3188,12 +3242,16 @@ class BindingAgentOrchestrator:
             ]
         can_apply = bool(action_spec and not missing and not error)
         response = str(draft.get("agentReply") or "").strip()
-        if not response or self._external_reply_conflicts_with_contract(
-            response,
-            gesture=gesture,
-            action_spec=action_spec,
-            missing=missing,
-            error=error,
+        if (
+            not response
+            or not gesture_known
+            or self._external_reply_conflicts_with_contract(
+                response,
+                gesture=gesture,
+                action_spec=action_spec,
+                missing=missing,
+                error=error,
+            )
         ):
             response = self._response_text(
                 ok=ok,
@@ -3201,6 +3259,7 @@ class BindingAgentOrchestrator:
                 missing=missing,
                 gesture=gesture,
                 action_spec=action_spec,
+                unknown_gesture=(requested_gesture if not gesture_known else ""),
             )
         return BindingAgentResult(
             ok=ok,
@@ -3263,9 +3322,22 @@ class BindingAgentOrchestrator:
         gesture: str,
         action_spec: dict[str, Any],
         research: dict[str, Any] | None = None,
+        unknown_gesture: str = "",
     ) -> str:
         if error:
             return f"Локальный агент: не смог разобрать запрос. {error}."
+        if unknown_gesture:
+            action_note = (
+                "Действие уже распознано. "
+                if action_spec
+                else ""
+            )
+            return (
+                f"**Жест `{unknown_gesture}` не найден**\n\n"
+                f"{action_note}Выберите жест из текущего словаря "
+                "или сначала запишите и обучите новый жест. "
+                "До этого привязка не будет применена."
+            )
         if missing:
             if "шаги сценария" in missing:
                 return (

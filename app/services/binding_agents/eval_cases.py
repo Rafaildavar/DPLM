@@ -265,9 +265,9 @@ BINDING_AGENT_EVAL_CASES: tuple[BindingAgentEvalCase, ...] = (
     ),
     _case(
         "abstract_workday_goal",
-        "привяжи sh3 к открытию моего рабочего дня",
+        "привяжи palm к открытию моего рабочего дня",
         can_apply=False,
-        gesture="sh3",
+        gesture="palm",
         missing=("действие",),
         tags=("abstention", "abstract"),
     ),

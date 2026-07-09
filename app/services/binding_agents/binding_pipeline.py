@@ -79,7 +79,10 @@ class MemoryAgent:
         elif gesture and gesture.lower() in known:
             message = "Жест есть в текущем списке; начата новая задача."
         elif gesture:
-            message = "Жест принят как typed label; БД проверит его при сохранении."
+            message = (
+                "Жеста нет в активном словаре; "
+                "привязка заблокирована до выбора или записи жеста."
+            )
         else:
             message = "Новая задача не наследует жест из старого диалога."
         return AgentStep(
@@ -97,8 +100,20 @@ class MemoryAgent:
 class PolicyAgent:
     name = "Policy Agent"
 
-    def run(self, gesture: str, action_spec: dict[str, Any]) -> AgentStep:
-        result = validate_binding_contract(gesture, action_spec)
+    def run(
+        self,
+        gesture: str,
+        action_spec: dict[str, Any],
+        *,
+        gesture_known: bool | None = None,
+        requested_gesture: str = "",
+    ) -> AgentStep:
+        result = validate_binding_contract(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         return AgentStep(
             self.name,
             result.status,

@@ -29,6 +29,7 @@ from app.services.binding_agents.tools import (
     validate_binding_contract,
 )
 from app.services.binding_agent import (
+    AgentStep,
     BindingAgentMlflowLogger,
     BindingAgentOrchestrator,
     MistralBindingAgent,
@@ -103,6 +104,8 @@ def test_binding_agent_tools_expose_stable_contracts():
     policy = validate_binding_contract(
         gesture.payload["gesture"],
         sequence.payload["action_spec"],
+        gesture_known=bool(gesture.payload["known"]),
+        requested_gesture=str(gesture.payload["gesture"]),
     )
 
     assert gesture.tool == "resolve_gesture"
@@ -327,22 +330,25 @@ def test_binding_agent_uses_dialog_memory_for_missing_gesture():
     assert gesture_step["data"]["source"] == "session_memory"
 
 
-def test_binding_agent_uses_explicit_typed_gesture_from_prompt():
+def test_binding_agent_rejects_explicit_typed_gesture_missing_from_catalog():
     draft = build_agent_binding_draft(
         "жест cntrz привяжи к открытию safari",
         GESTURES,
     )
 
-    assert draft["ok"] is True
-    assert draft["missing"] == []
-    assert draft["gestureLabel"] == "cntrz"
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["missing"] == ["жест"]
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "cntrz"
     assert draft["actionSpec"] == {
         "action": "open_app",
         "platform": "macos",
         "app": "Safari",
     }
     assert "Gesture Agent" in {item["agent"] for item in draft["agentTrace"]}
-    assert draft["agentReply"].startswith("Локальный агент: понял")
+    assert "cntrz" in draft["agentReply"]
+    assert "не найден" in draft["agentReply"]
 
 
 def test_binding_agent_prompt_gesture_beats_selected_dropdown_gesture():
@@ -374,9 +380,11 @@ def test_binding_agent_typed_unknown_gesture_does_not_fallback_to_selected():
         provider="local",
     )
 
-    assert draft["ok"] is True
-    assert draft["canApply"] is True
-    assert draft["gestureLabel"] == "zoom"
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "zoom"
+    assert draft["missing"] == ["жест"]
     assert draft["actionSpec"] == {
         "action": "volume_up",
         "platform": "macos",
@@ -385,6 +393,31 @@ def test_binding_agent_typed_unknown_gesture_does_not_fallback_to_selected():
         item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
     )
     assert gesture_step["data"]["source"] == "typed_query"
+
+
+def test_binding_agent_rejects_palm_when_current_catalog_has_no_palm():
+    available = [
+        {"label": "2finger"},
+        {"label": "SwipeLeft"},
+        {"label": "diagonal"},
+        {"label": "gun"},
+        {"label": "hand"},
+        {"label": "like"},
+        {"label": "onefinger"},
+        {"label": "zoom"},
+    ]
+
+    draft = build_agent_binding_draft(
+        "привяжи palm к открытию Safari",
+        available,
+        provider="local",
+    )
+
+    assert draft["canApply"] is False
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "palm"
+    assert draft["missing"] == ["жест"]
+    assert draft["actionSpec"]["action"] == "open_app"
 
 
 def test_binding_agent_resolves_russian_like_alias_to_like_gesture():
@@ -434,12 +467,12 @@ def test_binding_agent_does_not_treat_workday_goal_as_application():
 
 def test_binding_agent_orchestrator_returns_multi_agent_trace():
     result = BindingAgentOrchestrator().run(
-        "жест cntrz привяжи к открытию safari",
+        "жест ctrlz привяжи к открытию safari",
         GESTURES,
     )
 
     assert result.ok is True
-    assert result.gesture_label == "cntrz"
+    assert result.gesture_label == "ctrlz"
     assert result.action_spec["action"] == "open_app"
     assert [step.agent for step in result.steps] == [
         "Guardrails Agent",
@@ -464,15 +497,15 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         def read(self):
             content = json.dumps(
                 {
-                    "gestureLabel": "cntrz",
-                    "commandName": "cntrz: Открыть Safari",
+                    "gestureLabel": "ctrlz",
+                    "commandName": "ctrlz: Открыть Safari",
                     "mode": "single",
                     "actionSpec": {
                         "action": "open_app",
                         "platform": "macos",
                         "app": "Safari",
                     },
-                    "summary": ["Жест: cntrz", "Действие: Открыть Safari"],
+                    "summary": ["Жест: ctrlz", "Действие: Открыть Safari"],
                     "agentReply": "Mistral: предложение готово.",
                 },
                 ensure_ascii=False,
@@ -491,7 +524,7 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         assert payload["temperature"] == 0.25
         assert "Локальный перефраз интента для LLM" in payload["messages"][1]["content"]
         assert "intent=create_binding" in payload["messages"][1]["content"]
-        assert "жест cntrz" in payload["messages"][1]["content"]
+        assert "жест ctrlz" in payload["messages"][1]["content"]
         assert request.get_header("Authorization") == "Bearer test-key"
         assert 0 < timeout <= 8.0
         return FakeResponse()
@@ -502,13 +535,13 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         urlopen=fake_urlopen,
     )
     result = BindingAgentOrchestrator(mistral_agent=agent).run(
-        "жест cntrz привяжи к открытию safari",
+        "жест ctrlz привяжи к открытию safari",
         GESTURES,
         provider="mistral",
     )
 
     assert result.ok is True
-    assert result.gesture_label == "cntrz"
+    assert result.gesture_label == "ctrlz"
     assert result.action_spec == {
         "action": "open_app",
         "platform": "macos",
@@ -528,6 +561,48 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
     ]
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["durationMs"] >= 0
+
+
+def test_binding_agent_rejects_gesture_invented_by_mistral(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_LOCAL_FIRST", "0")
+
+    class InventingModel:
+        model = "inventing-model"
+
+        def run(self, _context, *, intent, block):
+            return (
+                AgentStep(
+                    "Mistral Agent",
+                    "ok",
+                    "Model draft received.",
+                    {"intent": intent, "block": block},
+                ),
+                {
+                    "gestureLabel": "palm",
+                    "commandName": "palm: Открыть Safari",
+                    "mode": "single",
+                    "actionSpec": {
+                        "action": "open_app",
+                        "platform": "macos",
+                        "app": "Safari",
+                    },
+                    "agentReply": "Готово к сохранению.",
+                },
+            )
+
+    result = BindingAgentOrchestrator(mistral_agent=InventingModel()).run(
+        "привяжи palm к открытию Safari",
+        [{"label": "hand"}, {"label": "zoom"}],
+        provider="mistral",
+    )
+    draft = result.to_legacy_draft()
+
+    assert result.can_apply is False
+    assert result.gesture_label == ""
+    assert result.missing == ["жест"]
+    assert draft["unknownGesture"] == "palm"
+    assert "palm" in result.response_text
+    assert "не найден" in result.response_text
 
 
 def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monkeypatch):
@@ -1595,6 +1670,96 @@ def test_binding_agent_ui_status_explains_missing_sequence_gesture():
     assert status == "Выберите жест для сценария"
     assert color
     assert "привяжи это" in view._agent_missing_text(draft)
+
+
+def test_binding_agent_ui_refuses_external_ready_draft_with_unknown_gesture():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return [{"label": "hand"}]
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def validate_action_spec_json(self, _spec_json):
+            return ""
+
+        def validate_command_name(self, _name):
+            return ""
+
+        def save_binding(self, *_args):
+            raise AssertionError("Неизвестный жест не должен дойти до сохранения")
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    view = BindingsView(None, FakeController())
+    view._gestures = [{"label": "hand"}]
+    view._last_agent_draft = {
+        "ok": True,
+        "canApply": True,
+        "missing": [],
+        "gestureLabel": "palm",
+        "mode": "single",
+        "commandName": "palm: Открыть Safari",
+        "actionSpec": {
+            "action": "open_app",
+            "platform": "macos",
+            "app": "Safari",
+        },
+    }
+
+    view._on_agent_apply_click(None)
+
+    assert view._last_agent_draft["canApply"] is False
+    assert view._last_agent_draft["gestureLabel"] == ""
+    assert view._last_agent_draft["unknownGesture"] == "palm"
+    assert view._gesture_dd.value is None
+    assert view._agent_status.value == "Жест не найден"
+
+
+def test_binding_agent_ui_watchdog_finishes_stalled_request():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return GESTURES
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    view = BindingsView(None, FakeController())
+    view._gestures = GESTURES
+    view._agent_request_id = 4
+    view._agent_active_request_id = 4
+    view._start_agent_send_state("привяжи palm", animate=False)
+
+    view._expire_agent_request(4, "привяжи palm", timeout=10.75)
+
+    assert view._agent_active_request_id == 0
+    assert view._agent_request_id == 5
+    assert view._last_agent_draft["timedOut"] is True
+    assert view._last_agent_draft["canApply"] is False
+    assert view._agent_status.value == "Время ожидания истекло"
+    assert view._agent_dialog_messages[-1]["role"] == "agent"
 
 
 def test_binding_agent_answer_mode_renders_visible_answer_panel():

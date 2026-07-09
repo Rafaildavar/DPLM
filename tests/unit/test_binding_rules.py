@@ -344,6 +344,20 @@ def test_save_binding_unknown_gesture_raises(memory_session):
         save_gesture_binding(memory_session, "nope", "X", {"action": "open_app", "app": "Safari"})
 
 
+def test_save_binding_inactive_gesture_raises(memory_session):
+    gesture = Gesture(label="inactive", is_active=False)
+    memory_session.add(gesture)
+    memory_session.commit()
+
+    with pytest.raises(ValueError, match="неактивен"):
+        save_gesture_binding(
+            memory_session,
+            "inactive",
+            "X",
+            {"action": "open_app", "app": "Safari"},
+        )
+
+
 def test_save_binding_rebind_creates_separate_commands(memory_session):
     """
     Регрессия: ранее saveBinding переименовывал старую команду вместо отвязки.

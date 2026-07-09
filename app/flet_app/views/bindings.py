@@ -48,6 +48,7 @@ from app.services.binding_agents.action_ontology import (
     ACTION_START_PATTERN,
     parse_action_intent,
 )
+from app.services.binding_agents.budget import configured_timeout
 from app.services.binding_agents.research import approve_research_proposal
 from app.services.gesture_aliases import approve_gesture_alias_proposal
 
@@ -1000,6 +1001,8 @@ class BindingsView:
         self._last_agent_draft: dict[str, Any] | None = None
         self._agent_dialog_messages: list[dict[str, str]] = []
         self._agent_request_id = 0
+        self._agent_active_request_id = 0
+        self._agent_request_lock = threading.Lock()
         self._agent_session_id = f"bindings-{id(self)}"
         self._agent_input = ft.TextField(
             hint_text="Спросите агента привязки",
@@ -2561,9 +2564,16 @@ class BindingsView:
             animate = self._page is not None
             self._start_agent_send_state(prompt, animate=animate)
             if animate:
+                with self._agent_request_lock:
+                    self._agent_active_request_id = request_id
                 threading.Thread(
                     target=self._run_agent_request,
                     args=(request_id, prompt, history, draft_state, bindings),
+                    daemon=True,
+                ).start()
+                threading.Thread(
+                    target=self._watch_agent_request_timeout,
+                    args=(request_id, prompt),
                     daemon=True,
                 ).start()
                 return
@@ -2649,8 +2659,14 @@ class BindingsView:
         *,
         animate: bool,
     ) -> None:
-        if animate and request_id != self._agent_request_id:
-            return
+        if animate:
+            with self._agent_request_lock:
+                if (
+                    request_id != self._agent_request_id
+                    or request_id != self._agent_active_request_id
+                ):
+                    return
+                self._agent_active_request_id = 0
         if prompt:
             is_answer = str(draft.get("mode") or "") == "answer"
             self._mark_agent_user_messages_sent()
@@ -2684,6 +2700,49 @@ class BindingsView:
             self._animate_agent_response(request_id, draft)
         else:
             self._set_agent_draft(draft)
+
+    def _watch_agent_request_timeout(self, request_id: int, prompt: str) -> None:
+        timeout = configured_timeout() + 0.75
+        time.sleep(timeout)
+        self._expire_agent_request(request_id, prompt, timeout=timeout)
+
+    def _expire_agent_request(
+        self,
+        request_id: int,
+        prompt: str,
+        *,
+        timeout: float,
+    ) -> None:
+        with self._agent_request_lock:
+            if request_id != self._agent_active_request_id:
+                return
+            self._agent_active_request_id = 0
+            self._agent_request_id += 1
+            timeout_request_id = self._agent_request_id
+        seconds = max(1, int(round(timeout)))
+        draft = {
+            "ok": True,
+            "canApply": False,
+            "mode": "answer",
+            "timedOut": True,
+            "error": "",
+            "missing": [],
+            "gestureLabel": "",
+            "commandName": "",
+            "actionSpec": {},
+            "agentReply": (
+                "**Ответ занял слишком много времени**\n\n"
+                f"Я остановил ожидание через {seconds} секунд. "
+                "Привязка не сохранена. Попробуйте повторить запрос или "
+                "сформулировать действие точнее."
+            ),
+        }
+        self._complete_agent_request(
+            timeout_request_id,
+            prompt,
+            draft,
+            animate=False,
+        )
 
     def _mark_agent_user_messages_sent(self) -> None:
         for message in self._agent_dialog_messages:
@@ -2826,6 +2885,10 @@ class BindingsView:
         )
 
     def _agent_status_for_draft(self, draft: dict[str, Any]) -> tuple[str, str]:
+        if draft.get("timedOut"):
+            return "Время ожидания истекло", COLOR_WARNING
+        if str(draft.get("unknownGesture") or "").strip():
+            return "Жест не найден", COLOR_WARNING
         mode = str(draft.get("mode") or "")
         if mode == "answer":
             return "Ответ", COLOR_ACCENT
@@ -2853,6 +2916,13 @@ class BindingsView:
     def _agent_missing_text(self, draft: dict[str, Any]) -> str:
         missing = set(str(item) for item in list(draft.get("missing") or []))
         spec = dict(draft.get("actionSpec") or {})
+        unknown_gesture = str(draft.get("unknownGesture") or "").strip()
+        if unknown_gesture:
+            return (
+                f"**Жест `{unknown_gesture}` отсутствует в текущем словаре.**\n\n"
+                "Выберите доступный жест слева или сначала "
+                "запишите и обучите новый жест на экране «Жесты»."
+            )
         if "жест" in missing and spec.get("action") == "sequence":
             return (
                 "**Осталось выбрать жест.**\n\n"
@@ -2860,10 +2930,18 @@ class BindingsView:
                 "`привяжи это к swipe_up` или выберите жест слева."
             )
         if "жест" in missing:
+            example = next(
+                (
+                    str(item.get("label") or "").strip()
+                    for item in self._gestures
+                    if str(item.get("label") or "").strip()
+                ),
+                "имя_жеста",
+            )
             return (
                 "**Осталось выбрать жест.**\n\n"
                 "Напишите его в сообщении или выберите слева. Например: "
-                "`привяжи это к palm`."
+                f"`привяжи это к {example}`."
             )
         if "действие" in missing:
             return (
@@ -2937,6 +3015,8 @@ class BindingsView:
             return
         if str(draft.get("mode") or "") == "mutation":
             return
+        if not self._ensure_agent_draft_gesture(draft):
+            return
         self._apply_agent_draft(draft)
         self._show_message(info="Предложение агента перенесено в форму")
         self._agent_status.value = "Форма заполнена"
@@ -2960,6 +3040,8 @@ class BindingsView:
             return
         if str(draft.get("mode") or "") == "mutation":
             self._confirm_agent_mutation(draft)
+            return
+        if not self._ensure_agent_draft_gesture(draft):
             return
         self._apply_agent_draft(draft)
         self._on_save_click(_e)
@@ -3547,8 +3629,50 @@ class BindingsView:
                 return category_id
         return ""
 
+    def _canonical_agent_gesture(self, value: str) -> str:
+        clean = str(value or "").strip().casefold()
+        if not clean:
+            return ""
+        return next(
+            (
+                str(item.get("label") or "").strip()
+                for item in self._gestures
+                if str(item.get("label") or "").strip().casefold() == clean
+            ),
+            "",
+        )
+
+    def _ensure_agent_draft_gesture(self, draft: dict[str, Any]) -> bool:
+        requested = str(draft.get("gestureLabel") or "").strip()
+        canonical = self._canonical_agent_gesture(requested)
+        if canonical:
+            draft["gestureLabel"] = canonical
+            return True
+        unknown = str(draft.get("unknownGesture") or requested).strip()
+        missing = list(draft.get("missing") or [])
+        if "жест" not in missing:
+            missing.append("жест")
+        self._set_agent_draft(
+            {
+                **draft,
+                "ok": False,
+                "canApply": False,
+                "missing": missing,
+                "gestureLabel": "",
+                "unknownGesture": unknown,
+                "agentReply": (
+                    f"**Жест `{unknown}` не найден**\n\n"
+                    "Привязка не применена. Выберите жест из словаря "
+                    "или сначала запишите новый."
+                ),
+            }
+        )
+        return False
+
     def _apply_agent_draft(self, draft: dict[str, Any]) -> None:
-        gesture = str(draft.get("gestureLabel") or "").strip()
+        gesture = self._canonical_agent_gesture(
+            str(draft.get("gestureLabel") or "")
+        )
         if gesture:
             self._gesture_dd.value = gesture
 
