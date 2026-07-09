@@ -69,17 +69,28 @@ class MemoryAgent:
             for item in context.gestures
             if str(item.get("label") or "").strip()
         }
-        if gesture and gesture.lower() in known:
-            message = "Жест есть в текущем списке."
+        relationship = str(
+            context.session_state.get("relationship") or "new_task"
+        )
+        if relationship == "correction":
+            message = "Применяю коррекцию только к активной задаче."
+        elif relationship == "continuation":
+            message = "Продолжаю активную задачу из структурированной памяти."
+        elif gesture and gesture.lower() in known:
+            message = "Жест есть в текущем списке; начата новая задача."
         elif gesture:
             message = "Жест принят как typed label; БД проверит его при сохранении."
         else:
-            message = "Нет жеста для проверки памяти."
+            message = "Новая задача не наследует жест из старого диалога."
         return AgentStep(
             self.name,
             "ok",
             message,
-            {"known": bool(gesture and gesture.lower() in known)},
+            {
+                "known": bool(gesture and gesture.lower() in known),
+                "relationship": relationship,
+                "sessionState": dict(context.session_state),
+            },
         )
 
 

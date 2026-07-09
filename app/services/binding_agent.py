@@ -2179,6 +2179,7 @@ from app.services.binding_agents import (
     RelevanceReviewerAgent,
     ResearchAgent,
     ScenarioAgent,
+    SessionMemoryAgent,
     ValidationAgent,
 )
 
@@ -2192,6 +2193,7 @@ class BindingAgentOrchestrator:
         mistral_agent: MistralBindingAgent | None = None,
         research_agent: ResearchAgent | None = None,
         mlflow_logger: BindingAgentMlflowLogger | None = None,
+        session_memory_agent: SessionMemoryAgent | None = None,
     ) -> None:
         self.intent_agent = IntentAgent()
         self.mistral_agent = mistral_agent or MistralBindingAgent()
@@ -2201,6 +2203,7 @@ class BindingAgentOrchestrator:
         self.action_agent = ActionAgent()
         self.crud_agent = BindingCrudAgent()
         self.scenario_agent = ScenarioAgent()
+        self.session_memory_agent = session_memory_agent or SessionMemoryAgent()
         self.memory_agent = MemoryAgent()
         self.policy_agent = PolicyAgent()
         self.validation_agent = ValidationAgent()
@@ -2297,6 +2300,7 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
+        context = self.session_memory_agent.prepare(context)
         task_frame = self.intent_agent.build_frame(context)
         context = replace(context, task_frame=task_frame)
         intent_step = self.intent_agent.run(context, frame=task_frame)
@@ -2820,12 +2824,18 @@ class BindingAgentOrchestrator:
     ) -> BindingAgentResult:
         if result.task_frame is None and context.task_frame is not None:
             result = replace(result, task_frame=context.task_frame)
-        telemetry = self.mlflow_logger.log(
+        memory_state = self.session_memory_agent.remember(context, result)
+        telemetry: dict[str, Any] = {}
+        if memory_state:
+            telemetry["session_memory"] = memory_state
+        logged = self.mlflow_logger.log(
             context,
             result,
             provider=provider,
             model=getattr(self.mistral_agent, "model", ""),
         )
+        if logged:
+            telemetry.update(logged)
         return replace(result, telemetry=telemetry) if telemetry else result
 
     def _maybe_research_result(
@@ -2942,6 +2952,11 @@ class BindingAgentOrchestrator:
         steps: list[AgentStep],
     ) -> BindingAgentResult:
         gesture = str(draft.get("gestureLabel") or "").strip()
+        gesture_verification = self.gesture_agent.run(context)
+        verified_gesture = str(gesture_verification.data.get("gesture") or "")
+        gesture_overridden = bool(verified_gesture and verified_gesture != gesture)
+        if verified_gesture:
+            gesture = verified_gesture
         action_spec = dict(draft.get("actionSpec") or {})
         if action_spec:
             goal, semantic_candidate = compile_action_candidate(
@@ -2962,6 +2977,12 @@ class BindingAgentOrchestrator:
                     {
                         "goal": goal.to_dict(),
                         "candidate": semantic_candidate.to_dict(),
+                        "gesture": {
+                            "model": str(draft.get("gestureLabel") or ""),
+                            "verified": gesture,
+                            "source": gesture_verification.data.get("source"),
+                            "overridden": gesture_overridden,
+                        },
                     },
                 )
             )

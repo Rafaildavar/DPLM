@@ -491,25 +491,7 @@ class TaskFrameExtractor:
             return True
         if context.draft_state.get("gestureLabel") or context.draft_state.get("actionSpec"):
             return True
-        labels = {
-            _norm(str(item.get("label") or ""))
-            for item in context.gestures
-            if str(item.get("label") or "").strip()
-        }
-        for item in reversed(context.conversation_history[-8:]):
-            if item.get("role") != "user":
-                continue
-            text = _norm(item.get("text") or "")
-            if any(
-                re.search(
-                    rf"(?<![a-zа-я0-9_]){re.escape(label)}(?![a-zа-я0-9_])",
-                    text,
-                )
-                for label in labels
-                if label
-            ):
-                return True
-        return False
+        return bool(context.session_state.get("inherited"))
 
     def _operation_for_intent(self, intent: str) -> TaskOperation:
         return {

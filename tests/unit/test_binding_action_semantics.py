@@ -1,6 +1,6 @@
 import os
 
-from app.services.binding_agent import BindingAgentOrchestrator
+from app.services.binding_agent import AgentStep, BindingAgentOrchestrator
 from app.services.binding_agents.action_semantics import (
     ActionCandidate,
     CandidateArbiter,
@@ -134,3 +134,38 @@ def test_semantic_router_reports_ranked_embedding_candidates_and_margin():
     assert route.method == "hybrid_embedding"
     assert route.margin > 0
     assert route.alternatives[0][0] == "update_binding"
+
+
+def test_model_gesture_is_overridden_by_verified_explicit_label(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_LOCAL_FIRST", "0")
+
+    class WrongGestureModel:
+        model = "test-model"
+
+        def run(self, _context, *, intent, block):
+            assert intent == "create_binding"
+            assert block == "binding"
+            return (
+                AgentStep("Mistral Agent", "ok", "Вернул JSON."),
+                {
+                    "gestureLabel": "hand",
+                    "commandName": "volume_up",
+                    "mode": "single",
+                    "actionSpec": {"action": "volume_up", "platform": "macos"},
+                    "missing": [],
+                    "agentReply": "Готово.",
+                },
+            )
+
+    result = BindingAgentOrchestrator(
+        mistral_agent=WrongGestureModel()
+    ).run(
+        "привяжи zoom к повышению звука",
+        GESTURES,
+        provider="mistral",
+    )
+
+    assert result.gesture_label == "zoom"
+    verifier = next(step for step in result.steps if step.agent == "Semantic Verifier")
+    assert verifier.data["gesture"]["overridden"] is True
+    assert verifier.data["gesture"]["verified"] == "zoom"

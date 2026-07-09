@@ -37,8 +37,9 @@ BINDING_SKILLS: tuple[AgentSkill, ...] = (
     ),
     AgentSkill(
         "memory.dialog_lookup",
-        "Dialog Memory",
-        "Достаёт жест или действие из предыдущих сообщений диалога.",
+        "Task-scoped Session Memory",
+        "Наследует слоты только из активной задачи и различает новую задачу, продолжение и коррекцию.",
+        version="2.0.0",
     ),
     AgentSkill(
         "action.parse",

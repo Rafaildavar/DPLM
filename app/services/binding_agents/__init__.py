@@ -25,6 +25,7 @@ __all__ = [
     "ResearchQueryPlanner",
     "ResearchRecipeValidator",
     "ScenarioAgent",
+    "SessionMemoryAgent",
     "SkillMemoryWriterAgent",
     "ValidationAgent",
 ]
@@ -72,6 +73,10 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.mistral import MistralBindingAgent
 
         return MistralBindingAgent
+    if name == "SessionMemoryAgent":
+        from app.services.binding_agents.session_memory import SessionMemoryAgent
+
+        return SessionMemoryAgent
     if name == "RelevanceReviewerAgent":
         from app.services.binding_agents.reviewer import RelevanceReviewerAgent
 

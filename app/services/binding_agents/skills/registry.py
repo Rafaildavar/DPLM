@@ -31,6 +31,7 @@ AGENT_DEFAULT_SKILLS: dict[str, list[str]] = {
     "Mistral Agent": ["action.parse", "gesture.resolve"],
     "Gesture Agent": ["gesture.resolve"],
     "Memory Agent": ["memory.dialog_lookup"],
+    "Session Memory Agent": ["memory.dialog_lookup"],
     "Scenario Agent": ["scenario.compose"],
     "Action Agent": ["action.parse"],
     "Binding CRUD Agent": ["binding.inspect", "binding.delete"],

@@ -312,7 +312,7 @@ def test_binding_agent_uses_dialog_memory_for_missing_gesture():
     gesture_step = next(
         item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
     )
-    assert gesture_step["data"]["source"] == "memory"
+    assert gesture_step["data"]["source"] == "session_memory"
 
 
 def test_binding_agent_uses_explicit_typed_gesture_from_prompt():
@@ -1473,7 +1473,7 @@ def test_binding_agent_continues_previous_draft_when_user_adds_gesture():
     action_step = next(
         item for item in second["agentTrace"] if item["agent"] == "Action Agent"
     )
-    assert action_step["data"]["source"] == "draft_state"
+    assert action_step["data"]["source"] == "session_memory"
 
 
 def test_binding_agent_submit_records_dialog_messages():

@@ -154,6 +154,7 @@ class BindingAgentContext:
     bindings: list[dict[str, Any]] = field(default_factory=list)
     task_frame: TaskFrame | None = None
     session_id: str = ""
+    session_state: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,7 @@ class BindingAgentResult:
                 for step in self.steps
             ],
             "telemetry": dict(self.telemetry),
+            "sessionState": dict(self.telemetry.get("session_memory") or {}),
             "mlflowRunId": str(self.telemetry.get("mlflow_run_id") or ""),
             "mlflowTrackingUri": str(
                 self.telemetry.get("mlflow_tracking_uri") or ""

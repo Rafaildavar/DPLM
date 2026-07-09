@@ -10,7 +10,6 @@ from app.services.binding_agent import (
     _action_title,
     _extract_scenario_name,
     _gesture_query_from_text,
-    _history_items,
     _known_gesture_labels,
     _match_gesture_label_in_text,
     _parse_action,
@@ -158,6 +157,29 @@ class AgentToolResult:
 def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
     labels = _known_gesture_labels(context)
     query = _gesture_query_from_text(context.prompt)
+    correction = _gesture_correction_target(context.prompt)
+    if correction:
+        corrected = _exact_known_label(correction, correction, labels)
+        if not corrected:
+            correction_match = GestureAliasRegistry().resolve(
+                correction,
+                labels=labels,
+                gestures=context.gestures,
+            )
+            if correction_match is not None and not correction_match.ambiguous:
+                corrected = correction_match.label
+        if corrected:
+            return AgentToolResult(
+                "resolve_gesture",
+                "ok",
+                f"Применил коррекцию жеста: {corrected}.",
+                {
+                    "gesture": corrected,
+                    "source": "correction",
+                    "known": True,
+                    "confidence": 1.0,
+                },
+            )
     exact_label = _exact_known_label(query, context.prompt, labels)
     if exact_label:
         return AgentToolResult(
@@ -272,50 +294,23 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
             },
         )
 
-    for item in reversed(_history_items(context.conversation_history)):
-        if item.get("role") != "user":
-            continue
-        alias_match = GestureAliasRegistry().resolve(
-            item.get("text") or "",
-            labels=labels,
-            gestures=context.gestures,
-        )
-        if alias_match is not None and not alias_match.ambiguous:
-            source = alias_match.source
-            if source in {"label", "label_words", "gesture_metadata:label"}:
-                source = "memory"
-            else:
-                source = f"memory:{source}"
-            return AgentToolResult(
-                "resolve_gesture",
-                "ok",
-                f"Взял жест из памяти диалога: {alias_match.label}.",
-                {
-                    "gesture": alias_match.label,
-                    "source": source,
-                    "known": True,
-                    "matchedAlias": alias_match.matched_alias,
-                    "confidence": alias_match.confidence,
-                },
-            )
-        gesture = _match_gesture_label_in_text(item.get("text") or "", labels)
-        if gesture:
-            known = gesture.lower() in known_labels
-            return AgentToolResult(
-                "resolve_gesture",
-                "ok",
-                f"Взял жест из памяти диалога: {gesture}.",
-                {"gesture": gesture, "source": "memory", "known": known},
-            )
-
     draft_gesture = str(context.draft_state.get("gestureLabel") or "").strip()
     if draft_gesture:
         known = draft_gesture.lower() in known_labels
+        inherited = bool(context.session_state.get("inherited"))
         return AgentToolResult(
             "resolve_gesture",
             "ok",
-            f"Взял жест из текущего черновика: {draft_gesture}.",
-            {"gesture": draft_gesture, "source": "draft_state", "known": known},
+            (
+                f"Взял жест из активной задачи: {draft_gesture}."
+                if inherited
+                else f"Взял жест из текущего черновика: {draft_gesture}."
+            ),
+            {
+                "gesture": draft_gesture,
+                "source": "session_memory" if inherited else "draft_state",
+                "known": known,
+            },
         )
 
     label = _selected_known_gesture(context, labels)
@@ -347,11 +342,19 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
 def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
     draft_spec = _draft_action_spec(context)
     if draft_spec and _is_draft_action_reference(context.prompt):
+        inherited = bool(context.session_state.get("inherited"))
         return AgentToolResult(
             "parse_macos_action",
             "ok",
-            f"Взял действие из текущего черновика: {_action_title(draft_spec)}.",
-            {"action_spec": draft_spec, "source": "draft_state"},
+            (
+                f"Взял действие из активной задачи: {_action_title(draft_spec)}."
+                if inherited
+                else f"Взял действие из текущего черновика: {_action_title(draft_spec)}."
+            ),
+            {
+                "action_spec": draft_spec,
+                "source": "session_memory" if inherited else "draft_state",
+            },
         )
 
     legacy_spec = _parse_action(context.prompt)
@@ -379,37 +382,20 @@ def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
     if spec is None:
         if draft_spec:
             spec = draft_spec
+            inherited = bool(context.session_state.get("inherited"))
             return AgentToolResult(
                 "parse_macos_action",
                 "ok",
-                f"Взял действие из текущего черновика: {_action_title(spec)}.",
-                {"action_spec": spec, "source": "draft_state"},
+                (
+                    f"Взял действие из активной задачи: {_action_title(spec)}."
+                    if inherited
+                    else f"Взял действие из текущего черновика: {_action_title(spec)}."
+                ),
+                {
+                    "action_spec": spec,
+                    "source": "session_memory" if inherited else "draft_state",
+                },
             )
-    if spec is None:
-        for item in reversed(_history_items(context.conversation_history)):
-            if item.get("role") != "user":
-                continue
-            history_text = item.get("text") or ""
-            history_legacy = _parse_action(history_text)
-            history_goal, history_candidate = compile_action_candidate(
-                history_text,
-                history_legacy,
-                source="dialog_memory",
-            )
-            history_choice = CandidateArbiter().choose((history_candidate,)).selected
-            if history_choice is not None:
-                spec = dict(history_choice.action_spec)
-                return AgentToolResult(
-                    "parse_macos_action",
-                    "ok",
-                    f"Взял действие из памяти: {_action_title(spec)}.",
-                    {
-                        "action_spec": spec,
-                        "source": "memory",
-                        "goal": history_goal.to_dict(),
-                        "candidate": history_choice.to_dict(),
-                    },
-                )
     if spec is None:
         return AgentToolResult(
             "parse_macos_action",
@@ -517,6 +503,19 @@ def _exact_known_label(query: str, prompt: str, labels: list[str]) -> str:
             re.IGNORECASE,
         ):
             return label
+    return ""
+
+
+def _gesture_correction_target(text: str) -> str:
+    raw = text or ""
+    patterns = (
+        r"(?:^|[,.;]\s*)не\s+[^,.;]+?[,;]?\s+а\s+(?P<target>[A-Za-zА-Яа-я0-9_.-]+)",
+        r"вместо\s+[A-Za-zА-Яа-я0-9_.-]+\s+(?:используй\s+)?(?P<target>[A-Za-zА-Яа-я0-9_.-]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, raw, re.IGNORECASE)
+        if match:
+            return str(match.group("target") or "").strip()
     return ""
 
 

@@ -332,8 +332,9 @@ class MistralBindingAgent:
             f"Локальный перефраз интента для LLM:\n{local_prompt}\n\n"
             f"Известные жесты: {gestures_text}\n"
             f"Выбранный жест в UI: {context.current_gesture or 'нет'}\n"
-            f"Диалоговая память:\n{_history_text(context.conversation_history) or 'нет'}\n"
-            "Текущий черновик JSON:\n"
+            "Структурированная память активной задачи JSON:\n"
+            f"{json.dumps(context.session_state or {}, ensure_ascii=False)}\n"
+            "Разрешённый черновик активной задачи JSON:\n"
             f"{json.dumps(context.draft_state or {}, ensure_ascii=False)}\n"
             f"Фраза пользователя: {context.prompt}"
         )
