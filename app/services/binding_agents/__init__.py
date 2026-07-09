@@ -19,6 +19,7 @@ __all__ = [
     "IntentAgent",
     "MemoryAgent",
     "MistralBindingAgent",
+    "MistralJudgeCompletion",
     "PolicyAgent",
     "RelevanceReviewerAgent",
     "ResearchAgent",
@@ -100,14 +101,20 @@ def __getattr__(name: str) -> Any:
             "ResearchRecipeValidator": ResearchRecipeValidator,
             "SkillMemoryWriterAgent": SkillMemoryWriterAgent,
         }[name]
-    if name in {"BindingAgentE2ECase", "BindingAgentLlmJudge"}:
+    if name in {
+        "BindingAgentE2ECase",
+        "BindingAgentLlmJudge",
+        "MistralJudgeCompletion",
+    }:
         from app.services.binding_agents.e2e_judge import (
             BindingAgentE2ECase,
             BindingAgentLlmJudge,
+            MistralJudgeCompletion,
         )
 
         return {
             "BindingAgentE2ECase": BindingAgentE2ECase,
             "BindingAgentLlmJudge": BindingAgentLlmJudge,
+            "MistralJudgeCompletion": MistralJudgeCompletion,
         }[name]
     raise AttributeError(name)

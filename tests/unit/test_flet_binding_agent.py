@@ -122,21 +122,29 @@ def test_binding_agent_eval_cases_cover_core_scenarios():
     dataset = binding_agent_eval_dataset()
 
     assert len(dataset) == len(BINDING_AGENT_EVAL_CASES)
-    assert len(BINDING_AGENT_EVAL_CASES) >= 8
+    assert len(BINDING_AGENT_EVAL_CASES) >= 30
 
     for case in BINDING_AGENT_EVAL_CASES:
         draft = build_agent_binding_draft(
             case.prompt,
             list(case.gestures),
             current_gesture=case.current_gesture,
+            bindings=list(case.bindings),
         )
         assert draft["intent"] == case.expected_intent, case.case_id
         assert draft["intentBlock"] == case.expected_block, case.case_id
         assert draft["mode"] == case.expected_mode, case.case_id
         assert draft["canApply"] is case.expected_can_apply, case.case_id
         assert tuple(draft["missing"]) == case.expected_missing, case.case_id
+        assert draft["gestureLabel"] == case.expected_gesture, case.case_id
         if case.expected_action:
             assert draft["actionSpec"]["action"] == case.expected_action, case.case_id
+        for key, value in case.expected_action_spec.items():
+            assert draft["actionSpec"].get(key) == value, case.case_id
+        if case.expected_sequence_steps is not None:
+            assert len(draft["actionSpec"].get("steps") or []) == case.expected_sequence_steps
+        assert draft["requiresConfirmation"] is case.expected_requires_confirmation
+        assert str(draft["mutation"].get("operation") or "") == case.expected_mutation
 
 
 def test_binding_agent_builds_open_app_draft():
@@ -900,8 +908,11 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
         for item in calls["spans"]
     )
     assert calls["eval_data"][0]["expectations"]["expected_status"] == "ready"
+    assert calls["eval_data"][0]["expectations"]["case_id"] == "open_app_binding"
+    assert calls["eval_data"][0]["expectations"]["expected_action_spec"]["app"] == "Safari"
     assert calls["eval_outputs"]["gestureLabel"] == "palm"
     assert "binding_agent_contract_ok" in calls["eval_scorers"]
+    assert "binding_agent_action_spec_ok" in calls["eval_scorers"]
 
 
 def test_binding_agent_builds_sequence_draft():

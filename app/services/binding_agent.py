@@ -1973,6 +1973,21 @@ class BindingAgentMlflowLogger:
     ) -> dict[str, Any]:
         if not _env_flag(BINDING_AGENT_GENAI_EVAL_ENV, default=False):
             return {}
+        from app.services.binding_agents.eval_cases import (
+            case_expectations,
+            find_binding_agent_eval_case,
+        )
+
+        golden_case = find_binding_agent_eval_case(
+            context.prompt,
+            current_gesture=context.current_gesture,
+        )
+        if golden_case is None:
+            return {
+                "mlflow_genai_eval": False,
+                "mlflow_genai_eval_reason": "no_golden_case",
+            }
+        expectations = case_expectations(golden_case)
         genai = getattr(mlflow, "genai", None)
         evaluate = getattr(genai, "evaluate", None)
         scorer = getattr(genai, "scorer", None)
@@ -1985,9 +2000,14 @@ class BindingAgentMlflowLogger:
             expectations=None,
             **_kwargs,
         ) -> bool:
-            if (expectations or {}).get("expected_status") == "answer":
-                return True
-            return bool(isinstance(outputs, dict) and outputs.get("gestureLabel"))
+            if not isinstance(outputs, dict):
+                return False
+            expected = expectations or {}
+            expected_gesture = str(expected.get("expected_gesture") or "")
+            actual = str(outputs.get("gestureLabel") or "")
+            if expected_gesture:
+                return actual == expected_gesture
+            return not actual
 
         @scorer
         def binding_agent_has_action(
@@ -1995,9 +2015,12 @@ class BindingAgentMlflowLogger:
             expectations=None,
             **_kwargs,
         ) -> bool:
-            if (expectations or {}).get("expected_status") == "answer":
-                return True
-            return bool(isinstance(outputs, dict) and outputs.get("actionSpec"))
+            if not isinstance(outputs, dict):
+                return False
+            expected_action = str((expectations or {}).get("expected_action") or "")
+            action_spec = outputs.get("actionSpec") or {}
+            actual_action = str(action_spec.get("action") or "") if isinstance(action_spec, dict) else ""
+            return actual_action == expected_action
 
         @scorer
         def binding_agent_contract_ok(outputs=None, expectations=None, **_kwargs) -> bool:
@@ -2014,17 +2037,34 @@ class BindingAgentMlflowLogger:
                 return bool(outputs.get("missing"))
             return not bool(outputs.get("error"))
 
-        action = str(result.action_spec.get("action") or "")
-        expected_status = (
-            "answer"
-            if result.mode == "answer"
-            else
-            "ready"
-            if result.ok
-            else "needs_clarification"
-            if result.missing
-            else "error"
-        )
+        @scorer
+        def binding_agent_intent_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            expected = expectations or {}
+            return (
+                outputs.get("intent") == expected.get("expected_intent")
+                and outputs.get("intentBlock") == expected.get("expected_block")
+            )
+
+        @scorer
+        def binding_agent_missing_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            return list(outputs.get("missing") or []) == list(
+                (expectations or {}).get("expected_missing") or []
+            )
+
+        @scorer
+        def binding_agent_action_spec_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            actual = outputs.get("actionSpec") or {}
+            expected = (expectations or {}).get("expected_action_spec") or {}
+            return isinstance(actual, dict) and all(
+                actual.get(key) == value for key, value in expected.items()
+            )
+
         output = redact_payload(result.to_legacy_draft())
         data = [
             {
@@ -2034,17 +2074,16 @@ class BindingAgentMlflowLogger:
                     "model": model,
                 },
                 "outputs": output,
-                "expectations": {
-                    "expected_status": expected_status,
-                    "expected_action": action,
-                    "expected_missing": list(result.missing),
-                },
+                "expectations": expectations,
             }
         ]
         scorers = [
             binding_agent_has_gesture,
             binding_agent_has_action,
             binding_agent_contract_ok,
+            binding_agent_intent_ok,
+            binding_agent_missing_ok,
+            binding_agent_action_spec_ok,
         ]
 
         def predict_fn(prompt: str = "", **_kwargs) -> dict[str, Any]:
@@ -2066,7 +2105,10 @@ class BindingAgentMlflowLogger:
         except Exception as exc:
             print(f"[w] MLflow GenAI evaluation failed: {exc}", flush=True)
             return {}
-        return {"mlflow_genai_eval": True}
+        return {
+            "mlflow_genai_eval": True,
+            "mlflow_genai_eval_case_id": golden_case.case_id,
+        }
 
     def _log_genai_trace(
         self,
