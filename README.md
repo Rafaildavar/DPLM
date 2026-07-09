@@ -68,6 +68,7 @@ Docker smoke checks, CI/CD и сборка release-артефактов.
 | Training loop | Обучение из UI, безопасная GISLR-style augmentation, Optuna support |
 | Live evaluation | Expected-label тесты: correct, wrong, missed, confidence, confusion, JSONL logs |
 | Command binding | Desktop actions, hotkeys, media keys, scroll/navigation, app launch, scripts, multi-step sequences |
+| Binding MAS | TaskFrame routing, structured memory, executable skills, research, guardrails, reviewer and optional Mistral |
 | Safety | Confidence threshold, cooldown, negative classes, open-set policy, command validation, dangerous-action warnings |
 | MLOps | MLflow runs, JSONL runtime logs, model smoke checks |
 | Delivery | GitHub Actions, Docker runtime image, desktop handoff release bundle |
@@ -214,6 +215,27 @@ Safety rules:
 
 Подробнее: [docs/BINDING_RULES.md](docs/BINDING_RULES.md).
 
+### Binding MAS
+
+Во вкладке привязок пользователь может описать задачу обычной фразой, например
+`привяжи zoom к повышению звука` или собрать многошаговый сценарий. Агентский
+pipeline сначала строит typed TaskFrame, разрешает жест и действие, выбирает
+исполняемый skill, проверяет схему/риск и только затем отдаёт draft в UI.
+
+Система поддерживает просмотр, изменение и подтверждаемое удаление привязок,
+task-scoped память уточнений, optional Mistral fallback, allowlisted research и
+MLflow GenAI traces. Модель не исполняет команды и не получает прямой доступ к
+БД. Подробнее: [MAS Architecture](docs/GESTUREBIND_MAS_ARCHITECTURE.md) и
+[MAS Audit](docs/GESTUREBIND_MAS_AUDIT.md).
+
+Проверить 32 golden-сценария и 10 критериев evaluator:
+
+```bash
+python scripts/evaluate_binding_agent_mas.py --judge local
+# Mistral judge при наличии MISTRAL_API_KEY:
+python scripts/evaluate_binding_agent_mas.py --judge auto --mlflow
+```
+
 ## Быстрый Старт
 
 GestureBind ориентирован на локальное desktop-использование. Рекомендуется
@@ -261,6 +283,9 @@ PYTHON=.venv/bin/python make ml-smoke
 # MLflow
 PYTHON=.venv/bin/python make mlflow-ui
 
+# Binding MAS golden evaluation
+PYTHON=.venv/bin/python scripts/evaluate_binding_agent_mas.py --judge local
+
 # Docker runtime checks
 make docker-build
 make docker-ml-smoke
@@ -307,6 +332,8 @@ production-релизу еще нужны проверка установки и
 - [Binding Rules](docs/BINDING_RULES.md)
 - [CI/CD](docs/CI_CD.md)
 - [Database Schema](docs/DB_SCHEMA.md)
+- [Binding MAS Architecture](docs/GESTUREBIND_MAS_ARCHITECTURE.md)
+- [Binding MAS Audit](docs/GESTUREBIND_MAS_AUDIT.md)
 - [Voice Assistant Guide](docs/VOICE_ASSISTANT_GUIDE.md)
 
 ## Roadmap

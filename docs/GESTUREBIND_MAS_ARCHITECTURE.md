@@ -1,156 +1,278 @@
 # GestureBind MAS architecture
 
-Дата: 2026-06-30
+Дата актуализации: 2026-07-09
 
-Документ описывает текущую архитектуру многоагентной системы привязок
-GestureBind и правила безопасного расширения.
+Этот документ описывает многоагентную систему вкладки «Привязки»: как фраза
+пользователя превращается в проверенный draft, ответ или подтверждаемую операцию
+над существующей привязкой.
 
-## Цель системы
+## Границы системы
 
-Агент привязки принимает обычную фразу пользователя и возвращает один из двух
-результатов:
+MAS решает четыре класса задач:
 
-- структурированный draft привязки жеста к macOS action или sequence;
-- markdown-ответ по проектному/внешнему вопросу без создания привязки.
+1. Создание и изменение одиночной привязки.
+2. Сборка сценария из нескольких действий.
+3. Просмотр и удаление существующих привязок.
+4. Ответы по GestureBind и мягкий redirect для вопросов вне проекта.
 
-## Главный pipeline
+Агенты никогда не исполняют предложенный `actionSpec`. Исполнение остаётся в
+`AppController`/`CommandExecutor` после явного пользовательского действия.
 
-```text
-UI prompt
-  -> BindingAgentOrchestrator
-  -> Input Guardrails
-  -> Intent Agent
-       rule route
-       semantic route
-       optional Mistral structured route
-  -> Binding agents or Conversation answer
-  -> Output Guardrails
-  -> Reviewer Agent
-  -> MLflow trace/eval metrics
-  -> Flet draft/result UI
+## End-to-end pipeline
+
+```mermaid
+flowchart TD
+    UI["Flet: сообщение пользователя"] --> IG["Input Guardrails"]
+    IG --> SM["Session Memory Agent"]
+    SM --> TF["TaskFrame extractor"]
+    TF --> IR["Intent Agent: rules + local semantic router"]
+    IR -->|question| CA["Conversation answer"]
+    IR -->|inspect/delete| CRUD["Binding CRUD Agent"]
+    IR -->|create/update/sequence| GA["Gesture Agent"]
+    GA --> AA["Action or Scenario Agent"]
+    AA --> SK["Executable Skill Runtime"]
+    SK -->|unknown action| RA["Research Agent"]
+    RA -->|local draft incomplete| MA["Optional Mistral fallback"]
+    MA --> SV["Semantic verifier"]
+    SK --> PA["Policy + schema validation"]
+    RA --> PA
+    SV --> PA
+    CRUD --> OG["Output Guardrails"]
+    CA --> OG
+    PA --> OG
+    OG --> RV["Reviewer Agent"]
+    RV --> MS["Update structured session state"]
+    MS --> UI2["Draft / answer / confirmation in UI"]
+    MS -. background .-> MF["MLflow traces, metrics, artifacts"]
 ```
 
-## Директории
+## Contracts
 
-- `app/services/binding_agent.py` - public facade, shared contracts,
-  orchestrator, MLflow logger, compatibility wrapper.
-- `app/services/binding_agents/intent.py` - hybrid intent router.
-- `app/services/binding_agents/semantic_router.py` - local semantic routing.
-- `app/services/binding_agents/tools.py` - reusable tool contracts.
-- `app/services/binding_agents/binding_pipeline.py` - concrete binding agents.
-- `app/services/binding_agents/guardrails.py` - input/output guardrails v2.
-- `app/services/binding_agents/reviewer.py` - evaluator/reviewer rubric.
-- `app/services/binding_agents/mistral.py` - optional model-backed adapter.
-- `app/services/binding_agents/skill_packs/*/SKILL.md` - filesystem skills.
-- `app/services/binding_agents/eval_cases.py` - regression/eval dataset.
-- `tests/unit/test_flet_binding_agent.py` - main regression suite.
+### TaskFrame
 
-## Intent contract
+`contracts.TaskFrame` is the normalized interpretation of one turn:
 
-Every routed request must produce:
+- `domain`: binding, project, general or guardrails;
+- `operation`: create, update, delete, inspect, validate, sequence, answer,
+  cancel;
+- `intent`, `block`, `route`;
+- `gesture_text`, `action_text`, `target_text`;
+- `negated`, `sequence_requested`;
+- confidence, evidence and ranked alternatives.
 
-- `intent`;
-- `block`;
-- `route`;
-- `routeMethod`: `rule`, `semantic`, or `fallback`;
-- optional `semanticIntent`, `semanticScore`, `semanticExample`.
+Rules handle high-precision phrases first. The local hybrid router compares the
+request with intent examples using lexical features and character TF-IDF. A
+small route margin causes abstention/clarification instead of forced routing.
+
+### ActionCandidate
+
+Every proposed action is compiled to `ActionCandidate` before it can become a
+draft. The candidate records:
+
+- normalized `actionSpec`;
+- source and confidence;
+- executable `skillId` and `skillVersion`;
+- semantic evidence/issues;
+- risk and `requiresConfirmation`.
+
+`CandidateArbiter` accepts a valid high-margin candidate and abstains when
+different actions are too close. This prevents, for example, `закрыть Telegram`
+from silently turning into `open_app`.
+
+### BindingAgentResult
+
+The public result has one of these forms:
+
+- ready `single`/`sequence` draft;
+- clarification with exact `missing` fields;
+- markdown `answer` without executable action;
+- `mutation` that requires explicit confirmation;
+- guardrail-blocked answer.
+
+The compatibility method `to_legacy_draft()` is the only conversion needed by
+the current Flet UI.
+
+## Intents
 
 Supported intents:
 
 - `create_binding`;
 - `update_binding`;
 - `build_sequence`;
+- `inspect_binding`;
+- `delete_binding`;
+- `cancel_binding`;
 - `validate_command`;
 - `project_question`;
 - `unsupported_general_question`;
 - `guardrail_block`.
 
-## Tool contract
+Question form alone does not force answer mode. For example,
+`можешь открыть Safari жестом palm?` remains a binding request.
 
-Every tool returns `AgentToolResult`:
+## Gesture resolution
 
-- `tool`;
-- `status`;
-- `message`;
-- `payload`.
+The Gesture Agent resolves in this order:
 
-Current tools:
+1. correction target after `не X, а Y` or `вместо X Y`;
+2. exact known label in the current prompt;
+3. gesture metadata and approved aliases;
+4. unambiguous fuzzy candidate;
+5. active task slot from structured memory;
+6. currently selected gesture in the UI;
+7. clarification.
 
-- `resolve_gesture`;
-- `parse_macos_action`;
-- `build_sequence_action`;
-- `validate_binding_contract`;
-- `review_answer_contract`.
+An exact label beats a colliding alias. A newly named custom gesture produces a
+pending `gestureAliasProposal`; the JSON registry is changed only after the
+binding itself is saved successfully.
 
-When adding a tool:
+## Structured memory
 
-1. Put reusable logic in `tools.py` or a dedicated tools module.
-2. Keep agent classes thin: agent `run()` should translate tool result to
-   `AgentStep`.
-3. Add a unit test for the tool contract.
-4. Attach or update a trace skill in `binding_agents/skills/`.
-5. Add or update a `SKILL.md` if the behavior changes agent reasoning.
+`session_memory.py` stores one active binding task per UI session with TTL:
 
-## Skill pack rules
+- task id and status;
+- intent;
+- gesture, actionSpec and command name;
+- source binding id;
+- missing slots and turn index.
 
-Filesystem skill packs are instructions, not executable tools.
+Each turn is classified as `new_task`, `continuation` or `correction`. Only an
+explicit continuation, a correction, or a response that fills a known missing
+slot inherits values. Raw chat history is retained for tone/answer continuity,
+but is not scanned for executable gesture/action parameters. Binding prompts
+sent to Mistral contain the sanitized `sessionState`, not the full dialog.
 
-When adding a skill pack:
+## Executable skills
 
-1. Create `app/services/binding_agents/skill_packs/<pack-id>/SKILL.md`.
-2. Add `<pack-id>` to `EXPECTED_SKILL_PACKS`.
-3. Include purpose, inputs, behavior, and output contract.
-4. Add or update tests that check pack discovery.
-5. Keep user-facing tone in `tone-of-voice/SKILL.md`.
+`skills/runtime.py` owns executable skill manifests. A manifest defines:
 
-## Guardrails rules
+- supported intents/actions and examples;
+- input/output contracts;
+- OS and required permissions;
+- risk, timeout and semantic version.
 
-Guardrails v2 uses decisions:
+The runtime selects a skill for each `actionSpec` and validates it with the same
+schema used by `CommandExecutor`. Current skills cover apps, URL/path opening,
+hotkeys, key presses, Spaces, page zoom, scroll, media, volume, brightness,
+screen actions, notifications, waits, scripts and sequences.
 
-- `allow` - result can proceed;
-- `clarify` - result is safe but needs missing information;
-- `block` - result must not be shown as actionable.
+Filesystem `skill_packs/*/SKILL.md` remain richer reasoning instructions. They
+do not bypass executable skill validation.
 
-Missing gesture/action is always `clarify`, not refusal.
+## Research and learning lifecycle
 
-## Reviewer metrics
+Unknown actions use this order:
 
-Reviewer writes:
+1. approved research memory;
+2. built-in source-backed recipes;
+3. optional allowlisted Apple web research;
+4. Mistral fallback if the local contract is still incomplete.
 
-- `relevance`;
-- `contract_completeness`;
-- `safety`;
-- `tone`;
-- `clarification_quality`.
+The same request can enter research only once. A discovered recipe must pass
+platform, source, schema and semantic validation. It remains `pending` until a
+successful user save, then `Skill Memory Writer` persists versioned provenance
+to JSON and renders the human-readable `SKILL.md` view.
 
-MLflow logs these as `reviewer_*` metrics together with
-`intent_semantic_score`.
+Live web research is opt-in and only accepts Apple Support/Developer pages.
 
-## Eval workflow
+## CRUD safety
 
-Before committing MAS changes, run:
+`BindingCrudAgent` receives a snapshot from `AppController.list_db_commands()`.
+
+- Inspect/list returns read-only markdown.
+- Delete returns a `delete_binding` mutation with binding id.
+- The UI changes the command button to «Удалить» and opens a confirmation
+  dialog.
+- Only the dialog confirmation calls `delete_db_command()`.
+
+The model never receives a direct database mutation tool.
+
+## Guardrails and reviewer
+
+Input guardrails block secrets and prompt-injection patterns. Output guardrails
+distinguish `clarify` from `block`: a missing gesture/action is a normal
+clarification, not a refusal.
+
+The reviewer checks semantic action alignment and scores:
+
+- relevance;
+- contract completeness;
+- safety;
+- tone;
+- clarification quality.
+
+Model output is not trusted: an explicit gesture from the prompt overrides a
+different model gesture, and the action must pass semantic compilation again.
+
+## Latency and privacy
+
+One request shares a default 12-second budget:
+
+- deterministic local stages run first;
+- Apple research uses short bounded requests and at most one result page;
+- Mistral receives only the remaining budget, capped at 8 seconds;
+- MLflow logging runs on a single background worker.
+
+Secrets are redacted recursively before external LLM prompts, MLflow params,
+artifacts, span inputs/outputs and trace metadata. Configure the total budget
+with `DPLM_BINDING_AGENT_TIMEOUT_SECONDS`.
+
+## MLflow
+
+Runtime logging records:
+
+- route method, semantic score and margin;
+- skill ids/versions in step artifacts;
+- per-step state and network duration;
+- total latency and remaining budget;
+- reviewer scores and confirmation requirement;
+- redacted pipeline/draft artifacts and GenAI traces.
+
+`DPLM_BINDING_AGENT_GENAI_EVAL=1` evaluates only prompts present in the golden
+dataset. Expectations come from `eval_cases.py`, never from the current result.
+
+## Evaluation
+
+The golden set currently contains 32 cases across actions, aliases, scenarios,
+abstention, questions, CRUD, cancellation and guardrails. The judge uses ten
+criteria and supports a deterministic CI rubric or an independent Mistral call.
 
 ```bash
-python -m pytest tests/unit/test_flet_binding_agent.py -q --no-cov
+python scripts/evaluate_binding_agent_mas.py --judge local
+python scripts/evaluate_binding_agent_mas.py --judge auto --mlflow
+python scripts/evaluate_binding_agent_mas.py --judge mistral --output /tmp/mas-eval.json
 ```
 
-When adding an intent, scenario, guardrail rule, or parser behavior:
+`auto` uses Mistral when `MISTRAL_API_KEY` exists and otherwise falls back to
+the deterministic rubric.
 
-1. Add a case to `BINDING_AGENT_EVAL_CASES`.
-2. Add a focused unit test if the behavior is subtle.
-3. Check MLflow fields if the trace contract changed.
-4. Update `docs/GESTUREBIND_MAS_AUDIT.md` when the current state changes.
+## Module map
 
-## Mistral usage
+| Module | Responsibility |
+|---|---|
+| `binding_agent.py` | Public facade, orchestrator and MLflow adapter |
+| `contracts.py` | TaskFrame, candidate, context, step and result contracts |
+| `task_frame.py` | Rule/semantic interpretation of a turn |
+| `semantic_router.py` | Local hybrid intent similarity |
+| `session_memory.py` | Task-scoped state and TTL store |
+| `tools.py` | Gesture/action/sequence tools |
+| `action_semantics.py` | Goal extraction, compilation and arbitration |
+| `skills/runtime.py` | Executable skills and schema validation |
+| `binding_crud.py` | Inspect/list/delete planning |
+| `research.py` | Source-backed research and approved memory |
+| `mistral.py` | Optional structured parser/answer rewriter |
+| `guardrails.py` | Input/output policy |
+| `reviewer.py` | Relevance and contract review |
+| `eval_cases.py` | Independent golden expectations |
+| `e2e_judge.py` | Ten-criterion local/Mistral judge |
 
-Mistral is optional. The local deterministic pipeline remains the source of
-truth for tests. When Mistral is enabled, prompts include:
+## Extension checklist
 
-- intent/block;
-- known gestures;
-- selected gesture;
-- dialog memory;
-- current draft-state;
-- local task paraphrase.
+When adding an action or intent:
 
-Model output must still pass policy, output guardrails, and reviewer checks.
+1. Extend TaskFrame/ontology rather than adding a UI-only trigger.
+2. Add or version an executable skill.
+3. Validate the executor schema and risk/permission requirements.
+4. Add positive, negative and ambiguous golden cases.
+5. Verify guardrails, reviewer and MLflow fields.
+6. Run the focused MAS tests and the full suite.
