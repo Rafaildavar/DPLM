@@ -13,7 +13,7 @@ import re
 import urllib.error
 import urllib.request
 import zlib
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,19 @@ from app.services.binding_agents.action_ontology import (
     ACTION_START_PATTERN,
     INLINE_ACTION_START_PATTERN,
     parse_action_intent,
+)
+from app.services.binding_agents.contracts import (
+    ActionCandidate,
+    AgentStatus,
+    AgentStep,
+    BindingAgentContext,
+    BindingAgentResult,
+    ResultStatus,
+    RiskLevel,
+    TaskDomain,
+    TaskEvidence,
+    TaskFrame,
+    TaskOperation,
 )
 from app.services.binding_agents.skills import (
     AgentSkill,
@@ -216,87 +229,6 @@ GESTURE_WORD_ALIASES: dict[str, str] = {
     "ок": "ok",
     "okay": "ok",
 }
-
-
-@dataclass(frozen=True)
-class BindingAgentContext:
-    prompt: str
-    gestures: list[dict[str, Any]] = field(default_factory=list)
-    current_gesture: str = ""
-    conversation_history: list[dict[str, str]] = field(default_factory=list)
-    draft_state: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class AgentStep:
-    agent: str
-    status: str
-    message: str
-    data: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class BindingAgentResult:
-    ok: bool
-    can_apply: bool
-    error: str
-    missing: list[str]
-    gesture_label: str
-    command_name: str
-    mode: str
-    action_spec: dict[str, Any]
-    summary: list[str]
-    response_text: str
-    steps: list[AgentStep]
-    intent: str = ""
-    intent_block: str = ""
-    telemetry: dict[str, Any] = field(default_factory=dict)
-    research: dict[str, Any] = field(default_factory=dict)
-
-    def to_legacy_draft(self) -> dict[str, Any]:
-        unresolved_steps: list[dict[str, Any]] = []
-        for step in self.steps:
-            raw_unresolved = step.data.get("unresolved_steps")
-            if not isinstance(raw_unresolved, list):
-                continue
-            unresolved_steps = [
-                dict(item)
-                for item in raw_unresolved
-                if isinstance(item, dict)
-            ]
-        return {
-            "ok": self.ok,
-            "canApply": self.can_apply,
-            "error": self.error,
-            "missing": list(self.missing),
-            "gestureLabel": self.gesture_label,
-            "commandName": self.command_name,
-            "mode": self.mode,
-            "actionSpec": dict(self.action_spec),
-            "summary": list(self.summary),
-            "agentReply": self.response_text,
-            "intent": self.intent,
-            "intentBlock": self.intent_block,
-            "researchProposal": dict(self.research),
-            "unresolvedSteps": unresolved_steps,
-            "agentSkills": _skill_registry_cards(),
-            "agentSkillPacks": _skill_pack_cards(),
-            "agentTrace": [
-                {
-                    "agent": step.agent,
-                    "status": step.status,
-                    "message": step.message,
-                    "data": _step_data_with_skills(step),
-                }
-                for step in self.steps
-            ],
-            "telemetry": dict(self.telemetry),
-            "mlflowRunId": str(self.telemetry.get("mlflow_run_id") or ""),
-            "mlflowTrackingUri": str(
-                self.telemetry.get("mlflow_tracking_uri") or ""
-            ),
-            "mlflowTraceId": str(self.telemetry.get("mlflow_trace_id") or ""),
-        }
 
 
 def _norm(value: str) -> str:
@@ -2348,7 +2280,9 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
-        intent_step = self.intent_agent.run(context)
+        task_frame = self.intent_agent.build_frame(context)
+        context = replace(context, task_frame=task_frame)
+        intent_step = self.intent_agent.run(context, frame=task_frame)
         steps.append(intent_step)
         intent = str(intent_step.data.get("intent") or "create_binding")
         block = str(intent_step.data.get("block") or "binding")
@@ -2745,6 +2679,8 @@ class BindingAgentOrchestrator:
         *,
         provider: str,
     ) -> BindingAgentResult:
+        if result.task_frame is None and context.task_frame is not None:
+            result = replace(result, task_frame=context.task_frame)
         telemetry = self.mlflow_logger.log(
             context,
             result,
