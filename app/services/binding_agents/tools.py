@@ -23,6 +23,7 @@ from app.services.binding_agents.action_semantics import (
 )
 from app.services.gesture_aliases import (
     GestureAliasRegistry,
+    gesture_alias_proposal,
     gesture_alias_query_from_text,
     normalize_gesture_alias,
 )
@@ -107,19 +108,19 @@ def _is_explicit_typed_gesture_query(prompt: str, query: str) -> bool:
     return 0 < len(normalized.split("_")) <= 5
 
 
-def _learn_selected_gesture_alias(
+def _selected_gesture_alias_proposal(
     context: BindingAgentContext,
     gesture_label: str,
-) -> str:
+) -> dict[str, Any]:
     alias = gesture_alias_query_from_text(context.prompt)
     clean = (alias or "").strip()
     if not clean:
-        return ""
+        return {}
     if clean == (context.prompt or "").strip():
-        return ""
+        return {}
     normalized = normalize_gesture_alias(clean)
     if not normalized or normalized == normalize_gesture_alias(gesture_label):
-        return ""
+        return {}
     if normalized in {
         "this",
         "eto",
@@ -131,17 +132,15 @@ def _learn_selected_gesture_alias(
         "выбранный",
         "выбранныи",
     }:
-        return ""
+        return {}
     if len(normalized.split("_")) > 5:
-        return ""
-    if GestureAliasRegistry().learn(
+        return {}
+    return gesture_alias_proposal(
         gesture_label,
         clean,
         source="selected_gesture",
         confidence=0.9,
-    ):
-        return clean
-    return ""
+    )
 
 
 @dataclass(frozen=True)
@@ -321,8 +320,9 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
 
     label = _selected_known_gesture(context, labels)
     if label:
-        learned_alias = _learn_selected_gesture_alias(context, label)
-        source = "selected_alias" if learned_alias else "selected"
+        alias_proposal = _selected_gesture_alias_proposal(context, label)
+        matched_alias = str(alias_proposal.get("alias") or "")
+        source = "selected_alias_pending" if alias_proposal else "selected"
         return AgentToolResult(
             "resolve_gesture",
             "ok",
@@ -331,7 +331,8 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
                 "gesture": label,
                 "source": source,
                 "known": True,
-                "matchedAlias": learned_alias,
+                "matchedAlias": matched_alias,
+                "aliasProposal": alias_proposal,
             },
         )
 

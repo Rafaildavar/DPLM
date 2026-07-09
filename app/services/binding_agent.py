@@ -2169,6 +2169,7 @@ class BindingAgentMlflowLogger:
 
 from app.services.binding_agents import (
     ActionAgent,
+    BindingCrudAgent,
     GestureAgent,
     GuardrailsAgent,
     IntentAgent,
@@ -2198,6 +2199,7 @@ class BindingAgentOrchestrator:
         self.mlflow_logger = mlflow_logger or BindingAgentMlflowLogger()
         self.gesture_agent = GestureAgent()
         self.action_agent = ActionAgent()
+        self.crud_agent = BindingCrudAgent()
         self.scenario_agent = ScenarioAgent()
         self.memory_agent = MemoryAgent()
         self.policy_agent = PolicyAgent()
@@ -2213,6 +2215,8 @@ class BindingAgentOrchestrator:
         current_gesture: str = "",
         conversation_history: list[dict[str, str]] | None = None,
         draft_state: dict[str, Any] | None = None,
+        bindings: list[dict[str, Any]] | None = None,
+        session_id: str = "",
         provider: str | None = None,
     ) -> BindingAgentResult:
         context = BindingAgentContext(
@@ -2221,6 +2225,8 @@ class BindingAgentOrchestrator:
             current_gesture=current_gesture,
             conversation_history=list(conversation_history or []),
             draft_state=dict(draft_state or {}),
+            bindings=[dict(item) for item in (bindings or []) if isinstance(item, dict)],
+            session_id=session_id,
         )
         steps: list[AgentStep] = []
         provider_name = _provider_name(provider)
@@ -2297,6 +2303,8 @@ class BindingAgentOrchestrator:
         steps.append(intent_step)
         intent = str(intent_step.data.get("intent") or "create_binding")
         block = str(intent_step.data.get("block") or "binding")
+        if intent == "update_binding":
+            context = self._hydrate_update_context(context)
 
         if intent == "cancel_binding":
             result = BindingAgentResult(
@@ -2329,6 +2337,48 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
+        if intent in {"inspect_binding", "delete_binding"}:
+            operation = "inspect" if intent == "inspect_binding" else "delete"
+            crud_step = self.crud_agent.run(context, operation=operation)
+            steps.append(crud_step)
+            mutation = dict(crud_step.data.get("mutation") or {})
+            binding = dict(crud_step.data.get("binding") or {})
+            gesture = str(
+                crud_step.data.get("gesture")
+                or binding.get("gestureLabel")
+                or ""
+            )
+            missing = list(crud_step.data.get("missing") or [])
+            response = str(crud_step.data.get("response") or crud_step.message)
+            can_apply = bool(mutation and crud_step.data.get("canApply"))
+            result = BindingAgentResult(
+                ok=crud_step.status in {"ok", "needs_approval"},
+                can_apply=can_apply,
+                error="",
+                missing=missing,
+                gesture_label=gesture,
+                command_name=str(binding.get("name") or ""),
+                mode="mutation" if mutation else "answer",
+                action_spec={},
+                summary=(
+                    [
+                        f"Жест: {gesture}",
+                        f"Команда: {binding.get('name') or 'не найдена'}",
+                        f"Операция: {operation}",
+                    ]
+                    if binding
+                    else []
+                ),
+                response_text=response,
+                steps=steps,
+                mutation=mutation,
+                requires_confirmation=bool(mutation),
+            )
+            return self._finish_result(
+                self._review_result(context, result, intent_step),
+                context,
+                provider=provider_name,
+            )
         if block == "project_question":
             labels = _known_gesture_labels(context)
             is_validation = intent == "validate_command"
@@ -2655,6 +2705,38 @@ class BindingAgentOrchestrator:
             requires_confirmation=requires_confirmation,
         )
         return result
+
+    def _hydrate_update_context(
+        self,
+        context: BindingAgentContext,
+    ) -> BindingAgentContext:
+        if context.draft_state.get("actionSpec"):
+            return context
+        selected = (context.current_gesture or "").strip().lower()
+        draft_gesture = str(context.draft_state.get("gestureLabel") or "").strip().lower()
+        binding = next(
+            (
+                item
+                for item in context.bindings
+                if str(item.get("gestureLabel") or "").strip().lower()
+                in {selected, draft_gesture}
+                and (selected or draft_gesture)
+            ),
+            None,
+        )
+        if not isinstance(binding, dict):
+            return context
+        action_spec = binding.get("actionSpec")
+        if not isinstance(action_spec, dict) or not action_spec.get("action"):
+            return context
+        state = {
+            **context.draft_state,
+            "gestureLabel": str(binding.get("gestureLabel") or ""),
+            "commandName": str(binding.get("name") or ""),
+            "actionSpec": dict(action_spec),
+            "sourceBindingId": int(binding.get("id") or 0),
+        }
+        return replace(context, draft_state=state)
 
     def _needs_mistral_fallback(self, result: BindingAgentResult) -> bool:
         if result.can_apply:
@@ -3050,7 +3132,7 @@ class BindingAgentOrchestrator:
                 )
             return (
                 f"Я нашёл проверенный рецепт: «{action}». Источник: {source}. "
-                "Если одобришь через «Заполнить» или «Сохранить», я запомню это как skill."
+                "После успешного «Сохранить» я запомню это как skill."
             )
         if ok:
             action = AGENT_ACTION_LABELS.get(
@@ -3071,6 +3153,8 @@ def build_agent_binding_draft(
     current_gesture: str = "",
     conversation_history: list[dict[str, str]] | None = None,
     draft_state: dict[str, Any] | None = None,
+    bindings: list[dict[str, Any]] | None = None,
+    session_id: str = "",
     provider: str | None = None,
 ) -> dict[str, Any]:
     """Compatibility wrapper returning the UI-facing draft dict."""
@@ -3080,5 +3164,7 @@ def build_agent_binding_draft(
         current_gesture=current_gesture,
         conversation_history=conversation_history,
         draft_state=draft_state,
+        bindings=bindings,
+        session_id=session_id,
         provider=provider,
     ).to_legacy_draft()

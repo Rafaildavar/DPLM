@@ -49,6 +49,7 @@ from app.services.binding_agents.action_ontology import (
     parse_action_intent,
 )
 from app.services.binding_agents.research import approve_research_proposal
+from app.services.gesture_aliases import approve_gesture_alias_proposal
 
 SEQUENCE_STEP_ACTIONS: list[dict[str, str]] = [
     {
@@ -615,6 +616,8 @@ def _agent_action_title(spec: dict[str, Any]) -> str:
     action = str(spec.get("action") or "")
     if action == "open_app":
         return f"Открыть {spec.get('app') or 'приложение'}"
+    if action == "quit_app":
+        return f"Закрыть {spec.get('app') or 'приложение'}"
     if action == "open_url":
         return f"Открыть {spec.get('url') or 'сайт'}"
     if action == "open_path":
@@ -647,6 +650,8 @@ def build_agent_binding_draft(
     current_gesture: str = "",
     conversation_history: list[dict[str, str]] | None = None,
     draft_state: dict[str, Any] | None = None,
+    bindings: list[dict[str, Any]] | None = None,
+    session_id: str = "",
     provider: str | None = None,
 ) -> dict[str, Any]:
     """Compatibility wrapper around the multi-agent pipeline."""
@@ -656,6 +661,8 @@ def build_agent_binding_draft(
         current_gesture=current_gesture,
         conversation_history=conversation_history,
         draft_state=draft_state,
+        bindings=bindings,
+        session_id=session_id,
         provider=provider,
     )
 
@@ -993,6 +1000,7 @@ class BindingsView:
         self._last_agent_draft: dict[str, Any] | None = None
         self._agent_dialog_messages: list[dict[str, str]] = []
         self._agent_request_id = 0
+        self._agent_session_id = f"bindings-{id(self)}"
         self._agent_input = ft.TextField(
             hint_text="Спросите агента привязки",
             multiline=True,
@@ -2504,11 +2512,27 @@ class BindingsView:
 
     # ---- Агент привязки ---------------------------------------------------
 
+    def _agent_bindings_snapshot(self) -> list[dict[str, Any]]:
+        getter = getattr(self._controller, "list_db_commands", None)
+        if not callable(getter):
+            return []
+        try:
+            rows = getter()
+        except Exception:
+            return []
+        return [dict(item) for item in rows if isinstance(item, dict)]
+
     def _set_agent_empty_state(self) -> None:
         self._last_agent_draft = None
         self._agent_dialog_messages = []
         self._agent_apply_btn.disabled = True
         self._agent_save_btn.disabled = True
+        self._agent_save_btn.content = ft.Text("Сохранить")
+        self._agent_save_btn.icon = ft.Icons.SAVE
+        self._agent_save_btn.style = ft.ButtonStyle(
+            bgcolor=COLOR_ACCENT,
+            color=ft.Colors.WHITE,
+        )
         self._agent_status.value = "Ожидает ввод"
         self._agent_status.color = COLOR_MUTED
         self._agent_result.controls = [
@@ -2530,6 +2554,7 @@ class BindingsView:
         prompt = (self._agent_input.value or "").strip()
         history = list(self._agent_dialog_messages)
         draft_state = dict(self._last_agent_draft or {})
+        bindings = self._agent_bindings_snapshot()
         if prompt:
             self._agent_request_id += 1
             request_id = self._agent_request_id
@@ -2538,7 +2563,7 @@ class BindingsView:
             if animate:
                 threading.Thread(
                     target=self._run_agent_request,
-                    args=(request_id, prompt, history, draft_state),
+                    args=(request_id, prompt, history, draft_state, bindings),
                     daemon=True,
                 ).start()
                 return
@@ -2551,6 +2576,8 @@ class BindingsView:
             current_gesture=self._gesture_dd.value or "",
             conversation_history=history,
             draft_state=draft_state,
+            bindings=bindings,
+            session_id=self._agent_session_id,
         )
         self._complete_agent_request(request_id, prompt, draft, animate=False)
 
@@ -2593,6 +2620,7 @@ class BindingsView:
         prompt: str,
         history: list[dict[str, str]],
         draft_state: dict[str, Any],
+        bindings: list[dict[str, Any]],
     ) -> None:
         try:
             draft = build_agent_binding_draft(
@@ -2601,6 +2629,8 @@ class BindingsView:
                 current_gesture=self._gesture_dd.value or "",
                 conversation_history=history,
                 draft_state=draft_state,
+                bindings=bindings,
+                session_id=self._agent_session_id,
             )
         except Exception as exc:
             draft = {
@@ -2799,6 +2829,8 @@ class BindingsView:
         mode = str(draft.get("mode") or "")
         if mode == "answer":
             return "Ответ", COLOR_ACCENT
+        if mode == "mutation":
+            return "Нужно подтверждение", COLOR_WARNING
         error = str(draft.get("error") or "")
         if error:
             return error, COLOR_DANGER
@@ -2903,7 +2935,8 @@ class BindingsView:
                 }
             )
             return
-        self._remember_agent_research(draft)
+        if str(draft.get("mode") or "") == "mutation":
+            return
         self._apply_agent_draft(draft)
         self._show_message(info="Предложение агента перенесено в форму")
         self._agent_status.value = "Форма заполнена"
@@ -2925,38 +2958,130 @@ class BindingsView:
         if draft.get("missing"):
             self._set_agent_draft(draft)
             return
-        self._remember_agent_research(draft)
+        if str(draft.get("mode") or "") == "mutation":
+            self._confirm_agent_mutation(draft)
+            return
         self._apply_agent_draft(draft)
         self._on_save_click(_e)
         if not self._error_text.visible:
+            self._remember_agent_learning(draft)
             self._agent_status.value = "Сохранено"
             self._agent_status.color = COLOR_SUCCESS
             self._safe_agent_update()
 
-    def _remember_agent_research(self, draft: dict[str, Any]) -> None:
+    def _remember_agent_learning(self, draft: dict[str, Any]) -> None:
         proposal = draft.get("researchProposal")
-        if not isinstance(proposal, dict) or not proposal:
+        if isinstance(proposal, dict) and proposal:
+            try:
+                saved = approve_research_proposal(proposal)
+            except Exception as exc:
+                self._show_message(error=f"Не удалось сохранить research skill: {exc}")
+            else:
+                if saved:
+                    proposal.update(saved)
+
+        alias_proposal = draft.get("gestureAliasProposal")
+        if isinstance(alias_proposal, dict) and alias_proposal:
+            try:
+                saved_alias = approve_gesture_alias_proposal(alias_proposal)
+            except Exception as exc:
+                self._show_message(error=f"Не удалось сохранить алиас жеста: {exc}")
+            else:
+                if saved_alias:
+                    alias_proposal.update(saved_alias)
+
+    def _confirm_agent_mutation(self, draft: dict[str, Any]) -> None:
+        mutation = dict(draft.get("mutation") or {})
+        if mutation.get("operation") != "delete_binding" or not mutation.get("bindingId"):
+            self._show_message(error="Агент подготовил некорректную операцию удаления")
             return
+        if self._page is None:
+            self._agent_status.value = "Требуется подтверждение удаления"
+            self._agent_status.color = COLOR_WARNING
+            self._safe_agent_update()
+            return
+
+        gesture = str(mutation.get("gestureLabel") or "жест")
+        command = str(mutation.get("commandName") or "команда")
+        dialog: ft.AlertDialog
+
+        def close_dialog(_event=None) -> None:
+            try:
+                self._page.close(dialog)
+            except Exception:
+                dialog.open = False
+                self._page.update()
+
+        def confirm_delete(_event=None) -> None:
+            result = self._controller.delete_db_command(int(mutation["bindingId"]))
+            close_dialog()
+            if not result.get("ok"):
+                self._show_message(
+                    error=str(result.get("error") or "Не удалось удалить привязку")
+                )
+                return
+            self._refresh_all_lists()
+            self._agent_dialog_messages.append(
+                {
+                    "role": "agent",
+                    "text": f"Удалил привязку **{gesture} → {command}**.",
+                }
+            )
+            completed = {
+                **draft,
+                "ok": True,
+                "canApply": False,
+                "mode": "answer",
+                "mutation": {},
+                "requiresConfirmation": False,
+                "agentReply": f"Привязка **{gesture} → {command}** удалена.",
+            }
+            self._set_agent_draft(completed)
+            self._show_message(info=f"Удалено: «{gesture}» → {command}")
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Удалить привязку?"),
+            content=ft.Text(
+                f"Жест «{gesture}» больше не будет запускать команду «{command}»."
+            ),
+            actions=[
+                ft.TextButton(content=ft.Text("Отмена"), on_click=close_dialog),
+                ft.FilledButton(
+                    content=ft.Text("Удалить"),
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    style=ft.ButtonStyle(bgcolor=COLOR_DANGER, color=ft.Colors.WHITE),
+                    on_click=confirm_delete,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
         try:
-            saved = approve_research_proposal(proposal)
-        except Exception as exc:
-            self._show_message(error=f"Не удалось сохранить research skill: {exc}")
-            return
-        if saved:
-            proposal["rememberOnApproval"] = False
-            proposal["approved"] = True
-            proposal["learned"] = True
+            self._page.open(dialog)
+        except Exception:
+            self._page.overlay.append(dialog)
+            dialog.open = True
+            self._page.update()
 
     def _set_agent_draft(self, draft: dict[str, Any]) -> None:
         self._last_agent_draft = draft
         mode = str(draft.get("mode") or "")
         is_answer = mode == "answer"
+        is_mutation = mode == "mutation"
         can_apply = bool(draft.get("canApply"))
         missing = list(draft.get("missing") or [])
         error = str(draft.get("error") or "")
 
-        self._agent_apply_btn.disabled = is_answer or not can_apply
+        self._agent_apply_btn.disabled = is_answer or is_mutation or not can_apply
         self._agent_save_btn.disabled = is_answer or (not can_apply) or bool(missing)
+        self._agent_save_btn.content = ft.Text("Удалить" if is_mutation else "Сохранить")
+        self._agent_save_btn.icon = (
+            ft.Icons.DELETE_OUTLINE if is_mutation else ft.Icons.SAVE
+        )
+        self._agent_save_btn.style = ft.ButtonStyle(
+            bgcolor=COLOR_DANGER if is_mutation else COLOR_ACCENT,
+            color=ft.Colors.WHITE,
+        )
         status_text, status_color = self._agent_status_for_draft(draft)
         self._agent_status.value = status_text
         self._agent_status.color = status_color
@@ -3037,6 +3162,8 @@ class BindingsView:
             return "Действие не распознано"
         if action == "open_app":
             return f"Открыть приложение {spec.get('app') or ''}".strip()
+        if action == "quit_app":
+            return f"Закрыть приложение {spec.get('app') or ''}".strip()
         if action == "open_url":
             return f"Открыть сайт {spec.get('url') or ''}".strip()
         if action == "open_path":
@@ -3177,6 +3304,35 @@ class BindingsView:
         )
 
     def _agent_structured_output(self, draft: dict[str, Any]) -> list[ft.Control]:
+        mutation = dict(draft.get("mutation") or {})
+        if mutation:
+            gesture = str(mutation.get("gestureLabel") or "Не указан")
+            command = str(mutation.get("commandName") or "Без имени")
+            return [
+                self._agent_output_panel(
+                    "Удаление привязки",
+                    ft.Icons.DELETE_OUTLINE,
+                    COLOR_DANGER,
+                    [
+                        self._agent_output_row(
+                            "Жест",
+                            gesture,
+                            ft.Icons.BACK_HAND,
+                            COLOR_ACCENT,
+                        ),
+                        self._agent_output_row(
+                            "Команда",
+                            command,
+                            ft.Icons.TERMINAL,
+                            COLOR_ON_SURFACE,
+                        ),
+                        self._agent_markdown(
+                            "Удаление изменяет базу GestureBind. "
+                            "Нажмите **Удалить**, затем подтвердите действие."
+                        ),
+                    ],
+                )
+            ]
         spec = dict(draft.get("actionSpec") or {})
         missing = list(draft.get("missing") or [])
         gesture = str(draft.get("gestureLabel") or "").strip()
@@ -3220,7 +3376,7 @@ class BindingsView:
             source = str(research.get("sourceTitle") or "Проверенный источник")
             url = str(research.get("sourceUrl") or "")
             approval = (
-                "После «Заполнить» или «Сохранить» я запомню это как skill."
+                "После успешного «Сохранить» я запомню это как skill."
                 if research.get("rememberOnApproval")
                 else "Этот рецепт уже есть в сохранённых skills."
             )

@@ -3,7 +3,10 @@ import json
 from app.flet_app.views.bindings import build_agent_binding_draft
 from app.services.binding_agent import BindingAgentContext
 from app.services.binding_agents.tools import resolve_gesture
-from app.services.gesture_aliases import GestureAliasRegistry
+from app.services.gesture_aliases import (
+    GestureAliasRegistry,
+    approve_gesture_alias_proposal,
+)
 
 
 def test_gesture_alias_registry_resolves_user_gesture_metadata(tmp_path):
@@ -113,7 +116,7 @@ def test_resolve_gesture_uses_display_name_from_trained_gesture(monkeypatch, tmp
     assert result.payload["matchedAlias"] == "Лайк"
 
 
-def test_selected_user_gesture_teaches_alias_for_next_request(monkeypatch, tmp_path):
+def test_selected_user_gesture_alias_requires_approval_before_reuse(monkeypatch, tmp_path):
     path = tmp_path / "aliases.json"
     monkeypatch.setenv("GESTUREBIND_GESTURE_ALIASES", str(path))
     gestures = [{"label": "custom_like_42"}]
@@ -130,7 +133,18 @@ def test_selected_user_gesture_teaches_alias_for_next_request(monkeypatch, tmp_p
 
     assert first["ok"] is True
     assert first["gestureLabel"] == "custom_like_42"
-    assert second["ok"] is True
-    assert second["gestureLabel"] == "custom_like_42"
+    assert first["gestureAliasProposal"]["status"] == "pending"
+    assert second["canApply"] is False
+    assert not path.exists()
+
+    approved = approve_gesture_alias_proposal(first["gestureAliasProposal"])
+    third = build_agent_binding_draft(
+        "привяжи лайк к открытию сафари",
+        gestures,
+    )
+
+    assert approved is not None
+    assert third["ok"] is True
+    assert third["gestureLabel"] == "custom_like_42"
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["gestures"]["custom_like_42"]["aliases"][0]["value"] == "лайк"

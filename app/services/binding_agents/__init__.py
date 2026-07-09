@@ -13,6 +13,7 @@ __all__ = [
     "ActionAgent",
     "BindingAgentE2ECase",
     "BindingAgentLlmJudge",
+    "BindingCrudAgent",
     "GestureAgent",
     "GuardrailsAgent",
     "IntentAgent",
@@ -59,6 +60,10 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.guardrails import GuardrailsAgent
 
         return GuardrailsAgent
+    if name == "BindingCrudAgent":
+        from app.services.binding_agents.binding_crud import BindingCrudAgent
+
+        return BindingCrudAgent
     if name == "IntentAgent":
         from app.services.binding_agents.intent import IntentAgent
 

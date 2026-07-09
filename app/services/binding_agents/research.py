@@ -21,6 +21,8 @@ from app.services.binding_agent import (
     _action_title,
     _norm,
 )
+from app.services.binding_agents.action_semantics import compile_action_candidate
+from app.services.user_command_sync import validate_action_spec
 
 
 RESEARCH_MEMORY_ENV = "DPLM_BINDING_RESEARCH_MEMORY"
@@ -81,6 +83,8 @@ class ResearchRecipe:
     learned: bool = False
     approved: bool = False
     recipe_id: str = ""
+    status: str = "pending"
+    skill_version: str = "1.0.0"
 
     def to_proposal(self, *, approval_required: bool) -> dict[str, Any]:
         recipe_id = self.recipe_id or _recipe_id(self.query, self.action_spec)
@@ -97,6 +101,8 @@ class ResearchRecipe:
             "confidence": float(self.confidence),
             "learned": bool(self.learned),
             "approved": bool(self.approved),
+            "status": "approved" if self.approved else self.status,
+            "skillVersion": self.skill_version,
             "approvalRequired": bool(approval_required),
             "rememberOnApproval": bool(approval_required),
         }
@@ -120,6 +126,8 @@ class ResearchRecipe:
             learned=bool(data.get("learned")),
             approved=bool(data.get("approved")),
             recipe_id=str(data.get("id") or data.get("recipe_id") or ""),
+            status=str(data.get("status") or ("approved" if data.get("approved") else "pending")),
+            skill_version=str(data.get("skillVersion") or data.get("skill_version") or "1.0.0"),
         )
 
 
@@ -217,6 +225,17 @@ class ResearchRecipeValidator:
             issues.append("platform_mismatch")
         if not action_spec.get("action"):
             issues.append("action_missing")
+        schema_error = validate_action_spec(action_spec) if action_spec else None
+        if schema_error:
+            issues.append("action_schema_invalid")
+        if recipe and action_spec:
+            _goal, candidate = compile_action_candidate(
+                recipe.query or plan.query,
+                action_spec,
+                source="research_validator",
+            )
+            if not candidate.valid:
+                issues.append("action_semantic_mismatch")
         if approval_required and recipe and not (
             recipe.source_title or recipe.source_url or recipe.source_excerpt
         ):
@@ -328,6 +347,19 @@ class ResearchMemoryStore:
             }
         )
         recipe_id = recipe.recipe_id or _recipe_id(recipe.query, recipe.action_spec)
+        schema_error = validate_action_spec(recipe.action_spec)
+        if schema_error:
+            raise ValueError(f"Research actionSpec is invalid: {schema_error}")
+        _goal, candidate = compile_action_candidate(
+            recipe.query,
+            recipe.action_spec,
+            source="research_approval",
+        )
+        if not candidate.valid:
+            raise ValueError(
+                "Research actionSpec conflicts with the approved query: "
+                + ", ".join(candidate.issues)
+            )
         saved = {
             "id": recipe_id,
             "title": recipe.title or _action_title(recipe.action_spec),
@@ -340,6 +372,13 @@ class ResearchMemoryStore:
             "confidence": recipe.confidence,
             "approved": True,
             "learned": True,
+            "status": "approved",
+            "skillVersion": recipe.skill_version or "1.0.0",
+            "provenance": {
+                "sourceTitle": recipe.source_title,
+                "sourceUrl": recipe.source_url,
+                "approvedBy": "user",
+            },
             "approvedAt": datetime.now(timezone.utc).isoformat(),
         }
         current = [

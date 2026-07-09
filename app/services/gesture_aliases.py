@@ -421,7 +421,6 @@ class GestureAliasRegistry:
             if contained:
                 return _best_or_ambiguous(contained, normalized_query)
         return None
-
     def _fuzzy_matches(
         self,
         normalized_query: str,
@@ -493,6 +492,68 @@ class GestureAliasRegistry:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
         self.path.write_text(payload + "\n", encoding="utf-8")
+
+
+def gesture_alias_proposal(
+    label: str,
+    alias: str,
+    *,
+    source: str = "selected_gesture",
+    confidence: float = 0.9,
+) -> dict[str, Any]:
+    """Build a non-persistent alias proposal for explicit user approval."""
+    clean_label = str(label or "").strip()
+    clean_alias = str(alias or "").strip()
+    normalized = normalize_gesture_alias(clean_alias)
+    if not clean_label or not normalized:
+        return {}
+    if normalized == normalize_gesture_alias(clean_label):
+        return {}
+    return {
+        "label": clean_label,
+        "alias": clean_alias,
+        "normalized": normalized,
+        "source": source,
+        "confidence": float(confidence),
+        "status": "pending",
+        "approvalRequired": True,
+        "rememberOnApproval": True,
+    }
+
+
+def approve_gesture_alias_proposal(
+    proposal: dict[str, Any],
+    *,
+    path: Path | str | None = None,
+) -> dict[str, Any] | None:
+    """Persist an alias only after the binding carrying it was approved."""
+    if not isinstance(proposal, dict) or not proposal.get("rememberOnApproval"):
+        return None
+    label = str(proposal.get("label") or "").strip()
+    alias = str(proposal.get("alias") or "").strip()
+    normalized = normalize_gesture_alias(alias)
+    if (
+        not label
+        or not normalized
+        or normalized != str(proposal.get("normalized") or normalized)
+        or len(normalized.split("_")) > 5
+    ):
+        return None
+    source = str(proposal.get("source") or "user_approved")
+    confidence = min(1.0, max(0.0, float(proposal.get("confidence") or 0.9)))
+    if not GestureAliasRegistry(path=path).learn(
+        label,
+        alias,
+        source=source,
+        confidence=confidence,
+    ):
+        return None
+    return {
+        **proposal,
+        "status": "approved",
+        "approved": True,
+        "rememberOnApproval": False,
+    }
 
 
 def _contains_alias(haystack: str, needle: str) -> bool:

@@ -12,6 +12,7 @@ from app.services.binding_agents.contracts import (
     TaskFrame,
     TaskOperation,
 )
+from app.services.binding_agents.skills.runtime import DEFAULT_SKILL_RUNTIME
 
 
 def _norm(value: str) -> str:
@@ -222,6 +223,17 @@ def compile_action_candidate(
             confidence = max(0.72, goal.confidence)
             skill_id = _skill_for_action(action)
 
+    if not issues and spec:
+        return goal, DEFAULT_SKILL_RUNTIME.prepare_candidate(
+            spec,
+            frame=frame,
+            preferred_skill=skill_id,
+            source=source,
+            confidence=confidence,
+            evidence=goal.evidence,
+            risk=risk,
+            requires_confirmation=confirmation,
+        )
     return goal, ActionCandidate(
         action_spec=spec,
         source=source,
