@@ -351,7 +351,7 @@ def test_binding_agent_prompt_gesture_beats_selected_dropdown_gesture():
     gesture_step = next(
         item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
     )
-    assert gesture_step["data"]["source"] == "label"
+    assert gesture_step["data"]["source"] == "exact_label"
 
 
 def test_binding_agent_typed_unknown_gesture_does_not_fallback_to_selected():
@@ -507,6 +507,7 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         "Guardrails Agent",
         "Intent Agent",
         "Mistral Agent",
+        "Semantic Verifier",
         "Memory Agent",
         "Policy Agent",
         "Validation Agent",

@@ -9,6 +9,7 @@ from app.services.binding_agent import (
     _short_text,
 )
 from app.services.binding_agents.tools import review_answer_contract
+from app.services.binding_agents.action_semantics import compile_action_candidate
 
 class RelevanceReviewerAgent:
     name = "Reviewer Agent"
@@ -29,6 +30,16 @@ class RelevanceReviewerAgent:
             action_spec=result.action_spec,
         )
         issues: list[str] = list(contract.payload.get("issues") or [])
+        semantic_candidate = None
+        if block == "binding" and result.action_spec:
+            _goal, semantic_candidate = compile_action_candidate(
+                context.prompt,
+                result.action_spec,
+                frame=context.task_frame,
+                source="reviewer",
+            )
+            if not semantic_candidate.valid:
+                issues.append("action_semantic_mismatch")
 
         if block == "project_question":
             if result.can_apply or result.action_spec:
@@ -111,6 +122,9 @@ class RelevanceReviewerAgent:
                 "issues": issues,
                 "contractTool": contract.tool,
                 "contractStatus": contract.status,
+                "semanticCandidate": (
+                    semantic_candidate.to_dict() if semantic_candidate else {}
+                ),
                 "prompt_preview": _short_text(context.prompt, 160),
             },
         )

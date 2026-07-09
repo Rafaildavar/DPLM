@@ -58,6 +58,7 @@ CATEGORY_LABELS: Dict[str, str] = {
 # Соответствие action → категория (см. docs/BINDING_RULES.md, раздел 4).
 ACTION_TO_CATEGORY: Dict[str, str] = {
     "open_app": CATEGORY_LAUNCH,
+    "quit_app": CATEGORY_SYSTEM,
     "open_path": CATEGORY_LAUNCH,
     "open_url": CATEGORY_LAUNCH,
     "notify": CATEGORY_SYSTEM,
@@ -90,6 +91,11 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
         "category": CATEGORY_LAUNCH,
         "fields": {"app": "str — имя приложения для macOS ``open -a`` (например Safari)"},
         "example": {"action": "open_app", "app": "Music", "platform": "macos"},
+    },
+    "quit_app": {
+        "category": CATEGORY_SYSTEM,
+        "fields": {"app": "str — имя приложения, которое нужно завершить"},
+        "example": {"action": "quit_app", "app": "Telegram", "platform": "macos"},
     },
     "open_url": {
         "category": CATEGORY_LAUNCH,
@@ -192,7 +198,7 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
 
 
 # Действия, для которых R6 рекомендует использовать двуручный жест.
-DANGEROUS_ACTIONS: frozenset = frozenset({"lock_screen", "run_script"})
+DANGEROUS_ACTIONS: frozenset = frozenset({"lock_screen", "quit_app", "run_script"})
 
 
 def is_dangerous_action(action: str) -> bool:
@@ -310,9 +316,9 @@ def _validate_action_spec_inner(
         if kind not in {"play_pause", "play", "pause", "next", "prev", "previous"}:
             return f"{label}media_key: «kind» должен быть play_pause | next | prev"
 
-    if action == "open_app":
+    if action in {"open_app", "quit_app"}:
         if not (spec.get("app") or "").strip():
-            return f"{label}open_app: укажите имя приложения в поле «app»"
+            return f"{label}{action}: укажите имя приложения в поле «app»"
 
     if action == "open_url":
         url = (spec.get("url") or "").strip()

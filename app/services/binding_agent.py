@@ -22,6 +22,7 @@ from app.services.binding_agents.action_ontology import (
     INLINE_ACTION_START_PATTERN,
     parse_action_intent,
 )
+from app.services.binding_agents.action_semantics import compile_action_candidate
 from app.services.binding_agents.contracts import (
     ActionCandidate,
     AgentStatus,
@@ -61,6 +62,7 @@ BINDING_AGENT_REWRITE_ANSWERS_ENV = "DPLM_BINDING_AGENT_REWRITE_ANSWERS"
 
 AGENT_ACTION_LABELS: dict[str, str] = {
     "open_app": "Открыть приложение",
+    "quit_app": "Закрыть приложение",
     "open_path": "Открыть файл или папку",
     "open_url": "Открыть сайт",
     "key_combination": "Нажать сочетание клавиш",
@@ -676,6 +678,13 @@ def _split_sequence(text: str) -> list[str]:
         body = body[scenario_marker.end() :]
     else:
         body = re.sub(
+            r"^\s*(?:сделай|создай|добавь|собери|подготовь)?\s*"
+            r"сценар\w*\s+[A-Za-zА-Яа-я0-9_.-]+\s*:\s*",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(
             (
                 r"^\s*(?:сделай|создай|добавь|собери|подготовь)?\s*"
                 r"сценар\w*(?:\s+под\s+названи(?:ем|е)\s+"
@@ -806,6 +815,8 @@ def _action_title(spec: dict[str, Any]) -> str:
     action = str(spec.get("action") or "")
     if action == "open_app":
         return f"Открыть {spec.get('app') or 'приложение'}"
+    if action == "quit_app":
+        return f"Закрыть {spec.get('app') or 'приложение'}"
     if action == "open_url":
         return f"Открыть {spec.get('url') or 'сайт'}"
     if action == "open_path":
@@ -2287,6 +2298,37 @@ class BindingAgentOrchestrator:
         intent = str(intent_step.data.get("intent") or "create_binding")
         block = str(intent_step.data.get("block") or "binding")
 
+        if intent == "cancel_binding":
+            result = BindingAgentResult(
+                ok=True,
+                can_apply=False,
+                error="",
+                missing=[],
+                gesture_label="",
+                command_name="",
+                mode="answer",
+                action_spec={},
+                summary=[],
+                response_text=(
+                    "Хорошо, привязку не создаю. Текущий черновик не будет "
+                    "изменён; можно сформулировать новую команду."
+                ),
+                steps=[
+                    *steps,
+                    AgentStep(
+                        "Conversation Agent",
+                        "ok",
+                        "Подтвердил отмену без создания исполняемого действия.",
+                        {"intent": intent, "block": block},
+                    ),
+                ],
+            )
+            return self._finish_result(
+                self._review_result(context, result, intent_step),
+                context,
+                provider=provider_name,
+            )
+
         if block == "project_question":
             labels = _known_gesture_labels(context)
             is_validation = intent == "validate_command"
@@ -2506,20 +2548,34 @@ class BindingAgentOrchestrator:
         steps.append(memory_step)
 
         action_spec: dict[str, Any] = {}
+        requires_confirmation = False
         if intent == "build_sequence":
             scenario_step = self.scenario_agent.run(context, enabled=True)
             steps.append(scenario_step)
             action_spec = dict(scenario_step.data.get("action_spec") or {})
+            requires_confirmation = bool(
+                scenario_step.data.get("requires_confirmation")
+            )
             if not action_spec:
                 action_step = self.action_agent.run(context)
                 steps.append(action_step)
                 action_spec = dict(action_step.data.get("action_spec") or {})
+                candidate_data = action_step.data.get("candidate")
+                requires_confirmation = bool(
+                    isinstance(candidate_data, dict)
+                    and candidate_data.get("requiresConfirmation")
+                )
         else:
             scenario_step = self.scenario_agent.run(context, enabled=False)
             steps.append(scenario_step)
             action_step = self.action_agent.run(context)
             steps.append(action_step)
             action_spec = dict(action_step.data.get("action_spec") or {})
+            candidate_data = action_step.data.get("candidate")
+            requires_confirmation = bool(
+                isinstance(candidate_data, dict)
+                and candidate_data.get("requiresConfirmation")
+            )
 
         research: dict[str, Any] = {}
         if not action_spec:
@@ -2596,6 +2652,7 @@ class BindingAgentOrchestrator:
             response_text=response,
             steps=steps,
             research=research,
+            requires_confirmation=requires_confirmation,
         )
         return result
 
@@ -2804,6 +2861,33 @@ class BindingAgentOrchestrator:
     ) -> BindingAgentResult:
         gesture = str(draft.get("gestureLabel") or "").strip()
         action_spec = dict(draft.get("actionSpec") or {})
+        if action_spec:
+            goal, semantic_candidate = compile_action_candidate(
+                context.prompt,
+                action_spec,
+                frame=context.task_frame,
+                source="model_candidate",
+            )
+            steps.append(
+                AgentStep(
+                    "Semantic Verifier",
+                    "ok" if semantic_candidate.valid else "blocked",
+                    (
+                        "Model action соответствует цели пользователя."
+                        if semantic_candidate.valid
+                        else "Model action не соответствует цели пользователя."
+                    ),
+                    {
+                        "goal": goal.to_dict(),
+                        "candidate": semantic_candidate.to_dict(),
+                    },
+                )
+            )
+            action_spec = (
+                dict(semantic_candidate.action_spec)
+                if semantic_candidate.valid
+                else {}
+            )
         forced_missing: list[str] = []
         if _action_conflicts_with_abstract_workflow(context.prompt, action_spec):
             action_spec = {}

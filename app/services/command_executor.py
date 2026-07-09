@@ -196,6 +196,9 @@ class CommandExecutor:
         if action == "open_app":
             return self._open_application(config.get("app", ""))
 
+        if action == "quit_app":
+            return self._quit_application(config.get("app", ""))
+
         if action == "open_path":
             return self._open_path(config.get("path", ""))
 
@@ -341,6 +344,31 @@ class CommandExecutor:
         
         except Exception as e:
             logger.error(f"Ошибка открытия приложения '{app_name}': {e}")
+            return False
+
+    def _quit_application(self, app_name: str) -> bool:
+        """Quit a named macOS application without interpolating shell text."""
+        clean = (app_name or "").strip()
+        if not clean or self.system != "darwin":
+            return False
+        script = (
+            "on run argv\n"
+            "tell application (item 1 of argv) to quit\n"
+            "end run"
+        )
+        try:
+            completed = subprocess.run(
+                ["osascript", "-e", script, clean],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if completed.returncode != 0:
+                logger.error("quit_app failed for %s: %s", clean, completed.stderr)
+            return completed.returncode == 0
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.error("quit_app failed for %s: %s", clean, exc)
             return False
     
     def _run_script(self, script_path: str, args: List[str] = None) -> bool:

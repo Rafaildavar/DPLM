@@ -11,6 +11,7 @@ from app.services.binding_agents.contracts import (
     TaskOperation,
 )
 from app.services.binding_agents.semantic_router import (
+    SEMANTIC_MIN_MARGIN,
     SEMANTIC_ROUTE_THRESHOLD,
     SEMANTIC_SEQUENCE_OVERRIDE_THRESHOLD,
     route_semantically,
@@ -350,7 +351,10 @@ class TaskFrameExtractor:
             evidence.append(TaskEvidence("project_question", project_marker, 0.88))
             return self._answer_frame("project_question", evidence, semantic, 0.88)
 
-        if semantic.score >= SEMANTIC_ROUTE_THRESHOLD:
+        if (
+            semantic.score >= SEMANTIC_ROUTE_THRESHOLD
+            and semantic.margin >= SEMANTIC_MIN_MARGIN
+        ):
             evidence.append(TaskEvidence("semantic_route", semantic.matched_example, semantic.score))
             domain = (
                 TaskDomain.BINDING
@@ -431,7 +435,10 @@ class TaskFrameExtractor:
         *,
         sequence: bool = False,
     ) -> TaskFrame:
-        alternatives = ((semantic.intent, semantic.score),) if semantic.intent else ()
+        alternatives = tuple(
+            (intent, score)
+            for intent, score, _example in semantic.alternatives
+        ) or (((semantic.intent, semantic.score),) if semantic.intent else ())
         return TaskFrame(
             domain=domain,
             operation=operation,

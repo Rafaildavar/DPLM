@@ -17,6 +17,10 @@ from app.services.binding_agent import (
     _similar_gesture_labels,
     _split_sequence,
 )
+from app.services.binding_agents.action_semantics import (
+    CandidateArbiter,
+    compile_action_candidate,
+)
 from app.services.gesture_aliases import (
     GestureAliasRegistry,
     gesture_alias_query_from_text,
@@ -155,6 +159,20 @@ class AgentToolResult:
 def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
     labels = _known_gesture_labels(context)
     query = _gesture_query_from_text(context.prompt)
+    exact_label = _exact_known_label(query, context.prompt, labels)
+    if exact_label:
+        return AgentToolResult(
+            "resolve_gesture",
+            "ok",
+            f"Нашёл точный label жеста: {exact_label}.",
+            {
+                "gesture": exact_label,
+                "source": "exact_label",
+                "known": True,
+                "matchedAlias": exact_label,
+                "confidence": 1.0,
+            },
+        )
     alias_match = GestureAliasRegistry().resolve(
         context.prompt,
         labels=labels,
@@ -335,7 +353,28 @@ def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
             {"action_spec": draft_spec, "source": "draft_state"},
         )
 
-    spec = _parse_action(context.prompt)
+    legacy_spec = _parse_action(context.prompt)
+    goal, candidate = compile_action_candidate(
+        context.prompt,
+        legacy_spec,
+        frame=context.task_frame,
+    )
+    arbitration = CandidateArbiter().choose((candidate,))
+    spec = dict(arbitration.selected.action_spec) if arbitration.selected else None
+    if candidate.issues and any(
+        issue not in {"action_unresolved"} for issue in candidate.issues
+    ):
+        return AgentToolResult(
+            "parse_macos_action",
+            "need_clarification",
+            "Действие не прошло семантическую проверку.",
+            {
+                "action_spec": {},
+                "goal": goal.to_dict(),
+                "candidates": [candidate.to_dict()],
+                "semanticIssues": list(candidate.issues),
+            },
+        )
     if spec is None:
         if draft_spec:
             spec = draft_spec
@@ -349,13 +388,26 @@ def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
         for item in reversed(_history_items(context.conversation_history)):
             if item.get("role") != "user":
                 continue
-            spec = _parse_action(item.get("text") or "")
-            if spec is not None:
+            history_text = item.get("text") or ""
+            history_legacy = _parse_action(history_text)
+            history_goal, history_candidate = compile_action_candidate(
+                history_text,
+                history_legacy,
+                source="dialog_memory",
+            )
+            history_choice = CandidateArbiter().choose((history_candidate,)).selected
+            if history_choice is not None:
+                spec = dict(history_choice.action_spec)
                 return AgentToolResult(
                     "parse_macos_action",
                     "ok",
                     f"Взял действие из памяти: {_action_title(spec)}.",
-                    {"action_spec": spec, "source": "memory"},
+                    {
+                        "action_spec": spec,
+                        "source": "memory",
+                        "goal": history_goal.to_dict(),
+                        "candidate": history_choice.to_dict(),
+                    },
                 )
     if spec is None:
         return AgentToolResult(
@@ -368,7 +420,12 @@ def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
         "parse_macos_action",
         "ok",
         f"Собрал действие: {_action_title(spec)}.",
-        {"action_spec": spec, "source": "prompt"},
+        {
+            "action_spec": spec,
+            "source": "prompt",
+            "goal": goal.to_dict(),
+            "candidate": arbitration.selected.to_dict() if arbitration.selected else {},
+        },
     )
 
 
@@ -377,11 +434,13 @@ def build_sequence_action(context: BindingAgentContext) -> AgentToolResult:
     unresolved: list[dict[str, Any]] = []
     clauses = _split_sequence(context.prompt)
     for index, clause in enumerate(clauses, start=1):
-        step = _parse_action(clause)
-        if step is None:
+        legacy_step = _parse_action(clause)
+        _goal, candidate = compile_action_candidate(clause, legacy_step)
+        selected = CandidateArbiter().choose((candidate,)).selected
+        if selected is None:
             unresolved.append({"index": index, "text": clause})
             continue
-        step = dict(step)
+        step = dict(selected.action_spec)
         step.pop("platform", None)
         steps.append(step)
     scenario_name = _extract_scenario_name(context.prompt)
@@ -406,6 +465,10 @@ def build_sequence_action(context: BindingAgentContext) -> AgentToolResult:
                 "steps_count": len(steps),
                 "expected_steps_count": len(clauses),
                 "unresolved_steps": unresolved,
+                "requires_confirmation": any(
+                    step.get("action") in {"quit_app", "lock_screen", "run_script"}
+                    for step in steps
+                ),
             },
         )
     if len(steps) < 2:
@@ -432,8 +495,28 @@ def build_sequence_action(context: BindingAgentContext) -> AgentToolResult:
             "steps_count": len(steps),
             "expected_steps_count": len(clauses),
             "unresolved_steps": [],
+            "requires_confirmation": any(
+                step.get("action") in {"quit_app", "lock_screen", "run_script"}
+                for step in steps
+            ),
         },
     )
+
+
+def _exact_known_label(query: str, prompt: str, labels: list[str]) -> str:
+    query_key = (query or "").strip().lower()
+    by_lower = {label.lower(): label for label in labels}
+    if query_key in by_lower:
+        return by_lower[query_key]
+    lower_prompt = (prompt or "").lower()
+    for label in sorted(labels, key=len, reverse=True):
+        if re.search(
+            rf"(?<![a-zа-я0-9_]){re.escape(label.lower())}(?![a-zа-я0-9_])",
+            lower_prompt,
+            re.IGNORECASE,
+        ):
+            return label
+    return ""
 
 
 def validate_binding_contract(
