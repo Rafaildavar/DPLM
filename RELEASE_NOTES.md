@@ -1,6 +1,6 @@
 # GestureBind v0.8.0 MVP
 
-GestureBind v0.8.0 is the first release candidate built around one coherent
+GestureBind v0.8.0 is the first MVP release built around one coherent
 desktop product path: record personal gestures, train local models, validate
 them live and bind accepted gestures to safe macOS actions.
 
@@ -36,6 +36,9 @@ them live and bind accepted gestures to safe macOS actions.
 | Post-gate controlled live static recall at threshold `0.80` | `20/20 = 1.0000` |
 | Post-gate controlled live dynamic recall at threshold `0.90` | `38/40 = 0.9500` |
 | Post-gate positive total / wrong class | `58/60 = 0.9667 / 0` |
+| Partial/look-alike false-command rate | `1/20 = 0.0500` |
+| Background/no-command false-command rate | `0/30 = 0.0000` |
+| Aggregate safety false-command rate | `1/50 = 0.0200` |
 
 The post-completion dynamic release run produced `SwipeLeft 20/20`,
 `diagonal 9/10` and
@@ -44,6 +47,8 @@ command-binding confidence policy is independent from the static and dynamic
 recognition thresholds.
 The completion benchmark is source-recording replay, while the `38/40` dynamic
 result is fresh controlled webcam evidence after enabling the gate.
+The final safety matrix passed the release target: one false command across
+`20` partial/look-alike attempts and zero across `30` background attempts.
 
 ## Included
 
@@ -63,7 +68,7 @@ result is fresh controlled webcam evidence after enabling the gate.
 ## Known MVP Limits
 
 - The release is macOS-first and is not yet notarized.
-- A partial/look-alike motion run and final no-command matrix are required
-  before creating the public `v0.8.0` tag.
+- Live evidence is a controlled personalized protocol, not signer-independent
+  benchmark quality.
 - New personal classes still require diverse recordings for reliable open-set
   behavior.

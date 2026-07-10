@@ -5900,7 +5900,7 @@ Live evidence от пользователя:
 
 ### H-115: Adaptive completion gate for arbitrary dynamic classes
 
-Дата: 2026-07-10. Статус: `validated-live-positive` в H-116; safety run pending.
+Дата: 2026-07-10. Статус: `validated-live-safety` в H-116/H-117.
 
 Проблема:
 - `canonical_dynamic_sequence` нормализует амплитуду глобального движения;
@@ -5993,6 +5993,41 @@ MLflow:
 - artifact: `controlled_live_summary.json`.
 
 Следующий обязательный release-check:
-- partial/look-alike dynamic matrix с подсчетом ложных команд;
-- минимум `30` no-command/background попыток;
-- после safety run обновить dashboard и финальные слайды.
+- выполнен в H-117; остается обновить dashboard и финальные слайды.
+
+### H-117: Final partial and no-command safety matrix
+
+Дата: 2026-07-10. Статус: `validated-release`.
+
+Протокол:
+- production auto-router с adaptive completion gate;
+- static threshold `0.80`, dynamic threshold `0.90`;
+- `20` незавершенных или похожих на команды движений;
+- `30` background/no-command попыток;
+- результаты сообщены пользователем агрегированно.
+
+Результаты:
+- partial/look-alike: `19/20` безопасно без команды, `1/20` ложная команда,
+  false-positive rate `0.0500`;
+- background/no-command: `30/30` без команды, false-positive rate `0.0000`;
+- aggregate safety: `49/50` без команды, `1/50` ложная команда,
+  false-positive rate `0.0200`;
+- обе группы проходят release target `<=0.10`.
+
+Совместно с H-116:
+- positive recall: `58/60 = 0.9667`;
+- dynamic recall: `38/40 = 0.9500`;
+- wrong-class predictions в positive matrix: `0`;
+- background false commands: `0/30`.
+
+MLflow:
+- evidence group: `release-safety-post-completion-2026-07-10-v1`;
+- run: `92d7a2795f8a4b05befd149a3e11935b`;
+- artifact: `controlled_live_safety_summary.json`.
+
+Решение:
+- controlled positive и safety gates для `v0.8.0` пройдены;
+- код и production artifacts замораживаются до публикации;
+- release можно создавать после final CI, hygiene и проверки `git archive`;
+- метрики на защите нужно называть результатами персонального controlled
+  protocol, а не signer-independent benchmark.

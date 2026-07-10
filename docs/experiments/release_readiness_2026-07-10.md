@@ -125,12 +125,31 @@ group `release-positive-post-completion-2026-07-10-v2`, run
 `5ee224e67a83473eacc36147adcba124`. This summary intentionally does not claim
 frame-level latency or route metadata.
 
-## Remaining evidence before defense
+## Final controlled safety evidence
 
-1. Run partial/look-alike motions and report completion rejects versus commands.
-2. Run at least `30` no-command/background attempts with static `0.80` and
-   dynamic `0.90` release thresholds.
-3. Report wrong commands and the live negative false-positive rate.
-4. Regenerate the MLflow/dashboard snapshot only after the no-command run.
-5. Do not present training accuracy as test accuracy; label it
-   `resubstitution accuracy` if it is shown at all.
+| Scenario | Safe no-command | False command | Attempts | False-positive rate |
+|---|---:|---:|---:|---:|
+| Partial/look-alike movement | `19` | `1` | `20` | `0.0500` |
+| Background/no-command | `30` | `0` | `30` | `0.0000` |
+| Aggregate safety | `49` | `1` | `50` | `0.0200` |
+
+Both scenarios pass the contest-demo safety target of false-positive rate
+`<=0.10`. The aggregate result is a controlled personalized safety test and
+does not claim general open-world specificity.
+
+MLflow evidence group: `release-safety-post-completion-2026-07-10-v1`, run
+`92d7a2795f8a4b05befd149a3e11935b`, artifact
+`controlled_live_safety_summary.json`.
+
+## Release decision
+
+Status: **ready for `v0.8.0` publication**.
+
+- positive controlled recall: `58/60 = 0.9667`;
+- dynamic controlled recall: `38/40 = 0.9500`;
+- wrong-class predictions in the positive matrix: `0`;
+- aggregate safety false-command rate: `1/50 = 0.0200`;
+- background/no-command false-command rate: `0/30 = 0.0000`;
+- automated suite and production model smoke must remain green on the final
+  release commit;
+- training accuracy must be labeled `resubstitution accuracy` if presented.

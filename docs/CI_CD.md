@@ -145,4 +145,16 @@ Before creating a tag:
 2. Confirm that `python -m scripts.check_repository_hygiene` succeeds.
 3. Check that `git status` has no unexpected local files staged.
 4. Tag the release with `vX.Y.Z`.
-5. Let `desktop-release.yml` create the draft release bundle.
+5. Let `desktop-release.yml` create the GitHub release bundle.
+
+For the current release branch:
+
+```bash
+git push origin contest_version
+git tag -a v0.8.0 -m "GestureBind v0.8.0"
+git push origin v0.8.0
+```
+
+The tag command must run on the exact commit that passed local CI and manual
+release QA. The tag push triggers archive creation and publication with
+`RELEASE_NOTES.md`.

@@ -16,6 +16,8 @@
   segmentation and MLflow full/prefix replay evidence.
 - Validated the post-gate controlled live matrix at `58/60` positive attempts,
   including `38/40` dynamic attempts and zero wrong-class predictions.
+- Passed the final safety matrix with `1/20` partial/look-alike and `0/30`
+  background false commands.
 
 ## v0.7.0 - 2026-07-08
 

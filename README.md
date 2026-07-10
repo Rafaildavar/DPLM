@@ -80,6 +80,9 @@ Release auto-router принимает static-предсказания от `0.8
 | Post-gate controlled live static recall at threshold `0.80` | `20/20 = 1.0000` |
 | Post-gate controlled live dynamic recall at threshold `0.90` | `38/40 = 0.9500` |
 | Post-gate positive total / wrong class | `58/60 = 0.9667 / 0` |
+| Partial/look-alike false-command rate | `1/20 = 0.0500` |
+| Background/no-command false-command rate | `0/30 = 0.0000` |
+| Aggregate safety false-command rate | `1/50 = 0.0200` |
 
 Post-gate live breakdown при release-пороге `0.90`: `SwipeLeft 20/20`,
 `diagonal 9/10` (`1` пропуск), `zoom 9/10` (`1` пропуск). Неверных
@@ -90,8 +93,9 @@ dynamic-классов в этом прогоне не отмечено.
 `no-command` safety run.
 Completion replay использует текущие source recordings через production
 `GestureOnlineInfer`; это regression evidence, а не независимый test set.
-Положительный webcam-run после gate выполнен; до release tag остается отдельная
-матрица partial/look-alike и `no-command` движений.
+Webcam positive и safety runs после gate выполнены. Partial/look-alike движения
+дали `1/20` ложную команду, а background/no-command сценарии не дали ни одной
+команды в `30` попытках. Оба показателя проходят release target `<=10%`.
 
 ## Архитектура
 
@@ -199,12 +203,15 @@ GitHub release workflow создает source/model bundle через `git archi
 Поэтому архив содержит только tracked-файлы текущего commit и не может случайно
 захватить `.env`, датасет, локальную БД или experiment outputs.
 
+Статус `v0.8.0`: **ready**. Positive matrix: `58/60`, wrong class `0`;
+safety matrix: `49/50` безопасных отклонений, background false commands `0/30`.
+
 Перед публикацией:
 
 1. выполнить `make ci`;
 2. пройти live static/dynamic/no-command matrix;
 3. проверить `VERSION`, `CHANGELOG.md` и `RELEASE_NOTES.md`;
-4. создать tag `v0.8.0` только после ручного release QA.
+4. создать tag `v0.8.0` после ручной проверки текущего commit.
 
 ## Документация
 
