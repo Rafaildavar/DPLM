@@ -53,6 +53,8 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 полные pairwise distances, углы пальцев и временные агрегаты. Dynamic LSTM
 получает нормализованную последовательность `72 x 22 x 3` и сохраняет
 глобальную траекторию, необходимую для направленных движений.
+Release auto-router принимает static-предсказания от `0.80`, а dynamic — от
+`0.90`; порог выполнения привязанной команды остается отдельным барьером.
 
 Текущая release evidence:
 
@@ -67,11 +69,13 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 | Controlled live static recall at threshold `0.80` | `1.0000` |
 | Controlled live dynamic recall | `28/30 = 0.9333` |
 
-Live dynamic breakdown: `SwipeLeft 10/10`, `diagonal 9/10`, `zoom 9/10`.
+Live dynamic breakdown до фиксации release-порога `0.90`: `SwipeLeft 10/10`,
+`diagonal 9/10`, `zoom 9/10`.
 Результат относится к персональному controlled protocol: рука полностью в
 кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
 нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
-`no-command` safety run.
+`no-command` safety run. После изменения порога dynamic live matrix нужно
+повторить при `0.90`.
 
 ## Архитектура
 

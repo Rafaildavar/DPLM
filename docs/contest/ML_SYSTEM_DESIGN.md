@@ -14,7 +14,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | Static gesture recognition | Stable | H-105/H-113: grouped CV accuracy `0.7767`; controlled live recognition `100%` at release threshold `0.80` | capture static denominator and run no-command matrix |
 | Dynamic gesture recording | Stable | H-106 rejects inactive duplicates before saving and supports translation or in-place shape change | record fresh live matrix for current classes |
 | Dynamic natural swipe segmentation | In Progress | H-036/H-038 natural end, H-053 return guard added | repeat no-command/return-motion validation |
-| Auto routing static/dynamic | Validated | H-038: static hijack `0%` on 30 fresh dynamic attempts | add negative/no-gesture live run |
+| Auto routing static/dynamic | Validated in tests | H-038/H-114: static threshold `0.80`, dynamic threshold and completed-event override floor `0.90` | repeat dynamic and no-gesture live runs |
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-053: up can be `10/10`, down drops to `4-5/10` via return-up phase | validate return guard and add sequence verifier |
 | Negative examples / rejection layer | Added | H-041 synthetic negatives, H-053 `no_command` live target | run no-command live validation |
@@ -23,12 +23,12 @@ Purpose: единый living-документ по ML-системе GestureBind
 | MLflow experiment tracking | Stable | H-108 logs dataset/model SHA-256, git state, source groups and grouped validation | use clean committed runs for final charts |
 | HTML MLOps dashboard | Stable | H-096: `docs/mlops_dashboard/index.html` includes MLflow showcase charts for training, live A/B, safety and timeline | regenerate before demo |
 | Release home experience | Validated | H-110: camera-first UI, friendly runtime state, one primary action; `205` Flet tests and desktop visual check | run final live demo matrix |
-| MVP repository contract | Validated | H-111/H-112/H-113: Flet-only runtime, portable CI fixtures, `265` tracked files, `15` allowlisted model artifacts, `599` clean tracked tests | verify tag archive before publication |
+| MVP repository contract | Validated | H-111/H-112/H-113/H-114: Flet-only runtime, `265` tracked files, `15` allowlisted model artifacts, `602` clean tracked tests, release route thresholds | verify tag archive before publication |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
-| Dynamic GISLR landmark LSTM | Validated live | H-109/H-113: grouped validation `0.8571`, overlap `0`; controlled live `28/30` (`SwipeLeft 10/10`, `diagonal 9/10`, `zoom 9/10`) | run no-command live matrix |
+| Dynamic GISLR landmark LSTM | Validated live, threshold recheck pending | H-109/H-113/H-114: grouped validation `0.8571`, overlap `0`; pre-threshold-change controlled live `28/30` | repeat class matrix at `0.90`, then run no-command matrix |
 | Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
 | Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
 | Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |

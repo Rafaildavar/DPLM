@@ -40,9 +40,9 @@ REASON_INTENT_DYNAMIC_PENDING = "intent_dynamic_pending"
 REASON_INTENT_STATIC_FALLBACK = "intent_static_fallback"
 REASON_INTENT_STATIC_NO_CANDIDATE = "intent_static_no_candidate"
 REASON_DYNAMIC_OVERRIDES_INTENT_GATE = "dynamic_overrides_intent_gate"
-DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.60
+DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.90
 DEFAULT_STATIC_CONFIDENCE_THRESHOLD = 0.80
-DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD = 0.85
+DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD = 0.90
 
 
 @dataclass(frozen=True)
@@ -587,7 +587,11 @@ class GestureRecognitionRouter:
         intent_label = str(intent_decision.get("label") or "")
         if intent_label not in {INTENT_NONE, INTENT_STATIC}:
             return False
-        if candidate.confidence < DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD:
+        override_threshold = max(
+            self._dynamic_confidence_threshold,
+            DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD,
+        )
+        if candidate.confidence < override_threshold:
             return False
 
         temporal = dynamic_out.get("temporal")

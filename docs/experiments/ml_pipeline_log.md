@@ -5851,3 +5851,34 @@ Live evidence от пользователя:
 - `0.79` static confidence отклоняется;
 - `0.80` принимается;
 - dynamic thresholds и routing остаются без изменений.
+
+### H-114: Release dynamic confidence threshold `0.90`
+
+Дата: 2026-07-10. Статус: `validated-tests`, ожидает live recheck.
+
+Проблема:
+- основной auto-router принимал dynamic prediction при confidence `>= 0.60`;
+- completed/cooldown dynamic event мог обойти intent `none/static` при `>= 0.85`;
+- два разных порога делали release-policy неочевидной и оставляли лишний путь
+  для слабого dynamic prediction.
+
+Решение:
+- release dynamic confidence threshold поднят до `0.90`;
+- минимальный порог completed-event override поднят до `0.90`;
+- effective override threshold равен максимуму из configured dynamic threshold
+  и release floor `0.90`, поэтому override не ослабляет основную настройку;
+- static threshold остается `0.80`, command binding threshold не меняется.
+
+Регрессия:
+- `0.89` dynamic confidence отклоняется;
+- `0.90` принимается;
+- completed event с confidence `0.89` не обходит intent-gate даже при
+  искусственно сниженном основном пороге;
+- targeted router suite: `24 passed`;
+- local `make ci`: `601 passed` + static/dynamic model smoke;
+- clean tracked full suite: `602 passed`.
+
+Следующий live-check:
+- повторить по `10` попыток `SwipeLeft`, `diagonal`, `zoom` на новой сборке;
+- затем выполнить `30` no-command/background попыток;
+- зафиксировать misses, wrong commands и dynamic false-positive rate.

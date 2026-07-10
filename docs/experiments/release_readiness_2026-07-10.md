@@ -29,13 +29,16 @@ git branch codex/release-rollback pre-critical-ml-pipeline-2026-07-10
 | MLflow runs could not prove which data/code produced a model | Dataset SHA-256, model SHA-256, git commit/dirty state, source groups and grouped-validation fields | Runs are traceable and comparable instead of being anonymous accuracy rows |
 | Two desktop implementations and skipped Qt tests obscured the release path | Retired PySide/QML files were removed; Flet is the only desktop entrypoint | Installation, CI and architecture now describe the same application |
 | A release archive was built from the working directory with a growing exclude list | Repository hygiene allowlist plus `git archive` from the tagged commit | Private/generated local files cannot enter the source bundle |
+| Dynamic output could pass at `0.60`, while a completed event could override intent at `0.85` | Dynamic acceptance and completed-event override floor are both `0.90` | Low-confidence movement is rejected consistently before command routing |
 
 ## Verification
 
-- Clean tracked automated suite: `599 passed`, no skipped legacy modules.
+- Clean tracked automated suite: `602 passed`, no skipped legacy modules.
 - Repository hygiene: `265` tracked files and exactly `15` allowlisted
   production model artifacts.
 - `make ci` runs the hygiene gate before tests and ML artifact smoke.
+- Local `make ci`: `601 passed`; static and production dynamic LSTM smoke both
+  completed successfully.
 - Atomic bundle rollback is tested with an injected model-activation failure.
 - MLflow smoke run: `32866f9906ac4b3688b3f3f52b9d220d` in
   `GestureBind-Pipeline-Smoke`.
@@ -77,9 +80,12 @@ but its ML stage remains below the `33.3 ms` budget for 30 FPS.
 ## Fresh controlled live evidence
 
 - Release static confidence threshold: `0.80`.
+- Release dynamic confidence threshold: `0.90`.
 - Static recognition: user-reported `100%` at threshold `0.80`; the attempt
   denominator was not captured in the report and must not be invented.
-- Dynamic recognition: `28/30 = 0.9333` overall.
+- Dynamic recognition before the code-level threshold promotion: `28/30 =
+  0.9333` overall. The accepted live scores were reported in the `0.93-0.99`
+  range, but the complete matrix still needs to be repeated with the new build.
 
 | Dynamic class | Correct | Attempts | Recall |
 |---|---:|---:|---:|
@@ -95,8 +101,10 @@ unconstrained gesture recognition.
 ## Remaining evidence before defense
 
 1. Record the exact static attempt denominator/per-class counts if available.
-2. Run at least `30` no-command/background attempts at threshold `0.80`.
-3. Report wrong commands, missed events and live negative false-positive rate.
-4. Regenerate the MLflow/dashboard snapshot only after the no-command run.
-5. Do not present training accuracy as test accuracy; label it
+2. Repeat the dynamic matrix with the release threshold `0.90`.
+3. Run at least `30` no-command/background attempts with static `0.80` and
+   dynamic `0.90` release thresholds.
+4. Report wrong commands, missed events and live negative false-positive rate.
+5. Regenerate the MLflow/dashboard snapshot only after the no-command run.
+6. Do not present training accuracy as test accuracy; label it
    `resubstitution accuracy` if it is shown at all.

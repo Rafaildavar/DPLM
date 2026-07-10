@@ -11,6 +11,7 @@
 - Switched release source bundles to tracked files only.
 - Made binding-agent path golden cases independent of a developer home directory.
 - Raised the release auto-router static confidence threshold to `0.80` from live evidence.
+- Raised the release dynamic confidence threshold and completed-event override floor to `0.90`.
 
 ## v0.7.0 - 2026-07-08
 
