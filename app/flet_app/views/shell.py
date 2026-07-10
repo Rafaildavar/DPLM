@@ -57,16 +57,28 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         side = ft.BorderSide(1, color)
         return ft.Border(top=side, right=side, bottom=side, left=side)
 
+    def friendly_status(value: str, *, active: bool) -> str:
+        clean = str(value or "").strip().lower()
+        if any(token in clean for token in ("error", "failed", "ошиб", "не удалось")):
+            return "Нужна проверка"
+        if active:
+            return "Распознавание включено"
+        return "Готово"
+
     status_dot = ft.Container(
         width=12,
         height=12,
         border_radius=6,
         bgcolor=COLOR_SUCCESS if controller.is_recognizing else COLOR_MUTED,
     )
-    status_text = ft.Text(controller.status, size=13, color=COLOR_ON_SURFACE)
+    status_text = ft.Text(
+        friendly_status(controller.status, active=controller.is_recognizing),
+        size=12,
+        color=COLOR_ON_SURFACE,
+    )
     title_text = ft.Text(
-        "GestureBind — ассистент жестов",
-        size=20,
+        "GestureBind",
+        size=19,
         weight=ft.FontWeight.BOLD,
         color=COLOR_ON_SURFACE,
     )
@@ -75,10 +87,10 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
         bgcolor=COLOR_SURFACE,
         border=border_all(COLOR_SURFACE_HIGH),
         border_radius=12,
-        padding=14,
+        padding=12,
         content=ft.Row(
             controls=[
-                ft.Icon(ft.Icons.SMART_TOY, color=COLOR_ACCENT, size=30),
+                ft.Icon(ft.Icons.GESTURE, color=COLOR_ACCENT, size=27),
                 ft.Column(
                     spacing=2,
                     controls=[
@@ -234,7 +246,10 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
     # --- Подписки на глобальный статус ------------------------------------
 
     def _apply_status() -> None:
-        status_text.value = controller.status
+        status_text.value = friendly_status(
+            controller.status,
+            active=controller.is_recognizing,
+        )
         status_dot.bgcolor = COLOR_SUCCESS if controller.is_recognizing else COLOR_MUTED
         try:
             page.update()
