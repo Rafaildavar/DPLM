@@ -318,7 +318,7 @@ production-релизу еще нужны проверка установки и
 
 | Слой | Инструменты |
 |---|---|
-| Desktop UI | Flet, legacy PySide/Qt components |
+| Desktop UI | Flet desktop runtime |
 | Computer vision | OpenCV, MediaPipe Hands |
 | ML | scikit-learn, NumPy, SciPy, PyTorch LSTM backbone, Optuna |
 | Data and storage | `.npy`, JSON metadata, SQLAlchemy, PostgreSQL, SQLite fallback |

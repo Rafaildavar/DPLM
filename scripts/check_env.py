@@ -14,10 +14,11 @@ TO_CHECK: List[Tuple[str, str]] = [
     ("mediapipe", "__version__"),
     ("sklearn", "__version__"),
     ("joblib", "__version__"),
+    ("torch", "__version__"),
+    ("flet", "__version__"),
+    ("sqlalchemy", "__version__"),
+    ("mlflow", "__version__"),
     ("pyttsx3", "__version__"),
-    ("objc", "__version__"),  # pyobjc пакеты экспортируют модуль objc
-    ("protobuf", "__version__"),
-    ("PySide6", "__version__"),
     ("speech_recognition", "__version__"),  # SpeechRecognition
     ("vosk", "__version__"),
 ]
@@ -38,10 +39,7 @@ def main() -> None:
 
     if missing:
         print("\nTo install missing (example):")
-        # Подбираем дружественный список пакетов
-        # Примечание: для objc нужен метапакет pyobjc
         replacements = {
-            "objc": "pyobjc",
             "speech_recognition": "SpeechRecognition",
         }
         pkgs = [replacements.get(m, m) for m in missing]
@@ -52,5 +50,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 

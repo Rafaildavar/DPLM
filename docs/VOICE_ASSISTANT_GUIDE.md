@@ -369,22 +369,12 @@ assistant.register_command("открыть", open_app_handler)
 assistant.start_listening_loop()
 ```
 
-### Пример 3: Интеграция с GUI
+### Пример 3: Интеграция с desktop UI
 
-```python
-# В QML
-Button {
-    text: "Запустить помощника"
-    onClicked: {
-        appController.startVoiceAssistant("ru", true, true)
-    }
-}
-
-// Отображение статуса
-Text {
-    text: appController.isVoiceAssistantActive ? "Активен" : "Неактивен"
-}
-```
+Flet-экран вызывает методы `AppController.start_voice_assistant()` и
+`AppController.stop_voice_assistant()`, а состояние получает через событие
+`voice_assistant_state_changed`. Реализация находится в
+`app/flet_app/views/voice.py`.
 
 ---
 

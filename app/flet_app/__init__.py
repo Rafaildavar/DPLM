@@ -1,5 +1,5 @@
 """
-Flet-версия GUI для GestureBind (замена PySide6 + QML).
+Desktop UI GestureBind на Flet.
 
 Точка входа: ``python -m app.flet_app.main``.
 

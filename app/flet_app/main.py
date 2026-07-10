@@ -5,9 +5,8 @@
 Запуск:
     python -m app.flet_app.main
 
-В отличие от PySide6 версии (``app/main.py``), не нужно никаких манипуляций с
-``QT_PLUGIN_PATH`` / ``QT_QPA_PLATFORM_PLUGIN_PATH`` — Flet поставляет свой
-Flutter-runtime внутри пакета ``flet_desktop`` и не требует системных плагинов.
+Flet поставляет Flutter runtime внутри ``flet_desktop``. Это единственная
+desktop-точка входа релизного приложения.
 """
 from __future__ import annotations
 

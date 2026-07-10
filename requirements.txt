@@ -19,18 +19,10 @@ pyttsx3
 SpeechRecognition
 vosk
 
-# GUI Framework — Flet (Flutter desktop runtime, без Qt-плагинов).
+# GUI Framework — Flet (Flutter desktop runtime).
 # Точка входа: `python -m app.flet_app.main`.
 flet>=0.85.3
 flet-desktop>=0.85.3
-
-# Legacy QML/PySide6 (старая ветка `app/main.py` + 22 QML-файла).
-# Не нужен для Flet-версии. Раскомментируй, если хочешь сравнить с QML;
-# фиксированная версия 6.9.3 оставлена как проверенный legacy-вариант.
-# PySide6==6.9.3
-# PySide6-Addons==6.9.3
-# PySide6-Essentials==6.9.3
-# shiboken6==6.9.3
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)
@@ -48,5 +40,3 @@ joblib
 pytest
 pytest-cov
 pytest-mock
-# pytest-qt — нужен только для тестов legacy QML/PySide6 версии.
-# pytest-qt

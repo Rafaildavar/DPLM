@@ -2062,11 +2062,11 @@ class GestureOnlineInfer:
 
     def _build_overlay_payload(self, hands: List[DetectedHand]) -> str:
         """
-        Сериализовать ключевые точки рук для QML.
+        Сериализовать ключевые точки рук для UI overlay.
 
         Формат: список рук, каждая рука — список [x, y] в нормализованных
-        кадровых координатах 0..1. QML сторона способна нарисовать произвольное
-        количество рук (см. CameraPreview.qml).
+        кадровых координатах 0..1. UI способен нарисовать произвольное
+        количество рук.
         """
         payload: List[List[List[float]]] = []
         for h in hands:

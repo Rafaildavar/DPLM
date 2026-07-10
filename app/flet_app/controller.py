@@ -1,12 +1,9 @@
 """
-GUI-агностичный контроллер для Flet-версии GestureBind.
-
-Делает то же, что прежний :class:`app.main.AppController` (PySide6), но без
-зависимостей от Qt: вместо ``Signal/Slot`` — обычные списки коллбэков.
+Оркестратор desktop-приложения GestureBind.
 
 Контроллер инкапсулирует:
-    * захват камеры (OpenCV, тот же ``open_default_capture`` что и в QML версии);
-    * встроенный CV-пайплайн (MediaPipe + KNN через :class:`GestureOnlineInfer`);
+    * захват камеры через общий OpenCV adapter;
+    * встроенный CV/ML-пайплайн через :class:`GestureOnlineInfer`;
     * subprocess-распознавание (``cv/realtime_infer.py``) для фонового режима;
     * выполнение команд (``CommandExecutor``);
     * (лениво) связку с БД и привязками жестов.
