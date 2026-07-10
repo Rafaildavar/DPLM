@@ -33,16 +33,17 @@ them live and bind accepted gestures to safe macOS actions.
 | Completion candidate full / prefix accepted | `60/60 / 6/240` |
 | Production state-machine replay full / wrong class | `59/60 / 0` |
 | Production state-machine replay prefix false accepts | `5/240 = 0.0208` |
-| Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
-| Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
+| Post-gate controlled live static recall at threshold `0.80` | `20/20 = 1.0000` |
+| Post-gate controlled live dynamic recall at threshold `0.90` | `38/40 = 0.9500` |
+| Post-gate positive total / wrong class | `58/60 = 0.9667 / 0` |
 
-The dynamic release run produced `SwipeLeft 10/10`, `diagonal 9/10` and
+The post-completion dynamic release run produced `SwipeLeft 20/20`,
+`diagonal 9/10` and
 `zoom 9/10`: two misses and no reported wrong-class predictions. The
 command-binding confidence policy is independent from the static and dynamic
 recognition thresholds.
-The completion figures are source-recording regression replay, not independent
-webcam evidence. The controlled `28/30` live run predates the completion gate
-and must be repeated before the public tag.
+The completion benchmark is source-recording replay, while the `38/40` dynamic
+result is fresh controlled webcam evidence after enabling the gate.
 
 ## Included
 
@@ -62,7 +63,7 @@ and must be repeated before the public tag.
 ## Known MVP Limits
 
 - The release is macOS-first and is not yet notarized.
-- A fresh positive/partial-motion run and final no-command matrix are required
+- A partial/look-alike motion run and final no-command matrix are required
   before creating the public `v0.8.0` tag.
 - New personal classes still require diverse recordings for reliable open-set
   behavior.

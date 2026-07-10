@@ -11,11 +11,11 @@ Purpose: единый living-документ по ML-системе GestureBind
 
 | Area | Status | Evidence | Next check |
 |---|---|---|---|
-| Static gesture recognition | Stable | H-105/H-114: grouped CV accuracy `0.7767`; controlled live `10/10` at release threshold `0.80` | run no-command matrix |
-| Dynamic gesture recording | Stable | H-106 rejects inactive duplicates before saving and supports translation or in-place shape change | record fresh live matrix for current classes |
-| Dynamic completion safety | Validated offline | H-115: adaptive per-class gate, online replay `59/60` full, `0` wrong class, prefix FP `5/240` | repeat positive and no-command webcam matrix |
-| Auto routing static/dynamic | Validated live | H-038/H-114: static threshold `0.80`, dynamic threshold and completed-event override floor `0.90`; positive matrix `38/40` | run no-gesture live matrix |
-| `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
+| Static gesture recognition | Stable | H-105/H-116: grouped CV accuracy `0.7767`; post-gate controlled live `20/20` at threshold `0.80` | run no-command matrix |
+| Dynamic gesture recording | Stable | H-106 rejects inactive duplicates before saving and supports translation or in-place shape change | run partial/no-command matrix |
+| Dynamic completion safety | Validated live-positive | H-115/H-116: adaptive gate; post-gate dynamic `38/40`, wrong class `0`; replay prefix FP `5/240` | run partial and no-command webcam matrix |
+| Auto routing static/dynamic | Validated live | H-114/H-116: static threshold `0.80`, dynamic threshold/override `0.90`; positive matrix `58/60` | run no-gesture live matrix |
+| `SwipeLeft` dynamic recognition | Stable | H-116: post-gate `20/20`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-053: up can be `10/10`, down drops to `4-5/10` via return-up phase | validate return guard and add sequence verifier |
 | Negative examples / rejection layer | Added | H-041 synthetic negatives, H-053 `no_command` live target | run no-command live validation |
 | Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
@@ -28,7 +28,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
-| Dynamic GISLR landmark LSTM | Validated live | H-109/H-114/H-115: grouped validation `0.8571`; controlled live `28/30`; completion replay `59/60`, `0` wrong classes | rerun webcam matrix with completion gate |
+| Dynamic GISLR landmark LSTM | Validated live | H-109/H-116: grouped validation `0.8571`; post-gate controlled live `38/40`, `0` wrong classes | run partial/no-command matrix |
 | Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
 | Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
 | Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |
@@ -263,16 +263,16 @@ H-115 replay evidence:
 | Prefix command in state-machine replay | `5/240 = 0.0208` |
 
 This is a regression replay over source recordings, not an independent webcam
-test. The next release evidence must repeat the positive and no-command live
-matrices after H-115.
+test. H-116 supplies the fresh positive webcam matrix; the remaining release
+evidence is the partial/look-alike and no-command safety matrix.
 
 Latest evidence:
 
 | Expected | Latest score | Routing risk | Failure mode | Evidence |
 |---|---:|---:|---:|---:|
-| `swipe_up` | `10/10` in latest baseline run | `0%` in prior route tests | current risk: variant-sensitive false left | live screenshots, H-053 |
-| `swipe_down` | `4-5/10` latest runs | `0%` in prior route tests | wrong mostly `swipe_up` after return phase | live screenshots, H-053 |
-| `swipe_left` | `10/10` latest runs | `0%` in prior route tests | `0%` in latest positive runs | live screenshots, H-053 |
+| `SwipeLeft` | `20/20` | `0%` | no miss in post-gate run | H-116 |
+| `diagonal` | `9/10` | `0%` | one miss; execution is more complex | H-116 |
+| `zoom` | `9/10` | `0%` | one miss; in-place shape motion is harder to perform | H-116 |
 
 Interpretation: routing, prototype rejection and completion verification now
 form separate guards. Remaining release uncertainty is live behavior on
@@ -492,7 +492,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Dynamic sequence verifier | Added | `prototype_distance` selected as cheaper offline-tied best |
 | Dynamic neural sequence baseline | Added | `sequence_mlp` trained/logged as previous neural baseline |
 | Dynamic landmark LSTM production profile | Added | H-095: GISLR-style `dynamic_landmark_image` + LSTM backbone |
-| Adaptive dynamic completion gate | Validated offline | H-115: grouped cross-class profiles, `59/60` online replay, prefix FP `5/240` |
+| Adaptive dynamic completion gate | Validated live-positive | H-115/H-116: grouped profiles, replay prefix FP `5/240`, live dynamic `38/40` with `0` wrong classes |
 | Intent gate `static/dynamic/none` | Added | first-stage MLP router trained/logged with external negatives |
 | User/market feedback | Planned | needed for product thinking criterion |
 
@@ -503,7 +503,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
 | Vertical direction confusion | `swipe_up/down` unstable | return guard, then sequence verifier with reject threshold |
 | No final negative live validation yet | false triggers may be hidden | run 30 no-command/background attempts and check rejection metrics |
-| Completion replay uses source recordings | optimistic versus new live motions | rerun full, partial and look-alike webcam matrix before tag |
+| Completion replay uses source recordings | optimistic versus new live motions | run partial, look-alike and no-command webcam matrix before tag |
 | Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
@@ -516,7 +516,7 @@ summarize and annotate; execution stays behind deterministic policies.
 
 | Task | Status | Owner |
 |---|---|---|
-| Test real static gestures after rejection policy | Next | user + ML pipeline |
+| Test real static gestures after rejection policy | Done: `20/20` | H-116 |
 | Run `no_command` live evaluation and log to MLflow | Next | user + ML pipeline |
 | Live-test intent gate against static/dynamic/none scenarios | Next | user + ML pipeline |
 | Record/train 5 dynamic classes with `dynamic_landmark_lstm_backbone` | Next | user + ML pipeline |
@@ -525,7 +525,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Add generic sequence/prototype dynamic classifier | Done | H-054 |
 | Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
-| Run final live matrix on the current committed classes | Next | user + ML pipeline |
+| Run final positive live matrix on current classes | Done: `58/60` | H-116 |
 | Run partial/look-alike dynamic completion matrix | Next | user + ML pipeline |
 
 ### Next
@@ -584,3 +584,4 @@ Change log:
 | `2026-07-10` | Set static release threshold to `0.80` and recorded controlled live results | H-113 |
 | `2026-07-10` | Validated static `10/10` and dynamic `28/30` at release thresholds | H-114 |
 | `2026-07-10` | Added adaptive per-class dynamic completion verification | H-115 |
+| `2026-07-10` | Validated the post-gate controlled positive live matrix | H-116 |

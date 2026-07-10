@@ -5686,7 +5686,7 @@ Production benchmark на `200` итерациях:
 
 ### H-109: Grouped production retrain of the dynamic landmark LSTM
 
-Дата: 2026-07-10. Статус: `validated-offline`, требуется fresh live run.
+Дата: 2026-07-10. Статус: `validated-live` в H-116.
 
 Причина:
 - production LSTM была обучена до source-grouped validation;
@@ -5900,7 +5900,7 @@ Live evidence от пользователя:
 
 ### H-115: Adaptive completion gate for arbitrary dynamic classes
 
-Дата: 2026-07-10. Статус: `validated-offline`, требуется fresh live run.
+Дата: 2026-07-10. Статус: `validated-live-positive` в H-116; safety run pending.
 
 Проблема:
 - `canonical_dynamic_sequence` нормализует амплитуду глобального движения;
@@ -5955,7 +5955,44 @@ Production benchmark:
   `59/60` до `58/60`, поэтому не был принят.
 
 Следующий шаг:
-- повторить по `10` полных попыток каждого dynamic-класса;
 - выполнить минимум `10` коротких/остановленных и `10` похожих на команды
   движений, плюс общий `30`-attempt no-command/background run;
-- только после fresh live evidence обновить release metrics и dashboard.
+- после safety evidence обновить dashboard.
+
+### H-116: Post-completion controlled positive live validation
+
+Дата: 2026-07-10. Статус: `validated-live-positive`.
+
+Протокол:
+- production auto-router после H-115;
+- static threshold `0.80`, dynamic threshold `0.90`;
+- персональный controlled webcam run;
+- результаты сообщены пользователем агрегированно, без frame-level latency.
+
+Результаты:
+- все static-жесты: `20/20 = 1.0000`, confidence выше `0.80`;
+- `SwipeLeft`: `20/20 = 1.0000`;
+- `diagonal`: `9/10 = 0.9000`, `1` пропуск;
+- `zoom`: `9/10 = 0.9000`, `1` пропуск;
+- dynamic total: `38/40 = 0.9500`;
+- общий positive total: `58/60 = 0.9667`;
+- wrong-class predictions: `0`, misses: `2`.
+
+Интерпретация:
+- post-gate положительная webcam-матрица подтверждает, что completion safety не
+  сломала распознавание полных жестов;
+- оба сбоя являются пропусками, а не неверными командами;
+- `diagonal` и `zoom` сложнее воспроизвести одинаково из-за составной
+  траектории и движения формы кисти на месте, поэтому `0.90` recall для них
+  отражает controlled execution sensitivity текущего персонального датасета;
+- результат нельзя называть signer-independent quality.
+
+MLflow:
+- evidence group: `release-positive-post-completion-2026-07-10-v2`;
+- run: `5ee224e67a83473eacc36147adcba124`;
+- artifact: `controlled_live_summary.json`.
+
+Следующий обязательный release-check:
+- partial/look-alike dynamic matrix с подсчетом ложных команд;
+- минимум `30` no-command/background попыток;
+- после safety run обновить dashboard и финальные слайды.

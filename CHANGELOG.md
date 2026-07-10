@@ -14,6 +14,8 @@
 - Raised the release dynamic confidence threshold and completed-event override floor to `0.90`.
 - Added adaptive per-class dynamic completion verification with resumable
   segmentation and MLflow full/prefix replay evidence.
+- Validated the post-gate controlled live matrix at `58/60` positive attempts,
+  including `38/40` dynamic attempts and zero wrong-class predictions.
 
 ## v0.7.0 - 2026-07-08
 

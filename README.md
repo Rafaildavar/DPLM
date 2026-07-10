@@ -77,10 +77,11 @@ Release auto-router принимает static-предсказания от `0.8
 | Completion gate, prefix accepts before / after | `214/240 / 6/240` |
 | Online state-machine replay, full / wrong class | `59/60 / 0` |
 | Online state-machine replay, prefix false accepts | `5/240 = 0.0208` |
-| Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
-| Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
+| Post-gate controlled live static recall at threshold `0.80` | `20/20 = 1.0000` |
+| Post-gate controlled live dynamic recall at threshold `0.90` | `38/40 = 0.9500` |
+| Post-gate positive total / wrong class | `58/60 = 0.9667 / 0` |
 
-Live dynamic breakdown при release-пороге `0.90`: `SwipeLeft 10/10`,
+Post-gate live breakdown при release-пороге `0.90`: `SwipeLeft 20/20`,
 `diagonal 9/10` (`1` пропуск), `zoom 9/10` (`1` пропуск). Неверных
 dynamic-классов в этом прогоне не отмечено.
 Результат относится к персональному controlled protocol: рука полностью в
@@ -89,7 +90,8 @@ dynamic-классов в этом прогоне не отмечено.
 `no-command` safety run.
 Completion replay использует текущие source recordings через production
 `GestureOnlineInfer`; это regression evidence, а не независимый test set.
-После добавления gate требуется новый webcam-run до создания release tag.
+Положительный webcam-run после gate выполнен; до release tag остается отдельная
+матрица partial/look-alike и `no-command` движений.
 
 ## Архитектура
 
