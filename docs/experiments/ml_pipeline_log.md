@@ -5676,10 +5676,64 @@ Prototype retrain:
 - тип training accuracy: `resubstitution`.
 
 Production benchmark на `200` итерациях:
-- static ML stage: mean `17.476 ms`, p95 `18.100 ms`;
-- dynamic LSTM ML stage: mean `3.847 ms`, p95 `4.053 ms`.
+- до H-109 static ML stage: mean `17.476 ms`, p95 `18.100 ms`;
+- до H-109 dynamic LSTM ML stage: mean `3.847 ms`, p95 `4.053 ms`.
 
 Проверки:
 - полный suite: `592 passed, 2 skipped`;
 - MLflow smoke run: `32866f9906ac4b3688b3f3f52b9d220d`;
 - полный audit: `release_readiness_2026-07-10.md`.
+
+### H-109: Grouped production retrain of the dynamic landmark LSTM
+
+Дата: 2026-07-10. Статус: `validated-offline`, требуется fresh live run.
+
+Причина:
+- production LSTM была обучена до source-grouped validation;
+- в старом artifact отсутствовали `validation_grouped` и group overlap;
+- пользовательский UI запускает retrain только после записи нового жеста.
+
+Scope обучения:
+- positive dynamic: `SwipeLeft`, `diagonal`, `zoom`;
+- negative: `no_gesture_static`, `partial_swipe`, `random_motion`,
+  `return_motion`, `wrong_axis_motion`;
+- `280` training files, включая GISLR augmentations;
+- `160` независимых source groups;
+- raw dim `65`, `72` кадров, model feature dim `4752`.
+
+Grouped Optuna:
+- trials: `8`;
+- best score: `0.8857`;
+- backbone dim `96`, hidden dim `128`, LSTM layers `2`;
+- bidirectional: `true`, dropout `0.2813`, batch size `24`;
+- learning rate `0.0010756`, weight decay `0.00001144`;
+- `used_group_split=true`.
+
+Final production artifact:
+- internal grouped validation accuracy: `0.8571`;
+- train/resubstitution accuracy: `0.8821`;
+- validation group overlap: `0`;
+- model SHA-256:
+  `7205d86139a1c02a73b7c0eba152291ab059944560bd0f6d04f764e21f6faf79`;
+- dataset SHA-256:
+  `740fbb794f03c164ce1c94baca18c8cbfb8e6d8b3cf003056709a1db7adbf620`;
+- MLflow run: `63f3e550f2a240b0a673f0af5102cbdc`.
+
+Prototype verifier после retrain:
+- train `448`, test `150`, external negatives checked `440`;
+- conflicts removed `2`, conflict rate `0.0045`;
+- overall `0.9933`, positive recall `0.9333`;
+- negative reject `1.0000`, negative FP `0.0000`;
+- `SwipeLeft`: `4/5` + один reject;
+- `diagonal`: `5/5`;
+- `zoom`: `5/5`.
+
+Production ML latency, `200` итераций:
+- static: mean `18.939 ms`, p95 `21.721 ms`;
+- new dynamic LSTM: mean `13.979 ms`, p95 `16.013 ms`;
+- dynamic capacity: `71.54 FPS` без MediaPipe/camera stage.
+
+Проверки:
+- model/classes/feature metadata load smoke;
+- `46 passed` для ML smoke, online infer, prototype и atomic bundle tests;
+- report: `dynamic_lstm_grouped_retrain_2026-07-10.md`.

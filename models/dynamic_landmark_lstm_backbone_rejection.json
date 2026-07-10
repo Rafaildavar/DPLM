@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_by": "cv.train_classifier",
-  "generated_at": 1783521202.566253,
+  "generated_at": 1783676919.8619862,
   "model_type": "dynamic_landmark_lstm_backbone",
   "feature_mode": "dynamic_landmark_image",
   "feature_dim": 4752,
@@ -4777,7 +4777,7 @@
       ],
       "distance_mean": 3.4716453552246094,
       "distance_std": 2.3100948333740234,
-      "distance_p95": 7.62840678691864,
+      "distance_p95": 7.628407001495361,
       "distance_max": 11.322654724121094,
       "prototype_radius": 8.091835021972656
     },
@@ -9539,7 +9539,7 @@
       ],
       "distance_mean": 5.870516300201416,
       "distance_std": 1.9849730730056763,
-      "distance_p95": 9.08152937889099,
+      "distance_p95": 9.08152961730957,
       "distance_max": 9.99856948852539,
       "prototype_radius": 9.840462446212769
     },
@@ -14301,7 +14301,7 @@
       ],
       "distance_mean": 19.615306854248047,
       "distance_std": 25.100515365600586,
-      "distance_p95": 30.543625640869212,
+      "distance_p95": 30.543624877929688,
       "distance_max": 127.58523559570312,
       "prototype_radius": 69.81633758544922
     },
@@ -19063,9 +19063,9 @@
       ],
       "distance_mean": 177.91452026367188,
       "distance_std": 132.87037658691406,
-      "distance_p95": 447.5993759155274,
+      "distance_p95": 447.599365234375,
       "distance_max": 533.1442260742188,
-      "prototype_radius": 447.5993759155274
+      "prototype_radius": 447.599365234375
     },
     "random_motion": {
       "sample_count": 20,
@@ -23825,7 +23825,7 @@
       ],
       "distance_mean": 8.745104789733887,
       "distance_std": 2.8510234355926514,
-      "distance_p95": 12.256351518630986,
+      "distance_p95": 12.256351470947266,
       "distance_max": 16.845937728881836,
       "prototype_radius": 14.44715166091919
     },
@@ -28587,9 +28587,9 @@
       ],
       "distance_mean": 147.7066192626953,
       "distance_std": 64.00743865966797,
-      "distance_p95": 285.1881790161133,
+      "distance_p95": 285.18817138671875,
       "distance_max": 292.3307189941406,
-      "prototype_radius": 285.1881790161133
+      "prototype_radius": 285.18817138671875
     },
     "wrong_axis_motion": {
       "sample_count": 20,
@@ -33349,7 +33349,7 @@
       ],
       "distance_mean": 10.736798286437988,
       "distance_std": 2.7001209259033203,
-      "distance_p95": 14.585546875,
+      "distance_p95": 14.585546493530273,
       "distance_max": 15.738354682922363,
       "prototype_radius": 16.13704013824463
     },
@@ -38111,7 +38111,7 @@
       ],
       "distance_mean": 9.335330963134766,
       "distance_std": 5.264063835144043,
-      "distance_p95": 19.65374851226806,
+      "distance_p95": 19.65374755859375,
       "distance_max": 31.4781436920166,
       "prototype_radius": 19.86345863342285
     }
@@ -38147,5 +38147,9 @@
       "wrong_axis_motion": 20,
       "zoom": 60
     }
-  }
+  },
+  "training_group_count": 160,
+  "validation_grouped": true,
+  "validation_group_overlap": 0,
+  "validation_best_accuracy": 0.8571428656578064
 }

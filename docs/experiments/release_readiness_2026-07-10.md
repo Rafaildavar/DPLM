@@ -60,12 +60,16 @@ Source: [release_latency_benchmark_2026-07-10.json](release_latency_benchmark_20
 
 | Profile | Model / features | Mean | P95 | Capacity |
 |---|---|---:|---:|---:|
-| Static | ExtraTrees / `static_craft_full_stats` | `17.476 ms` | `18.100 ms` | `57.22 FPS` |
-| Dynamic | LSTM / `dynamic_landmark_image` | `3.847 ms` | `4.053 ms` | `259.94 FPS` |
+| Static | ExtraTrees / `static_craft_full_stats` | `18.939 ms` | `21.721 ms` | `52.80 FPS` |
+| Dynamic | LSTM / `dynamic_landmark_image` | `13.979 ms` | `16.013 ms` | `71.54 FPS` |
 
 These values cover feature extraction plus the same `predict` and
 `predict_proba` calls used by the recognition layer. They do not include camera
 capture or MediaPipe; end-to-end webcam latency must be measured separately.
+
+The dynamic value reflects the grouped-Optuna production retrain from H-109:
+the selected two-layer bidirectional LSTM is larger than the frozen baseline,
+but its ML stage remains below the `33.3 ms` budget for 30 FPS.
 
 ## Required fresh evidence before defense
 

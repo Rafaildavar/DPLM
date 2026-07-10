@@ -1,15 +1,16 @@
 {
-  "best_score": 0.675,
+  "best_score": 0.8857142857142857,
   "best_params": {
-    "backbone_dim": 32,
-    "hidden_dim": 48,
-    "num_layers": 1,
-    "dropout": 0.3227961206236346,
+    "backbone_dim": 96,
+    "hidden_dim": 128,
+    "num_layers": 2,
+    "dropout": 0.2812901539863683,
     "use_bidirectional": true,
-    "learning_rate": 0.0008740340823059874,
-    "weight_decay": 0.00015728674194978581,
+    "learning_rate": 0.0010756267205536197,
+    "weight_decay": 1.144168990104071e-05,
     "batch_size": 24
   },
   "trials": 8,
-  "used_validation_split": true
+  "used_validation_split": true,
+  "used_group_split": true
 }

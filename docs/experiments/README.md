@@ -30,6 +30,8 @@
   оригинала и его аугментаций по source group.
 - `release_latency_benchmark_2026-07-10.json` - feature extraction и model
   inference для текущих static ExtraTrees и dynamic LSTM.
+- `dynamic_lstm_grouped_retrain_2026-07-10.*` - grouped Optuna retrain
+  production LSTM и prototype safety metrics.
 - `live_eval.json` / `live_eval.md` - проверка в рабочем приложении: ложные
   срабатывания, успешные команды, ошибки.
 - `figures/` - confusion matrix, распределения датасета и графики метрик.

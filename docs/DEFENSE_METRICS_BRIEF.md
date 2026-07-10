@@ -20,8 +20,10 @@
 | Grouped static CV | accuracy `0.7767`, macro F1 `0.6613`, `200` source groups, overlap `0` |
 | Positive static classes | F1 `1.0000` для пяти пользовательских классов |
 | Accepted static predictions | accuracy `1.0000` при coverage `0.7133`, threshold `0.75` |
-| Static ML latency | mean `17.476 ms`, p95 `18.100 ms` |
-| Dynamic LSTM ML latency | mean `3.847 ms`, p95 `4.053 ms` |
+| Static ML latency | mean `18.939 ms`, p95 `21.721 ms` |
+| Dynamic LSTM ML latency | mean `13.979 ms`, p95 `16.013 ms` |
+| Dynamic grouped retrain | Optuna `0.8857`, final validation `0.8571`, group overlap `0` |
+| Dynamic prototype safety | positive recall `0.9333`, negative FP `0.0000` |
 | Automated checks | `592 passed`, `2` optional Qt modules skipped |
 
 Источник: [release readiness audit](experiments/release_readiness_2026-07-10.md).

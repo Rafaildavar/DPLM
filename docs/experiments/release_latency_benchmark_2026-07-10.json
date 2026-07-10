@@ -26,33 +26,33 @@
       ],
       "runtime_estimators_set_to_one_worker": 1,
       "feature_extraction_latency": {
-        "mean_ms": 1.251,
-        "p50_ms": 1.219,
-        "p90_ms": 1.304,
-        "p95_ms": 1.36,
-        "p99_ms": 1.454,
-        "min_ms": 1.122,
-        "max_ms": 6.598
+        "mean_ms": 1.298,
+        "p50_ms": 1.248,
+        "p90_ms": 1.451,
+        "p95_ms": 1.491,
+        "p99_ms": 1.82,
+        "min_ms": 1.133,
+        "max_ms": 2.34
       },
       "model_prediction_latency": {
-        "mean_ms": 16.225,
-        "p50_ms": 15.945,
-        "p90_ms": 16.277,
-        "p95_ms": 16.679,
-        "p99_ms": 23.209,
-        "min_ms": 15.565,
-        "max_ms": 39.449
+        "mean_ms": 17.641,
+        "p50_ms": 16.209,
+        "p90_ms": 18.057,
+        "p95_ms": 20.268,
+        "p99_ms": 30.103,
+        "min_ms": 15.682,
+        "max_ms": 144.839
       },
       "ml_pipeline_latency": {
-        "mean_ms": 17.476,
-        "p50_ms": 17.158,
-        "p90_ms": 17.592,
-        "p95_ms": 18.1,
-        "p99_ms": 27.192,
-        "min_ms": 16.695,
-        "max_ms": 40.84
+        "mean_ms": 18.939,
+        "p50_ms": 17.476,
+        "p90_ms": 19.607,
+        "p95_ms": 21.721,
+        "p99_ms": 31.444,
+        "min_ms": 16.876,
+        "max_ms": 146.123
       },
-      "capacity_fps": 57.22
+      "capacity_fps": 52.8
     },
     {
       "profile": "dynamic",
@@ -76,33 +76,33 @@
       ],
       "runtime_estimators_set_to_one_worker": 0,
       "feature_extraction_latency": {
-        "mean_ms": 0.264,
-        "p50_ms": 0.276,
-        "p90_ms": 0.305,
-        "p95_ms": 0.314,
-        "p99_ms": 0.392,
-        "min_ms": 0.118,
-        "max_ms": 0.417
+        "mean_ms": 0.387,
+        "p50_ms": 0.354,
+        "p90_ms": 0.432,
+        "p95_ms": 0.494,
+        "p99_ms": 1.476,
+        "min_ms": 0.161,
+        "max_ms": 2.958
       },
       "model_prediction_latency": {
-        "mean_ms": 3.583,
-        "p50_ms": 3.546,
-        "p90_ms": 3.739,
-        "p95_ms": 3.775,
-        "p99_ms": 3.898,
-        "min_ms": 3.465,
-        "max_ms": 4.106
+        "mean_ms": 13.592,
+        "p50_ms": 12.715,
+        "p90_ms": 14.041,
+        "p95_ms": 15.615,
+        "p99_ms": 35.865,
+        "min_ms": 11.703,
+        "max_ms": 57.319
       },
       "ml_pipeline_latency": {
-        "mean_ms": 3.847,
-        "p50_ms": 3.819,
-        "p90_ms": 4.022,
-        "p95_ms": 4.053,
-        "p99_ms": 4.161,
-        "min_ms": 3.617,
-        "max_ms": 4.377
+        "mean_ms": 13.979,
+        "p50_ms": 13.071,
+        "p90_ms": 14.455,
+        "p95_ms": 16.013,
+        "p99_ms": 37.335,
+        "min_ms": 11.999,
+        "max_ms": 60.277
       },
-      "capacity_fps": 259.94
+      "capacity_fps": 71.54
     }
   ]
 }

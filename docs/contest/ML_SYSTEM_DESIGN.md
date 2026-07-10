@@ -26,7 +26,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
-| Dynamic GISLR landmark LSTM | Added | H-095: `dynamic_landmark_lstm_backbone` added as production profile over `72 x 22 x 3` landmark image | record 5 dynamic classes, train, compare live vs `sequence_mlp` |
+| Dynamic GISLR landmark LSTM | Validated offline | H-109 grouped retrain: Optuna `0.8857`, final validation `0.8571`, overlap `0`; prototype positive recall `0.9333`, negative FP `0.0000` | run fresh per-class and no-command live matrix |
 | Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
 | Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
 | Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |
@@ -539,3 +539,4 @@ Change log:
 | `2026-07-10` | Added label-safe routing and dynamic duplicate rejection | H-106 |
 | `2026-07-10` | Added low-latency runtime and rollback-safe model activation | H-107 |
 | `2026-07-10` | Added reproducible MLflow provenance and production latency report | H-108 |
+| `2026-07-10` | Retrained production dynamic LSTM with grouped Optuna and refreshed verifier | H-109 |
