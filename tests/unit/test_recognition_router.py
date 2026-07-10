@@ -419,7 +419,7 @@ def test_router_rejects_dynamic_model_quasi_static_label() -> None:
 
 def test_router_rejects_low_confidence_dynamic_label() -> None:
     static = _FakeInfer(
-        [{"label": "palm", "confidence": 0.70, "landmarks_json": "[static]"}]
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
     )
     dynamic = _FakeInfer(
         [{"label": "swipe_up", "confidence": 0.40, "landmarks_json": "[dynamic]"}]
@@ -435,6 +435,46 @@ def test_router_rejects_low_confidence_dynamic_label() -> None:
     assert out["label"] == "palm"
     assert out["route"] == ROUTE_STATIC
     assert out["router"]["dynamic_reject_reason"] == REASON_LOW_CONFIDENCE
+
+
+def test_router_release_static_threshold_rejects_below_80_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.79, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["router"]["static_reject_reason"] == REASON_LOW_CONFIDENCE
+    assert out["router"]["static_threshold"] == 0.80
+
+
+def test_router_release_static_threshold_accepts_80_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.80, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_STATIC
+    assert out["label"] == "palm"
+    assert out["confidence"] == 0.80
 
 
 def test_router_rejects_low_confidence_static_label() -> None:

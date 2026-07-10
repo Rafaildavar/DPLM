@@ -10,6 +10,7 @@
 - Added the root architecture contract and CI-enforced repository hygiene.
 - Switched release source bundles to tracked files only.
 - Made binding-agent path golden cases independent of a developer home directory.
+- Raised the release auto-router static confidence threshold to `0.80` from live evidence.
 
 ## v0.7.0 - 2026-07-08
 

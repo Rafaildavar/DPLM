@@ -16,6 +16,7 @@ them live and bind accepted gestures to safe macOS actions.
 - MLflow training runs include dataset/model hashes, Git state and group overlap.
 - Repository architecture and an automated tracked-tree hygiene gate are part of CI.
 - Binding-agent golden cases are portable across macOS development and Linux CI.
+- Static predictions in auto mode now require `0.80` confidence, based on the final controlled live run.
 
 ## Reproducible Evidence
 
@@ -26,6 +27,8 @@ them live and bind accepted gestures to safe macOS actions.
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency mean / p95 | `13.979 / 16.013 ms` |
+| Controlled live static recall at threshold `0.80` | `1.0000` |
+| Controlled live dynamic recall | `28/30 = 0.9333` |
 
 ## Included
 

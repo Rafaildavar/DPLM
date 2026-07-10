@@ -11,7 +11,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 
 | Area | Status | Evidence | Next check |
 |---|---|---|---|
-| Static gesture recognition | Stable | H-105 grouped 5-fold CV: production craft ExtraTrees accuracy `0.7767`, macro F1 `0.6613`; all positive static classes F1 `1.0` | fresh live positive/no-command matrix |
+| Static gesture recognition | Stable | H-105/H-113: grouped CV accuracy `0.7767`; controlled live recognition `100%` at release threshold `0.80` | capture static denominator and run no-command matrix |
 | Dynamic gesture recording | Stable | H-106 rejects inactive duplicates before saving and supports translation or in-place shape change | record fresh live matrix for current classes |
 | Dynamic natural swipe segmentation | In Progress | H-036/H-038 natural end, H-053 return guard added | repeat no-command/return-motion validation |
 | Auto routing static/dynamic | Validated | H-038: static hijack `0%` on 30 fresh dynamic attempts | add negative/no-gesture live run |
@@ -23,12 +23,12 @@ Purpose: единый living-документ по ML-системе GestureBind
 | MLflow experiment tracking | Stable | H-108 logs dataset/model SHA-256, git state, source groups and grouped validation | use clean committed runs for final charts |
 | HTML MLOps dashboard | Stable | H-096: `docs/mlops_dashboard/index.html` includes MLflow showcase charts for training, live A/B, safety and timeline | regenerate before demo |
 | Release home experience | Validated | H-110: camera-first UI, friendly runtime state, one primary action; `205` Flet tests and desktop visual check | run final live demo matrix |
-| MVP repository contract | Validated | H-111/H-112: Flet-only runtime, portable CI fixtures, `265` tracked files, `15` allowlisted model artifacts, `597` clean tracked tests | verify tag archive before publication |
+| MVP repository contract | Validated | H-111/H-112/H-113: Flet-only runtime, portable CI fixtures, `265` tracked files, `15` allowlisted model artifacts, `599` clean tracked tests | verify tag archive before publication |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
-| Dynamic GISLR landmark LSTM | Validated offline | H-109 grouped retrain: Optuna `0.8857`, final validation `0.8571`, overlap `0`; prototype positive recall `0.9333`, negative FP `0.0000` | run fresh per-class and no-command live matrix |
+| Dynamic GISLR landmark LSTM | Validated live | H-109/H-113: grouped validation `0.8571`, overlap `0`; controlled live `28/30` (`SwipeLeft 10/10`, `diagonal 9/10`, `zoom 9/10`) | run no-command live matrix |
 | Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
 | Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
 | Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |
@@ -545,3 +545,4 @@ Change log:
 | `2026-07-10` | Rebuilt the home page as a camera-first release experience | H-110 |
 | `2026-07-10` | Enforced the Flet-only MVP repository and tracked release contract | H-111 |
 | `2026-07-10` | Removed a developer-specific path from binding-agent golden CI | H-112 |
+| `2026-07-10` | Set static release threshold to `0.80` and recorded controlled live results | H-113 |

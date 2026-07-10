@@ -54,7 +54,7 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 получает нормализованную последовательность `72 x 22 x 3` и сохраняет
 глобальную траекторию, необходимую для направленных движений.
 
-Текущая воспроизводимая offline-база:
+Текущая release evidence:
 
 | Проверка | Результат |
 |---|---:|
@@ -64,10 +64,14 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency, mean / p95 | `13.979 / 16.013 ms` |
+| Controlled live static recall at threshold `0.80` | `1.0000` |
+| Controlled live dynamic recall | `28/30 = 0.9333` |
 
-Offline-метрики нужны для сравнения моделей, но не заменяют webcam-проверку.
-Перед релизом выполняется отдельная live-матрица для static, dynamic и
-`no-command` сценариев.
+Live dynamic breakdown: `SwipeLeft 10/10`, `diagonal 9/10`, `zoom 9/10`.
+Результат относится к персональному controlled protocol: рука полностью в
+кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
+нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
+`no-command` safety run.
 
 ## Архитектура
 

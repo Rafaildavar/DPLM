@@ -32,7 +32,7 @@ git branch codex/release-rollback pre-critical-ml-pipeline-2026-07-10
 
 ## Verification
 
-- Clean tracked automated suite: `597 passed`, no skipped legacy modules.
+- Clean tracked automated suite: `599 passed`, no skipped legacy modules.
 - Repository hygiene: `265` tracked files and exactly `15` allowlisted
   production model artifacts.
 - `make ci` runs the hygiene gate before tests and ML artifact smoke.
@@ -74,11 +74,29 @@ The dynamic value reflects the grouped-Optuna production retrain from H-109:
 the selected two-layer bidirectional LSTM is larger than the frozen baseline,
 but its ML stage remains below the `33.3 ms` budget for 30 FPS.
 
-## Required fresh evidence before defense
+## Fresh controlled live evidence
 
-1. Run at least `10` live attempts per positive static and dynamic class.
-2. Run at least `30` no-command/background attempts.
-3. Report correct, wrong, missed, per-class recall and negative false-positive rate.
-4. Regenerate the MLflow/dashboard snapshot only after these runs.
+- Release static confidence threshold: `0.80`.
+- Static recognition: user-reported `100%` at threshold `0.80`; the attempt
+  denominator was not captured in the report and must not be invented.
+- Dynamic recognition: `28/30 = 0.9333` overall.
+
+| Dynamic class | Correct | Attempts | Recall |
+|---|---:|---:|---:|
+| `SwipeLeft` | `10` | `10` | `1.0000` |
+| `diagonal` | `9` | `10` | `0.9000` |
+| `zoom` | `9` | `10` | `0.9000` |
+
+The result is a controlled personalized evaluation. Gesture shape, start pose,
+direction and amplitude must be close to the user's recording protocol. This is
+acceptable for the MVP, but it is not evidence of signer-independent or
+unconstrained gesture recognition.
+
+## Remaining evidence before defense
+
+1. Record the exact static attempt denominator/per-class counts if available.
+2. Run at least `30` no-command/background attempts at threshold `0.80`.
+3. Report wrong commands, missed events and live negative false-positive rate.
+4. Regenerate the MLflow/dashboard snapshot only after the no-command run.
 5. Do not present training accuracy as test accuracy; label it
    `resubstitution accuracy` if it is shown at all.

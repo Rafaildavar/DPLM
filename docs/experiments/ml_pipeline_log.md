@@ -5823,3 +5823,31 @@ Production ML latency, `200` итераций:
 - binding-agent suite: `57 passed`;
 - local `make ci`: `596 passed` + static/dynamic ML smoke;
 - clean tracked full suite: `597 passed`.
+
+### H-113: Release static threshold and controlled live acceptance
+
+Дата: 2026-07-10. Статус: `validated-live-controlled`.
+
+Решение:
+- поднять только static confidence threshold auto-router с `0.50` до `0.80`;
+- dynamic threshold остается отдельным и не меняется;
+- command binding threshold остается независимым safety-барьером.
+
+Live evidence от пользователя:
+- static при threshold `0.80`: `100%` распознавания, denominator не указан;
+- `SwipeLeft`: `10/10`;
+- `diagonal`: `9/10`;
+- `zoom`: `9/10`;
+- dynamic total: `28/30 = 0.9333`.
+
+Интерпретация:
+- модель хорошо работает для персонального controlled protocol;
+- жест нужно выполнять с формой, направлением, амплитудой и стартовой позой,
+  близкими к recorded samples;
+- это нельзя представлять как signer-independent качество;
+- следующий обязательный release check: `30` no-command/background attempts.
+
+Регрессия:
+- `0.79` static confidence отклоняется;
+- `0.80` принимается;
+- dynamic thresholds и routing остаются без изменений.
