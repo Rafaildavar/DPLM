@@ -16,8 +16,16 @@ GestureBind uses a compact release-oriented pipeline:
 PYTHON=.venv/bin/python make ci
 ```
 
-Runs unit tests without camera/GUI access and then validates release ML
-artifacts.
+Validates the tracked repository contract, runs tests without camera/GUI access
+and then validates release ML artifacts.
+
+```bash
+PYTHON=.venv/bin/python make repo-hygiene
+```
+
+Fails when generated/private data, a retired UI path or an unexpected model
+artifact enters the Git index. It also checks that every required release file
+is present.
 
 ```bash
 PYTHON=.venv/bin/python make ml-smoke
@@ -77,7 +85,7 @@ Trigger:
 
 Sequence:
 
-1. Unit tests run `make test-unit-ci`.
+1. Repository hygiene and unit tests run `make repo-hygiene test-unit-ci`.
 2. ML smoke runs `make ml-smoke`.
 3. Docker runtime builds the image and runs ML smoke inside the container.
 
@@ -122,18 +130,19 @@ Trigger:
 Output:
 
 - `gesturebind-<version>.tar.gz`;
-- draft GitHub Release for tag builds.
+- GitHub Release for tag builds.
 
-The bundle contains source code, tracked model artifacts, configs and release
-documentation. Local datasets, generated reports, virtual environments, MLflow
-state and output folders are excluded.
+The bundle is generated with `git archive` and therefore contains only source
+code, allowlisted tracked model artifacts, configs and release documentation
+from the tagged commit. Local datasets, generated reports, virtual
+environments, MLflow state and output folders cannot enter the archive.
 
 ## Release Gate
 
 Before creating a tag:
 
 1. Run `PYTHON=.venv/bin/python make ci`.
-2. Check that `models/` contains only release artifacts.
+2. Confirm that `python -m scripts.check_repository_hygiene` succeeds.
 3. Check that `git status` has no unexpected local files staged.
 4. Tag the release with `vX.Y.Z`.
 5. Let `desktop-release.yml` create the draft release bundle.

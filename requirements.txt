@@ -12,7 +12,6 @@ mlflow
 psutil
 torch
 optuna
-tensorflow
 
 # Voice Assistant
 pyttsx3
@@ -33,10 +32,5 @@ alembic
 # Command Execution
 pyautogui
 
-# Development
+# Model serialization
 joblib
-
-# Testing
-pytest
-pytest-cov
-pytest-mock

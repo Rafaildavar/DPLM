@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.0 - 2026-07-10
+
+- Rebuilt the home screen around the release camera and recognition workflow.
+- Removed the retired PySide/QML runtime, duplicate launcher and skipped legacy tests.
+- Retrained the production dynamic LSTM with grouped Optuna validation and zero group overlap.
+- Added train-only normalization, label-safe routing and atomic model publication.
+- Added reproducible MLflow provenance and production latency evidence.
+- Added the root architecture contract and CI-enforced repository hygiene.
+- Switched release source bundles to tracked files only.
+
 ## v0.7.0 - 2026-07-08
 
 - Prepared the repository for a public release: kept the project-focused source tree, current docs, CI/CD workflows and production model artifacts.

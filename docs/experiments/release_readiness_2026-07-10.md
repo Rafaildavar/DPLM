@@ -27,12 +27,15 @@ git branch codex/release-rollback pre-critical-ml-pipeline-2026-07-10
 | Model and sidecars were overwritten one by one | Temporary siblings, rollback on failure, sidecars first and model-last activation | A failed training process keeps the previous working bundle |
 | Latency script averaged coordinates and could not test current 1377/4752-dimensional models | Benchmark now builds the real feature mode and runs production static/dynamic artifacts | Presentation numbers correspond to the code used in live inference |
 | MLflow runs could not prove which data/code produced a model | Dataset SHA-256, model SHA-256, git commit/dirty state, source groups and grouped-validation fields | Runs are traceable and comparable instead of being anonymous accuracy rows |
+| Two desktop implementations and skipped Qt tests obscured the release path | Retired PySide/QML files were removed; Flet is the only desktop entrypoint | Installation, CI and architecture now describe the same application |
+| A release archive was built from the working directory with a growing exclude list | Repository hygiene allowlist plus `git archive` from the tagged commit | Private/generated local files cannot enter the source bundle |
 
 ## Verification
 
-- Full automated suite: `592 passed, 2 skipped`.
-- The two skipped modules are the optional legacy PySide6 UI in the active
-  Flet environment.
+- Clean tracked automated suite: `596 passed`, no skipped legacy modules.
+- Repository hygiene: `265` tracked files and exactly `15` allowlisted
+  production model artifacts.
+- `make ci` runs the hygiene gate before tests and ML artifact smoke.
 - Atomic bundle rollback is tested with an injected model-activation failure.
 - MLflow smoke run: `32866f9906ac4b3688b3f3f52b9d220d` in
   `GestureBind-Pipeline-Smoke`.

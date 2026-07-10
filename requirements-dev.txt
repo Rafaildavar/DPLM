@@ -1,0 +1,4 @@
+# Install together with requirements.txt for tests and CI.
+pytest
+pytest-cov
+pytest-mock

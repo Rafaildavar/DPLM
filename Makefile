@@ -1,11 +1,14 @@
-.PHONY: ci test-unit test-unit-ci ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
+.PHONY: ci repo-hygiene test-unit test-unit-ci ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
 CI_ARTIFACT_DIR ?= outputs/ci
 CI_PYTEST_TARGETS ?= tests/unit --ignore=tests/unit/test_app_controller.py
 
-ci: test-unit-ci ml-smoke
+ci: repo-hygiene test-unit-ci ml-smoke
+
+repo-hygiene:
+	$(PYTHON) -m scripts.check_repository_hygiene
 
 test-unit-ci:
 	$(PYTHON) -m pytest $(CI_PYTEST_TARGETS) --no-cov -q

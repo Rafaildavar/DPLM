@@ -12,11 +12,13 @@ on:
       - ".dockerignore"
       - "docker-compose.yml"
       - "requirements.txt"
+      - "requirements-dev.txt"
       - "Makefile"
       - "app/**"
       - "cv/**"
       - "models/**"
       - "scripts/ml_smoke.py"
+      - "scripts/check_repository_hygiene.py"
       - ".github/workflows/docker-runtime.yml"
 
 permissions:

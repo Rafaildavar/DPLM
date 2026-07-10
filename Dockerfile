@@ -25,17 +25,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY requirements.txt requirements-dev.txt ./
 RUN python -m pip install --upgrade pip setuptools wheel \
     && grep -v -E '^torch([<>= ].*)?$' requirements.txt > /tmp/requirements-docker.txt \
     && python -m pip install --index-url "${TORCH_INDEX_URL}" torch \
-    && python -m pip install -r /tmp/requirements-docker.txt
+    && python -m pip install -r /tmp/requirements-docker.txt \
+    && python -m pip install -r requirements-dev.txt
 
 FROM base AS runtime
 
 LABEL org.opencontainers.image.title="GestureBind Runtime"
 LABEL org.opencontainers.image.description="Headless GestureBind ML/runtime image for CI, smoke tests and release validation"
-LABEL org.opencontainers.image.source="https://github.com/Rafaildavar/DPLM"
+LABEL org.opencontainers.image.source="https://github.com/Rafaildavar/GestureBind"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

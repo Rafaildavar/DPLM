@@ -11,6 +11,12 @@ __pycache__
 .coverage
 htmlcov
 .DS_Store
+node_modules
+tmp
+output
+build
+dist
+packaging
 
 # Local runtime state.
 .env

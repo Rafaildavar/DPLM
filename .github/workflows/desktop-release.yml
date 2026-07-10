@@ -19,24 +19,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate release tree
+        run: python -m scripts.check_repository_hygiene
+
       - name: Build source and model bundle
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME:-manual}"
           BUNDLE="gesturebind-${VERSION}.tar.gz"
-          tar \
-            --exclude=".git" \
-            --exclude=".venv" \
-            --exclude="venv" \
-            --exclude="node_modules" \
-            --exclude="data/raw" \
-            --exclude="data/external" \
-            --exclude="data/experiments" \
-            --exclude="outputs" \
-            --exclude="htmlcov" \
-            --exclude="mlruns" \
-            --exclude="mlflow.db" \
-            -czf "$BUNDLE" .
+          git archive \
+            --format=tar.gz \
+            --prefix="gesturebind-${VERSION}/" \
+            --output="$BUNDLE" \
+            HEAD
           mkdir -p outputs/release
           mv "$BUNDLE" outputs/release/
 

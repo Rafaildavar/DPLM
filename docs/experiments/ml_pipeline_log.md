@@ -5766,3 +5766,38 @@ Production ML latency, `200` итераций:
   синхронизацию камеры, статуса и основной кнопки;
 - визуальная проверка Flet web preview на `1280 x 720` и `900 x 700`: без
   пересечений элементов и потери основного действия.
+
+### H-111: Enforced MVP repository and release contract
+
+Дата: 2026-07-10. Статус: `validated-release`.
+
+Гипотеза:
+- GitHub snapshot должен содержать один production desktop runtime и только
+  воспроизводимые release assets;
+- исключение локальных файлов только через `.gitignore` недостаточно, потому
+  что ранее tracked/generated файл продолжит попадать в архив;
+- release bundle должен строиться из commit, а не из текущей рабочей папки.
+
+Изменения:
+- удалена неиспользуемая PySide/QML ветка, ее дублирующий launcher и skipped
+  tests: `50` файлов, около `9 000` строк;
+- Flet закреплен как единственная desktop-точка входа;
+- добавлен root `ARCHITECTURE.md` с MVP boundary, runtime/training flows,
+  ownership данных и dependency rules;
+- runtime, dev и research зависимости разделены; TensorFlow оставлен только
+  для optional historical CNN benchmark;
+- `scripts.check_repository_hygiene` запрещает tracking пользовательских
+  данных, secrets, MLflow, generated outputs, legacy UI и неожиданных models;
+- production `models/` ограничен allowlist из `15` файлов;
+- `make ci` и release workflow запускают hygiene gate;
+- GitHub source bundle переведен на `git archive`, поэтому содержит только
+  tracked content конкретного commit.
+
+Проверки:
+- future Git snapshot: `265` tracked files, `15` release model artifacts;
+- hygiene contract tests: `6 passed`;
+- clean tracked suite: `596 passed`, без legacy skips;
+- local `make ci`: `595 passed` с дополнительными локальными ignored tests;
+- ML smoke: static и `dynamic_landmark_lstm_backbone` artifacts загрузились и
+  выполнили `predict/predict_proba`;
+- `git diff --check`, shell syntax и workflow YAML validation.
