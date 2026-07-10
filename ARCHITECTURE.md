@@ -45,8 +45,9 @@ flowchart LR
     MP --> Infer["GestureOnlineInfer"]
     Infer --> Static["Static classifier"]
     Infer --> Dynamic["Dynamic LSTM"]
+    Dynamic --> Completion["Adaptive completion gate"]
     Static --> Router["RecognitionRouter"]
-    Dynamic --> Router
+    Completion --> Router
     Router --> Policy["Rejection + cooldown policy"]
     Policy --> UI
     Policy --> Bridge["GestureCommandBridge"]
@@ -74,7 +75,8 @@ sequenceDiagram
     UI->>C: toggle_recognition()
     loop Fresh camera frames
         C->>I: process(frame, timestamp)
-        I->>R: static / dynamic candidates
+        I->>I: segment + LSTM + completion gate
+        I->>R: static / completed dynamic candidates
         R->>R: intent, rejection, cooldown
         R-->>C: accepted event or reject
         C-->>UI: status, label, confidence
@@ -87,8 +89,10 @@ sequenceDiagram
 ```
 
 Static gestures require dwell confirmation. Dynamic gestures are temporal
-events and are emitted immediately after segmentation and model validation;
-they do not wait for the static dwell counter.
+events and are emitted immediately after segmentation, model validation and
+class-conditional completion verification; they do not wait for the static
+dwell counter. A rejected dynamic prefix remains in `awaiting_continuation`,
+so resumed movement can finish the same event without emitting the prefix.
 
 ## 4. Training And Publication
 
@@ -100,6 +104,8 @@ flowchart LR
     Augment --> Features["Feature extraction"]
     Features --> Tune["Optuna / grouped CV"]
     Tune --> Validate["Offline + rejection metrics"]
+    Samples --> Completion["Per-class completion profiles"]
+    Completion --> Validate
     Validate --> Temp["Temporary model bundle"]
     Temp --> Atomic["Atomic production activation"]
     Atomic --> Models["Tracked release artifacts"]
@@ -161,7 +167,8 @@ the historical filename.
 ## 7. Quality Attributes
 
 - **Safety:** open-set rejection, confidence threshold, per-gesture cooldown,
-  typed action schemas and warnings for dangerous commands.
+  adaptive dynamic completion verification, typed action schemas and warnings
+  for dangerous commands.
 - **Privacy:** camera data and samples are local by default; secrets are never
   committed.
 - **Reproducibility:** grouped validation, dataset/model hashes, Git state and

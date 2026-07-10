@@ -30,14 +30,15 @@ git branch codex/release-rollback pre-critical-ml-pipeline-2026-07-10
 | Two desktop implementations and skipped Qt tests obscured the release path | Retired PySide/QML files were removed; Flet is the only desktop entrypoint | Installation, CI and architecture now describe the same application |
 | A release archive was built from the working directory with a growing exclude list | Repository hygiene allowlist plus `git archive` from the tagged commit | Private/generated local files cannot enter the source bundle |
 | Dynamic output could pass at `0.60`, while a completed event could override intent at `0.85` | Dynamic acceptance and completed-event override floor are both `0.90` | Low-confidence movement is rejected consistently before command routing |
+| Amplitude normalization made incomplete motion resemble a full gesture | Raw class-conditional completion profiles plus resumable segmentation run before command routing | Unfinished candidates are rejected without hard-coded gesture names |
 
 ## Verification
 
-- Clean tracked automated suite: `602 passed`, no skipped legacy modules.
-- Repository hygiene: `265` tracked files and exactly `15` allowlisted
+- Current full automated suite: `620 passed`, no skipped legacy modules.
+- Repository hygiene: `270` tracked files and exactly `15` allowlisted
   production model artifacts.
 - `make ci` runs the hygiene gate before tests and ML artifact smoke.
-- Local `make ci`: `601 passed`; static and production dynamic LSTM smoke both
+- Local `make ci`: `615 passed`; static and production dynamic LSTM smoke both
   completed successfully.
 - Atomic bundle rollback is tested with an injected model-activation failure.
 - MLflow smoke run: `32866f9906ac4b3688b3f3f52b9d220d` in
@@ -77,6 +78,27 @@ The dynamic value reflects the grouped-Optuna production retrain from H-109:
 the selected two-layer bidirectional LSTM is larger than the frozen baseline,
 but its ML stage remains below the `33.3 ms` budget for 30 FPS.
 
+## Adaptive dynamic completion evidence
+
+H-115 adds a model-specific completion profile for every positive dynamic
+class. Profiles are trained with source-group isolation on complete target
+recordings, own prefixes and cross-class hard negatives. Runtime evidence is
+measured before global amplitude normalization.
+
+| Check | Result |
+|---|---:|
+| Full candidate recordings | `60/60` accepted |
+| Truncated candidates accepted by LSTM alone | `214/240` |
+| Truncated candidates accepted after completion gate | `6/240` |
+| Full production state-machine replay | `59/60` correct |
+| Wrong class in full replay | `0/60` |
+| Prefix commands in state-machine replay | `5/240 = 0.0208` |
+
+MLflow run: `4900d7c52abe4ff58018c2dfc452e8a3`. The state-machine replay uses
+the production `GestureOnlineInfer`, but its inputs are current source
+recordings. It is regression evidence, not a replacement for a fresh webcam
+matrix.
+
 ## Fresh controlled live evidence
 
 - Release static confidence threshold: `0.80`.
@@ -103,9 +125,11 @@ not claim frame-level latency or route metadata.
 
 ## Remaining evidence before defense
 
-1. Run at least `30` no-command/background attempts with static `0.80` and
+1. Repeat `10` full attempts for each dynamic class after H-115.
+2. Run partial/look-alike motions and report completion rejects versus commands.
+3. Run at least `30` no-command/background attempts with static `0.80` and
    dynamic `0.90` release thresholds.
-2. Report wrong commands and the live negative false-positive rate.
-3. Regenerate the MLflow/dashboard snapshot only after the no-command run.
-4. Do not present training accuracy as test accuracy; label it
+4. Report wrong commands and the live negative false-positive rate.
+5. Regenerate the MLflow/dashboard snapshot only after the no-command run.
+6. Do not present training accuracy as test accuracy; label it
    `resubstitution accuracy` if it is shown at all.

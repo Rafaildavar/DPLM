@@ -1921,6 +1921,24 @@ class AppController:
                         "dynamic_negative_threshold": payload.get(
                             "dynamic_negative_threshold"
                         ),
+                        "dynamic_completion_enabled": payload.get(
+                            "dynamic_completion_enabled"
+                        ),
+                        "dynamic_completion_accepted": payload.get(
+                            "dynamic_completion_accepted"
+                        ),
+                        "dynamic_completion_score": payload.get(
+                            "dynamic_completion_score"
+                        ),
+                        "dynamic_completion_threshold": payload.get(
+                            "dynamic_completion_threshold"
+                        ),
+                        "dynamic_completion_reason": payload.get(
+                            "dynamic_completion_reason"
+                        ),
+                        "dynamic_completion_candidate_label": payload.get(
+                            "dynamic_completion_candidate_label"
+                        ),
                         "dynamic_axis": payload.get("dynamic_axis"),
                         "dynamic_direction": payload.get("dynamic_direction"),
                         "dynamic_axis_ratio": payload.get("dynamic_axis_ratio"),
@@ -2012,6 +2030,7 @@ class AppController:
         static_false_positive_count = 0
         wrong_dynamic_direction_count = 0
         negative_rejected_count = 0
+        completion_rejected_count = 0
         for item in attempts:
             route = str(item.get("route") or "none").strip() or "none"
             decision = str(item.get("dynamic_decision_source") or "").strip()
@@ -2022,6 +2041,8 @@ class AppController:
                 end_reason_counts[end_reason] = end_reason_counts.get(end_reason, 0) + 1
             if decision == "negative_rejected":
                 negative_rejected_count += 1
+            if decision == "completion_rejected":
+                completion_rejected_count += 1
             prototype_method = str(item.get("dynamic_prototype_method") or "").strip()
             if prototype_method:
                 dynamic_prototype_method_counts[prototype_method] = (
@@ -2134,6 +2155,12 @@ class AppController:
             else 0.0
         )
         metrics["live_negative_rejected_count"] = float(negative_rejected_count)
+        metrics["live_completion_rejected_count"] = float(
+            completion_rejected_count
+        )
+        metrics["live_completion_rejected_rate"] = (
+            float(completion_rejected_count / total) if total else 0.0
+        )
         return metrics
 
     def _live_evaluation_runtime_rows(
@@ -3100,6 +3127,24 @@ class AppController:
             "dynamic_negative_threshold": _float_or_none(
                 route_metadata.get("dynamic_negative_threshold")
             ),
+            "dynamic_completion_enabled": bool(
+                route_metadata.get("dynamic_completion_enabled")
+            ),
+            "dynamic_completion_accepted": bool(
+                route_metadata.get("dynamic_completion_accepted")
+            ),
+            "dynamic_completion_score": _float_or_none(
+                route_metadata.get("dynamic_completion_score")
+            ),
+            "dynamic_completion_threshold": _float_or_none(
+                route_metadata.get("dynamic_completion_threshold")
+            ),
+            "dynamic_completion_reason": str(
+                route_metadata.get("dynamic_completion_reason") or ""
+            ),
+            "dynamic_completion_candidate_label": str(
+                route_metadata.get("dynamic_completion_candidate_label") or ""
+            ),
             "dynamic_axis": str(route_metadata.get("dynamic_axis") or ""),
             "dynamic_direction": str(route_metadata.get("dynamic_direction") or ""),
             "dynamic_axis_ratio": _float_or_none(
@@ -3200,6 +3245,7 @@ class AppController:
         row.update(self._live_evaluation_route_fields(route_metadata))
         attempts = session.setdefault("attempts", [])
         attempts.append(row)
+        session["attempt_route_metadata"] = {}
         session["total"] = attempt_no
         if result == "correct":
             session["correct"] = int(session.get("correct") or 0) + 1
@@ -3242,6 +3288,43 @@ class AppController:
         )
         self._emit_live_evaluation_changed(session, message=session["message"])
         self._set_status(f"Live eval: {expected} {attempt_no + 1}/{target}")
+
+    def _capture_live_evaluation_route_metadata(
+        self,
+        route_metadata: dict[str, Any] | None,
+    ) -> None:
+        if not isinstance(route_metadata, dict) or not route_metadata:
+            return
+        with self._live_evaluation_lock:
+            session = self._live_evaluation
+            if session is None or not bool(session.get("active")):
+                return
+            if time.monotonic() < float(session.get("next_ready_at") or 0.0):
+                return
+            current = session.get("attempt_route_metadata")
+            if not isinstance(current, dict):
+                current = {}
+            incoming_source = str(
+                route_metadata.get("dynamic_decision_source") or ""
+            ).strip()
+            current_source = str(
+                current.get("dynamic_decision_source") or ""
+            ).strip()
+            rejection_sources = {
+                "completion_rejected",
+                "negative_rejected",
+                "prototype_rejected",
+                "prototype_motion_conflict",
+            }
+            if (
+                incoming_source in rejection_sources
+                or not current_source
+                or (
+                    bool(incoming_source)
+                    and current_source not in rejection_sources
+                )
+            ):
+                session["attempt_route_metadata"] = dict(route_metadata)
 
     def _consume_live_evaluation_prediction(
         self,
@@ -3339,7 +3422,10 @@ class AppController:
                 result=result,
                 predicted_label="",
                 confidence=0.0,
-                route_metadata={"route": "none"},
+                route_metadata={
+                    **dict(session.get("attempt_route_metadata") or {}),
+                    "route": "none",
+                },
                 now=monotonic_now,
             )
 
@@ -4792,6 +4878,7 @@ class AppController:
         route_metadata = out.get("router") if isinstance(out.get("router"), dict) else {}
         if not route_metadata and out.get("route"):
             route_metadata = {"route": out.get("route")}
+        self._capture_live_evaluation_route_metadata(route_metadata)
         lj = out.get("landmarks_json") or "[]"
         self._set_landmarks(lj)
         self._update_pointer_from_landmarks(lj)

@@ -516,6 +516,51 @@ def test_dynamic_intent_override_cannot_bypass_release_threshold() -> None:
     assert out["route_reason"] == REASON_INTENT_NONE
 
 
+def test_completion_rejected_candidate_cannot_override_intent_none() -> None:
+    static = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "SwipeLeft",
+                "confidence": 0.99,
+                "landmarks_json": "[dynamic]",
+                "intent_features": [0.0, 1.0],
+                "dynamic_decision": {
+                    "source": "completion_rejected",
+                    "completion_enabled": True,
+                    "completion_accepted": False,
+                    "completion_score": 0.20,
+                    "completion_threshold": 0.85,
+                    "completion_reason": "incomplete_gesture",
+                    "completion_candidate_label": "SwipeLeft",
+                },
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "end_reason": "velocity_drop",
+                },
+            }
+        ],
+        classes=["SwipeLeft", "no_gesture_static"],
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+        intent_gate=_FakeIntentGate("none"),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["route_reason"] == REASON_INTENT_NONE
+    assert out["router"]["dynamic_completion_enabled"] is True
+    assert out["router"]["dynamic_completion_accepted"] is False
+    assert out["router"]["dynamic_completion_candidate_label"] == "SwipeLeft"
+
+
 def test_router_release_static_threshold_rejects_below_80_percent() -> None:
     static = _FakeInfer(
         [{"label": "palm", "confidence": 0.79, "landmarks_json": "[static]"}]

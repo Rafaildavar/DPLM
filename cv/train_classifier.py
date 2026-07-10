@@ -22,6 +22,13 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
+from cv.dynamic_completion import (
+    COMPLETION_METHOD,
+    COMPLETION_SCHEMA_VERSION,
+    build_dynamic_completion_profiles,
+    completion_target_frames,
+    supports_dynamic_completion,
+)
 from cv.gesture_features import (
     DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
@@ -2221,6 +2228,61 @@ def main() -> None:
     best_eval_accuracy = getattr(clf, "best_eval_accuracy_", None)
     if best_eval_accuracy is not None and np.isfinite(float(best_eval_accuracy)):
         rejection_metadata["validation_best_accuracy"] = float(best_eval_accuracy)
+    if supports_dynamic_completion(str(args.feature_mode)):
+        if args.expect_dim is None:
+            rejection_metadata["dynamic_completion_profiles"] = {
+                "schema_version": COMPLETION_SCHEMA_VERSION,
+                "method": COMPLETION_METHOD,
+                "classes": {},
+                "skipped_classes": {
+                    "*": "expect_dim_required",
+                },
+            }
+            print("[w] Completion gate skipped: --expect-dim is required")
+        else:
+            completion_profiles = build_dynamic_completion_profiles(
+                data_root,
+                classes,
+                target_dim=int(args.expect_dim),
+                target_frames=completion_target_frames(str(args.feature_mode)),
+                random_state=int(args.random_state),
+            )
+            rejection_metadata["dynamic_completion_profiles"] = completion_profiles
+            validations = [
+                profile.get("validation", {})
+                for profile in completion_profiles.get("classes", {}).values()
+                if isinstance(profile, dict)
+            ]
+            average_complete_recall = (
+                float(
+                    np.mean(
+                        [
+                            float(item.get("complete_recall") or 0.0)
+                            for item in validations
+                        ]
+                    )
+                )
+                if validations
+                else 0.0
+            )
+            average_partial_far = (
+                float(
+                    np.mean(
+                        [
+                            float(item.get("partial_false_accept_rate") or 0.0)
+                            for item in validations
+                        ]
+                    )
+                )
+                if validations
+                else 0.0
+            )
+            print(
+                "[i] Completion profiles: "
+                f"{len(completion_profiles.get('classes', {}))}; "
+                f"grouped complete recall={average_complete_recall:.4f}; "
+                f"prefix false accept={average_partial_far:.4f}"
+            )
     publish_model_bundle_atomic(
         clf,
         out_path,
@@ -2760,6 +2822,20 @@ def _log_mlflow_run(
         validation_group_overlap = int(
             rejection_metadata.get("validation_group_overlap", 0)
         )
+        completion_metadata = rejection_metadata.get(
+            "dynamic_completion_profiles"
+        )
+        if not isinstance(completion_metadata, dict):
+            completion_metadata = {}
+        completion_classes = completion_metadata.get("classes")
+        if not isinstance(completion_classes, dict):
+            completion_classes = {}
+        completion_validations = [
+            profile.get("validation", {})
+            for profile in completion_classes.values()
+            if isinstance(profile, dict)
+            and isinstance(profile.get("validation"), dict)
+        ]
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -2906,6 +2982,10 @@ def _log_mlflow_run(
                     ),
                     "reject_min_margin": reject_min_margin,
                     "reject_distance_multiplier": reject_distance_multiplier,
+                    "completion_method": str(
+                        completion_metadata.get("method") or "disabled"
+                    ),
+                    "completion_profile_count": int(len(completion_classes)),
                 }
             )
             negative_labels = rejection_metadata.get("negative_labels") or []
@@ -2926,6 +3006,38 @@ def _log_mlflow_run(
             if validation_best_accuracy is not None:
                 metrics["validation_best_accuracy"] = float(
                     validation_best_accuracy
+                )
+            if completion_validations:
+                metrics["completion_profile_count"] = float(
+                    len(completion_validations)
+                )
+                metrics["completion_grouped_full_recall"] = float(
+                    np.mean(
+                        [
+                            float(item.get("complete_recall") or 0.0)
+                            for item in completion_validations
+                        ]
+                    )
+                )
+                metrics["completion_grouped_prefix_false_accept_rate"] = float(
+                    np.mean(
+                        [
+                            float(
+                                item.get("partial_false_accept_rate") or 0.0
+                            )
+                            for item in completion_validations
+                        ]
+                    )
+                )
+                metrics["completion_grouped_negative_false_accept_rate"] = float(
+                    np.mean(
+                        [
+                            float(
+                                item.get("negative_false_accept_rate") or 0.0
+                            )
+                            for item in completion_validations
+                        ]
+                    )
                 )
             if isinstance(sequence_gru_optuna_summary, dict):
                 metrics["sequence_gru_optuna_best_score"] = float(

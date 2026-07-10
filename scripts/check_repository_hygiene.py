@@ -90,6 +90,8 @@ ALLOWED_EXPERIMENT_EVIDENCE = {
     "docs/experiments/README.md",
     "docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.json",
     "docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.md",
+    "docs/experiments/dynamic_completion_benchmark.json",
+    "docs/experiments/dynamic_completion_benchmark.md",
     "docs/experiments/ml_pipeline_log.md",
     "docs/experiments/release_latency_benchmark_2026-07-10.json",
     "docs/experiments/release_readiness_2026-07-10.md",

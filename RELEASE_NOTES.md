@@ -18,6 +18,8 @@ them live and bind accepted gestures to safe macOS actions.
 - Binding-agent golden cases are portable across macOS development and Linux CI.
 - Static predictions in auto mode now require `0.80` confidence, based on the final controlled live run.
 - Dynamic predictions and completed-event intent overrides now require at least `0.90` confidence.
+- An adaptive per-class completion gate rejects unfinished dynamic gestures
+  before amplitude normalization and can resume the same event after a pause.
 
 ## Reproducible Evidence
 
@@ -28,6 +30,9 @@ them live and bind accepted gestures to safe macOS actions.
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency mean / p95 | `13.979 / 16.013 ms` |
+| Completion candidate full / prefix accepted | `60/60 / 6/240` |
+| Production state-machine replay full / wrong class | `59/60 / 0` |
+| Production state-machine replay prefix false accepts | `5/240 = 0.0208` |
 | Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
 | Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
 
@@ -35,6 +40,9 @@ The dynamic release run produced `SwipeLeft 10/10`, `diagonal 9/10` and
 `zoom 9/10`: two misses and no reported wrong-class predictions. The
 command-binding confidence policy is independent from the static and dynamic
 recognition thresholds.
+The completion figures are source-recording regression replay, not independent
+webcam evidence. The controlled `28/30` live run predates the completion gate
+and must be repeated before the public tag.
 
 ## Included
 
@@ -48,13 +56,13 @@ recognition thresholds.
 
 - User recordings or personal gesture classes.
 - `.env`, local SQLite/PostgreSQL state, runtime logs or MLflow runs.
-- Experiment model folders, generated reports, IDE state or virtual environments.
+- Experiment model folders, non-allowlisted generated reports, IDE state or virtual environments.
 - The retired Qt/QML desktop implementation.
 
 ## Known MVP Limits
 
 - The release is macOS-first and is not yet notarized.
-- A final no-command matrix is required before creating the public `v0.8.0`
-  tag.
+- A fresh positive/partial-motion run and final no-command matrix are required
+  before creating the public `v0.8.0` tag.
 - New personal classes still require diverse recordings for reliable open-set
   behavior.

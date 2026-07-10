@@ -3,6 +3,7 @@ import numpy as np
 from cv.dynamic_motion import (
     DynamicMotionSegmenter,
     canonical_dynamic_sequence,
+    create_runtime_dynamic_segmenter,
     normalize_global_trajectory,
     resample_sequence,
 )
@@ -70,6 +71,8 @@ def test_segmenter_emits_one_completed_swipe_after_motion_stops():
     assert len(completed) == 1
     assert completed[0].phase == "completed"
     assert completed[0].completed_sequence.shape == (36, 44)
+    assert completed[0].completion_evidence is not None
+    assert completed[0].completion_evidence["raw_displacement"] > 0.45
     motion = trajectory_features(completed[0].completed_sequence, target_dim=44)
     assert motion[0] < -0.4
 
@@ -159,6 +162,105 @@ def test_online_segmenter_emits_fast_horizontal_swipe_before_hand_leaves():
     assert hand_lost.end_reason == "hand_lost"
     motion = trajectory_features(hand_lost.completed_sequence, target_dim=44)
     assert motion[0] < -0.4
+
+
+def test_runtime_segmenter_waits_five_frames_before_tentative_completion():
+    segmenter = create_runtime_dynamic_segmenter(target_frames=72)
+
+    assert segmenter.completion_grace_frames == 5
+
+
+def test_rejected_prefix_waits_and_then_resumes_same_gesture():
+    segmenter = create_runtime_dynamic_segmenter(target_frames=72)
+    first_leg = [0.80, 0.72, 0.64, 0.56, 0.48] + [0.48] * 8
+    first_updates = [
+        segmenter.update(_frame(x, 0.5), motion_scale=0.50)
+        for x in first_leg
+    ]
+    rejected = next(
+        update for update in first_updates if update.completed_sequence is not None
+    )
+    assert rejected.raw_sequence is not None
+
+    segmenter.reject_completed_candidate(
+        rejected.raw_sequence,
+        motion_scale=0.50,
+    )
+    waiting = [
+        segmenter.update(_frame(0.48, 0.5), motion_scale=0.50)
+        for _ in range(6)
+    ]
+
+    assert all(update.phase == "awaiting_continuation" for update in waiting)
+    assert all(update.completed_sequence is None for update in waiting)
+
+    second_leg = [0.40, 0.32, 0.24, 0.20] + [0.20] * 8
+    resumed = [
+        segmenter.update(_frame(x, 0.5), motion_scale=0.50)
+        for x in second_leg
+    ]
+    completed = [
+        update for update in resumed if update.completed_sequence is not None
+    ]
+
+    assert len(completed) == 1
+    assert completed[0].raw_sequence is not None
+    motion = trajectory_features(completed[0].raw_sequence, target_dim=44)
+    assert motion[0] < -0.55
+
+
+def test_confirmed_returning_motion_can_finish_near_its_start():
+    segmenter = create_runtime_dynamic_segmenter(target_frames=72)
+    points = [
+        0.50,
+        0.54,
+        0.61,
+        0.69,
+        0.75,
+        0.69,
+        0.61,
+        0.54,
+        0.50,
+        *([0.50] * 9),
+    ]
+
+    updates = [
+        segmenter.update(_frame(x, 0.5), motion_scale=0.50)
+        for x in points
+    ]
+    completed = [
+        update for update in updates if update.completed_sequence is not None
+    ]
+
+    assert len(completed) == 1
+    assert completed[0].end_reason in {"still", "velocity_drop"}
+    assert completed[0].frames < segmenter.max_active_frames
+
+
+def test_rejected_prefix_times_out_without_emitting_a_command():
+    segmenter = create_runtime_dynamic_segmenter(target_frames=72)
+    first_leg = [0.80, 0.72, 0.64, 0.56, 0.48] + [0.48] * 8
+    rejected = next(
+        update
+        for x in first_leg
+        if (
+            update := segmenter.update(_frame(x, 0.5), motion_scale=0.50)
+        ).completed_sequence
+        is not None
+    )
+    assert rejected.raw_sequence is not None
+    segmenter.reject_completed_candidate(
+        rejected.raw_sequence,
+        motion_scale=0.50,
+    )
+
+    waiting = [
+        segmenter.update(_frame(0.48, 0.5), motion_scale=0.50)
+        for _ in range(segmenter.continuation_wait_frames)
+    ]
+
+    assert all(update.completed_sequence is None for update in waiting)
+    assert waiting[-1].end_reason == "completion_timeout"
 
 
 def test_segmenter_handles_different_gesture_speeds():

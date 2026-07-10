@@ -2772,6 +2772,77 @@ def test_no_command_live_evaluation_counts_negative_prediction_as_correct(
     assert snapshot["missed"] == 0
 
 
+def test_live_metrics_count_dynamic_completion_rejections():
+    controller = _dispatch_controller()
+    controller._gesture_type_for_label = lambda _label: "dynamic"
+    session = {
+        "expected_label": "SwipeLeft",
+        "target_attempts": 2,
+        "total": 2,
+        "correct": 1,
+        "wrong": 0,
+        "missed": 1,
+        "attempts": [
+            {
+                "route": "none",
+                "dynamic_decision_source": "completion_rejected",
+                "result": "missed",
+            },
+            {
+                "route": "dynamic",
+                "dynamic_decision_source": "motion_and_prototype_agree",
+                "result": "correct",
+            },
+        ],
+    }
+
+    metrics = controller._live_evaluation_mlflow_metrics(session)
+
+    assert metrics["live_completion_rejected_count"] == pytest.approx(1.0)
+    assert metrics["live_completion_rejected_rate"] == pytest.approx(0.5)
+    assert metrics["live_decision_completion_rejected_count"] == pytest.approx(1.0)
+
+
+def test_live_timeout_preserves_completion_rejection_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    controller = _dispatch_controller()
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    controller._gesture_type_for_label = lambda _label: "dynamic"
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+    assert controller.start_live_evaluation(
+        "SwipeLeft",
+        attempts=1,
+        timeout_seconds=1.0,
+        min_confidence=0.90,
+    )
+    controller._live_evaluation["attempt_started_at"] = 10.0
+    controller._live_evaluation["next_ready_at"] = 0.0
+    controller._capture_live_evaluation_route_metadata(
+        {
+            "route": "none",
+            "dynamic_decision_source": "completion_rejected",
+            "dynamic_completion_enabled": True,
+            "dynamic_completion_accepted": False,
+            "dynamic_completion_score": 0.25,
+            "dynamic_completion_threshold": 0.85,
+            "dynamic_completion_reason": "incomplete_gesture",
+            "dynamic_completion_candidate_label": "SwipeLeft",
+        }
+    )
+
+    controller._update_live_evaluation_timeout(now=12.0)
+
+    snapshot = controller.current_live_evaluation()
+    attempt = snapshot["attempts"][0]
+    assert attempt["dynamic_decision_source"] == "completion_rejected"
+    assert attempt["dynamic_completion_accepted"] is False
+    assert attempt["dynamic_completion_candidate_label"] == "SwipeLeft"
+    metrics = controller._live_evaluation_mlflow_metrics(snapshot)
+    assert metrics["live_completion_rejected_count"] == pytest.approx(1.0)
+
+
 def test_live_evaluation_static_rejection_metrics_for_negative_expected():
     controller = _dispatch_controller()
     controller._gesture_type_for_label = (

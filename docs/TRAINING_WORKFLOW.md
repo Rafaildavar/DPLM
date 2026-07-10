@@ -289,5 +289,26 @@ static_craft_full_stats`: при маленьком пользовательск
 - `21` точка кисти + дополнительная `wrist_xy` точка, если она есть;
 - `3` координаты на точку, где для старых `xy` samples `z = 0`.
 
-Это не production-модель и не EfficientNet, а легкая benchmark-ветка для
-сравнения идеи GISLR-спектрограммы с текущими sequence-моделями.
+В production этот тензор использует `dynamic_landmark_lstm_backbone`: общий
+per-frame MLP-backbone кодирует landmarks, затем двухслойная bidirectional LSTM
+и `final/mean/max` pooling классифицируют всю последовательность. Обычная
+кнопка dynamic-обучения публикует модель и sidecars под префиксом
+`models/dynamic_landmark_lstm_backbone.*`.
+
+В ту же транзакцию обучения входит adaptive completion gate. Для каждого
+положительного пользовательского класса автоматически строится grouped
+logistic profile:
+
+- positive: полные реальные записи целевого класса;
+- hard negatives: его префиксы по cumulative motion progress;
+- cross-class hard negatives: полные записи и префиксы остальных классов;
+- доступные negative classes тоже используются, если имеют совместимый raw
+  layout.
+
+Профиль сохраняется в model-specific `*_rejection.json`. Он работает по raw
+траектории до amplitude normalization, поэтому переименование или добавление
+жеста не требует ручных alias/rules. Для проверки текущего production bundle:
+
+```bash
+python -m scripts.evaluate_dynamic_completion --log-mlflow
+```

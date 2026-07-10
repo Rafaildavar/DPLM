@@ -21,12 +21,13 @@ GestureBind MVP `0.8.0` превращает обычную веб-камеру 
 | Dynamic ML | `dynamic_landmark_lstm_backbone` по последовательности landmarks |
 | Обучение | train-only GISLR-style augmentation, grouped validation, Optuna |
 | Команды | typed actions, hotkeys, media, navigation, app launch и sequences |
-| Безопасность | confidence gate, negative classes, cooldown, command validation |
+| Безопасность | confidence gate, adaptive completion gate, negative classes, cooldown |
 | Наблюдаемость | live evaluation, JSONL runtime logs, MLflow provenance |
 | Хранение | SQLite по умолчанию, PostgreSQL опционально |
 
 В релиз не входят пользовательские датасеты, секреты, локальные БД, MLflow
-runs, generated reports и экспериментальные model artifacts.
+runs, не включенные в release allowlist generated reports и экспериментальные
+model artifacts.
 
 ## Пользовательский Сценарий
 
@@ -56,6 +57,12 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 Release auto-router принимает static-предсказания от `0.80`, а dynamic — от
 `0.90`; порог выполнения привязанной команды остается отдельным барьером.
 
+Перед нормализацией амплитуды dynamic-пайплайн проверяет, завершен ли жест.
+Для каждого пользовательского класса verifier автоматически обучается на его
+полных записях, собственных префиксах и префиксах остальных классов. Если
+кандидат отклонен, сегментатор сохраняет уже выполненную часть и ждет
+продолжения, не испуская команду по неподвижному неполному жесту.
+
 Текущая release evidence:
 
 | Проверка | Результат |
@@ -66,6 +73,10 @@ Release auto-router принимает static-предсказания от `0.8
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency, mean / p95 | `13.979 / 16.013 ms` |
+| Completion gate, full source recordings | `60/60 = 1.0000` |
+| Completion gate, prefix accepts before / after | `214/240 / 6/240` |
+| Online state-machine replay, full / wrong class | `59/60 / 0` |
+| Online state-machine replay, prefix false accepts | `5/240 = 0.0208` |
 | Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
 | Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
 
@@ -76,6 +87,9 @@ dynamic-классов в этом прогоне не отмечено.
 кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
 нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
 `no-command` safety run.
+Completion replay использует текущие source recordings через production
+`GestureOnlineInfer`; это regression evidence, а не независимый test set.
+После добавления gate требуется новый webcam-run до создания release tag.
 
 ## Архитектура
 
@@ -168,6 +182,9 @@ PYTHON=.venv/bin/python make ci
 # Только production model smoke
 PYTHON=.venv/bin/python make ml-smoke
 
+# Full/prefix benchmark через production dynamic state machine
+python -m scripts.evaluate_dynamic_completion --log-mlflow
+
 # Локальный MLflow UI
 PYTHON=.venv/bin/python make mlflow-ui
 ```
@@ -195,6 +212,7 @@ GitHub release workflow создает source/model bundle через `git archi
 - [Database Schema](docs/DB_SCHEMA.md)
 - [CI/CD](docs/CI_CD.md)
 - [ML System Design](docs/contest/ML_SYSTEM_DESIGN.md)
+- [Dynamic Completion Benchmark](docs/experiments/dynamic_completion_benchmark.md)
 - [Release Readiness](docs/experiments/release_readiness_2026-07-10.md)
 
 ## Ограничения MVP

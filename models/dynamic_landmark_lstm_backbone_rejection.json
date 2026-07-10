@@ -38151,5 +38151,350 @@
   "training_group_count": 160,
   "validation_grouped": true,
   "validation_group_overlap": 0,
-  "validation_best_accuracy": 0.8571428656578064
+  "validation_best_accuracy": 0.8571428656578064,
+  "dynamic_completion_profiles": {
+    "schema_version": 2,
+    "method": "per_class_logistic_cross_class_prefix",
+    "generated_at": 1783693612.507085,
+    "target_dim": 65,
+    "target_frames": 72,
+    "prefix_fractions": [
+      0.25,
+      0.4,
+      0.55,
+      0.7
+    ],
+    "min_complete_recall": 1.0,
+    "max_cross_class_sources": 20,
+    "classes": {
+      "SwipeLeft": {
+        "enabled": true,
+        "method": "logistic_cross_class_prefix_verifier",
+        "feature_names": [
+          "relative_dx",
+          "relative_dy",
+          "relative_displacement",
+          "relative_path",
+          "relative_excursion",
+          "relative_x_range",
+          "relative_y_range",
+          "relative_positive_x_path",
+          "relative_negative_x_path",
+          "relative_positive_y_path",
+          "relative_negative_y_path",
+          "straightness",
+          "turning_energy",
+          "shape_change_energy",
+          "shape_endpoint_delta"
+        ],
+        "scaler_mean": [
+          -0.28622552326540723,
+          0.07896382601586603,
+          0.3294596316774841,
+          0.4662214118506527,
+          0.3369117668136354,
+          0.2967787432679567,
+          0.1403394682266763,
+          0.02530247467451062,
+          0.3115279988947048,
+          0.16597113512735048,
+          0.08700730911148441,
+          0.578553543366462,
+          0.6701799911508958,
+          0.006430019237256298,
+          0.13239807345904409
+        ],
+        "scaler_scale": [
+          0.2623960805571361,
+          0.16702997946966994,
+          0.2763465273678385,
+          0.29706644946098,
+          0.27046422827203065,
+          0.2545946441122931,
+          0.14284697673832614,
+          0.026511867959912044,
+          0.25160228788726324,
+          0.16518754326321822,
+          0.06092630526433387,
+          0.34440979846494174,
+          0.32709083582810605,
+          0.003614893088230076,
+          0.08058423036079915
+        ],
+        "coefficients": [
+          -1.0184187114136034,
+          -0.9662562817462936,
+          0.8235929321602296,
+          0.7403873063109179,
+          0.8356098873502559,
+          1.0276228675976606,
+          -0.7287637241078984,
+          -0.3249017200493262,
+          1.027873695857175,
+          -0.4128679256412592,
+          1.5296041368229412,
+          -0.038447636660806896,
+          0.05096301018091023,
+          0.30758542698680447,
+          0.15497636929577113
+        ],
+        "intercept": -11.167220858491868,
+        "threshold": 0.8675559757964003,
+        "validation": {
+          "grouped_cv": true,
+          "folds": 5,
+          "source_groups": 60,
+          "complete_recall": 1.0,
+          "negative_false_accept_rate": 0.0,
+          "partial_false_accept_rate": 0.0,
+          "partial_false_accept_rate_by_fraction": {
+            "0.25": 0.0,
+            "0.40": 0.0,
+            "0.55": 0.0,
+            "0.70": 0.0
+          },
+          "negative_false_accept_rate_by_kind": {
+            "cross_class_full": 0.0,
+            "cross_class_prefix": 0.0,
+            "own_prefix": 0.0
+          },
+          "full_score_min": 0.8675559767964003,
+          "full_score_mean": 0.9788984903289331,
+          "partial_score_mean": 0.01771070100975972
+        },
+        "source_sample_count": 20,
+        "negative_sample_counts": {
+          "cross_class_full": 40,
+          "cross_class_prefix": 160,
+          "own_prefix": 80
+        },
+        "segmented_prefix_count": 240,
+        "prefix_fractions": [
+          0.25,
+          0.4,
+          0.55,
+          0.7
+        ]
+      },
+      "diagonal": {
+        "enabled": true,
+        "method": "logistic_cross_class_prefix_verifier",
+        "feature_names": [
+          "relative_dx",
+          "relative_dy",
+          "relative_displacement",
+          "relative_path",
+          "relative_excursion",
+          "relative_x_range",
+          "relative_y_range",
+          "relative_positive_x_path",
+          "relative_negative_x_path",
+          "relative_positive_y_path",
+          "relative_negative_y_path",
+          "straightness",
+          "turning_energy",
+          "shape_change_energy",
+          "shape_endpoint_delta"
+        ],
+        "scaler_mean": [
+          -0.2862255232654072,
+          0.0789638260158661,
+          0.3294596316774841,
+          0.4662214118506529,
+          0.33691176681363544,
+          0.29677874326795683,
+          0.14033946822667637,
+          0.025302474674510612,
+          0.31152799889470456,
+          0.16597113512735062,
+          0.08700730911148441,
+          0.5785535433664624,
+          0.6701799911508958,
+          0.006430019237256298,
+          0.13239807345904409
+        ],
+        "scaler_scale": [
+          0.26239608055713604,
+          0.16702997946966994,
+          0.27634652736783843,
+          0.29706644946098004,
+          0.27046422827203065,
+          0.254594644112293,
+          0.14284697673832614,
+          0.02651186795991205,
+          0.2516022878872632,
+          0.1651875432632182,
+          0.06092630526433388,
+          0.3444097984649419,
+          0.3270908358281061,
+          0.003614893088230076,
+          0.08058423036079915
+        ],
+        "coefficients": [
+          -0.11130302127561562,
+          0.918998495651935,
+          0.37311002096885354,
+          0.6914833715488661,
+          0.46182824597183664,
+          0.09353984105363908,
+          0.9336360017791125,
+          2.426703556486505,
+          0.3717848584610762,
+          0.8387958003618615,
+          -0.24524189076120728,
+          0.1511168936157144,
+          0.7775238383200846,
+          0.13659640309579024,
+          0.3545641620119847
+        ],
+        "intercept": -8.192671618389637,
+        "threshold": 0.5483973914665254,
+        "validation": {
+          "grouped_cv": true,
+          "folds": 5,
+          "source_groups": 60,
+          "complete_recall": 1.0,
+          "negative_false_accept_rate": 0.03214285714285714,
+          "partial_false_accept_rate": 0.03333333333333333,
+          "partial_false_accept_rate_by_fraction": {
+            "0.25": 0.0,
+            "0.40": 0.0,
+            "0.55": 0.03333333333333333,
+            "0.70": 0.1
+          },
+          "negative_false_accept_rate_by_kind": {
+            "cross_class_full": 0.025,
+            "cross_class_prefix": 0.0,
+            "own_prefix": 0.1
+          },
+          "full_score_min": 0.5483973924665254,
+          "full_score_mean": 0.9427840709841574,
+          "partial_score_mean": 0.03466362858050898
+        },
+        "source_sample_count": 20,
+        "negative_sample_counts": {
+          "cross_class_full": 40,
+          "cross_class_prefix": 160,
+          "own_prefix": 80
+        },
+        "segmented_prefix_count": 240,
+        "prefix_fractions": [
+          0.25,
+          0.4,
+          0.55,
+          0.7
+        ]
+      },
+      "zoom": {
+        "enabled": true,
+        "method": "logistic_cross_class_prefix_verifier",
+        "feature_names": [
+          "relative_dx",
+          "relative_dy",
+          "relative_displacement",
+          "relative_path",
+          "relative_excursion",
+          "relative_x_range",
+          "relative_y_range",
+          "relative_positive_x_path",
+          "relative_negative_x_path",
+          "relative_positive_y_path",
+          "relative_negative_y_path",
+          "straightness",
+          "turning_energy",
+          "shape_change_energy",
+          "shape_endpoint_delta"
+        ],
+        "scaler_mean": [
+          -0.2862255232654071,
+          0.078963826015866,
+          0.3294596316774842,
+          0.46622141185065347,
+          0.3369117668136357,
+          0.296778743267957,
+          0.14033946822667615,
+          0.02530247467451059,
+          0.31152799889470456,
+          0.1659711351273506,
+          0.0870073091114844,
+          0.5785535433664625,
+          0.6701799911508958,
+          0.006430019237256298,
+          0.13239807345904409
+        ],
+        "scaler_scale": [
+          0.2623960805571362,
+          0.16702997946966996,
+          0.2763465273678384,
+          0.2970664494609801,
+          0.27046422827203065,
+          0.25459464411229293,
+          0.14284697673832608,
+          0.02651186795991204,
+          0.2516022878872633,
+          0.1651875432632183,
+          0.060926305264333874,
+          0.3444097984649417,
+          0.32709083582810594,
+          0.003614893088230076,
+          0.08058423036079915
+        ],
+        "coefficients": [
+          0.35702843234558307,
+          -0.08969837623127569,
+          -0.346595924655932,
+          0.019438300410880262,
+          -0.31272334233628124,
+          -0.2805752406169089,
+          -0.28192076965084417,
+          1.128544479376053,
+          -0.2534278986996154,
+          0.06693308657931313,
+          0.4273823919317302,
+          -0.6958839386024639,
+          0.13695018648363727,
+          1.116824312718796,
+          -2.543362298165406
+        ],
+        "intercept": -6.059564229442244,
+        "threshold": 0.9508757250800547,
+        "validation": {
+          "grouped_cv": true,
+          "folds": 5,
+          "source_groups": 60,
+          "complete_recall": 1.0,
+          "negative_false_accept_rate": 0.0035714285714285713,
+          "partial_false_accept_rate": 0.004166666666666667,
+          "partial_false_accept_rate_by_fraction": {
+            "0.25": 0.0,
+            "0.40": 0.0,
+            "0.55": 0.0,
+            "0.70": 0.016666666666666666
+          },
+          "negative_false_accept_rate_by_kind": {
+            "cross_class_full": 0.0,
+            "cross_class_prefix": 0.0,
+            "own_prefix": 0.0125
+          },
+          "full_score_min": 0.9508757260800547,
+          "full_score_mean": 0.9818519115433466,
+          "partial_score_mean": 0.017505465919679154
+        },
+        "source_sample_count": 20,
+        "negative_sample_counts": {
+          "cross_class_full": 40,
+          "cross_class_prefix": 160,
+          "own_prefix": 80
+        },
+        "segmented_prefix_count": 240,
+        "prefix_fractions": [
+          0.25,
+          0.4,
+          0.55,
+          0.7
+        ]
+      }
+    },
+    "skipped_classes": {}
+  }
 }

@@ -608,6 +608,7 @@ class GestureRecognitionRouter:
         if not source:
             return False
         return source not in {
+            "completion_rejected",
             "negative_rejected",
             "prototype_rejected",
             "prototype_motion_conflict",
@@ -910,6 +911,24 @@ class GestureRecognitionRouter:
             ),
             "dynamic_negative_threshold": float(
                 dynamic_decision.get("negative_threshold") or 0.0
+            ),
+            "dynamic_completion_enabled": bool(
+                dynamic_decision.get("completion_enabled")
+            ),
+            "dynamic_completion_accepted": bool(
+                dynamic_decision.get("completion_accepted")
+            ),
+            "dynamic_completion_score": float(
+                dynamic_decision.get("completion_score") or 0.0
+            ),
+            "dynamic_completion_threshold": float(
+                dynamic_decision.get("completion_threshold") or 0.0
+            ),
+            "dynamic_completion_reason": str(
+                dynamic_decision.get("completion_reason") or ""
+            ),
+            "dynamic_completion_candidate_label": str(
+                dynamic_decision.get("completion_candidate_label") or ""
             ),
             "dynamic_axis": str(dynamic_decision.get("axis") or ""),
             "dynamic_direction": str(dynamic_decision.get("direction") or ""),

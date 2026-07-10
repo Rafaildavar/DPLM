@@ -5897,3 +5897,65 @@ Live evidence от пользователя:
   - `zoom`: `59c6d2e7af9d4d7da71e2c7aa79c6f86`;
 - осталось выполнить `30` no-command/background попыток и зафиксировать
   dynamic false-positive rate.
+
+### H-115: Adaptive completion gate for arbitrary dynamic classes
+
+Дата: 2026-07-10. Статус: `validated-offline`, требуется fresh live run.
+
+Проблема:
+- `canonical_dynamic_sequence` нормализует амплитуду глобального движения;
+- после такой нормализации короткий префикс может выглядеть для LSTM как
+  законченный жест и получать confidence `>= 0.90`;
+- начало составного пользовательского жеста иногда совпадает с полным другим
+  классом, поэтому verifier только на префиксах собственного класса
+  недостаточен.
+
+Решение:
+- completion evidence вычисляется по raw sequence до amplitude normalization;
+- используются signed `dx/dy`, displacement, path, excursion, axis ranges,
+  positive/negative axis paths, straightness, turning и hand-shape change;
+- для каждого положительного класса автоматически обучается grouped logistic
+  verifier: full target против own prefixes, cross-class prefixes/full samples
+  и доступных negative classes;
+- названия пользовательских жестов не зашиты в runtime-логику;
+- tentative stop ждет `5` кадров, чтобы короткая пауза не завершала жест;
+- отклоненный префикс переходит в `awaiting_continuation`: продолжение wrist или
+  hand-shape motion дописывается в тот же segment;
+- после `24` кадров без продолжения raw intent очищается без команды;
+- `motion_confirmed` не сбрасывается, если запястье вернулось к старту, что
+  поддерживает zoom, круговые и возвратные движения;
+- новые профили генерируются обычным training pipeline и сохраняются в
+  model-specific `*_rejection.json`.
+
+Grouped profile validation:
+- positive classes: `SwipeLeft`, `diagonal`, `zoom`;
+- по `20` независимых source recordings на класс;
+- complete recall: `1.0000` для каждого класса;
+- aggregate prefix false accept rate: `0.0125`;
+- cross-class prefix false accepts для `SwipeLeft`: `0.0000`.
+
+Production benchmark:
+- candidate full: `60/60` accepted;
+- LSTM alone accepted `214/240` truncated candidates;
+- LSTM + completion gate accepted `6/240`;
+- production `GestureOnlineInfer` state-machine replay: `59/60` correct full,
+  `0` wrong-class, `5/240 = 0.0208` prefix commands;
+- focused dynamic regression suite: `48 passed`;
+- release CI: `615 passed` plus static/dynamic model smoke;
+- full discoverable suite: `620 passed`;
+- MLflow run: `4900d7c52abe4ff58018c2dfc452e8a3`;
+- reproducible command:
+  `python -m scripts.evaluate_dynamic_completion --log-mlflow`.
+
+Ограничение:
+- replay использует текущие source recordings, поэтому не является независимым
+  test set и не заменяет webcam safety matrix;
+- пять принятых префиксов относятся к `70%` motion progress и геометрически уже
+  близки к полному жесту; более строгий threshold ухудшил full replay с
+  `59/60` до `58/60`, поэтому не был принят.
+
+Следующий шаг:
+- повторить по `10` полных попыток каждого dynamic-класса;
+- выполнить минимум `10` коротких/остановленных и `10` похожих на команды
+  движений, плюс общий `30`-attempt no-command/background run;
+- только после fresh live evidence обновить release metrics и dashboard.

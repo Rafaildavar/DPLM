@@ -6,6 +6,7 @@ import numpy as np
 from app.gesture_online_infer import (
     GestureOnlineInfer,
     configure_estimator_for_live_inference,
+    default_gesture_rejection_path,
 )
 from cv.gesture_features import (
     DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
@@ -63,6 +64,24 @@ def test_dynamic_sequence_artifact_forces_sequence_feature_mode():
     infer._ensure_dynamic_sequence_feature_mode(Path("dynamic_sequence_rocket.pkl"))
 
     assert infer._feature_mode == FEATURE_DYNAMIC_SEQUENCE
+
+
+def test_dynamic_model_prefers_model_specific_rejection_metadata(tmp_path: Path):
+    model_path = tmp_path / "dynamic_custom.pkl"
+    generic = tmp_path / "gesture_rejection.json"
+    specific = tmp_path / "dynamic_custom_rejection.json"
+    generic.write_text("{}", encoding="utf-8")
+    specific.write_text("{}", encoding="utf-8")
+
+    assert default_gesture_rejection_path(model_path) == specific
+
+
+def test_dynamic_model_falls_back_to_legacy_rejection_metadata(tmp_path: Path):
+    model_path = tmp_path / "dynamic_custom.pkl"
+    generic = tmp_path / "gesture_rejection.json"
+    generic.write_text("{}", encoding="utf-8")
+
+    assert default_gesture_rejection_path(model_path) == generic
 
 
 def test_long_dynamic_sequence_artifact_forces_long_sequence_feature_mode():
