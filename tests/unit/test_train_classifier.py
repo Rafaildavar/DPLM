@@ -3,8 +3,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
-from cv.gesture_features import DYNAMIC_TRAJECTORY_FEATURE_DIM
+from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    DYNAMIC_TRAJECTORY_FEATURE_DIM,
+    FEATURE_DYNAMIC_LANDMARK_IMAGE,
+    FEATURE_STATIC_CRAFT_FULL_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
+    feature_vector_size,
+)
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_gru_backbone import TorchGRUBackboneClassifier, TorchLSTMBackboneClassifier
@@ -13,10 +21,14 @@ from cv.sequence_shapelet import ShapeletSequenceTransformer
 from cv.sequence_sprocket import SprocketSequenceTransformer
 from cv.train_classifier import (
     _log_mlflow_run,
+    balance_training_set,
     build_classifier,
     can_use_sequence_mlp_validation_split,
     default_rejection_metadata_path,
     load_dataset,
+    model_uses_internal_class_balance,
+    training_dataset_provenance,
+    tune_extra_trees_hyperparameters,
 )
 
 
@@ -45,6 +57,22 @@ def test_load_dataset_can_filter_and_normalize_labels(tmp_path):
     assert x.shape == (2, 42)
     assert y.tolist() == [0, 1]
     assert classes == ["new", "new2"]
+
+
+def test_training_dataset_provenance_tracks_selected_sample_content(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "keep", 0, value=1.0)
+    _write_sample(data_root, "ignore", 0, value=2.0)
+
+    first = training_dataset_provenance(data_root, include_labels=["keep"])
+    _write_sample(data_root, "ignore", 0, value=3.0)
+    unchanged = training_dataset_provenance(data_root, include_labels=["keep"])
+    _write_sample(data_root, "keep", 0, value=4.0)
+    changed = training_dataset_provenance(data_root, include_labels=["keep"])
+
+    assert first["sample_file_count"] == 1
+    assert first["sha256"] == unchanged["sha256"]
+    assert first["sha256"] != changed["sha256"]
 
 
 def test_load_dataset_supports_dynamic_feature_mode(tmp_path):
@@ -78,10 +106,155 @@ def test_load_dataset_expect_dim_expands_dynamic_feature_size(tmp_path):
     assert x.shape == (2, 44 * 6 + DYNAMIC_TRAJECTORY_FEATURE_DIM)
 
 
+def test_load_dataset_supports_static_craft_full_feature_mode(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "palm", 0, value=0.0)
+    _write_sample(data_root, "gun", 0, value=1.0)
+
+    x, y, classes = load_dataset(
+        data_root,
+        expect_dim=63,
+        include_labels=["palm", "gun"],
+        feature_mode=FEATURE_STATIC_CRAFT_FULL_STATS,
+    )
+
+    assert x.shape == (2, feature_vector_size(FEATURE_STATIC_CRAFT_FULL_STATS, 63))
+    assert y.tolist() == [0, 1]
+    assert classes == ["gun", "palm"]
+
+
+def test_load_dataset_supports_static_landmark_image_feature_mode(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "palm", 0, value=0.0)
+    _write_sample(data_root, "gun", 0, value=1.0)
+
+    x, y, classes = load_dataset(
+        data_root,
+        expect_dim=63,
+        include_labels=["palm", "gun"],
+        feature_mode=FEATURE_STATIC_LANDMARK_IMAGE,
+    )
+
+    assert x.shape == (2, feature_vector_size(FEATURE_STATIC_LANDMARK_IMAGE, 63))
+    assert y.tolist() == [0, 1]
+    assert classes == ["gun", "palm"]
+
+
+def test_load_dataset_supports_dynamic_landmark_image_feature_mode(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "swipe", 0, value=0.0)
+    _write_sample(data_root, "circle", 0, value=1.0)
+
+    x, y, classes = load_dataset(
+        data_root,
+        expect_dim=65,
+        include_labels=["swipe", "circle"],
+        feature_mode=FEATURE_DYNAMIC_LANDMARK_IMAGE,
+    )
+
+    assert x.shape == (2, feature_vector_size(FEATURE_DYNAMIC_LANDMARK_IMAGE, 65))
+    assert y.tolist() == [0, 1]
+    assert classes == ["circle", "swipe"]
+
+
 def test_build_classifier_supports_non_knn_models():
     clf = build_classifier("extra_trees", random_state=7)
 
     assert clf.__class__.__name__ == "ExtraTreesClassifier"
+
+
+def test_build_classifier_supports_static_stacking_model():
+    clf = build_classifier("static_stacking", random_state=7, static_stacking_cv_folds=2)
+
+    assert clf.__class__.__name__ == "StackingClassifier"
+    assert clf.cv == 2
+
+
+def test_build_classifier_supports_static_landmark_cnn_model():
+    clf = build_classifier(
+        "static_landmark_cnn",
+        random_state=7,
+        static_cnn_max_epochs=3,
+        static_cnn_batch_size=4,
+    )
+
+    assert clf.__class__.__name__ == "KerasStaticLandmarkCNNClassifier"
+    assert clf.max_epochs == 3
+    assert clf.batch_size == 4
+
+
+def test_build_classifier_supports_dynamic_landmark_cnn_model():
+    clf = build_classifier(
+        "dynamic_landmark_cnn",
+        random_state=7,
+        static_cnn_max_epochs=3,
+        static_cnn_batch_size=4,
+    )
+
+    assert clf.__class__.__name__ == "KerasStaticLandmarkCNNClassifier"
+    assert clf.target_frames == DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES
+    assert clf.feature_name == "dynamic_landmark_cnn"
+    assert clf.max_epochs == 3
+    assert clf.batch_size == 4
+
+
+def test_build_classifier_allows_extra_trees_overrides():
+    clf = build_classifier(
+        "extra_trees",
+        random_state=7,
+        extra_trees_n_estimators=40,
+        extra_trees_max_depth=6,
+        extra_trees_min_samples_split=4,
+        extra_trees_min_samples_leaf=2,
+        extra_trees_max_features=0.5,
+        extra_trees_criterion="entropy",
+        extra_trees_bootstrap=True,
+    )
+
+    assert clf.__class__.__name__ == "ExtraTreesClassifier"
+    assert clf.n_estimators == 40
+    assert clf.max_depth == 6
+    assert clf.min_samples_split == 4
+    assert clf.min_samples_leaf == 2
+    assert clf.max_features == 0.5
+    assert clf.criterion == "entropy"
+    assert clf.bootstrap is True
+
+
+def test_extra_trees_optuna_tuning_returns_effective_params():
+    pytest.importorskip("optuna")
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(18, 10)).astype(np.float32)
+    x[6:12] += 0.6
+    x[12:] -= 0.6
+    y = np.asarray([0] * 6 + [1] * 6 + [2] * 6, dtype=np.int64)
+    groups = np.asarray(
+        [f"class{class_idx}-source{sample_idx // 2}" for class_idx in range(3) for sample_idx in range(6)],
+        dtype=object,
+    )
+
+    summary = tune_extra_trees_hyperparameters(
+        x,
+        y,
+        ["a", "b", "c"],
+        n_trials=2,
+        cv_folds=3,
+        timeout=30,
+        random_state=7,
+        class_balance="none",
+        boost_labels=[],
+        groups=groups,
+    )
+
+    assert summary["trials"] == 2
+    assert summary["used_cv"] is True
+    assert summary["cv_folds"] == 3
+    assert summary["grouped_cv"] is True
+    assert summary["group_count"] == 9
+    assert 0.0 <= summary["best_score"] <= 1.0
+    params = summary["best_params"]
+    assert params["extra_trees_n_estimators"] >= 120
+    assert params["extra_trees_min_samples_leaf"] >= 1
 
 
 def test_build_classifier_supports_sequence_mlp_model():
@@ -219,6 +392,27 @@ def test_build_classifier_supports_sequence_lstm_backbone_model():
     )
 
     assert isinstance(clf, TorchLSTMBackboneClassifier)
+    assert clf.backbone_dim == 16
+    assert clf.hidden_dim == 24
+    assert clf.max_epochs == 3
+
+
+def test_build_classifier_supports_dynamic_landmark_lstm_backbone_model():
+    clf = build_classifier(
+        "dynamic_landmark_lstm_backbone",
+        random_state=7,
+        sequence_lstm_backbone_dim=16,
+        sequence_lstm_hidden_dim=24,
+        sequence_lstm_layers=1,
+        sequence_lstm_max_epochs=3,
+        sequence_lstm_batch_size=4,
+        sequence_lstm_validation_fraction=0.0,
+    )
+
+    assert isinstance(clf, TorchLSTMBackboneClassifier)
+    assert clf.target_frames == DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES
+    assert clf.feature_name == FEATURE_DYNAMIC_LANDMARK_IMAGE
+    assert clf.sequence_model_name == "dynamic_landmark_lstm_backbone"
     assert clf.backbone_dim == 16
     assert clf.hidden_dim == 24
     assert clf.max_epochs == 3
@@ -451,6 +645,45 @@ def test_sequence_lstm_backbone_classifier_supports_predict_proba():
     assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-5)
 
 
+def test_sequence_lstm_group_split_fits_normalizer_on_train_only():
+    frames = 36
+    channels = 4
+    rows = []
+    labels = []
+    groups = []
+    for class_idx in range(2):
+        for group_idx in range(4):
+            value = float(class_idx * 10 + group_idx)
+            for _variant in range(2):
+                rows.append(np.full(frames * channels, value, dtype=np.float32))
+                labels.append(class_idx)
+                groups.append(f"class{class_idx}-source{group_idx}")
+    x = np.stack(rows)
+    y = np.asarray(labels, dtype=np.int64)
+    group_values = np.asarray(groups, dtype=object)
+    clf = build_classifier(
+        "sequence_lstm_backbone",
+        random_state=5,
+        sequence_lstm_backbone_dim=8,
+        sequence_lstm_hidden_dim=8,
+        sequence_lstm_max_epochs=1,
+        sequence_lstm_batch_size=4,
+        sequence_lstm_validation_fraction=0.25,
+        sequence_lstm_patience=1,
+    )
+    raw_sequences = x.reshape(len(x), frames, channels)
+    train_raw, _validation_raw, _train_y, _validation_y = (
+        clf._split_train_validation(raw_sequences, y, groups=group_values)
+    )
+    expected_mean = train_raw.mean(axis=(0, 1), keepdims=True)
+
+    clf.fit(x, y, groups=group_values)
+
+    assert clf.used_group_validation_ is True
+    assert clf.validation_group_overlap_ == 0
+    assert np.allclose(clf.sequence_mean_, expected_mean)
+
+
 def test_build_classifier_allows_sequence_mlp_validation_overrides():
     clf = build_classifier(
         "sequence_mlp",
@@ -481,6 +714,50 @@ def test_sequence_mlp_validation_split_requires_enough_samples_per_class():
     )
 
 
+def test_balance_training_set_oversamples_knn_and_boosts_weak_labels():
+    X = np.arange(6, dtype=np.float32).reshape(6, 1)
+    y = np.asarray([0, 0, 0, 1, 1, 2], dtype=np.int64)
+    classes = ["other", "hend", "gun"]
+
+    X_fit, y_fit, metadata = balance_training_set(
+        X,
+        y,
+        classes,
+        model_type="knn",
+        strategy="auto",
+        boost_labels=["hend", "gun"],
+        boost_factor=1.5,
+        random_state=7,
+    )
+
+    counts = np.bincount(y_fit, minlength=3)
+    assert X_fit.shape[0] == y_fit.shape[0]
+    assert metadata["effective"] == "oversample"
+    assert counts.tolist() == [3, 5, 5]
+    assert metadata["fit_class_counts"] == {"other": 3, "hend": 5, "gun": 5}
+
+
+def test_balance_training_set_only_boosts_labels_for_weighted_models():
+    X = np.arange(10, dtype=np.float32).reshape(10, 1)
+    y = np.asarray([0, 0, 0, 0, 0, 1, 1, 1, 1, 2], dtype=np.int64)
+    classes = ["other", "hend", "gun"]
+
+    _X_fit, y_fit, metadata = balance_training_set(
+        X,
+        y,
+        classes,
+        model_type="logreg",
+        strategy="auto",
+        boost_labels=["gun"],
+        boost_factor=2.0,
+        random_state=7,
+    )
+
+    assert model_uses_internal_class_balance("logreg")
+    assert metadata["effective"] == "boost_labels"
+    assert np.bincount(y_fit, minlength=3).tolist() == [5, 4, 2]
+
+
 def test_default_rejection_metadata_path_keeps_dynamic_metadata_separate():
     assert (
         default_rejection_metadata_path(Path("models/knn.pkl"))
@@ -500,6 +777,8 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         "params": {},
         "metrics": {},
         "artifacts": [],
+        "tags": {},
+        "dicts": {},
     }
 
     class _Run:
@@ -529,6 +808,12 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         def log_artifact(self, path):
             calls["artifacts"].append(Path(path).name)
 
+        def set_tags(self, tags):
+            calls["tags"] = dict(tags)
+
+        def log_dict(self, payload, path):
+            calls["dicts"][path] = payload
+
     monkeypatch.setitem(sys.modules, "mlflow", _FakeMlflow())
     artifacts = []
     for name in (
@@ -543,7 +828,7 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         artifacts.append(path)
 
     args = SimpleNamespace(
-        mlflow_experiment="GestureFlow",
+        mlflow_experiment="GestureBind",
         mlflow_tracking_uri="sqlite:///mlflow.db",
         mlflow_run_name="dynamic-test",
         data_root="data/gestures",
@@ -554,6 +839,8 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         expect_dim=None,
         lowercase_labels=True,
         include_label=["swipe_up", "no_gesture_static"],
+        include_augmented=False,
+        sample_group_count=20,
     )
 
     _log_mlflow_run(
@@ -571,13 +858,19 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
     )
 
     assert calls["tracking_uri"] == "sqlite:///mlflow.db"
-    assert calls["experiment"] == "GestureFlow"
+    assert calls["experiment"] == "GestureBind"
     assert calls["run_name"] == "dynamic-test"
     assert calls["params"]["include_labels"] == "swipe_up,no_gesture_static"
     assert calls["params"]["sequence_mlp_early_stopping_effective"] is True
     assert calls["params"]["sequence_mlp_validation_fraction_effective"] == 0.20
     assert calls["params"]["sequence_mlp_alpha"] == 1e-3
+    assert len(calls["params"]["dataset_sha256"]) == 64
+    assert len(calls["params"]["model_sha256"]) == 64
     assert calls["metrics"]["train_accuracy"] == 0.95
+    assert calls["metrics"]["source_group_count"] == 20.0
+    assert calls["metrics"]["validation_group_overlap"] == 0.0
+    assert "provenance.json" in calls["dicts"]
+    assert "dplm.dataset.sha256" in calls["tags"]
     assert calls["artifacts"] == [
         "model.pkl",
         "classes.json",

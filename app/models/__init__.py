@@ -1,1 +1,1 @@
-"""Database models package for DPLM."""
+"""Database models package for GestureBind."""

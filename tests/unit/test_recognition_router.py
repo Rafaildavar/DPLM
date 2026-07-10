@@ -12,13 +12,14 @@ from app.services.recognition_router import (
     REASON_INTENT_STATIC_FALLBACK,
     REASON_LOW_CONFIDENCE,
     REASON_NOT_DYNAMIC_TYPE,
+    REASON_DYNAMIC_OVERRIDES_INTENT_GATE,
     REASON_STATIC_FALLBACK,
     GestureRecognitionRouter,
 )
 
 
 class _FakeInfer:
-    def __init__(self, outputs):
+    def __init__(self, outputs, classes=None):
         self.outputs = list(outputs)
         self.calls = 0
         self.closed = False
@@ -31,6 +32,7 @@ class _FakeInfer:
         self.classifier_requires_two_hands = False
         self.reset_calls = 0
         self.acknowledge_calls = 0
+        self._classes = list(classes or [])
 
     def process_frame_rgb(self, _frame_rgb):
         self.calls += 1
@@ -112,7 +114,7 @@ def test_router_prefers_confident_dynamic_label() -> None:
         [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
     )
     dynamic = _FakeInfer(
-        [{"label": "swipe_up", "confidence": 0.88, "landmarks_json": "[dynamic]"}]
+        [{"label": "swipe_up", "confidence": 0.92, "landmarks_json": "[dynamic]"}]
     )
     router = GestureRecognitionRouter(
         static_infer=static,
@@ -123,7 +125,7 @@ def test_router_prefers_confident_dynamic_label() -> None:
     out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
 
     assert out["label"] == "swipe_up"
-    assert out["confidence"] == 0.88
+    assert out["confidence"] == 0.92
     assert out["route"] == ROUTE_DYNAMIC
     assert out["route_reason"] == "dynamic_accepted"
     assert out["router"]["static_label"] == "palm"
@@ -191,6 +193,88 @@ def test_intent_gate_static_selects_static_over_dynamic_candidate() -> None:
     assert out["route_reason"] == REASON_INTENT_STATIC_FALLBACK
 
 
+def test_intent_gate_none_does_not_block_completed_user_dynamic_model_label() -> None:
+    static = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "SwipeLeft",
+                "confidence": 0.98,
+                "landmarks_json": "[dynamic]",
+                "intent_features": [0.0, 1.0],
+                "dynamic_decision": {
+                    "source": "motion_over_prototype_reject",
+                    "motion_label": "SwipeLeft",
+                    "model_label": "SwipeLeft",
+                },
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "end_reason": "velocity_drop",
+                },
+            }
+        ],
+        classes=["SwipeLeft", "no_gesture_static"],
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+        intent_gate=_FakeIntentGate("none"),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == "SwipeLeft"
+    assert out["route"] == ROUTE_DYNAMIC
+    assert out["route_reason"] == REASON_DYNAMIC_OVERRIDES_INTENT_GATE
+    assert out["router"]["dynamic_type"] == "dynamic"
+    assert out["router"]["intent_gate_label"] == "none"
+
+
+def test_intent_gate_static_does_not_hide_completed_dynamic_result() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "SwipeLeft",
+                "confidence": 0.98,
+                "landmarks_json": "[dynamic]",
+                "intent_features": [0.0, 1.0],
+                "dynamic_decision": {
+                    "source": "motion_and_model_agree",
+                    "motion_label": "SwipeLeft",
+                    "model_label": "SwipeLeft",
+                },
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "end_reason": "pending_repeat",
+                },
+            }
+        ],
+        classes=["SwipeLeft", "no_gesture_static"],
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+        intent_gate=_FakeIntentGate("static"),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["label"] == "SwipeLeft"
+    assert out["route"] == ROUTE_DYNAMIC
+    assert out["route_reason"] == REASON_DYNAMIC_OVERRIDES_INTENT_GATE
+    assert out["router"]["static_label"] == "palm"
+    assert out["router"]["intent_gate_label"] == "static"
+
+
 def test_intent_gate_dynamic_holds_static_until_dynamic_candidate_arrives() -> None:
     static = _FakeInfer(
         [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
@@ -226,7 +310,7 @@ def test_router_accepts_unlisted_dynamic_channel_label() -> None:
         [
             {
                 "label": "circle_clockwise",
-                "confidence": 0.86,
+                "confidence": 0.92,
                 "landmarks_json": "[dynamic]",
             }
         ]
@@ -250,7 +334,7 @@ def test_router_runs_one_shared_detection_for_both_models() -> None:
         [{"label": "palm", "confidence": 0.90, "landmarks_json": "[shared]"}]
     )
     dynamic = _SharedFakeInfer(
-        [{"label": "swipe_up", "confidence": 0.88, "landmarks_json": "[shared]"}]
+        [{"label": "swipe_up", "confidence": 0.92, "landmarks_json": "[shared]"}]
     )
     router = GestureRecognitionRouter(
         static_infer=static,
@@ -335,7 +419,7 @@ def test_router_rejects_dynamic_model_quasi_static_label() -> None:
 
 def test_router_rejects_low_confidence_dynamic_label() -> None:
     static = _FakeInfer(
-        [{"label": "palm", "confidence": 0.70, "landmarks_json": "[static]"}]
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
     )
     dynamic = _FakeInfer(
         [{"label": "swipe_up", "confidence": 0.40, "landmarks_json": "[dynamic]"}]
@@ -351,6 +435,170 @@ def test_router_rejects_low_confidence_dynamic_label() -> None:
     assert out["label"] == "palm"
     assert out["route"] == ROUTE_STATIC
     assert out["router"]["dynamic_reject_reason"] == REASON_LOW_CONFIDENCE
+
+
+def test_router_release_dynamic_threshold_rejects_below_90_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "swipe_up", "confidence": 0.89, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_STATIC
+    assert out["router"]["dynamic_reject_reason"] == REASON_LOW_CONFIDENCE
+    assert out["router"]["dynamic_threshold"] == 0.90
+
+
+def test_router_release_dynamic_threshold_accepts_90_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.90, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "swipe_up", "confidence": 0.90, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_DYNAMIC
+    assert out["label"] == "swipe_up"
+    assert out["confidence"] == 0.90
+
+
+def test_dynamic_intent_override_cannot_bypass_release_threshold() -> None:
+    static = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "SwipeLeft",
+                "confidence": 0.89,
+                "landmarks_json": "[dynamic]",
+                "intent_features": [0.0, 1.0],
+                "dynamic_decision": {
+                    "source": "motion_and_model_agree",
+                    "motion_label": "SwipeLeft",
+                    "model_label": "SwipeLeft",
+                },
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "end_reason": "velocity_drop",
+                },
+            }
+        ],
+        classes=["SwipeLeft", "no_gesture_static"],
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+        dynamic_confidence_threshold=0.80,
+        intent_gate=_FakeIntentGate("none"),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["route_reason"] == REASON_INTENT_NONE
+
+
+def test_completion_rejected_candidate_cannot_override_intent_none() -> None:
+    static = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [
+            {
+                "label": "SwipeLeft",
+                "confidence": 0.99,
+                "landmarks_json": "[dynamic]",
+                "intent_features": [0.0, 1.0],
+                "dynamic_decision": {
+                    "source": "completion_rejected",
+                    "completion_enabled": True,
+                    "completion_accepted": False,
+                    "completion_score": 0.20,
+                    "completion_threshold": 0.85,
+                    "completion_reason": "incomplete_gesture",
+                    "completion_candidate_label": "SwipeLeft",
+                },
+                "temporal": {
+                    "enabled": True,
+                    "phase": "completed",
+                    "end_reason": "velocity_drop",
+                },
+            }
+        ],
+        classes=["SwipeLeft", "no_gesture_static"],
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+        intent_gate=_FakeIntentGate("none"),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["route_reason"] == REASON_INTENT_NONE
+    assert out["router"]["dynamic_completion_enabled"] is True
+    assert out["router"]["dynamic_completion_accepted"] is False
+    assert out["router"]["dynamic_completion_candidate_label"] == "SwipeLeft"
+
+
+def test_router_release_static_threshold_rejects_below_80_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.79, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_NONE
+    assert out["router"]["static_reject_reason"] == REASON_LOW_CONFIDENCE
+    assert out["router"]["static_threshold"] == 0.80
+
+
+def test_router_release_static_threshold_accepts_80_percent() -> None:
+    static = _FakeInfer(
+        [{"label": "palm", "confidence": 0.80, "landmarks_json": "[static]"}]
+    )
+    dynamic = _FakeInfer(
+        [{"label": "", "confidence": 0.0, "landmarks_json": "[dynamic]"}]
+    )
+    router = GestureRecognitionRouter(
+        static_infer=static,
+        dynamic_infer=dynamic,
+        taxonomy=_taxonomy(),
+    )
+
+    out = router.process_frame_rgb(np.zeros((8, 8, 3), dtype=np.uint8))
+
+    assert out["route"] == ROUTE_STATIC
+    assert out["label"] == "palm"
+    assert out["confidence"] == 0.80
 
 
 def test_router_rejects_low_confidence_static_label() -> None:

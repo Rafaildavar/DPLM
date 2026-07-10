@@ -1,18 +1,15 @@
 """
-Тестовый пакет для проекта DPLM
-Test package for DPLM project
+Тестовый пакет для проекта GestureBind
+Test package for GestureBind project
 
 Структура тестов / Test structure:
 - tests/unit/ — юнит-тесты (изолированные тесты функций)
                 unit tests (isolated function tests)
 - tests/integration/ — интеграционные тесты (взаимодействие компонентов)
                        integration tests (component interaction)
-- tests/ui/ — тесты интерфейса (QML, Qt)
-              UI tests (QML, Qt)
+- Flet view/controller tests live in ``tests/unit/test_flet_*.py``.
 - tests/fixtures/ — общие фикстуры для тестов
                     shared test fixtures
 
-Требования к покрытию кода: >90%
-Code coverage requirement: >90%
+Текущий обязательный baseline покрытия задается в ``pytest.ini``.
 """
-

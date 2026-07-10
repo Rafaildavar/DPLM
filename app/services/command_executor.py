@@ -115,6 +115,11 @@ class CommandExecutor:
                 "clicks": 5,
                 "platform": "macos"
             })
+            self.register_command("пауза или продолжить медиа", {
+                "action": "media_key",
+                "kind": "play_pause",
+                "platform": "macos"
+            })
             self.register_command("пауза или продолжить музыку", {
                 "action": "media_key",
                 "kind": "play_pause",
@@ -191,6 +196,9 @@ class CommandExecutor:
         if action == "open_app":
             return self._open_application(config.get("app", ""))
 
+        if action == "quit_app":
+            return self._quit_application(config.get("app", ""))
+
         if action == "open_path":
             return self._open_path(config.get("path", ""))
 
@@ -233,11 +241,11 @@ class CommandExecutor:
         if action == "notify":
             return self._notify(
                 str(config.get("message") or ""),
-                title=str(config.get("title") or "GestureFlow"),
+                title=str(config.get("title") or "GestureBind"),
             )
 
         if action == "mute_toggle":
-            return self._press_single("volumemute")
+            return self._mute_toggle()
 
         if action == "brightness_up":
             return self._brightness("up")
@@ -336,6 +344,31 @@ class CommandExecutor:
         
         except Exception as e:
             logger.error(f"Ошибка открытия приложения '{app_name}': {e}")
+            return False
+
+    def _quit_application(self, app_name: str) -> bool:
+        """Quit a named macOS application without interpolating shell text."""
+        clean = (app_name or "").strip()
+        if not clean or self.system != "darwin":
+            return False
+        script = (
+            "on run argv\n"
+            "tell application (item 1 of argv) to quit\n"
+            "end run"
+        )
+        try:
+            completed = subprocess.run(
+                ["osascript", "-e", script, clean],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if completed.returncode != 0:
+                logger.error("quit_app failed for %s: %s", clean, completed.stderr)
+            return completed.returncode == 0
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.error("quit_app failed for %s: %s", clean, exc)
             return False
     
     def _run_script(self, script_path: str, args: List[str] = None) -> bool:
@@ -473,9 +506,9 @@ class CommandExecutor:
     def _applescript_string(value: str) -> str:
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def _notify(self, message: str, *, title: str = "GestureFlow") -> bool:
+    def _notify(self, message: str, *, title: str = "GestureBind") -> bool:
         message = (message or "").strip()
-        title = (title or "GestureFlow").strip() or "GestureFlow"
+        title = (title or "GestureBind").strip() or "GestureBind"
         if not message:
             logger.error("notify: пустой текст уведомления")
             return False
@@ -542,6 +575,27 @@ class CommandExecutor:
         except Exception as e:
             logger.error("brightness pyautogui: %s", e)
             return False
+
+    def _mute_toggle(self) -> bool:
+        """Переключить mute для системного вывода звука."""
+        if self.system == "darwin":
+            script = (
+                "set currentSettings to get volume settings\n"
+                "set volume output muted (not (output muted of currentSettings))"
+            )
+            try:
+                subprocess.run(
+                    ["osascript", "-e", script],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2.0,
+                )
+                return True
+            except (OSError, subprocess.SubprocessError) as e:
+                logger.error("mute_toggle osascript: %s", e)
+                return self._press_single("volumemute")
+        return self._press_single("volumemute")
 
     def _lock_screen(self) -> bool:
         """

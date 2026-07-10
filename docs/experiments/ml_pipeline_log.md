@@ -1,6 +1,6 @@
 # ML Pipeline Log
 
-Рабочий журнал гипотез и решений по ML-пайплайну GestureFlow для JMLC.
+Рабочий журнал гипотез и решений по ML-пайплайну GestureBind для JMLC.
 Каждая запись фиксирует, что проверяли, что получилось, что не получилось и
 какое инженерное решение принято.
 
@@ -16,14 +16,16 @@
 
 ## Текущее состояние
 
-- Основной static-пайплайн: `models/knn.pkl`, `classes.json`, `feature_dim.txt`.
-- Отдельный dynamic-пайплайн: `models/dynamic_knn.pkl`,
-  `dynamic_classes.json`, `dynamic_feature_dim.txt`,
-  `dynamic_feature_mode.txt`.
-- Dynamic live-инференс сейчас грузит именно `models/dynamic_knn.pkl`, даже
-  если внутри сохранен не KNN, а, например, `ExtraTreesClassifier`.
-- Новый dynamic-формат записи: `36` кадров, `44` признака на кадр:
-  `42` нормализованных признака позы + `2` координаты запястья в кадре.
+- Production static: `models/knn.pkl`, внутри `ExtraTreesClassifier`, feature
+  mode `static_craft_full_stats`, raw dim `63`, model dim `1377`.
+- Production dynamic: `models/dynamic_landmark_lstm_backbone.pkl`, feature mode
+  `dynamic_landmark_image`, `72 x 22 x 3 = 4752` признака.
+- Новая dynamic-запись хранит `21 * xyz + wrist_xy = 65` значений на кадр и
+  затем resample-ится до `72` кадров для LSTM.
+- Validation использует source groups: реальный дубль и его аугментации не
+  могут оказаться по разные стороны fold/holdout.
+- Production artifacts публикуются комплектом с rollback; модель заменяется
+  последней как activation marker.
 
 ## Гипотезы и результаты
 
@@ -1593,7 +1595,7 @@ python -m scripts.mlops_dashboard
 
 Что добавлено:
 - `cv/train_classifier.py` логирует MLflow run при каждом обучении.
-- Default experiment: `GestureFlow`.
+- Default experiment: `GestureBind`.
 - Default tracking URI: `sqlite:///mlflow.db`.
 - Логируются параметры: `model_type`, `feature_mode`, `neighbors`,
   `weights`, `include_labels`, `classes`.
@@ -1605,7 +1607,7 @@ python -m scripts.mlops_dashboard
   заменен на SQLite backend: MLflow 3 переводит filesystem tracking backend в
   maintenance mode и требует либо env-флаг, либо database backend.
 - Smoke-run `dynamic-negative-smoke` успешно записан в experiment
-  `GestureFlow`: `170` samples, `8` classes, `train_accuracy=1.0000`.
+  `GestureBind`: `170` samples, `8` classes, `train_accuracy=1.0000`.
 
 Команды:
 
@@ -1690,7 +1692,7 @@ Live-протокол проверки:
 
 Что изменено:
 - После завершения live-теста Flet controller автоматически пишет MLflow run
-  в experiment `GestureFlow`.
+  в experiment `GestureBind`.
 - Run name строится как `live-<expected>-<mode>-<dynamic_profile>`.
 - Tracking URI берется из `MLFLOW_TRACKING_URI`, fallback:
   `sqlite:////Users/remi/Developer/GUAP/DPLM/mlflow.db`.
@@ -1724,8 +1726,8 @@ Live-протокол проверки:
 PYTHON=.venv/bin/python make mlflow-ui
 ```
 
-2. В интерфейсе GestureFlow пройти live-test, например `swipe_left 10/10`.
-3. Обновить `http://127.0.0.1:5000`, открыть experiment `GestureFlow`.
+2. В интерфейсе GestureBind пройти live-test, например `swipe_left 10/10`.
+3. Обновить `http://127.0.0.1:5000`, открыть experiment `GestureBind`.
 4. Найти run `live-swipe_left-auto-knn`.
 5. Смотреть:
    - `live_accuracy` и `live_recall` — общее качество;
@@ -2180,7 +2182,7 @@ Live protocol:
 Гипотеза:
 - IPN Hand и HaGRID могут улучшить reject-layer: система должна чаще молчать
   на чужих/почти жестах и не принимать их за пользовательские команды.
-- При этом они не должны заменять основной датасет GestureFlow, потому что
+- При этом они не должны заменять основной датасет GestureBind, потому что
   задача проекта персонализированная: камера, дистанция, рука, скорость и
   смысл команд отличаются от публичных датасетов.
 
@@ -2206,7 +2208,7 @@ Live protocol:
 - `combined_external`.
 
 Как устроена обработка:
-- Внешние samples кладутся в формате GestureFlow:
+- Внешние samples кладутся в формате GestureBind:
   `data/external/<source>/<original_label>/sample_*.npy`.
 - Скрипт не добавляет оригинальные labels как новые команды.
 - Все внешние классы мапятся в negative-классы:
@@ -2404,7 +2406,7 @@ ML-часть:
 
 Цель:
 - Подготовить воспроизводимый способ превратить IPN Hand в формат
-  GestureFlow `(frames, 44)`.
+  GestureBind `(frames, 44)`.
 - Не менять production-модель.
 - Сразу логировать результат в MLflow и документы.
 
@@ -3608,7 +3610,7 @@ Live результат пользователя:
 - Live evaluation logs now include `intent_gate_*` route fields.
 
 Данные:
-- Internal GestureFlow samples: `291`.
+- Internal GestureBind samples: `291`.
 - External negative samples: `440`.
 - Total for intent gate: `731`.
 - Intent classes:
@@ -3630,7 +3632,7 @@ Offline результат:
 - `docs/experiments/intent_gate_training.md`;
 - `docs/experiments/intent_gate_training.json`;
 - `docs/experiments/intent_gate_confusion_matrix.svg`;
-- MLflow run: `intent-gate-mlp`, experiment `GestureFlow`,
+- MLflow run: `intent-gate-mlp`, experiment `GestureBind`,
   artifact path `intent_gate`.
 
 Критерий live-проверки:
@@ -4896,3 +4898,1136 @@ Offline result:
 - `upandleft` определяется как отдельный label после полного движения.
 - Простые swipe-жесты остаются не ниже `90%` live accuracy.
 - Negative false positive rate на live остается не выше `10%`.
+
+### H-090: Static GISLR handcrafted features вместо KNN baseline
+
+Дата: 2026-07-05.
+
+Контекст:
+- После перезаписи 5 пользовательских static-классов нужен production baseline,
+  который лучше переносит маленький персональный датасет, чем `static_mean +
+  KNN`.
+- В GISLR Transformer-ветке сильный сигнал давали геометрические признаки
+  кисти: pairwise distances и finger angles.
+
+Гипотеза:
+- Для пользовательских static-жестов широкие handcrafted-признаки кисти должны
+  быть стабильнее KNN по raw mean pose, особенно на похожих классах `gun`,
+  `hand`, `2finger`, `onefinger`, `like`.
+
+Решение:
+- Добавлен/используется feature mode `static_craft_full_stats`.
+- На одну руку при `--expect-dim 63` вход содержит:
+  - raw pose stats: `63 * 4`;
+  - все `210` pairwise distances между 21 точкой кисти;
+  - `15` углов фаланг;
+  - временные агрегаты геометрии: `mean/std/min/max/p95`.
+- Итоговая размерность: `1377`.
+- Production static model в UI: `ExtraTreesClassifier` + class balancing +
+  Optuna tuning.
+- Recording сохраняет `21 * xyz = 63`; старые `42` samples совместимы через
+  `z = 0`.
+
+Текущий датасет:
+- Пользовательские классы:
+  - `2Finger`: `20` real + `20` aug;
+  - `Like`: `20` real + `20` aug;
+  - `OneFInger`: `20` real + `20` aug;
+  - `gun`: `10` real + `10` aug;
+  - `hand`: `10` real + `10` aug.
+- Negative-классы:
+  - `no_gesture_static`, `partial_swipe`, `random_motion`, `return_motion`,
+    `wrong_axis_motion`: по `20` real.
+- Active static artifact:
+  - `models/knn.pkl`;
+  - `feature_mode=static_craft_full_stats`;
+  - `feature_dim=1377`;
+  - model class: `ExtraTreesClassifier`.
+
+Первичный результат:
+- Train-set comparison на `260` samples: `accuracy=1.0000`.
+- Live feedback пользователя: модель показывает заметно более хорошие
+  результаты, чем предыдущая static-попытка.
+
+Вывод:
+- `ExtraTrees + static_craft_full_stats` остается production static baseline.
+- Следующая честная проверка: live A/B, а не train accuracy.
+
+### H-091: Static GISLR landmark-image CNN как benchmark и UI model variant
+
+Дата: 2026-07-05.
+
+Контекст:
+- В GISLR самая сильная CNN-ветка превращала координаты в image-like tensor
+  `time x points x xyz` и обучала EfficientNet-B0.
+- Для GestureBind EfficientNet пока избыточен, но идею landmark-image можно
+  проверить через компактную TensorFlow CNN.
+
+Гипотеза:
+- `static_landmark_image` может выучить форму и микродвижения статического
+  удержания, но на маленьком датасете может проигрывать handcrafted деревьям
+  и хуже reject-ить negative-классы.
+
+Решение:
+- Добавлен feature mode `static_landmark_image`:
+  - `30` кадров;
+  - `21` точка кисти;
+  - `3` координаты на точку;
+  - размерность на одну руку: `30 * 21 * 3 = 1890`.
+- Добавлен `KerasStaticLandmarkCNNClassifier`:
+  - `Conv2D + DepthwiseConv2D`;
+  - weighted categorical cross entropy;
+  - label smoothing;
+  - dropout;
+  - early stopping.
+- Обучен отдельный benchmark artifact:
+  - `models/experiments/static_landmark_cnn/static_landmark_cnn.pkl`;
+  - `models/experiments/static_landmark_cnn/classes.json`;
+  - `models/experiments/static_landmark_cnn/feature_dim.txt`;
+  - `models/experiments/static_landmark_cnn/feature_mode.txt`;
+  - `models/experiments/static_landmark_cnn/gesture_rejection.json`.
+- Добавлен Flet model variant `static_landmark_cnn`, чтобы переключать live
+  тест из UI без ручного ввода путей.
+
+Первичный результат:
+- Training data: `260` samples, `10` classes.
+- Class balancing fit set: `270` samples.
+- Feature mode: `static_landmark_image`.
+- Feature dim: `1890`.
+- CNN train accuracy: `0.8000`.
+- CNN final validation accuracy: `0.7963`.
+- По train-set report CNN хорошо распознает пользовательские gestures, но хуже
+  отделяет negative-классы:
+  - `partial_swipe` F1 около `0.400`;
+  - `random_motion` F1 около `0.500`;
+  - `return_motion` F1 около `0.091`;
+  - `wrong_axis_motion` F1 около `0.367`.
+
+Вывод:
+- CNN готова только как benchmark, не production default.
+- Текущий production default остается `ExtraTrees + static_craft_full_stats`.
+- Следующая проверка: live A/B через dropdown `Набор моделей`:
+  - `production`;
+  - `static_landmark_cnn`.
+
+Критерий live-проверки:
+- Пользовательские 5 gestures не хуже production baseline по hit rate.
+- False positives на no-hand/no-command/частичных движениях не выше production
+  baseline.
+- Если CNN дает лучшее ощущение в live, нужно отдельно усилить negative
+  аугментации или threshold/rejection для image-ветки.
+
+### H-092: Static cross-validation benchmark report
+
+Дата: 2026-07-05.
+
+Контекст:
+- Train accuracy больше не подходит как главный сигнал качества: на маленьком
+  персональном датасете она легко становится `1.0000`, но не показывает
+  устойчивость на новых попытках.
+- Нужно честно сравнить `ExtraTrees`, `static_stacking`,
+  `static_landmark_cnn` и разные feature modes через stratified CV.
+
+Решение:
+- Расширен `scripts/compare_models.py`:
+  - поддерживает `--include-augmented` для GISLR-marked `aug_sample_*`;
+  - поддерживает `--include-label` и `--lowercase-labels` для точного
+    выбора активных классов;
+  - умеет сравнивать `static_stacking` и `static_landmark_cnn`;
+  - автоматически пропускает несовместимые пары, например
+    `static_craft_full_stats + static_landmark_cnn`;
+  - запускает benchmark-версию stacking в serial mode (`n_jobs=1`), чтобы CV
+    не зависел от sandbox/multiprocessing.
+- Добавлен unit-тест для режима GISLR-аугментаций и lowercase labels:
+  `tests/unit/test_compare_models.py`.
+- Сгенерированы отчеты:
+  - `docs/experiments/static_cv_benchmark.md`;
+  - `docs/experiments/static_cv_benchmark.json`.
+
+Команда:
+```bash
+python -m scripts.compare_models \
+  --feature-modes static_craft_full_stats,static_landmark_image \
+  --models extra_trees,static_stacking,static_landmark_cnn \
+  --target-dim 63 \
+  --include-augmented \
+  --lowercase-labels \
+  --include-label 2finger \
+  --include-label like \
+  --include-label onefinger \
+  --include-label gun \
+  --include-label hand \
+  --include-label no_gesture_static \
+  --include-label partial_swipe \
+  --include-label random_motion \
+  --include-label return_motion \
+  --include-label wrong_axis_motion \
+  --max-folds 5 \
+  --min-samples-per-class 10 \
+  --static-cnn-max-epochs 30 \
+  --static-cnn-patience 6 \
+  --static-cnn-batch-size 16 \
+  --json-out docs/experiments/static_cv_benchmark.json \
+  --markdown-out docs/experiments/static_cv_benchmark.md
+```
+
+Результат 5-fold CV:
+- Dataset: `260` samples, `10` active classes, GISLR-аугментации включены.
+- Лучший общий pipeline:
+  `static_landmark_image + extra_trees`, accuracy `0.8000`,
+  macro F1 `0.7389`.
+- Production baseline:
+  `static_craft_full_stats + extra_trees`, accuracy `0.7769`,
+  macro F1 `0.7045`.
+- `static_stacking` не дал прироста:
+  - `static_landmark_image + static_stacking`: macro F1 `0.6861`;
+  - `static_craft_full_stats + static_stacking`: macro F1 `0.6856`.
+- `static_landmark_cnn` заметно слабее:
+  accuracy `0.5923`, macro F1 `0.4599`, latency около
+  `5.683 ms/sample`.
+
+Главное наблюдение:
+- Пользовательские жесты распознаются идеально в лучшем CV-пайплайне:
+  `2finger`, `gun`, `hand`, `like`, `onefinger` имеют F1 `1.0000`.
+- Просадка идет на negative motion-классах:
+  - `partial_swipe` F1 `0.4500`;
+  - `random_motion` F1 `0.4091`;
+  - `return_motion` F1 `0.2051`;
+  - `wrong_axis_motion` F1 `0.3243`.
+- Поэтому следующая работа должна усиливать rejection/negative separation,
+  а не усложнять classifier для пользовательских static-классов.
+
+Вывод:
+- Для production сейчас разумнее держать `ExtraTrees`, но проверить
+  `static_landmark_image + ExtraTrees` как новый static default.
+- CNN пока остается экспериментом, а не финальной моделью для статики.
+- Следующий полезный шаг: отдельный benchmark rejection-политик именно на
+  negative motion-классах и live A/B для `static_landmark_image + ExtraTrees`.
+
+### H-093: Static rejection benchmark и image-ExtraTrees model variant
+
+Дата: 2026-07-05.
+
+Контекст:
+- H-092 показал низкий macro F1 на negative motion-классах, но confusion
+  matrix в CV штрафует и случаи, когда один negative-класс спутан с другим.
+- Для runtime важнее другой вопрос: принимает ли модель negative motion за
+  пользовательский positive-жест.
+
+Решение:
+- Расширен `scripts/rejection_method_benchmark.py`:
+  - добавлен `--candidate-model` (`knn`, `extra_trees`, `rf`, `logreg`, `svm`);
+  - добавлены `--include-label`, `--include-augmented`, `--lowercase-labels`;
+  - target dim теперь можно infer-ить по выбранным samples;
+  - отчет показывает `candidate model`, augmented status и breakdown по
+    каждому negative-классу лучшего метода.
+- Добавлен UI model variant:
+  `static_landmark_image_extra_trees`.
+- Обучен отдельный artifact:
+  - `models/experiments/static_landmark_image_extra_trees/knn.pkl`;
+  - `models/experiments/static_landmark_image_extra_trees/classes.json`;
+  - `models/experiments/static_landmark_image_extra_trees/feature_dim.txt`;
+  - `models/experiments/static_landmark_image_extra_trees/feature_mode.txt`;
+  - `models/experiments/static_landmark_image_extra_trees/gesture_rejection.json`.
+
+Команды benchmark:
+```bash
+python -m scripts.rejection_method_benchmark \
+  --scope static \
+  --feature-mode static_craft_full_stats \
+  --candidate-model extra_trees \
+  --target-dim 63 \
+  --methods negative_classes,confidence_threshold,open_set_policy,one_vs_rest_logreg,local_outlier_factor,isolation_forest \
+  --include-augmented \
+  --lowercase-labels \
+  --include-label 2finger \
+  --include-label like \
+  --include-label onefinger \
+  --include-label gun \
+  --include-label hand \
+  --include-label no_gesture_static \
+  --include-label partial_swipe \
+  --include-label random_motion \
+  --include-label return_motion \
+  --include-label wrong_axis_motion \
+  --max-folds 5 \
+  --min-samples-per-class 10
+```
+
+Результаты:
+- `static_craft_full_stats + ExtraTrees`:
+  - лучший метод: `negative_classes`;
+  - overall success `1.0000`;
+  - positive recall `1.0000`;
+  - negative reject `1.0000`;
+  - negative false positive rate `0.0000`.
+- `static_landmark_image + ExtraTrees`:
+  - лучший метод: `negative_classes`;
+  - overall success `1.0000`;
+  - positive recall `1.0000`;
+  - negative reject `1.0000`;
+  - negative false positive rate `0.0000`.
+- `open_set_policy` дает тот же результат на обоих feature modes, поэтому
+  runtime default можно не менять.
+
+Артефакты:
+- `docs/experiments/static_rejection_benchmark_craft_extratrees.md`;
+- `docs/experiments/static_rejection_benchmark_craft_extratrees.json`;
+- `docs/experiments/static_rejection_benchmark_image_extratrees.md`;
+- `docs/experiments/static_rejection_benchmark_image_extratrees.json`.
+
+Вывод:
+- H-092 negative-class просадка не означает, что модель запускает команды на
+  negative motion. Она в основном путает negative-классы между собой.
+- Production default остается `static_craft_full_stats + ExtraTrees +
+  open_set_policy`.
+- Новый variant `static_landmark_image_extra_trees` нужен для live A/B против
+  production без ручного ввода путей.
+- Следующая проверка: live 20-attempt matrix:
+  `production` vs `static_landmark_image_extra_trees` на 5 positive gestures и
+  `no_command`/partial motions.
+
+### H-094: MobileNet/ResNet для статики не берем
+
+Дата: 2026-07-05.
+
+Контекст:
+- Был вариант добавить MobileNet/ResNet для static-жестов по аналогии с
+  image-based CV-пайплайнами.
+- В текущей системе основной сигнал уже находится в векторах признаков:
+  MediaPipe landmarks, `static_craft_full_stats`,
+  `static_landmark_image` как flattened landmark tensor.
+
+Решение:
+- MobileNet/ResNet/raw RGB hand-crop ветку не добавляем в ближайший pipeline.
+- Не меняем формат записи static-жестов на хранение hand-crop изображений.
+- Оставляем фокус на vector-based моделях:
+  - `ExtraTrees + static_craft_full_stats` как production baseline;
+  - `ExtraTrees + static_landmark_image` как UI-selectable A/B benchmark;
+  - rejection-focused benchmark для проверки false positives.
+
+Причина:
+- MobileNet/ResNet полезны, когда вход — реальные изображения руки или
+  большой image-like датасет.
+- У нас вход уже нормализован в устойчивые landmark-векторы, а текущий CV
+  показывает, что деревья по векторам сильнее CNN на этом маленьком
+  персональном датасете.
+- Добавление тяжелой image-модели увеличит сложность записи, хранения,
+  обучения и live-latency без доказанного выигрыша.
+
+Вывод:
+- Static roadmap остается vector-first.
+- CNN/MobileNet/ResNet не становятся production-кандидатами.
+- Старые CNN benchmark artifacts можно хранить как историческое сравнение, но
+  новые улучшения делаем через признаки, деревья, stacking/ensemble и
+  rejection/live-eval.
+
+### H-095: GISLR-style dynamic landmark image + LSTM backbone
+
+Дата: 2026-07-05.
+
+Контекст:
+- Для dynamic-жестов хотим взять сильную идею GISLR: представлять движение не
+  только агрегатами, а как последовательность `time x points x xyz`.
+- CNN/EfficientNet-путь из GISLR полезен как benchmark, но для текущей системы
+  удобнее LSTM-backbone: он уже встроен в sklearn/joblib-style training/live
+  pipeline и работает с малыми пользовательскими датасетами.
+- Новые dynamic samples уже пишутся как `72` кадра и `65` признаков на кадр:
+  `21 * xyz + wrist_xy`.
+
+Решение:
+- Добавлен model type `dynamic_landmark_lstm_backbone`.
+- Feature mode для него: `dynamic_landmark_image`.
+- Вход модели: `72 x 22 x 3`, где `22` точки = `21` hand landmarks +
+  global wrist point, а `3` канала = `x, y, z`.
+- LSTM получает на каждом шаге вектор `22 * 3 = 66`; перед LSTM остается
+  per-frame backbone MLP, затем LSTM и head по `final/mean/max` temporal
+  pooling.
+- Production dynamic profile переведен с `sequence_mlp` на
+  `dynamic_landmark_lstm_backbone`.
+- Старый `sequence_mlp` оставлен как selectable baseline.
+- `dynamic_landmark_cnn` оставлен экспериментальным benchmark-профилем, но не
+  является default.
+
+Артефакты нового профиля:
+- `models/dynamic_landmark_lstm_backbone.pkl`;
+- `models/dynamic_landmark_lstm_backbone_classes.json`;
+- `models/dynamic_landmark_lstm_backbone_feature_dim.txt`;
+- `models/dynamic_landmark_lstm_backbone_feature_mode.txt`;
+- `models/dynamic_landmark_lstm_backbone_prototypes.json`.
+
+UI/CLI:
+- Обычное dynamic-обучение использует
+  `dynamic_landmark_lstm_backbone + dynamic_landmark_image`.
+- Advanced dynamic dropdown содержит новый профиль и старые baseline-профили.
+- Для advanced `dynamic_landmark_lstm_backbone` включаются те же
+  `--sequence-lstm-optuna-*` параметры, но Optuna тюнит `72` кадра.
+- Live `auto/dynamic` подхватывает новый production profile без ручного ввода
+  путей.
+
+Проверки:
+- `python -m py_compile cv/sequence_gru_backbone.py cv/train_classifier.py cv/static_landmark_cnn.py app/flet_app/views/training.py app/flet_app/views/home.py app/flet_app/controller.py`
+- `pytest --no-cov tests/unit/test_train_classifier.py -q`
+- `pytest --no-cov tests/unit/test_flet_training_view.py -q`
+- `pytest --no-cov tests/unit/test_flet_static_model_paths.py -q`
+- `pytest --no-cov tests/unit/test_flet_controller_commands.py -q`
+
+Вывод:
+- GISLR-подход для dynamic теперь реализован через LSTM-backbone поверх
+  landmark-image представления.
+- Метрик качества пока нет: нужно записать новые 5 dynamic-классов, обучить
+  новый профиль и сравнить live/MLflow против `sequence_mlp` и
+  `sequence_ensemble`.
+
+### H-096: Presentation-ready MLflow showcase dashboard
+
+Дата: 2026-07-05.
+
+Контекст:
+- В MLflow уже накоплено много runs, но для презентации сырые scalar-графики
+  и длинные таблицы плохо отвечают на вопрос "какой подход лучше".
+- Нужна локальная витрина, которая поверх `mlflow.db` строит понятную историю:
+  обучение, live A/B, safety/rejection, latency и timeline.
+
+Решение:
+- `scripts/mlops_dashboard.py` теперь читает локальный MLflow SQLite backend.
+- В `summary.json` добавлен блок `mlflow`:
+  - распределение run kinds;
+  - training leaderboard;
+  - live leaderboard;
+  - profile scoreboard;
+  - safety scoreboard;
+  - recent timeline.
+- В `index.html` добавлена секция `MLflow Showcase` с презентационными
+  карточками и bar charts.
+- Для training leaderboard добавлен `rank_score`: CV/Optuna/test metrics
+  ранжируются как более надежные, а train-only accuracy дисконтируется, чтобы
+  overfit-запуски не выглядели победителями только из-за `100%` на train.
+- CLI получил параметр `--mlflow-db`, default остается `mlflow.db`.
+
+Проверки:
+- `python -m py_compile scripts/mlops_dashboard.py`
+- `pytest --no-cov tests/unit/test_mlops_dashboard.py -q`
+- `python -m scripts.mlops_dashboard`
+
+Текущий снимок `mlflow.db`:
+- `447` MLflow runs;
+- `275` live-evaluation runs;
+- лучший live presentation score в текущей истории:
+  `sequence_knn / open_set_policy`, score `0.7024`;
+- лучший training candidate по reliable rank:
+  `intent_gate_mlp + default_features`, `macro_f1=0.9480`;
+- текущий вывод: после записи новых dynamic-классов нужно сравнить
+  `dynamic_landmark_lstm_backbone` против старых live-профилей через эту
+  витрину.
+
+### H-097: Quick Settings hides stale dynamic profiles
+
+Дата: 2026-07-07.
+
+Контекст:
+- После перезаписи dynamic-датасета свежий production-профиль
+  `dynamic_landmark_lstm_backbone` должен содержать только пользовательский
+  positive класс и negative/rejection классы.
+- Старые benchmark-профили `sequence_*`, включая `sequence_lstm_backbone`,
+  остались на диске и в `*_classes.json` всё ещё содержат удалённые
+  `swipe_up`, `swipe_down`, `swipe_left`, `upandleft`.
+- Из-за этого пользователь мог выбрать старый профиль в Quick Settings и
+  получить распознавание удалённых жестов.
+
+Решение:
+- `AppController.list_dynamic_model_profiles()` читает dynamic artifacts,
+  отделяет positive-классы от rejection-классов и сравнивает positive-классы с
+  реальными папками `data/gestures/<label>/sample_*.npy`.
+- Профиль считается `stale`, если он обучен на positive-классе, которого уже
+  нет в текущем датасете.
+- Главная страница строит dropdown `Dynamic` только из `quick_selectable`
+  профилей; stale-профили не удаляются с диска, но не попадают в быстрый live
+  выбор.
+- Если текущий профиль уже stale, Quick Settings возвращает live-инференс на
+  production `dynamic_landmark_lstm_backbone`.
+
+Проверки:
+- `python -m py_compile app/flet_app/controller.py app/flet_app/views/home.py tests/unit/test_flet_static_model_paths.py`
+- `pytest --no-cov tests/unit/test_flet_static_model_paths.py -q`
+- `git diff --check -- app/flet_app/controller.py app/flet_app/views/home.py tests/unit/test_flet_static_model_paths.py`
+
+Текущий снимок:
+- `dynamic_landmark_lstm_backbone`: quick-selectable, positive `SwipeLeft`
+  после H-098 label-preserving retrain;
+- `sequence_lstm_backbone`: stale, missing dataset labels
+  `upandleft`, `swipe_down`, `swipe_left`, `swipe_up`.
+
+### H-098: Label-preserving user dynamic training
+
+Дата: 2026-07-07.
+
+Контекст:
+- В библиотеке жестов сейчас один пользовательский dynamic-positive:
+  `SwipeLeft`; остальные dynamic labels в обучении должны быть только
+  negative/rejection classes.
+- Раньше часть pipeline приводила пользовательские labels к lowercase
+  (`SwipeLeft -> swipeleft`) или полагалась на `gesture_taxonomy.json`, из-за
+  чего live/prototype слой мог расходиться с тем, что реально записал
+  пользователь.
+
+Решение:
+- UI training больше не добавляет `--lowercase-labels`.
+- `sync_dataset_to_db()` сохраняет пользовательское имя папки до обучения, а
+  после обучения берёт точное имя из `classes.json`.
+- Dynamic scope для обучения выводится из metadata sample-файлов
+  (`include_global_motion`, `sample_feature_format`, `raw_feature_dim`), а не
+  из ручных alias в taxonomy.
+- `dynamic_prototype_experiments.py` принимает `--include-label` и строит
+  positive dynamic набор из записанных пользователем labels.
+- `dynamic_landmark_lstm_backbone` остаётся production dynamic profile:
+  feature mode `dynamic_landmark_image`, feature dim `4752`, prototype verifier
+  `target_dim=65`, `target_frames=72`.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_dynamic_direction.py tests/unit/test_dynamic_prototype.py ... -q`
+- `py_compile` для `controller`, prototype scripts и dynamic helpers
+- `git diff --check`
+
+Текущий снимок:
+- production classes: `SwipeLeft`, `no_gesture_static`, `partial_swipe`,
+  `random_motion`, `return_motion`, `wrong_axis_motion`;
+- prototype positive labels: `SwipeLeft`;
+- prototype report: positive recall `0.8000`, negative reject `1.0000`,
+  negative FP `0.0000`.
+
+### H-099: Auto router does not hide completed user dynamic gestures
+
+Дата: 2026-07-07.
+
+Контекст:
+- `dynamic_landmark_lstm_backbone` и prototype layer на сохранённых
+  `data/gestures/SwipeLeft/sample_*.npy` возвращают `SwipeLeft` корректно:
+  model confidence около `0.999`, runtime dynamic decision около `0.98`.
+- В live-режиме `auto` перед static/dynamic выбором стоит старый
+  `intent_gate_mlp.pkl` от 2026-06-29. Он обучался до текущего
+  label-preserving `SwipeLeft` pipeline и может уверенно сказать `none` или
+  `static`, хотя dynamic-infer уже завершил сегмент.
+- В итоге проблема была не в LSTM-артефакте и не в названии класса, а в
+  router layer: intent-gate мог скрыть уже принятый dynamic result.
+
+Решение:
+- `GestureRecognitionRouter` теперь считает label из `dynamic_infer._classes`
+  валидным пользовательским dynamic label, если это не negative class.
+- Добавлен guarded override для intent-gate: если dynamic candidate уже
+  принят, confidence >= `0.85`, temporal phase `completed/cooldown` и
+  `dynamic_decision.source` не является rejection-source, router выбирает
+  dynamic даже при intent `none/static`.
+- Слабые/сырые кадры без завершённого `dynamic_decision` по-прежнему
+  блокируются intent-gate, чтобы не увеличивать ложные срабатывания.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_recognition_router.py -q` -> 19 passed.
+- `py_compile app/services/recognition_router.py tests/unit/test_recognition_router.py`
+- Runtime-check: `SwipeLeft type -> dynamic`, `no_gesture_static type -> negative`.
+
+### H-100: Dynamic commands execute immediately, static commands dwell to 15
+
+Дата: 2026-07-07.
+
+Контекст:
+- Live UI показывал `SwipeLeft` как `pending 1/15`, хотя это dynamic route.
+- Для динамических жестов событие уже является завершённым сегментом
+  (`route=dynamic`, temporal completed/cooldown), поэтому дополнительное
+  накопление 15 кадров задерживает команду и ухудшает UX.
+- Для static route наоборот нужен dwell-фильтр, чтобы удерживаемая поза не
+  срабатывала от одного шумного кадра.
+
+Решение:
+- `_gesture_confirm_frames()` теперь учитывает `route_metadata.route`:
+  - `dynamic` -> `DYNAMIC_GESTURE_CONFIRM_FRAMES = 1`;
+  - `static` -> `AUTO_STATIC_GESTURE_CONFIRM_FRAMES = 15`.
+- Static-only режим также использует dwell `15` для обычных static labels.
+- Auto fallback по taxonomy оставлен для старых outputs без router metadata.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_flet_controller_commands.py::test_confirmed_dynamic_event_is_acknowledged_without_full_reset tests/unit/test_flet_controller_commands.py::test_auto_dynamic_route_confirms_user_label_immediately tests/unit/test_flet_controller_commands.py::test_auto_static_route_waits_for_deliberate_dwell tests/unit/test_flet_controller_commands.py::test_auto_static_label_requires_deliberate_dwell tests/unit/test_flet_controller_commands.py::test_static_mode_uses_deliberate_dwell -q`
+  -> 5 passed.
+- `py_compile app/flet_app/controller.py tests/unit/test_flet_controller_commands.py`
+
+### H-101: Stop button no longer blocks Flet UI handler
+
+Дата: 2026-07-07.
+
+Контекст:
+- При нажатии `Стоп` на главном экране Flet показывал полноэкранный
+  `Working...`.
+- Причина: `HomeView._on_toggle()` вызывал `controller.toggle_recognition()`
+  синхронно из UI event handler. Остановка закрывает embedded infer, MediaPipe
+  и camera threads, поэтому handler мог долго не возвращать управление Flet.
+
+Решение:
+- Главная кнопка Start/Stop теперь вызывает `controller.toggle_recognition`
+  через `page.run_thread(...)`.
+- Такой же non-blocking вызов добавлен в compact assistant и settings toggle.
+- Для тестовых page-объектов без `run_thread` оставлен fallback на прямой
+  вызов.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_flet_frame_delivery.py -q` -> 6 passed.
+- `pytest --no-cov tests/unit/test_settings_view.py -q` -> 2 passed.
+- `py_compile app/flet_app/views/home.py app/flet_app/views/assistant_widget.py app/flet_app/views/settings.py tests/unit/test_flet_frame_delivery.py`
+
+### H-102: Completed training subprocess no longer blocks auto-training
+
+Дата: 2026-07-07.
+
+Контекст:
+- После записи 20 real дублей dynamic-жеста `zoom` UI показал
+  `Обучение не запустилось: Другая операция еще выполняется`.
+- Запись была успешной: `data/gestures/zoom` содержит 20 real samples и
+  40 GISLR augmentations.
+- Причина была в controller guard: `_training_proc` мог хранить уже
+  завершённый subprocess от предыдущей операции, и следующий запуск обучения
+  видел состояние как занятое.
+
+Решение:
+- Добавлен helper `_active_training_process()`, который очищает завершённый
+  `_training_proc`.
+- `start_recording()`, `start_training()`, `start_negative_generation()`,
+  `is_training_active` и `cancel_training()` теперь используют этот helper.
+- Reader threads очищают `_training_proc` после `proc.wait()`.
+
+Production retrain:
+- Обучен `models/dynamic_landmark_lstm_backbone.pkl`.
+- Feature mode: `dynamic_landmark_image`, feature dim `4752`.
+- Samples loaded: `220`, classes: `7`.
+- Training accuracy: `0.9364`.
+- Classes: `SwipeLeft`, `zoom`, `no_gesture_static`, `partial_swipe`,
+  `random_motion`, `return_motion`, `wrong_axis_motion`.
+- Обновлён `models/dynamic_landmark_lstm_backbone_prototypes.json`;
+  positive labels: `SwipeLeft`, `zoom`; target dim `65`, target frames `72`.
+- Prototype report: overall `0.9931`, positive recall `0.9000`,
+  negative reject `1.0000`, negative FP `0.0000`; `zoom` recall `5/5`.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_flet_controller_commands.py::test_start_recording_uses_embedded_camera_session tests/unit/test_flet_controller_commands.py::test_completed_training_process_does_not_block_new_recording tests/unit/test_flet_training_view.py::test_user_dynamic_recording_auto_trains_dynamic_profile_from_start_state -q`
+  -> 3 passed.
+- `py_compile app/flet_app/controller.py tests/unit/test_flet_controller_commands.py`
+
+### H-103: Always-on live usage telemetry for release demos
+
+Дата: 2026-07-07.
+
+Контекст:
+- Перед релизом нужны live-метрики не только из ручных live-evaluation
+  прогонов, но и из обычного использования приложения.
+- MLflow полезен для истории экспериментов, но для демо нужен надежный
+  локальный поток событий, который работает без отдельного сервера.
+
+Решение:
+- `_dispatch_infer_result()` теперь пишет best-effort usage events при:
+  - подтвержденном жесте без auto-execute;
+  - успешном выполнении команды;
+  - command cooldown / command rejected;
+  - negative-label rejection;
+  - dynamic return-motion suppression.
+- Добавлены локальные артефакты в `~/.dplm/logs/`:
+  - `live_usage_events.jsonl` — append-only поток событий;
+  - `live_usage_summary.json` — rolling summary за последние 5 минут;
+  - `runtime_performance.jsonl` — runtime latency/FPS, как раньше.
+- Summary считает:
+  - `total_events`;
+  - `command_attempts`;
+  - `executed_events`;
+  - `command_success_rate`;
+  - `avg_confidence`;
+  - counts по label / route / event_type;
+  - latest event и latest runtime.
+- `scripts/mlops_dashboard.py` теперь читает `live_usage_summary.json` и
+  показывает отдельный блок `Live Usage` в `docs/mlops_dashboard/index.html`.
+
+Команда генерации витрины:
+
+```bash
+python -m scripts.mlops_dashboard
+```
+
+Live-режим для презентации:
+
+```bash
+python -m scripts.mlops_dashboard --watch-seconds 5
+```
+
+Проверки:
+- `tests/unit/test_flet_controller_commands.py` покрывает запись
+  `live_usage_events.jsonl` и `live_usage_summary.json`.
+- `tests/unit/test_mlops_dashboard.py` покрывает отображение usage metrics в
+  HTML dashboard.
+
+### H-104: Z normalization for dynamic landmark LSTM
+
+Дата: 2026-07-08.
+
+Контекст:
+- `dynamic_landmark_lstm_backbone` использует `dynamic_landmark_image`:
+  `72 x 22 x 3`.
+- `xy` уже нормализуется через `wrist_scale`, а global `wrist_xy` приводится
+  к нормированной траектории.
+- Но `z` из MediaPipe попадал в sample/model feature как сырой image-z,
+  поэтому модель могла быть чувствительнее к расстоянию руки до камеры.
+
+Решение:
+- Добавлен `normalize_landmark_z_with_xy()`:
+  `z' = (z - z_wrist) / projected_hand_scale`.
+- Live inference и запись samples теперь сохраняют `z` в той же шкале, что и
+  normalized `xy`.
+- `dynamic_landmark_image` дополнительно нормализует z при feature extraction,
+  чтобы старые `.npy` с raw-z приводились к тому же виду.
+- Dynamic prototype verifier тоже применяет z-нормализацию перед сравнением
+  последовательностей.
+
+Production retrain:
+- Переобучен `models/dynamic_landmark_lstm_backbone.pkl`.
+- Feature mode: `dynamic_landmark_image`, feature dim `4752`.
+- Samples loaded: `280`, classes: `8`.
+- Training accuracy: `0.9393`.
+- Classes: `SwipeLeft`, `diagonal`, `zoom`, `no_gesture_static`,
+  `partial_swipe`, `random_motion`, `return_motion`, `wrong_axis_motion`.
+- MLflow logging не выполнился локально: пакет `mlflow` не установлен в
+  текущем окружении.
+
+Prototype retrain:
+- Обновлён `models/dynamic_landmark_lstm_backbone_prototypes.json`.
+- Positive labels: `SwipeLeft`, `diagonal`, `zoom`.
+- Target dim `65`, target frames `72`.
+- Prototype report: overall `0.9778`, positive recall `0.8667`,
+  negative reject `1.0000`, negative FP `0.0000`.
+
+Проверки:
+- `pytest --no-cov tests/unit/test_gesture_features.py::test_normalize_landmark_z_with_xy_uses_wrist_and_projected_hand_scale tests/unit/test_gesture_features.py::test_dynamic_landmark_image_centers_and_scales_z_channel tests/unit/test_gesture_features.py::test_normalize_sequence_landmark_z_preserves_global_wrist_xy tests/unit/test_dynamic_prototype.py::test_normalize_dynamic_sequence_normalizes_xyz_z_channel tests/unit/test_gesture_online_infer_no_hand.py::test_hand_frame_feature_builds_65_dim_xyz_wrist_layout tests/unit/test_flet_controller_commands.py::test_process_static_sample_recording_frame_saves_xyz_features tests/unit/test_flet_controller_commands.py::test_process_dynamic_sample_recording_frame_saves_xyz_wrist_features -q`
+  -> 7 passed.
+- `py_compile cv/gesture_features.py cv/dynamic_prototype.py app/gesture_online_infer.py app/flet_app/controller.py`.
+
+### H-105: Source-grouped validation instead of augmentation leakage
+
+Дата: 2026-07-10. Статус: `validated`.
+
+Проблема:
+- GISLR-аугментация создает несколько вариантов одного реального дубля.
+- При обычном `StratifiedKFold` оригинал мог попасть в train, а его почти
+  идентичная копия в validation.
+- LSTM дополнительно обучал нормализатор до holdout split.
+
+Решение:
+- sample и `aug_sample` объединены ключом `source_sample`;
+- ExtraTrees Optuna, recurrent Optuna, LSTM/GRU holdout и model comparison
+  используют `StratifiedGroupKFold`/grouped holdout;
+- recurrent normalization fit выполняется только на raw train split;
+- в metadata сохраняются `validation_grouped` и
+  `validation_group_overlap`.
+
+Результат:
+- grouped static CV: `300` файлов, `200` source groups, `5` folds;
+- accuracy `0.7767`, macro F1 `0.6613`;
+- overlap между train и validation groups равен `0`.
+
+### H-106: Label-safe routing and a real dynamic recording gate
+
+Дата: 2026-07-10. Статус: `validated`.
+
+Проблема:
+- `SwipeLeft` и `swipe_left` считались разными классами в live evaluation и
+  command lookup;
+- quality report угадывал направление по словам `left/up` в имени, что не
+  работает для произвольных пользовательских классов;
+- слабый дубль сохранялся даже при `WARN`.
+
+Решение:
+- spelling normalization убирает только регистр и разделители, не вводя
+  семантических aliases;
+- результат всегда восстанавливается в точное уникальное имя из обученной
+  `classes.json`;
+- динамический quality gate использует OR из global displacement, global path
+  и изменения всех `210` pairwise distances кисти;
+- неподвижный дубль сбрасывается до `np.save`, а пользователь видит понятное
+  сообщение и повторяет попытку.
+
+### H-107: Low-latency runtime and failure-safe model activation
+
+Дата: 2026-07-10. Статус: `validated`.
+
+Результат A/B на текущем production ExtraTrees:
+- `n_jobs=-1`: `26.715 ms` на `predict_proba`;
+- `n_jobs=1`: `8.690 ms`;
+- ускорение `3.07x`, ответы модели не меняются.
+
+Публикация модели:
+- модель и sidecars сначала полностью пишутся во временные sibling-файлы;
+- рабочая модель активируется последней;
+- при любой ошибке предыдущие файлы восстанавливаются;
+- rollback покрыт тестом с искусственной ошибкой activation.
+
+### H-108: Reproducible MLflow and production latency evidence
+
+Дата: 2026-07-10. Статус: `validated`.
+
+Каждый новый training run теперь фиксирует:
+- SHA-256 выбранного набора `.npy` и metadata;
+- SHA-256 итоговой модели;
+- git commit и dirty state;
+- число независимых source groups;
+- grouped-validation flag и overlap;
+- тип training accuracy: `resubstitution`.
+
+Production benchmark на `200` итерациях:
+- до H-109 static ML stage: mean `17.476 ms`, p95 `18.100 ms`;
+- до H-109 dynamic LSTM ML stage: mean `3.847 ms`, p95 `4.053 ms`.
+
+Проверки:
+- полный suite: `592 passed, 2 skipped`;
+- MLflow smoke run: `32866f9906ac4b3688b3f3f52b9d220d`;
+- полный audit: `release_readiness_2026-07-10.md`.
+
+### H-109: Grouped production retrain of the dynamic landmark LSTM
+
+Дата: 2026-07-10. Статус: `validated-live` в H-116.
+
+Причина:
+- production LSTM была обучена до source-grouped validation;
+- в старом artifact отсутствовали `validation_grouped` и group overlap;
+- пользовательский UI запускает retrain только после записи нового жеста.
+
+Scope обучения:
+- positive dynamic: `SwipeLeft`, `diagonal`, `zoom`;
+- negative: `no_gesture_static`, `partial_swipe`, `random_motion`,
+  `return_motion`, `wrong_axis_motion`;
+- `280` training files, включая GISLR augmentations;
+- `160` независимых source groups;
+- raw dim `65`, `72` кадров, model feature dim `4752`.
+
+Grouped Optuna:
+- trials: `8`;
+- best score: `0.8857`;
+- backbone dim `96`, hidden dim `128`, LSTM layers `2`;
+- bidirectional: `true`, dropout `0.2813`, batch size `24`;
+- learning rate `0.0010756`, weight decay `0.00001144`;
+- `used_group_split=true`.
+
+Final production artifact:
+- internal grouped validation accuracy: `0.8571`;
+- train/resubstitution accuracy: `0.8821`;
+- validation group overlap: `0`;
+- model SHA-256:
+  `7205d86139a1c02a73b7c0eba152291ab059944560bd0f6d04f764e21f6faf79`;
+- dataset SHA-256:
+  `740fbb794f03c164ce1c94baca18c8cbfb8e6d8b3cf003056709a1db7adbf620`;
+- MLflow run: `63f3e550f2a240b0a673f0af5102cbdc`.
+
+Prototype verifier после retrain:
+- train `448`, test `150`, external negatives checked `440`;
+- conflicts removed `2`, conflict rate `0.0045`;
+- overall `0.9933`, positive recall `0.9333`;
+- negative reject `1.0000`, negative FP `0.0000`;
+- `SwipeLeft`: `4/5` + один reject;
+- `diagonal`: `5/5`;
+- `zoom`: `5/5`.
+
+Production ML latency, `200` итераций:
+- static: mean `18.939 ms`, p95 `21.721 ms`;
+- new dynamic LSTM: mean `13.979 ms`, p95 `16.013 ms`;
+- dynamic capacity: `71.54 FPS` без MediaPipe/camera stage.
+
+Проверки:
+- model/classes/feature metadata load smoke;
+- `46 passed` для ML smoke, online infer, prototype и atomic bundle tests;
+- report: `dynamic_lstm_grouped_retrain_2026-07-10.md`.
+
+### H-110: Release-first home experience
+
+Дата: 2026-07-10. Статус: `validated-ui`.
+
+Гипотеза:
+- пользователь должен понимать состояние системы и запускать распознавание с
+  первого экрана без знания названий моделей, feature modes и reject policies;
+- камера, текущее распознавание и выполненная команда важнее диагностических
+  панелей в основном пользовательском сценарии.
+
+Изменения:
+- главная страница перестроена вокруг крупного live-превью камеры;
+- добавлены единый статус готовности, одна основная кнопка
+  `Включить/Остановить`, последнее действие и журнал недавних действий;
+- пользовательские переключатели получили предметные названия:
+  `Выполнять команды`, `Показывать точки`, `Управлять курсором`;
+- технические `model/profile/reject` selectors, Recognition Inspector и Live
+  Evaluation больше не отображаются на главной странице;
+- глобальный заголовок упрощен до бренда и понятного состояния
+  `Готово/Распознавание включено/Нужна проверка`;
+- ML-контракты, обучение и runtime-маршрутизация не изменялись.
+
+Проверки:
+- `205 passed` для Flet controller/view, live state, bindings и training tests;
+- отдельные тесты проверяют отсутствие developer controls в release tree и
+  синхронизацию камеры, статуса и основной кнопки;
+- визуальная проверка Flet web preview на `1280 x 720` и `900 x 700`: без
+  пересечений элементов и потери основного действия.
+
+### H-111: Enforced MVP repository and release contract
+
+Дата: 2026-07-10. Статус: `validated-release`.
+
+Гипотеза:
+- GitHub snapshot должен содержать один production desktop runtime и только
+  воспроизводимые release assets;
+- исключение локальных файлов только через `.gitignore` недостаточно, потому
+  что ранее tracked/generated файл продолжит попадать в архив;
+- release bundle должен строиться из commit, а не из текущей рабочей папки.
+
+Изменения:
+- удалена неиспользуемая PySide/QML ветка, ее дублирующий launcher и skipped
+  tests: `50` файлов, около `9 000` строк;
+- Flet закреплен как единственная desktop-точка входа;
+- добавлен root `ARCHITECTURE.md` с MVP boundary, runtime/training flows,
+  ownership данных и dependency rules;
+- runtime, dev и research зависимости разделены; TensorFlow оставлен только
+  для optional historical CNN benchmark;
+- `scripts.check_repository_hygiene` запрещает tracking пользовательских
+  данных, secrets, MLflow, generated outputs, legacy UI и неожиданных models;
+- production `models/` ограничен allowlist из `15` файлов;
+- `make ci` и release workflow запускают hygiene gate;
+- GitHub source bundle переведен на `git archive`, поэтому содержит только
+  tracked content конкретного commit.
+
+Проверки:
+- future Git snapshot: `265` tracked files, `15` release model artifacts;
+- hygiene contract tests: `6 passed`;
+- clean tracked suite: `597 passed`, без legacy skips;
+- local `make ci`: `596 passed` с дополнительными локальными ignored tests;
+- ML smoke: static и `dynamic_landmark_lstm_backbone` artifacts загрузились и
+  выполнили `predict/predict_proba`;
+- `git diff --check`, shell syntax и workflow YAML validation.
+
+### H-112: Platform-independent binding-agent golden path
+
+Дата: 2026-07-10. Статус: `validated-ci`.
+
+Проблема:
+- golden case `open_path_binding` содержал `/Users/remi/Documents`;
+- локально каталог существовал, поэтому `canApply=true`;
+- Linux GitHub runner корректно отклонял несуществующий путь и падал с
+  `1 failed, 590 passed`.
+
+Исправление:
+- fixture переведен на существующий POSIX path `/tmp`;
+- strict safety-правило `open_path` требует существующий абсолютный путь и не
+  ослаблялось;
+- добавлен regression test, запрещающий персональный `/Users/remi/` в golden
+  prompts и expected action specs.
+
+Проверки:
+- binding-agent suite: `57 passed`;
+- local `make ci`: `596 passed` + static/dynamic ML smoke;
+- clean tracked full suite: `597 passed`.
+
+### H-113: Release static threshold and controlled live acceptance
+
+Дата: 2026-07-10. Статус: `validated-live-controlled`.
+
+Решение:
+- поднять только static confidence threshold auto-router с `0.50` до `0.80`;
+- dynamic threshold остается отдельным и не меняется;
+- command binding threshold остается независимым safety-барьером.
+
+Live evidence от пользователя:
+- static при threshold `0.80`: `100%` распознавания, denominator не указан;
+- `SwipeLeft`: `10/10`;
+- `diagonal`: `9/10`;
+- `zoom`: `9/10`;
+- dynamic total: `28/30 = 0.9333`.
+
+Интерпретация:
+- модель хорошо работает для персонального controlled protocol;
+- жест нужно выполнять с формой, направлением, амплитудой и стартовой позой,
+  близкими к recorded samples;
+- это нельзя представлять как signer-independent качество;
+- следующий обязательный release check: `30` no-command/background attempts.
+
+Регрессия:
+- `0.79` static confidence отклоняется;
+- `0.80` принимается;
+- dynamic thresholds и routing остаются без изменений.
+
+### H-114: Release dynamic confidence threshold `0.90`
+
+Дата: 2026-07-10. Статус: `validated-live-controlled`.
+
+Проблема:
+- основной auto-router принимал dynamic prediction при confidence `>= 0.60`;
+- completed/cooldown dynamic event мог обойти intent `none/static` при `>= 0.85`;
+- два разных порога делали release-policy неочевидной и оставляли лишний путь
+  для слабого dynamic prediction.
+
+Решение:
+- release dynamic confidence threshold поднят до `0.90`;
+- минимальный порог completed-event override поднят до `0.90`;
+- effective override threshold равен максимуму из configured dynamic threshold
+  и release floor `0.90`, поэтому override не ослабляет основную настройку;
+- static threshold остается `0.80`, command binding threshold не меняется.
+
+Регрессия:
+- `0.89` dynamic confidence отклоняется;
+- `0.90` принимается;
+- completed event с confidence `0.89` не обходит intent-gate даже при
+  искусственно сниженном основном пороге;
+- targeted router suite: `24 passed`;
+- local `make ci`: `601 passed` + static/dynamic model smoke;
+- clean tracked full suite: `602 passed`.
+
+Следующий live-check:
+- выполнен positive-class run на новой сборке с release thresholds:
+  - static: `10/10 = 1.0000` при threshold `0.80`;
+  - `SwipeLeft`: `10/10 = 1.0000`;
+  - `diagonal`: `9/10 = 0.9000`, `1` пропуск;
+  - `zoom`: `9/10 = 0.9000`, `1` пропуск;
+  - dynamic total: `28/30 = 0.9333` при threshold `0.90`;
+  - общий positive total: `38/40 = 0.9500`;
+  - wrong-class predictions: `0`, misses: `2`;
+- результаты являются manual controlled user report; покадровая latency и route
+  metadata для этого прогона не заявляются;
+- MLflow evidence group: `release-positive-thresholds-2026-07-10-v1`;
+- MLflow run IDs:
+  - static: `59a671cf23d54723b047fe0321fe9e11`;
+  - `SwipeLeft`: `58b311a70d0641eb9af50f033101f710`;
+  - `diagonal`: `1914abfdc747496a8977b72d25215dc2`;
+  - `zoom`: `59c6d2e7af9d4d7da71e2c7aa79c6f86`;
+- осталось выполнить `30` no-command/background попыток и зафиксировать
+  dynamic false-positive rate.
+
+### H-115: Adaptive completion gate for arbitrary dynamic classes
+
+Дата: 2026-07-10. Статус: `validated-live-safety` в H-116/H-117.
+
+Проблема:
+- `canonical_dynamic_sequence` нормализует амплитуду глобального движения;
+- после такой нормализации короткий префикс может выглядеть для LSTM как
+  законченный жест и получать confidence `>= 0.90`;
+- начало составного пользовательского жеста иногда совпадает с полным другим
+  классом, поэтому verifier только на префиксах собственного класса
+  недостаточен.
+
+Решение:
+- completion evidence вычисляется по raw sequence до amplitude normalization;
+- используются signed `dx/dy`, displacement, path, excursion, axis ranges,
+  positive/negative axis paths, straightness, turning и hand-shape change;
+- для каждого положительного класса автоматически обучается grouped logistic
+  verifier: full target против own prefixes, cross-class prefixes/full samples
+  и доступных negative classes;
+- названия пользовательских жестов не зашиты в runtime-логику;
+- tentative stop ждет `5` кадров, чтобы короткая пауза не завершала жест;
+- отклоненный префикс переходит в `awaiting_continuation`: продолжение wrist или
+  hand-shape motion дописывается в тот же segment;
+- после `24` кадров без продолжения raw intent очищается без команды;
+- `motion_confirmed` не сбрасывается, если запястье вернулось к старту, что
+  поддерживает zoom, круговые и возвратные движения;
+- новые профили генерируются обычным training pipeline и сохраняются в
+  model-specific `*_rejection.json`.
+
+Grouped profile validation:
+- positive classes: `SwipeLeft`, `diagonal`, `zoom`;
+- по `20` независимых source recordings на класс;
+- complete recall: `1.0000` для каждого класса;
+- aggregate prefix false accept rate: `0.0125`;
+- cross-class prefix false accepts для `SwipeLeft`: `0.0000`.
+
+Production benchmark:
+- candidate full: `60/60` accepted;
+- LSTM alone accepted `214/240` truncated candidates;
+- LSTM + completion gate accepted `6/240`;
+- production `GestureOnlineInfer` state-machine replay: `59/60` correct full,
+  `0` wrong-class, `5/240 = 0.0208` prefix commands;
+- focused dynamic regression suite: `48 passed`;
+- release CI: `615 passed` plus static/dynamic model smoke;
+- full discoverable suite: `620 passed`;
+- MLflow run: `4900d7c52abe4ff58018c2dfc452e8a3`;
+- reproducible command:
+  `python -m scripts.evaluate_dynamic_completion --log-mlflow`.
+
+Ограничение:
+- replay использует текущие source recordings, поэтому не является независимым
+  test set и не заменяет webcam safety matrix;
+- пять принятых префиксов относятся к `70%` motion progress и геометрически уже
+  близки к полному жесту; более строгий threshold ухудшил full replay с
+  `59/60` до `58/60`, поэтому не был принят.
+
+Следующий шаг:
+- выполнить минимум `10` коротких/остановленных и `10` похожих на команды
+  движений, плюс общий `30`-attempt no-command/background run;
+- после safety evidence обновить dashboard.
+
+### H-116: Post-completion controlled positive live validation
+
+Дата: 2026-07-10. Статус: `validated-live-positive`.
+
+Протокол:
+- production auto-router после H-115;
+- static threshold `0.80`, dynamic threshold `0.90`;
+- персональный controlled webcam run;
+- результаты сообщены пользователем агрегированно, без frame-level latency.
+
+Результаты:
+- все static-жесты: `20/20 = 1.0000`, confidence выше `0.80`;
+- `SwipeLeft`: `20/20 = 1.0000`;
+- `diagonal`: `9/10 = 0.9000`, `1` пропуск;
+- `zoom`: `9/10 = 0.9000`, `1` пропуск;
+- dynamic total: `38/40 = 0.9500`;
+- общий positive total: `58/60 = 0.9667`;
+- wrong-class predictions: `0`, misses: `2`.
+
+Интерпретация:
+- post-gate положительная webcam-матрица подтверждает, что completion safety не
+  сломала распознавание полных жестов;
+- оба сбоя являются пропусками, а не неверными командами;
+- `diagonal` и `zoom` сложнее воспроизвести одинаково из-за составной
+  траектории и движения формы кисти на месте, поэтому `0.90` recall для них
+  отражает controlled execution sensitivity текущего персонального датасета;
+- результат нельзя называть signer-independent quality.
+
+MLflow:
+- evidence group: `release-positive-post-completion-2026-07-10-v2`;
+- run: `5ee224e67a83473eacc36147adcba124`;
+- artifact: `controlled_live_summary.json`.
+
+Следующий обязательный release-check:
+- выполнен в H-117; остается обновить dashboard и финальные слайды.
+
+### H-117: Final partial and no-command safety matrix
+
+Дата: 2026-07-10. Статус: `validated-release`.
+
+Протокол:
+- production auto-router с adaptive completion gate;
+- static threshold `0.80`, dynamic threshold `0.90`;
+- `20` незавершенных или похожих на команды движений;
+- `30` background/no-command попыток;
+- результаты сообщены пользователем агрегированно.
+
+Результаты:
+- partial/look-alike: `19/20` безопасно без команды, `1/20` ложная команда,
+  false-positive rate `0.0500`;
+- background/no-command: `30/30` без команды, false-positive rate `0.0000`;
+- aggregate safety: `49/50` без команды, `1/50` ложная команда,
+  false-positive rate `0.0200`;
+- обе группы проходят release target `<=0.10`.
+
+Совместно с H-116:
+- positive recall: `58/60 = 0.9667`;
+- dynamic recall: `38/40 = 0.9500`;
+- wrong-class predictions в positive matrix: `0`;
+- background false commands: `0/30`.
+
+MLflow:
+- evidence group: `release-safety-post-completion-2026-07-10-v1`;
+- run: `92d7a2795f8a4b05befd149a3e11935b`;
+- artifact: `controlled_live_safety_summary.json`.
+
+Решение:
+- controlled positive и safety gates для `v0.8.0` пройдены;
+- код и production artifacts замораживаются до публикации;
+- release можно создавать после final CI, hygiene и проверки `git archive`;
+- метрики на защите нужно называть результатами персонального controlled
+  protocol, а не signer-independent benchmark.

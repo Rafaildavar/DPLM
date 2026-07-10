@@ -1,6 +1,7 @@
-"""Tool contracts used by GestureFlow binding agents."""
+"""Tool contracts used by GestureBind binding agents."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -9,12 +10,21 @@ from app.services.binding_agent import (
     _action_title,
     _extract_scenario_name,
     _gesture_query_from_text,
-    _history_items,
     _known_gesture_labels,
     _match_gesture_label_in_text,
     _parse_action,
     _similar_gesture_labels,
     _split_sequence,
+)
+from app.services.binding_agents.action_semantics import (
+    CandidateArbiter,
+    compile_action_candidate,
+)
+from app.services.gesture_aliases import (
+    GestureAliasRegistry,
+    gesture_alias_proposal,
+    gesture_alias_query_from_text,
+    normalize_gesture_alias,
 )
 
 
@@ -63,6 +73,75 @@ def _is_draft_action_reference(text: str) -> bool:
     return reference and not action_marker
 
 
+def _selected_known_gesture(context: BindingAgentContext, labels: list[str]) -> str:
+    current = (context.current_gesture or "").strip()
+    if not current:
+        return ""
+    for label in labels:
+        if label.lower() == current.lower():
+            return label
+    return ""
+
+
+def _is_explicit_typed_gesture_query(prompt: str, query: str) -> bool:
+    clean = (query or "").strip()
+    if not clean:
+        return False
+    if clean == (prompt or "").strip():
+        return False
+    normalized = normalize_gesture_alias(clean)
+    if normalized in {
+        "this",
+        "eto",
+        "это",
+        "этот",
+        "эту",
+        "текущий",
+        "текущии",
+        "выбранный",
+            "выбранныи",
+    }:
+        return False
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{1,63}", clean):
+        return False
+    return 0 < len(normalized.split("_")) <= 5
+
+
+def _selected_gesture_alias_proposal(
+    context: BindingAgentContext,
+    gesture_label: str,
+) -> dict[str, Any]:
+    alias = gesture_alias_query_from_text(context.prompt)
+    clean = (alias or "").strip()
+    if not clean:
+        return {}
+    if clean == (context.prompt or "").strip():
+        return {}
+    normalized = normalize_gesture_alias(clean)
+    if not normalized or normalized == normalize_gesture_alias(gesture_label):
+        return {}
+    if normalized in {
+        "this",
+        "eto",
+        "это",
+        "этот",
+        "эту",
+        "текущий",
+        "текущии",
+        "выбранный",
+        "выбранныи",
+    }:
+        return {}
+    if len(normalized.split("_")) > 5:
+        return {}
+    return gesture_alias_proposal(
+        gesture_label,
+        clean,
+        source="selected_gesture",
+        confidence=0.9,
+    )
+
+
 @dataclass(frozen=True)
 class AgentToolResult:
     tool: str
@@ -78,6 +157,81 @@ class AgentToolResult:
 def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
     labels = _known_gesture_labels(context)
     query = _gesture_query_from_text(context.prompt)
+    correction = _gesture_correction_target(context.prompt)
+    if correction:
+        corrected = _exact_known_label(correction, correction, labels)
+        if not corrected:
+            correction_match = GestureAliasRegistry().resolve(
+                correction,
+                labels=labels,
+                gestures=context.gestures,
+            )
+            if correction_match is not None and not correction_match.ambiguous:
+                corrected = correction_match.label
+        if corrected:
+            return AgentToolResult(
+                "resolve_gesture",
+                "ok",
+                f"Применил коррекцию жеста: {corrected}.",
+                {
+                    "gesture": corrected,
+                    "source": "correction",
+                    "known": True,
+                    "confidence": 1.0,
+                },
+            )
+    exact_label = _exact_known_label(query, context.prompt, labels)
+    if exact_label:
+        return AgentToolResult(
+            "resolve_gesture",
+            "ok",
+            f"Нашёл точный label жеста: {exact_label}.",
+            {
+                "gesture": exact_label,
+                "source": "exact_label",
+                "known": True,
+                "matchedAlias": exact_label,
+                "confidence": 1.0,
+            },
+        )
+    alias_match = GestureAliasRegistry().resolve(
+        context.prompt,
+        labels=labels,
+        gestures=context.gestures,
+    )
+    fuzzy_alias_match = None
+    if alias_match is not None:
+        if alias_match.ambiguous:
+            if alias_match.source == "alias_registry:fuzzy":
+                fuzzy_alias_match = alias_match
+            else:
+                return AgentToolResult(
+                    "resolve_gesture",
+                    "need_clarification",
+                    "Нашёл несколько похожих жестов, нужен выбор.",
+                    {
+                        "gesture": "",
+                        "source": alias_match.source,
+                        "known": False,
+                        "suggestions": alias_match.suggestions,
+                        "query": alias_match.query,
+                        "matchedAlias": alias_match.matched_alias,
+                        "confidence": alias_match.confidence,
+                    },
+                )
+        else:
+            return AgentToolResult(
+                "resolve_gesture",
+                "ok",
+                f"Нашёл жест по алиасу: {alias_match.label}.",
+                {
+                    "gesture": alias_match.label,
+                    "source": alias_match.source,
+                    "known": True,
+                    "matchedAlias": alias_match.matched_alias,
+                    "confidence": alias_match.confidence,
+                },
+            )
     gesture = _match_gesture_label_in_text(context.prompt, labels)
     known_labels = {label.lower() for label in labels}
     if gesture:
@@ -111,37 +265,70 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
             },
         )
 
-    for item in reversed(_history_items(context.conversation_history)):
-        if item.get("role") != "user":
-            continue
-        gesture = _match_gesture_label_in_text(item.get("text") or "", labels)
-        if gesture:
-            known = gesture.lower() in known_labels
-            return AgentToolResult(
-                "resolve_gesture",
-                "ok",
-                f"Взял жест из памяти диалога: {gesture}.",
-                {"gesture": gesture, "source": "memory", "known": known},
-            )
+    if fuzzy_alias_match is not None and fuzzy_alias_match.suggestions:
+        return AgentToolResult(
+            "resolve_gesture",
+            "need_clarification",
+            "Нашёл похожие жесты, но нужен выбор.",
+            {
+                "gesture": "",
+                "source": fuzzy_alias_match.source,
+                "known": False,
+                "suggestions": fuzzy_alias_match.suggestions,
+                "query": fuzzy_alias_match.query,
+                "matchedAlias": fuzzy_alias_match.matched_alias,
+                "confidence": fuzzy_alias_match.confidence,
+            },
+        )
+
+    if _is_explicit_typed_gesture_query(context.prompt, query):
+        return AgentToolResult(
+            "resolve_gesture",
+            "ok",
+            f"Принял явно указанное имя жеста: {query}.",
+            {
+                "gesture": query,
+                "source": "typed_query",
+                "known": False,
+                "query": query,
+            },
+        )
 
     draft_gesture = str(context.draft_state.get("gestureLabel") or "").strip()
     if draft_gesture:
         known = draft_gesture.lower() in known_labels
+        inherited = bool(context.session_state.get("inherited"))
         return AgentToolResult(
             "resolve_gesture",
             "ok",
-            f"Взял жест из текущего черновика: {draft_gesture}.",
-            {"gesture": draft_gesture, "source": "draft_state", "known": known},
+            (
+                f"Взял жест из активной задачи: {draft_gesture}."
+                if inherited
+                else f"Взял жест из текущего черновика: {draft_gesture}."
+            ),
+            {
+                "gesture": draft_gesture,
+                "source": "session_memory" if inherited else "draft_state",
+                "known": known,
+            },
         )
 
-    current = (context.current_gesture or "").strip()
-    if current and current.lower() in known_labels:
-        label = next(label for label in labels if label.lower() == current.lower())
+    label = _selected_known_gesture(context, labels)
+    if label:
+        alias_proposal = _selected_gesture_alias_proposal(context, label)
+        matched_alias = str(alias_proposal.get("alias") or "")
+        source = "selected_alias_pending" if alias_proposal else "selected"
         return AgentToolResult(
             "resolve_gesture",
             "ok",
             f"Использую выбранный жест: {label}.",
-            {"gesture": label, "source": "selected", "known": True},
+            {
+                "gesture": label,
+                "source": source,
+                "known": True,
+                "matchedAlias": matched_alias,
+                "aliasProposal": alias_proposal,
+            },
         )
 
     return AgentToolResult(
@@ -155,35 +342,60 @@ def resolve_gesture(context: BindingAgentContext) -> AgentToolResult:
 def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
     draft_spec = _draft_action_spec(context)
     if draft_spec and _is_draft_action_reference(context.prompt):
+        inherited = bool(context.session_state.get("inherited"))
         return AgentToolResult(
             "parse_macos_action",
             "ok",
-            f"Взял действие из текущего черновика: {_action_title(draft_spec)}.",
-            {"action_spec": draft_spec, "source": "draft_state"},
+            (
+                f"Взял действие из активной задачи: {_action_title(draft_spec)}."
+                if inherited
+                else f"Взял действие из текущего черновика: {_action_title(draft_spec)}."
+            ),
+            {
+                "action_spec": draft_spec,
+                "source": "session_memory" if inherited else "draft_state",
+            },
         )
 
-    spec = _parse_action(context.prompt)
+    legacy_spec = _parse_action(context.prompt)
+    goal, candidate = compile_action_candidate(
+        context.prompt,
+        legacy_spec,
+        frame=context.task_frame,
+    )
+    arbitration = CandidateArbiter().choose((candidate,))
+    spec = dict(arbitration.selected.action_spec) if arbitration.selected else None
+    if candidate.issues and any(
+        issue not in {"action_unresolved"} for issue in candidate.issues
+    ):
+        return AgentToolResult(
+            "parse_macos_action",
+            "need_clarification",
+            "Действие не прошло семантическую проверку.",
+            {
+                "action_spec": {},
+                "goal": goal.to_dict(),
+                "candidates": [candidate.to_dict()],
+                "semanticIssues": list(candidate.issues),
+            },
+        )
     if spec is None:
         if draft_spec:
             spec = draft_spec
+            inherited = bool(context.session_state.get("inherited"))
             return AgentToolResult(
                 "parse_macos_action",
                 "ok",
-                f"Взял действие из текущего черновика: {_action_title(spec)}.",
-                {"action_spec": spec, "source": "draft_state"},
+                (
+                    f"Взял действие из активной задачи: {_action_title(spec)}."
+                    if inherited
+                    else f"Взял действие из текущего черновика: {_action_title(spec)}."
+                ),
+                {
+                    "action_spec": spec,
+                    "source": "session_memory" if inherited else "draft_state",
+                },
             )
-    if spec is None:
-        for item in reversed(_history_items(context.conversation_history)):
-            if item.get("role") != "user":
-                continue
-            spec = _parse_action(item.get("text") or "")
-            if spec is not None:
-                return AgentToolResult(
-                    "parse_macos_action",
-                    "ok",
-                    f"Взял действие из памяти: {_action_title(spec)}.",
-                    {"action_spec": spec, "source": "memory"},
-                )
     if spec is None:
         return AgentToolResult(
             "parse_macos_action",
@@ -195,59 +407,157 @@ def parse_macos_action(context: BindingAgentContext) -> AgentToolResult:
         "parse_macos_action",
         "ok",
         f"Собрал действие: {_action_title(spec)}.",
-        {"action_spec": spec, "source": "prompt"},
+        {
+            "action_spec": spec,
+            "source": "prompt",
+            "goal": goal.to_dict(),
+            "candidate": arbitration.selected.to_dict() if arbitration.selected else {},
+        },
     )
 
 
 def build_sequence_action(context: BindingAgentContext) -> AgentToolResult:
     steps: list[dict[str, Any]] = []
-    for clause in _split_sequence(context.prompt):
-        step = _parse_action(clause)
-        if step is None:
+    unresolved: list[dict[str, Any]] = []
+    clauses = _split_sequence(context.prompt)
+    for index, clause in enumerate(clauses, start=1):
+        legacy_step = _parse_action(clause)
+        _goal, candidate = compile_action_candidate(clause, legacy_step)
+        selected = CandidateArbiter().choose((candidate,)).selected
+        if selected is None:
+            unresolved.append({"index": index, "text": clause})
             continue
-        step = dict(step)
+        step = dict(selected.action_spec)
         step.pop("platform", None)
         steps.append(step)
+    scenario_name = _extract_scenario_name(context.prompt)
+    if unresolved:
+        spec: dict[str, Any] = {
+            "action": "sequence",
+            "platform": "macos",
+            "steps": steps,
+        }
+        if scenario_name:
+            spec["name"] = scenario_name
+        return AgentToolResult(
+            "build_sequence",
+            "need_clarification",
+            (
+                "Не понял шаги сценария: "
+                + ", ".join(f"#{item['index']}" for item in unresolved)
+                + "."
+            ),
+            {
+                "action_spec": spec if steps else {},
+                "steps_count": len(steps),
+                "expected_steps_count": len(clauses),
+                "unresolved_steps": unresolved,
+                "requires_confirmation": any(
+                    step.get("action") in {"quit_app", "lock_screen", "run_script"}
+                    for step in steps
+                ),
+            },
+        )
     if len(steps) < 2:
         return AgentToolResult(
             "build_sequence",
             "need_clarification",
             "Для сценария нужно минимум два понятных шага.",
-            {"action_spec": {}, "steps_count": len(steps)},
+            {
+                "action_spec": {},
+                "steps_count": len(steps),
+                "expected_steps_count": len(clauses),
+                "unresolved_steps": [],
+            },
         )
     spec: dict[str, Any] = {"action": "sequence", "platform": "macos", "steps": steps}
-    scenario_name = _extract_scenario_name(context.prompt)
     if scenario_name:
         spec["name"] = scenario_name
     return AgentToolResult(
         "build_sequence",
         "ok",
         f"Собрал сценарий из {len(steps)} шагов.",
-        {"action_spec": spec, "steps_count": len(steps)},
+        {
+            "action_spec": spec,
+            "steps_count": len(steps),
+            "expected_steps_count": len(clauses),
+            "unresolved_steps": [],
+            "requires_confirmation": any(
+                step.get("action") in {"quit_app", "lock_screen", "run_script"}
+                for step in steps
+            ),
+        },
     )
+
+
+def _exact_known_label(query: str, prompt: str, labels: list[str]) -> str:
+    query_key = (query or "").strip().lower()
+    by_lower = {label.lower(): label for label in labels}
+    if query_key in by_lower:
+        return by_lower[query_key]
+    lower_prompt = (prompt or "").lower()
+    for label in sorted(labels, key=len, reverse=True):
+        if re.search(
+            rf"(?<![a-zа-я0-9_]){re.escape(label.lower())}(?![a-zа-я0-9_])",
+            lower_prompt,
+            re.IGNORECASE,
+        ):
+            return label
+    return ""
+
+
+def _gesture_correction_target(text: str) -> str:
+    raw = text or ""
+    patterns = (
+        r"(?:^|[,.;]\s*)не\s+[^,.;]+?[,;]?\s+а\s+(?P<target>[A-Za-zА-Яа-я0-9_.-]+)",
+        r"вместо\s+[A-Za-zА-Яа-я0-9_.-]+\s+(?:используй\s+)?(?P<target>[A-Za-zА-Яа-я0-9_.-]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, raw, re.IGNORECASE)
+        if match:
+            return str(match.group("target") or "").strip()
+    return ""
 
 
 def validate_binding_contract(
     gesture: str,
     action_spec: dict[str, Any],
+    *,
+    gesture_known: bool | None = None,
+    requested_gesture: str = "",
 ) -> AgentToolResult:
     missing: list[str] = []
-    if not gesture:
+    clean_gesture = str(gesture or "").strip()
+    clean_requested = str(requested_gesture or clean_gesture).strip()
+    known = bool(gesture_known)
+    unknown_gesture = clean_requested if clean_requested and not known else ""
+    if not clean_gesture or not known:
         missing.append("жест")
     if not action_spec:
         missing.append("действие")
     if missing:
+        if unknown_gesture:
+            message = (
+                f"Жест «{unknown_gesture}» отсутствует в текущем словаре. "
+                "Выберите существующий жест или сначала запишите новый."
+            )
+        else:
+            message = "Нужны уточнения: " + ", ".join(missing) + "."
         return AgentToolResult(
             "validate_binding_contract",
             "need_clarification",
-            "Нужны уточнения: " + ", ".join(missing) + ".",
-            {"missing": missing},
+            message,
+            {
+                "missing": missing,
+                "gestureKnown": known,
+                "unknownGesture": unknown_gesture,
+            },
         )
     return AgentToolResult(
         "validate_binding_contract",
         "ok",
         "Правила локальной политики пройдены.",
-        {"missing": []},
+        {"missing": [], "gestureKnown": True, "unknownGesture": ""},
     )
 
 

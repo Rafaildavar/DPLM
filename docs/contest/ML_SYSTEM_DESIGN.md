@@ -1,8 +1,8 @@
-# GestureFlow ML System Design
+# GestureBind ML System Design
 
-Last updated: `2026-07-02`
+Last updated: `2026-07-10`
 
-Purpose: единый living-документ по ML-системе GestureFlow для JMLC. Здесь
+Purpose: единый living-документ по ML-системе GestureBind для JMLC. Здесь
 фиксируется не только текущая архитектура, но и путь разработки: что уже
 стабильно, что валидируется, что находится в работе и какие метрики доказывают
 прогресс.
@@ -11,21 +11,27 @@ Purpose: единый living-документ по ML-системе GestureFlow
 
 | Area | Status | Evidence | Next check |
 |---|---|---|---|
-| Static gesture recognition | Stable | legacy/static pipeline works through Flet | refresh per-class live metrics |
-| Dynamic gesture recording | Stable | developer UI records dynamic samples | keep protocol in `gesture_protocol.md` |
-| Dynamic natural swipe segmentation | In Progress | H-036/H-038 natural end, H-053 return guard added | repeat no-command/return-motion validation |
-| Auto routing static/dynamic | Validated | H-038: static hijack `0%` on 30 fresh dynamic attempts | add negative/no-gesture live run |
-| `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
+| Static gesture recognition | Stable | H-105/H-116/H-117: grouped CV `0.7767`; live `20/20`; background FP `0/30` | freeze for v0.8.0 |
+| Dynamic gesture recording | Stable | H-106/H-117: duplicate gate plus completed positive/safety matrices | freeze for v0.8.0 |
+| Dynamic completion safety | Validated live-safety | H-115-H-117: positive dynamic `38/40`, partial FP `1/20`, background FP `0/30` | monitor new user classes |
+| Auto routing static/dynamic | Validated live | H-114-H-117: thresholds `0.80/0.90`; positive `58/60`; safety false commands `1/50` | freeze for v0.8.0 |
+| `SwipeLeft` dynamic recognition | Stable | H-116: post-gate `20/20`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-053: up can be `10/10`, down drops to `4-5/10` via return-up phase | validate return guard and add sequence verifier |
-| Negative examples / rejection layer | Added | H-041 synthetic negatives, H-053 `no_command` live target | run no-command live validation |
+| Negative examples / rejection layer | Validated live | H-117: background/no-command false commands `0/30` | monitor after new classes |
 | Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
 | Live rejection A/B testing | Added | H-043/H-044: Flet + MLflow track `static_rejection_method`, charts added | run 20-attempt live matrix |
-| MLflow experiment tracking | Stable | training and live runs in `GestureFlow` experiment | compare live runs after every test |
-| HTML MLOps dashboard | Stable | `docs/mlops_dashboard/index.html` | regenerate before demo |
+| MLflow experiment tracking | Stable | H-108 logs dataset/model SHA-256, git state, source groups and grouped validation | use clean committed runs for final charts |
+| HTML MLOps dashboard | Stable | H-096: `docs/mlops_dashboard/index.html` includes MLflow showcase charts for training, live A/B, safety and timeline | regenerate before demo |
+| Release home experience | Validated | H-110: camera-first UI, friendly runtime state, one primary action; `205` Flet tests and desktop visual check | run final live demo matrix |
+| MVP repository contract | Release ready | H-111-H-117: Flet-only runtime, allowlisted models, positive and safety matrices passed | verify final commit archive |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
-| Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | live A/B against `sequence_knn` |
+| Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
+| Dynamic GISLR landmark LSTM | Validated live | H-109/H-116/H-117: grouped validation `0.8571`; live `38/40`; partial/background FP `5%/0%` | freeze for v0.8.0 |
+| Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
+| Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
+| Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |
 | Intent gate `static/dynamic/none` | Added | H-070: MLP gate offline accuracy `0.9672`, macro F1 `0.9480` | live matrix: static, dynamic, random/no-command |
 | MediaPipe quality A/B | Added | H-085: timestamp, thresholds, smoothing, hand-lost grace logged to MLflow | compare profiles on live 20-attempt matrix |
 
@@ -42,7 +48,7 @@ Status legend:
 
 ## 2. Product Goal
 
-GestureFlow is a personalized gesture-control system for desktop workflows. A
+GestureBind is a personalized gesture-control system for desktop workflows. A
 user records their own gestures with a webcam, trains recognition models, binds
 recognized gestures to commands and then uses them in a live interface.
 
@@ -91,12 +97,18 @@ static poses. A natural swipe should be recognized after movement ends by
 | Recorded samples | `data/gestures/<label>/sample_*.npy` | raw landmark sequences | Stable |
 | Taxonomy | `configs/gesture_taxonomy.json` | static/dynamic/negative label scope | Stable |
 | Static model artifacts | `models/knn.pkl`, `classes.json` | static/quasi-static recognizer | Stable |
+| Static CNN benchmark artifacts | `models/experiments/static_landmark_cnn/*` | historical TensorFlow CNN over `30 x 21 x 3`; not production candidate | Parked |
+| Static image ExtraTrees variant | `models/experiments/static_landmark_image_extra_trees/*` | ExtraTrees over `static_landmark_image`, selectable from UI | Added |
+| Static CV benchmark reports | `docs/experiments/static_cv_benchmark.md/json` | 5-fold comparison of ExtraTrees, stacking, CNN and static feature modes | Added |
+| Static rejection-focused reports | `docs/experiments/static_rejection_benchmark_*_extratrees.md/json` | runtime-style positive recall and negative false positive benchmark | Added |
 | Static rejection metadata | `models/gesture_rejection.json` | negative labels, class prototypes, reject thresholds | Added |
 | Static rejection verifiers | `models/static_rejection_verifiers.pkl` | one-vs-rest, one-class, isolation, LOF, metric, MLP verifiers | Added |
-| Dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | dynamic recognizer | Stable |
+| Legacy dynamic model artifacts | `models/dynamic_knn.pkl`, `dynamic_classes.json` | old dynamic recognizer contract | Stable |
 | Dynamic sequence MLP artifacts | `models/dynamic_sequence_mlp.*` | neural baseline over 36-frame dynamic sequences | Added |
+| Dynamic landmark LSTM artifacts | `models/dynamic_landmark_lstm_backbone.*` | production dynamic profile over `dynamic_landmark_image`, `72 x 22 x 3` | Added |
 | Dynamic sequence ensemble artifacts | `models/dynamic_sequence_ensemble.*` | soft-voting MultiRocket/SProcket/Shapelet/PhaseHMM dynamic recognizer | Added |
 | Dynamic prototype verifier | `models/dynamic_prototypes.json` | open-set sequence verifier for dynamic gestures | Added |
+| Dynamic landmark LSTM verifier | `models/dynamic_landmark_lstm_backbone_prototypes.json` | open-set verifier for production landmark-LSTM profile | Added |
 | Dynamic sequence MLP verifier | `models/dynamic_sequence_mlp_prototypes.json` | open-set verifier for the sequence MLP profile | Added |
 | Intent gate model | `models/intent_gate_mlp.pkl` | first-stage `static/dynamic/none` ML router | Added |
 | Negative synthetic samples | `docs/experiments/negative_sampling_manifest.json` | reproducible generated negative set | Added |
@@ -112,16 +124,29 @@ static poses. A natural swipe should be recognized after movement ends by
 
 ### Static / Quasi-Static
 
-Static gestures are represented by window-level pose statistics. The model
-should be conservative: a static gesture is confirmed over multiple frames to
-avoid accidental command execution.
+Static gestures are represented by window-level pose geometry. The production
+path uses GISLR-style handcrafted hand features because the user dataset is
+small and personalized. The model should be conservative: a static gesture is
+confirmed over multiple frames to avoid accidental command execution.
 
 Current properties:
 
 - uses MediaPipe hand landmarks;
+- records `21 * xyz = 63` features per hand for new static samples;
+- trains production static model with `static_craft_full_stats`: raw
+  `mean/std/min/max`, all `210` pairwise hand distances, `15` finger angles
+  and time aggregates;
+- production classifier is `ExtraTreesClassifier` with balanced classes and
+  optional Optuna tuning;
+- parks `static_landmark_cnn` as historical benchmark evidence after H-092/H-094;
+- keeps `static_landmark_image_extra_trees` as a UI-selectable A/B variant
+  after H-092/H-093;
+- validates static model changes through H-092-style stratified
+  cross-validation instead of relying on train accuracy;
 - confirms via dwell/anti-bounce logic;
 - trains only on `static,quasi_static,negative` taxonomy scope;
-- uses `expect_dim=42` so static inference is pose-based;
+- uses `expect_dim=63`; legacy `42`-dim `xy` samples are converted with
+  `z = 0`;
 - can reject unsafe predictions via negative class probability, top1/top2
   margin and distance-to-prototype;
 - can switch live rejection strategy in Flet:
@@ -129,6 +154,8 @@ Current properties:
   `confidence_threshold`, `one_class_svm`, `isolation_forest`,
   `local_outlier_factor`, `metric_nca_centroid`, `mlp_negative_classes`;
 - participates in auto routing only when dynamic route is not active.
+- can switch production vs vector-feature benchmark variants from the Flet
+  model-variant dropdown.
 
 ### MediaPipe Quality Layer
 
@@ -142,10 +169,9 @@ black box. The live pipeline now logs:
 - `z/world landmarks` availability and depth ranges;
 - hand bbox size, wrist step, hand detected rate and hand-lost streak.
 
-The current 3D data is diagnostic only: existing training samples are still
-mostly 2D landmarks plus global motion. A future `dynamic_sequence_world_72`
-experiment should be trained only after new samples are recorded with
-image-space `z` or world landmarks.
+For newly recorded samples, image-space `z` is now part of the static and
+dynamic feature contract. World landmarks remain diagnostic/future work; they
+should become a separate experiment only after enough new samples are recorded.
 
 ### Intent Gate
 
@@ -189,7 +215,21 @@ Runtime policy:
 
 ### Dynamic
 
-Dynamic gestures use trajectory-level features and a motion-first layer.
+Dynamic gestures use trajectory-level features, a motion-first layer and a
+GISLR-style temporal landmark representation for the production neural model.
+
+Current production dynamic profile:
+
+- `dynamic_landmark_lstm_backbone`;
+- feature mode: `dynamic_landmark_image`;
+- input contract: `72 x 22 x 3` = `72` frames, `21` hand landmarks + global
+  wrist point, `x/y/z` channels;
+- per-frame backbone MLP -> LSTM -> `final/mean/max` temporal pooling head;
+- artifacts use the `models/dynamic_landmark_lstm_backbone.*` prefix;
+- model-specific rejection metadata contains automatically trained completion
+  profiles for every positive user class;
+- `sequence_mlp`, Rocket/MultiRocket/SProcket/Shapelet/PhaseHMM and
+  `sequence_ensemble` remain selectable A/B baselines.
 
 Key signals:
 
@@ -202,18 +242,42 @@ Key signals:
 | `dynamic_motion_scale` | normalizes movement magnitude |
 | `dynamic_segment_frames` | captures gesture duration |
 | `dynamic_end_reason` | shows whether natural swipe ended by movement or hand loss |
+| raw relative displacement/path/excursion | verifies completion before amplitude normalization |
+| signed axis paths and shape change | separates full target motion from own and cross-class prefixes |
+
+Completion verification is class-conditional but label-agnostic: training uses
+the actual classes in the current dataset, not hard-coded swipe aliases. Full
+target recordings are positives; own prefixes, prefixes/full samples of other
+positive classes and available negative classes are hard negatives. Source
+groups keep descendants of one recording in the same fold.
+
+H-115 replay evidence:
+
+| Check | Result |
+|---|---:|
+| Full candidate recordings accepted | `60/60` |
+| Prefixes accepted by LSTM alone | `214/240` |
+| Prefixes accepted after completion gate | `6/240` |
+| Full production state-machine replay | `59/60` |
+| Wrong class in state-machine replay | `0/60` |
+| Prefix command in state-machine replay | `5/240 = 0.0208` |
+
+This is a regression replay over source recordings, not an independent webcam
+test. H-116 supplies the fresh positive webcam matrix; the remaining release
+evidence is the partial/look-alike and no-command safety matrix.
 
 Latest evidence:
 
 | Expected | Latest score | Routing risk | Failure mode | Evidence |
 |---|---:|---:|---:|---:|
-| `swipe_up` | `10/10` in latest baseline run | `0%` in prior route tests | current risk: variant-sensitive false left | live screenshots, H-053 |
-| `swipe_down` | `4-5/10` latest runs | `0%` in prior route tests | wrong mostly `swipe_up` after return phase | live screenshots, H-053 |
-| `swipe_left` | `10/10` latest runs | `0%` in prior route tests | `0%` in latest positive runs | live screenshots, H-053 |
+| `SwipeLeft` | `20/20` | `0%` | no miss in post-gate run | H-116 |
+| `diagonal` | `9/10` | `0%` | one miss; execution is more complex | H-116 |
+| `zoom` | `9/10` | `0%` | one miss; in-place shape motion is harder to perform | H-116 |
 
-Interpretation: routing is now good, but dynamic inference still needs two
-guards: event policy for return-motion and a model-level verifier so KNN does
-not force every ambiguous movement into the nearest known class.
+Interpretation: routing, prototype rejection and completion verification now
+form separate guards. Remaining release uncertainty is live behavior on
+unfinished/background motions, not whether the offline LSTM can classify its
+recorded full sequences.
 
 ## 6. Online Inference Design
 
@@ -222,10 +286,11 @@ stateDiagram-v2
     [*] --> Idle
     Idle --> Candidate: hand detected + motion starts
     Candidate --> Active: movement scale passes threshold
-    Active --> Completed: velocity_drop
-    Active --> Completed: hand_lost after valid motion
-    Active --> Completed: max_frames fallback
-    Completed --> Routed: build dynamic features
+    Active --> Tentative: velocity_drop / still / max_frames
+    Tentative --> AwaitingContinuation: completion gate rejects
+    AwaitingContinuation --> Active: wrist or hand-shape motion resumes
+    AwaitingContinuation --> Idle: continuation timeout / hand lost
+    Tentative --> Routed: LSTM + completion gate accept
     Routed --> Cooldown: emit live prediction
     Cooldown --> Idle
 ```
@@ -235,6 +300,9 @@ Router policy:
 | Case | Decision |
 |---|---|
 | dynamic segment completed and accepted | route=`dynamic` |
+| LSTM candidate fails completion profile | no command; wait for continuation |
+| continuation resumes before timeout | append to the same raw gesture segment |
+| continuation does not resume | clear raw intent without a command |
 | dynamic and model/motion agree | decision=`motion_and_model_agree` |
 | dynamic motion valid but model weak | motion-first fallback can still emit |
 | no dynamic event and static label stable | route=`static` |
@@ -264,20 +332,25 @@ Training artifacts:
 |---|---|
 | `models/knn.pkl` | current static/quasi-static baseline |
 | `models/gesture_rejection.json` | static open-set/rejection metadata |
-| `models/dynamic_knn.pkl` | current dynamic baseline |
+| `models/dynamic_landmark_lstm_backbone.pkl` | current production dynamic landmark-LSTM model |
+| `models/dynamic_landmark_lstm_backbone_feature_mode.txt` | `dynamic_landmark_image` feature contract |
+| `models/dynamic_landmark_lstm_backbone_feature_dim.txt` | dynamic landmark-image inference dimension contract |
+| `models/dynamic_landmark_lstm_backbone_rejection.json` | confidence, open-set and adaptive completion profiles |
+| `models/dynamic_knn.pkl` | legacy dynamic baseline |
 | `models/dynamic_svm.pkl` | candidate comparison |
 | `models/dynamic_extra_trees.pkl` | candidate comparison |
-| `models/dynamic_feature_mode.txt` | feature contract |
-| `models/dynamic_feature_dim.txt` | inference dimension contract |
-| `models/dynamic_classes.json` | class order contract |
+| `models/dynamic_sequence_mlp.pkl` | previous production neural baseline |
+| `models/dynamic_classes.json` | legacy class order contract |
 
 Current model choice:
 
-- KNN remains the live baseline because it works best with small personalized
-  samples and motion-first routing.
-- SVM/ExtraTrees were kept as candidates, but live evidence was worse.
-- Next model step should be data/feature improvement before adding LSTM or
-  Transformers.
+- Dynamic production profile is `dynamic_landmark_lstm_backbone` after H-095.
+- It keeps the lightweight runtime contract but uses the GISLR-like
+  `time x points x xyz` representation instead of a single flattened
+  36-frame MLP input.
+- `sequence_mlp` remains available as the previous neural baseline for A/B.
+- Next model step is not another architecture change; it is recording fresh
+  dynamic classes, training this profile and comparing live/MLflow metrics.
 
 ## 8. Evaluation Metrics
 
@@ -310,6 +383,7 @@ Live metrics:
 | `live_latency_avg_s`, `p50`, `p95` | interaction delay |
 | `live_end_reason_*` | natural swipe completion diagnostics |
 | `live_decision_*` | router decision diagnostics |
+| `live_completion_rejected_count/rate` | unfinished candidate suppression |
 
 Acceptance targets for contest demo:
 
@@ -349,6 +423,7 @@ MLflow run types:
 | Static verifier training | `static-rejection-verifiers` | trained second-stage reject methods and method readiness |
 | Live evaluation | `live-<expected>-<mode>-<profile>-<static_rejection_method>` | live metrics, route counts, raw attempts artifact |
 | External negative datasets | `external-negative-<variant>-<scope>` | public-dataset negative benchmark, artifacts, best reject method |
+| Completion benchmark | `dynamic-completion-release-benchmark` | full/prefix candidate metrics and production state-machine replay |
 
 Live MLflow runs also store an artifact bundle under `live_evaluation/`:
 
@@ -415,7 +490,9 @@ summarize and annotate; execution stays behind deterministic policies.
 | Auto routing | Validated | fresh static hijack `0%` |
 | Vertical direction quality | In Progress | `swipe_down` still confused with return-up motion |
 | Dynamic sequence verifier | Added | `prototype_distance` selected as cheaper offline-tied best |
-| Dynamic neural sequence baseline | Added | `sequence_mlp` trained/logged as next model after KNN |
+| Dynamic neural sequence baseline | Added | `sequence_mlp` trained/logged as previous neural baseline |
+| Dynamic landmark LSTM production profile | Added | H-095: GISLR-style `dynamic_landmark_image` + LSTM backbone |
+| Adaptive dynamic completion gate | Validated live-safety | H-115-H-117: replay prefix FP `5/240`, live partial FP `1/20`, background FP `0/30` |
 | Intent gate `static/dynamic/none` | Added | first-stage MLP router trained/logged with external negatives |
 | User/market feedback | Planned | needed for product thinking criterion |
 
@@ -425,10 +502,13 @@ summarize and annotate; execution stays behind deterministic policies.
 |---|---|---|
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
 | Vertical direction confusion | `swipe_up/down` unstable | return guard, then sequence verifier with reject threshold |
-| No static/negative live validation yet | false triggers may be hidden | run 20 no-gesture/background attempts and check static rejection metrics |
+| Personalized safety evidence | may not generalize to unseen users/environments | present as controlled protocol and collect post-release feedback |
+| Completion replay uses source recordings | optimistic by itself | supplement with H-116/H-117 controlled webcam evidence |
 | Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
+| Validation leakage from augmentations | inflated offline score | H-105 source-grouped folds and train-only normalization |
+| Interrupted model publication | model/sidecar mismatch | H-107 rollback transaction with model-last activation |
 
 ## 13. Next Engineering Steps
 
@@ -436,29 +516,32 @@ summarize and annotate; execution stays behind deterministic policies.
 
 | Task | Status | Owner |
 |---|---|---|
-| Test real static gestures after rejection policy | Next | user + ML pipeline |
-| Run `no_command` live evaluation and log to MLflow | Next | user + ML pipeline |
+| Test real static gestures after rejection policy | Done: `20/20` | H-116 |
+| Run `no_command` live evaluation and log to MLflow | Done: `0/30` FP | H-117 |
 | Live-test intent gate against static/dynamic/none scenarios | Next | user + ML pipeline |
+| Record/train 5 dynamic classes with `dynamic_landmark_lstm_backbone` | Next | user + ML pipeline |
 | Download/place a small IPN subset under `data/raw/ipn_hand` | Next | data pipeline |
 | Add IPN converter and dynamic intent detector experiment | Next | ML pipeline |
 | Add generic sequence/prototype dynamic classifier | Done | H-054 |
 | Analyze `swipe_up/down` correct vs wrong trajectory features | In Progress | ML pipeline |
 | Regenerate HTML MLOps dashboard after fresh tests | Next | MLOps |
+| Run final positive live matrix on current classes | Done: `58/60` | H-116 |
+| Run partial/look-alike dynamic completion matrix | Done: `1/20` FP | H-117 |
 
 ### Next
 
 | Task | Status | Owner |
 |---|---|---|
 | Add direction-gate report for live attempts | Planned | ML pipeline |
+| Live A/B `dynamic_landmark_lstm_backbone` vs `sequence_mlp` | Next | ML research |
 | Add UI link/instruction for MLflow and dashboard | Planned | product/dev |
-| Add model card for current dynamic KNN | Planned | ML pipeline |
+| Add model card for current landmark-LSTM dynamic profile | Planned | ML pipeline |
 
 ### Later
 
 | Task | Status | Owner |
 |---|---|---|
-| Live A/B `sequence_knn` vs `sequence_mlp` | Next | ML research |
-| Try GRU/LSTM only after `sequence_mlp` live result | Backlog | ML research |
+| Live A/B `sequence_ensemble` vs landmark-LSTM | Backlog | ML research |
 | Add user study script and feedback table | Backlog | product |
 | Package reproducible demo mode | Backlog | engineering |
 
@@ -489,3 +572,17 @@ Change log:
 | `2026-06-29` | Added dynamic prototype verifier and offline comparison | H-054 |
 | `2026-06-29` | Added `sequence_mlp` neural dynamic baseline | H-068 |
 | `2026-07-02` | Added `sequence_ensemble` dynamic model and lowercase-safe prototype evaluation | H-086 |
+| `2026-07-05` | Added GISLR-style dynamic landmark LSTM production profile | H-095 |
+| `2026-07-10` | Added grouped validation and train-only recurrent normalization | H-105 |
+| `2026-07-10` | Added label-safe routing and dynamic duplicate rejection | H-106 |
+| `2026-07-10` | Added low-latency runtime and rollback-safe model activation | H-107 |
+| `2026-07-10` | Added reproducible MLflow provenance and production latency report | H-108 |
+| `2026-07-10` | Retrained production dynamic LSTM with grouped Optuna and refreshed verifier | H-109 |
+| `2026-07-10` | Rebuilt the home page as a camera-first release experience | H-110 |
+| `2026-07-10` | Enforced the Flet-only MVP repository and tracked release contract | H-111 |
+| `2026-07-10` | Removed a developer-specific path from binding-agent golden CI | H-112 |
+| `2026-07-10` | Set static release threshold to `0.80` and recorded controlled live results | H-113 |
+| `2026-07-10` | Validated static `10/10` and dynamic `28/30` at release thresholds | H-114 |
+| `2026-07-10` | Added adaptive per-class dynamic completion verification | H-115 |
+| `2026-07-10` | Validated the post-gate controlled positive live matrix | H-116 |
+| `2026-07-10` | Passed the final partial and no-command safety matrix | H-117 |

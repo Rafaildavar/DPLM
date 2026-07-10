@@ -161,11 +161,24 @@ def _direction_confidence(
 
 def _resolve_label(target: str, labels: Iterable[str]) -> str:
     clean_target = str(target or "").strip().lower()
+    compact_target = _compact_label(clean_target)
     for label in labels:
         raw = str(label or "").strip()
         if raw.lower() == clean_target:
             return raw
+    compact_matches = [
+        raw
+        for label in labels
+        if (raw := str(label or "").strip())
+        and _compact_label(raw) == compact_target
+    ]
+    if len(compact_matches) == 1:
+        return compact_matches[0]
     return ""
+
+
+def _compact_label(value: str) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
 
 
 def _straightness(displacement: float, path_length: float) -> float:

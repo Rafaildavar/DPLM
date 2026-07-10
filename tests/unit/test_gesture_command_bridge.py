@@ -48,6 +48,37 @@ def test_resolve_ok(memory_session):
     assert r[1].name == "open browser"
 
 
+def test_resolve_preserves_unique_user_label_spelling(memory_session):
+    gesture = Gesture(label="SwipeLeft", samples_path=None, model_class_id=0)
+    memory_session.add(gesture)
+    memory_session.commit()
+    command = Command(
+        name="previous desktop",
+        platform="all",
+        gesture_id=gesture.id,
+    )
+    memory_session.add(command)
+    memory_session.commit()
+
+    resolved = resolve_command_for_gesture(memory_session, "swipe_left")
+
+    assert resolved is not None
+    assert resolved[0].label == "SwipeLeft"
+    assert resolved[1].name == "previous desktop"
+
+
+def test_resolve_rejects_ambiguous_normalized_labels(memory_session):
+    memory_session.add_all(
+        [
+            Gesture(label="SwipeLeft", samples_path=None, model_class_id=0),
+            Gesture(label="swipe-left", samples_path=None, model_class_id=1),
+        ]
+    )
+    memory_session.commit()
+
+    assert resolve_command_for_gesture(memory_session, "swipe_left") is None
+
+
 def test_execute_uses_executor(memory_session, monkeypatch):
     g = Gesture(label="pinch", samples_path=None, model_class_id=1)
     memory_session.add(g)

@@ -1,4 +1,4 @@
-"""Compare gesture feature modes and classifiers for JMLC.
+"""Compare gesture feature modes and classifiers for GestureBind.
 
 This script is deliberately CLI-first: it can run in CI and does not require a
 camera or Flet. The report answers whether a universal model is enough, or
@@ -26,7 +26,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -36,9 +35,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from cv.gesture_dataset_files import gesture_sample_paths, sample_group_key  # noqa: E402
+from cv.gesture_validation import make_grouped_splitter  # noqa: E402
 from cv.gesture_features import (  # noqa: E402
+    FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+    FEATURE_DYNAMIC_CRAFT_STATS,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
+    FEATURE_STATIC_CRAFT_FULL_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     MOTION_DYNAMIC_LIKE,
@@ -51,6 +56,12 @@ from cv.gesture_features import (  # noqa: E402
     class_motion_profiles,
     infer_target_dim,
     load_gesture_sequences,
+    sequence_to_matrix,
+)
+from cv.train_classifier import (  # noqa: E402
+    balance_training_set,
+    build_classifier,
+    _gislr_augmented_sample_paths,
 )
 
 
@@ -65,6 +76,9 @@ class DatasetInfo:
     cv_folds: int
     motion_threshold: float
     motion_profiles: list[ClassMotionProfile]
+    include_augmented: bool = False
+    group_count: int = 0
+    grouped_cv: bool = True
 
 
 @dataclass(frozen=True)
@@ -186,8 +200,37 @@ def recommend_threshold(
     )
 
 
-def build_estimators(min_class_count: int, random_state: int) -> dict[str, Any]:
+def _force_serial_jobs(estimator: Any) -> Any:
+    if not hasattr(estimator, "get_params") or not hasattr(estimator, "set_params"):
+        return estimator
+    params = estimator.get_params(deep=True)
+    serial_params = {
+        name: 1
+        for name in params
+        if name == "n_jobs" or name.endswith("__n_jobs")
+    }
+    if serial_params:
+        estimator.set_params(**serial_params)
+    return estimator
+
+
+def build_estimators(
+    min_class_count: int,
+    random_state: int,
+    *,
+    static_cnn_max_epochs: int = 30,
+    static_cnn_patience: int = 6,
+    static_cnn_batch_size: int = 16,
+) -> dict[str, Any]:
     knn_neighbors = max(1, min(5, int(min_class_count) - 1))
+    stacking_cv = max(2, min(3, max(2, int(min_class_count) - 1)))
+    static_stacking = _force_serial_jobs(
+        build_classifier(
+            "static_stacking",
+            random_state=random_state,
+            static_stacking_cv_folds=stacking_cv,
+        )
+    )
     return {
         "knn": KNeighborsClassifier(
             n_neighbors=knn_neighbors,
@@ -214,6 +257,14 @@ def build_estimators(min_class_count: int, random_state: int) -> dict[str, Any]:
             n_estimators=250,
             random_state=random_state,
             class_weight="balanced",
+        ),
+        "static_stacking": static_stacking,
+        "static_landmark_cnn": build_classifier(
+            "static_landmark_cnn",
+            random_state=random_state,
+            static_cnn_max_epochs=max(1, int(static_cnn_max_epochs)),
+            static_cnn_patience=max(1, int(static_cnn_patience)),
+            static_cnn_batch_size=max(1, int(static_cnn_batch_size)),
         ),
         "logreg": make_pipeline(
             StandardScaler(),
@@ -292,18 +343,30 @@ def evaluate_model(
     estimator: Any,
     model_name: str,
     feature_mode: str,
-    cv: StratifiedKFold,
+    cv: Any,
+    groups: np.ndarray,
     labels: list[str],
     motion_type_by_label: dict[str, str],
+    random_state: int = 42,
 ) -> ModelResult:
     y_true_parts: list[np.ndarray] = []
     y_pred_parts: list[np.ndarray] = []
     confidence_parts: list[np.ndarray] = []
     latency_values: list[float] = []
 
-    for train_idx, test_idx in cv.split(X, y):
+    for fold_idx, (train_idx, test_idx) in enumerate(
+        cv.split(X, y, groups=groups)
+    ):
         fitted = clone(estimator)
-        fitted.fit(X[train_idx], y[train_idx])
+        X_fit, y_fit, _balance_metadata = balance_training_set(
+            X[train_idx],
+            y[train_idx],
+            labels,
+            model_type=model_name,
+            strategy="auto",
+            random_state=int(random_state) + int(fold_idx),
+        )
+        fitted.fit(X_fit, y_fit)
 
         start = time.perf_counter()
         pred = fitted.predict(X[test_idx])
@@ -353,6 +416,44 @@ def _select_records(
     counts = class_counts(materialized)
     allowed = {label for label, count in counts.items() if count >= min_samples_per_class}
     return [record for record in materialized if record.label in allowed]
+
+
+def _load_records_for_comparison(
+    data_root: Path,
+    *,
+    include_augmented: bool,
+    include_labels: Iterable[str] | None,
+    lowercase_labels: bool,
+) -> list[GestureSequence]:
+    raw_include = {
+        str(label).strip()
+        for label in (include_labels or [])
+        if str(label).strip()
+    }
+    canonical_include = {
+        label.lower() if lowercase_labels else label for label in raw_include
+    }
+    if not include_augmented and not raw_include and not lowercase_labels:
+        return load_gesture_sequences(data_root)
+
+    records: list[GestureSequence] = []
+    if not data_root.exists():
+        return records
+    for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
+        raw_label = label_dir.name
+        label = raw_label.lower() if lowercase_labels else raw_label
+        if canonical_include and label not in canonical_include and raw_label not in raw_include:
+            continue
+        sample_paths = gesture_sample_paths(label_dir)
+        if include_augmented:
+            sample_paths = [*sample_paths, *_gislr_augmented_sample_paths(label_dir)]
+        for sample_path in sample_paths:
+            try:
+                sequence = sequence_to_matrix(np.load(sample_path))
+            except Exception:
+                continue
+            records.append(GestureSequence(label=label, path=sample_path, sequence=sequence))
+    return records
 
 
 def _best_by_group(
@@ -429,8 +530,19 @@ def compare_models(
     max_folds: int = 5,
     random_state: int = 42,
     motion_threshold: float = 0.015,
+    include_augmented: bool = False,
+    include_labels: Iterable[str] | None = None,
+    lowercase_labels: bool = False,
+    static_cnn_max_epochs: int = 30,
+    static_cnn_patience: int = 6,
+    static_cnn_batch_size: int = 16,
 ) -> ComparisonReport:
-    records = load_gesture_sequences(data_root)
+    records = _load_records_for_comparison(
+        data_root,
+        include_augmented=include_augmented,
+        include_labels=include_labels,
+        lowercase_labels=lowercase_labels,
+    )
     selected_records = _select_records(
         records,
         min_samples_per_class=min_samples_per_class,
@@ -443,19 +555,32 @@ def compare_models(
     if min_class_count < 2:
         raise RuntimeError("at least two samples per active class are required")
 
-    folds = max(2, min(int(max_folds), int(min_class_count)))
+    group_values = np.asarray(
+        [sample_group_key(record.path) for record in selected_records],
+        dtype=object,
+    )
     actual_target_dim = int(target_dim or infer_target_dim(record.sequence for record in selected_records))
     modes = feature_modes or [
         FEATURE_STATIC_MEAN,
         FEATURE_STATIC_STATS,
+        FEATURE_STATIC_CRAFT_FULL_STATS,
+        FEATURE_STATIC_LANDMARK_IMAGE,
         FEATURE_DYNAMIC_STATS,
+        FEATURE_DYNAMIC_CRAFT_STATS,
+        FEATURE_DYNAMIC_CRAFT_FULL_STATS,
         FEATURE_HYBRID_STATS,
     ]
     unknown_modes = [mode for mode in modes if mode not in SUPPORTED_FEATURE_MODES]
     if unknown_modes:
         raise ValueError(f"unsupported feature modes: {', '.join(unknown_modes)}")
 
-    estimators = build_estimators(min_class_count=min_class_count, random_state=random_state)
+    estimators = build_estimators(
+        min_class_count=min_class_count,
+        random_state=random_state,
+        static_cnn_max_epochs=static_cnn_max_epochs,
+        static_cnn_patience=static_cnn_patience,
+        static_cnn_batch_size=static_cnn_batch_size,
+    )
     names = model_names or ["knn", "svm", "rf", "extra_trees", "logreg"]
     unknown_models = [name for name in names if name not in estimators]
     if unknown_models:
@@ -467,8 +592,8 @@ def compare_models(
     )
     motion_type_by_label = {profile.label: profile.suggested_type for profile in profiles}
 
-    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=random_state)
     results: list[ModelResult] = []
+    skipped_pairs: list[str] = []
     labels_for_report: list[str] = []
     for mode in modes:
         X, y, labels = build_feature_matrix(
@@ -476,8 +601,17 @@ def compare_models(
             mode=mode,
             target_dim=actual_target_dim,
         )
+        cv, folds = make_grouped_splitter(
+            y,
+            group_values,
+            max_folds=max_folds,
+            random_state=random_state,
+        )
         labels_for_report = labels
         for name in names:
+            if name == "static_landmark_cnn" and mode != FEATURE_STATIC_LANDMARK_IMAGE:
+                skipped_pairs.append(f"{mode}+{name}")
+                continue
             results.append(
                 evaluate_model(
                     X=X,
@@ -486,16 +620,30 @@ def compare_models(
                     model_name=name,
                     feature_mode=mode,
                     cv=cv,
+                    groups=group_values,
                     labels=labels,
                     motion_type_by_label=motion_type_by_label,
+                    random_state=random_state,
                 )
             )
+    if not results:
+        raise RuntimeError(
+            "no compatible feature/model pairs were selected for comparison"
+        )
 
     raw_dims = sorted({record.feature_dim for record in selected_records})
     notes = [
         f"Активные классы в сравнении: {', '.join(labels_for_report)}",
         f"CV folds: {folds}; минимальный размер класса: {min_class_count}",
+        f"Grouped CV: {len(set(group_values.tolist()))} source groups; "
+        "originals and their augmentations stay in the same fold",
+        "Augmented samples: " + ("included" if include_augmented else "excluded"),
     ]
+    if skipped_pairs:
+        notes.append(
+            "Пропущены несовместимые пары feature/model: "
+            + ", ".join(f"`{pair}`" for pair in skipped_pairs)
+        )
     if len(raw_dims) > 1:
         notes.append(
             "Обнаружены разные исходные размерности признаков; benchmark выравнивает "
@@ -514,6 +662,9 @@ def compare_models(
         cv_folds=folds,
         motion_threshold=float(motion_threshold),
         motion_profiles=profiles,
+        include_augmented=bool(include_augmented),
+        group_count=int(len(set(group_values.tolist()))),
+        grouped_cv=True,
     )
     best_overall = sorted(
         results,
@@ -575,7 +726,12 @@ def _motion_table(profiles: list[ClassMotionProfile]) -> str:
 
 def _results_table(results: list[ModelResult]) -> str:
     rows: list[str] = []
-    for result in results:
+    ranked = sorted(
+        results,
+        key=lambda item: (item.macro_f1, item.accuracy, -item.latency_ms_per_sample),
+        reverse=True,
+    )
+    for result in ranked:
         rows.append(
             "| "
             + " | ".join(
@@ -626,7 +782,7 @@ def build_markdown_report(report: ComparisonReport) -> str:
     result_rows = _results_table(report.results)
     per_class_rows = _per_class_table(best)
 
-    return f"""# JMLC Model Comparison
+    return f"""# GestureBind Cross-Validation Model Comparison
 
 ## Краткий вывод
 
@@ -645,7 +801,10 @@ def build_markdown_report(report: ComparisonReport) -> str:
 | Исходные размерности | {", ".join(str(dim) for dim in report.dataset.raw_feature_dims)} |
 | Целевая размерность | {report.dataset.target_dim} |
 | CV folds | {report.dataset.cv_folds} |
+| Source groups | {report.dataset.group_count} |
+| Grouped CV | {"yes" if report.dataset.grouped_cv else "no"} |
 | Motion threshold | {report.dataset.motion_threshold:.4f} |
+| Augmented samples | {"included" if report.dataset.include_augmented else "excluded"} |
 
 ## Motion Profile
 
@@ -708,11 +867,14 @@ def _parse_csv(value: str) -> list[str]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compare DPLM gesture recognition models")
+    parser = argparse.ArgumentParser(description="Compare GestureBind gesture recognition models")
     parser.add_argument("--data-root", default="data/gestures", type=Path)
     parser.add_argument(
         "--feature-modes",
-        default="static_mean,static_stats,dynamic_stats,hybrid_stats",
+        default=(
+            "static_mean,static_stats,static_craft_full_stats,"
+            "dynamic_stats,dynamic_craft_stats,dynamic_craft_full_stats,hybrid_stats"
+        ),
         help="Comma-separated feature modes",
     )
     parser.add_argument(
@@ -725,6 +887,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-folds", type=int, default=5)
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--motion-threshold", type=float, default=0.015)
+    parser.add_argument(
+        "--include-augmented",
+        action="store_true",
+        help="Include GISLR-marked aug_sample_* files with gislr_landmark_v1 metadata.",
+    )
+    parser.add_argument(
+        "--include-label",
+        action="append",
+        default=[],
+        help="Restrict comparison to a label. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--lowercase-labels",
+        action="store_true",
+        help="Normalize labels to lowercase before filtering and CV.",
+    )
+    parser.add_argument(
+        "--static-cnn-max-epochs",
+        type=int,
+        default=30,
+        help="Maximum epochs for static_landmark_cnn during CV.",
+    )
+    parser.add_argument(
+        "--static-cnn-patience",
+        type=int,
+        default=6,
+        help="Early-stopping patience for static_landmark_cnn during CV.",
+    )
+    parser.add_argument(
+        "--static-cnn-batch-size",
+        type=int,
+        default=16,
+        help="Mini-batch size for static_landmark_cnn during CV.",
+    )
     parser.add_argument("--json-out", default="docs/experiments/model_comparison.json", type=Path)
     parser.add_argument("--markdown-out", default="docs/experiments/model_comparison.md", type=Path)
     return parser.parse_args()
@@ -741,6 +937,12 @@ def main() -> None:
         max_folds=args.max_folds,
         random_state=args.random_state,
         motion_threshold=args.motion_threshold,
+        include_augmented=args.include_augmented,
+        include_labels=args.include_label,
+        lowercase_labels=args.lowercase_labels,
+        static_cnn_max_epochs=args.static_cnn_max_epochs,
+        static_cnn_patience=args.static_cnn_patience,
+        static_cnn_batch_size=args.static_cnn_batch_size,
     )
 
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -755,4 +957,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

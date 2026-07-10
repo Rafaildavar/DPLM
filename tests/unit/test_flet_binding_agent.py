@@ -28,7 +28,12 @@ from app.services.binding_agents.tools import (
     resolve_gesture,
     validate_binding_contract,
 )
-from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
+from app.services.binding_agent import (
+    AgentStep,
+    BindingAgentMlflowLogger,
+    BindingAgentOrchestrator,
+    MistralBindingAgent,
+)
 from app.services.binding_agent import BindingAgentContext
 from app.services.binding_agents.research import (
     ResearchAgent,
@@ -49,8 +54,12 @@ GESTURES = [
 ]
 
 GESTURES_WITH_GUN = [*GESTURES, {"label": "gun"}]
+GESTURES_WITH_HAND = [*GESTURES, {"label": "hand"}]
+GESTURES_WITH_LIKE = [*GESTURES, {"label": "like"}]
+GESTURES_WITH_THUMBS_UP = [*GESTURES, {"label": "thumbs_up"}]
 GESTURES_WITH_SWIPE_LEFT = [*GESTURES, {"label": "swipe_left"}]
 GESTURES_WITH_SH3 = [*GESTURES, {"label": "sh3"}]
+GESTURES_WITH_ZOOM = [*GESTURES_WITH_HAND, {"label": "zoom"}]
 
 
 def test_binding_agents_are_importable_from_dedicated_package():
@@ -95,6 +104,8 @@ def test_binding_agent_tools_expose_stable_contracts():
     policy = validate_binding_contract(
         gesture.payload["gesture"],
         sequence.payload["action_spec"],
+        gesture_known=bool(gesture.payload["known"]),
+        requested_gesture=str(gesture.payload["gesture"]),
     )
 
     assert gesture.tool == "resolve_gesture"
@@ -114,21 +125,37 @@ def test_binding_agent_eval_cases_cover_core_scenarios():
     dataset = binding_agent_eval_dataset()
 
     assert len(dataset) == len(BINDING_AGENT_EVAL_CASES)
-    assert len(BINDING_AGENT_EVAL_CASES) >= 8
+    assert len(BINDING_AGENT_EVAL_CASES) >= 30
 
     for case in BINDING_AGENT_EVAL_CASES:
         draft = build_agent_binding_draft(
             case.prompt,
             list(case.gestures),
             current_gesture=case.current_gesture,
+            bindings=list(case.bindings),
         )
         assert draft["intent"] == case.expected_intent, case.case_id
         assert draft["intentBlock"] == case.expected_block, case.case_id
         assert draft["mode"] == case.expected_mode, case.case_id
         assert draft["canApply"] is case.expected_can_apply, case.case_id
         assert tuple(draft["missing"]) == case.expected_missing, case.case_id
+        assert draft["gestureLabel"] == case.expected_gesture, case.case_id
         if case.expected_action:
             assert draft["actionSpec"]["action"] == case.expected_action, case.case_id
+        for key, value in case.expected_action_spec.items():
+            assert draft["actionSpec"].get(key) == value, case.case_id
+        if case.expected_sequence_steps is not None:
+            assert len(draft["actionSpec"].get("steps") or []) == case.expected_sequence_steps
+        assert draft["requiresConfirmation"] is case.expected_requires_confirmation
+        assert str(draft["mutation"].get("operation") or "") == case.expected_mutation
+
+
+def test_binding_agent_eval_cases_do_not_depend_on_a_developer_home_path():
+    for case in BINDING_AGENT_EVAL_CASES:
+        assert "/Users/remi/" not in case.prompt, case.case_id
+        assert not str(case.expected_action_spec.get("path") or "").startswith(
+            "/Users/remi/"
+        ), case.case_id
 
 
 def test_binding_agent_builds_open_app_draft():
@@ -229,7 +256,7 @@ def test_binding_agent_redirects_unsupported_general_question():
     assert draft["mode"] == "answer"
     assert draft["intentBlock"] == "unsupported_general"
     assert draft["actionSpec"] == {}
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Ха-ха" in draft["agentReply"]
     assert draft["agentTrace"][-1]["agent"] == "Reviewer Agent"
     assert draft["agentTrace"][-1]["data"]["relevance"] == 1.0
@@ -241,8 +268,8 @@ def test_binding_agent_redirect_answer_varies_by_prompt():
 
     assert weather["intentBlock"] == "unsupported_general"
     assert currency["intentBlock"] == "unsupported_general"
-    assert "GestureFlow" in weather["agentReply"]
-    assert "GestureFlow" in currency["agentReply"]
+    assert "GestureBind" in weather["agentReply"]
+    assert "GestureBind" in currency["agentReply"]
     assert weather["agentReply"] != currency["agentReply"]
 
 
@@ -258,7 +285,7 @@ def test_binding_agent_scope_question_is_not_binding_with_selected_gesture():
     assert draft["mode"] == "answer"
     assert draft["intentBlock"] == "project_question"
     assert draft["gestureLabel"] == ""
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Ха-ха" in draft["agentReply"]
 
 
@@ -275,7 +302,7 @@ def test_binding_agent_blocks_instruction_override_prompt():
     assert draft["intentBlock"] == "guardrails"
     assert draft["intent"] == "guardrail_block"
     assert draft["actionSpec"] == {}
-    assert "GestureFlow" in draft["agentReply"]
+    assert "GestureBind" in draft["agentReply"]
     assert "Guardrails" in draft["agentReply"]
     assert draft["agentTrace"][0]["status"] == "blocked"
     assert draft["agentTrace"][0]["data"]["decision"] == "block"
@@ -308,25 +335,127 @@ def test_binding_agent_uses_dialog_memory_for_missing_gesture():
     gesture_step = next(
         item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
     )
-    assert gesture_step["data"]["source"] == "memory"
+    assert gesture_step["data"]["source"] == "session_memory"
 
 
-def test_binding_agent_uses_explicit_typed_gesture_from_prompt():
+def test_binding_agent_rejects_explicit_typed_gesture_missing_from_catalog():
     draft = build_agent_binding_draft(
         "жест cntrz привяжи к открытию safari",
         GESTURES,
     )
 
-    assert draft["ok"] is True
-    assert draft["missing"] == []
-    assert draft["gestureLabel"] == "cntrz"
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["missing"] == ["жест"]
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "cntrz"
     assert draft["actionSpec"] == {
         "action": "open_app",
         "platform": "macos",
         "app": "Safari",
     }
     assert "Gesture Agent" in {item["agent"] for item in draft["agentTrace"]}
-    assert draft["agentReply"].startswith("Локальный агент: понял")
+    assert "cntrz" in draft["agentReply"]
+    assert "не найден" in draft["agentReply"]
+
+
+def test_binding_agent_prompt_gesture_beats_selected_dropdown_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи zoom к повышение звука",
+        GESTURES_WITH_ZOOM,
+        current_gesture="hand",
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "zoom"
+    assert draft["actionSpec"] == {
+        "action": "volume_up",
+        "platform": "macos",
+    }
+    gesture_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
+    )
+    assert gesture_step["data"]["source"] == "exact_label"
+
+
+def test_binding_agent_typed_unknown_gesture_does_not_fallback_to_selected():
+    draft = build_agent_binding_draft(
+        "привяжи zoom к повышение звука",
+        GESTURES_WITH_HAND,
+        current_gesture="hand",
+        provider="local",
+    )
+
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "zoom"
+    assert draft["missing"] == ["жест"]
+    assert draft["actionSpec"] == {
+        "action": "volume_up",
+        "platform": "macos",
+    }
+    gesture_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Gesture Agent"
+    )
+    assert gesture_step["data"]["source"] == "typed_query"
+
+
+def test_binding_agent_rejects_palm_when_current_catalog_has_no_palm():
+    available = [
+        {"label": "2finger"},
+        {"label": "SwipeLeft"},
+        {"label": "diagonal"},
+        {"label": "gun"},
+        {"label": "hand"},
+        {"label": "like"},
+        {"label": "onefinger"},
+        {"label": "zoom"},
+    ]
+
+    draft = build_agent_binding_draft(
+        "привяжи palm к открытию Safari",
+        available,
+        provider="local",
+    )
+
+    assert draft["canApply"] is False
+    assert draft["gestureLabel"] == ""
+    assert draft["unknownGesture"] == "palm"
+    assert draft["missing"] == ["жест"]
+    assert draft["actionSpec"]["action"] == "open_app"
+
+
+def test_binding_agent_resolves_russian_like_alias_to_like_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи лайк к открытию телеграм",
+        GESTURES_WITH_LIKE,
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "like"
+    assert draft["missing"] == []
+    assert draft["actionSpec"] == {
+        "action": "open_app",
+        "platform": "macos",
+        "app": "Telegram",
+    }
+
+
+def test_binding_agent_resolves_like_alias_to_thumbs_up_gesture():
+    draft = build_agent_binding_draft(
+        "привяжи лайк к открытию телеграм",
+        GESTURES_WITH_THUMBS_UP,
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "thumbs_up"
+    assert draft["missing"] == []
+    assert draft["actionSpec"]["app"] == "Telegram"
 
 
 def test_binding_agent_does_not_treat_workday_goal_as_application():
@@ -346,12 +475,12 @@ def test_binding_agent_does_not_treat_workday_goal_as_application():
 
 def test_binding_agent_orchestrator_returns_multi_agent_trace():
     result = BindingAgentOrchestrator().run(
-        "жест cntrz привяжи к открытию safari",
+        "жест ctrlz привяжи к открытию safari",
         GESTURES,
     )
 
     assert result.ok is True
-    assert result.gesture_label == "cntrz"
+    assert result.gesture_label == "ctrlz"
     assert result.action_spec["action"] == "open_app"
     assert [step.agent for step in result.steps] == [
         "Guardrails Agent",
@@ -376,15 +505,15 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         def read(self):
             content = json.dumps(
                 {
-                    "gestureLabel": "cntrz",
-                    "commandName": "cntrz: Открыть Safari",
+                    "gestureLabel": "ctrlz",
+                    "commandName": "ctrlz: Открыть Safari",
                     "mode": "single",
                     "actionSpec": {
                         "action": "open_app",
                         "platform": "macos",
                         "app": "Safari",
                     },
-                    "summary": ["Жест: cntrz", "Действие: Открыть Safari"],
+                    "summary": ["Жест: ctrlz", "Действие: Открыть Safari"],
                     "agentReply": "Mistral: предложение готово.",
                 },
                 ensure_ascii=False,
@@ -403,9 +532,9 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         assert payload["temperature"] == 0.25
         assert "Локальный перефраз интента для LLM" in payload["messages"][1]["content"]
         assert "intent=create_binding" in payload["messages"][1]["content"]
-        assert "жест cntrz" in payload["messages"][1]["content"]
+        assert "жест ctrlz" in payload["messages"][1]["content"]
         assert request.get_header("Authorization") == "Bearer test-key"
-        assert timeout == 25.0
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -414,13 +543,13 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         urlopen=fake_urlopen,
     )
     result = BindingAgentOrchestrator(mistral_agent=agent).run(
-        "жест cntrz привяжи к открытию safari",
+        "жест ctrlz привяжи к открытию safari",
         GESTURES,
         provider="mistral",
     )
 
     assert result.ok is True
-    assert result.gesture_label == "cntrz"
+    assert result.gesture_label == "ctrlz"
     assert result.action_spec == {
         "action": "open_app",
         "platform": "macos",
@@ -431,6 +560,7 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
         "Guardrails Agent",
         "Intent Agent",
         "Mistral Agent",
+        "Semantic Verifier",
         "Memory Agent",
         "Policy Agent",
         "Validation Agent",
@@ -439,6 +569,48 @@ def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
     ]
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["durationMs"] >= 0
+
+
+def test_binding_agent_rejects_gesture_invented_by_mistral(monkeypatch):
+    monkeypatch.setenv("DPLM_BINDING_AGENT_LOCAL_FIRST", "0")
+
+    class InventingModel:
+        model = "inventing-model"
+
+        def run(self, _context, *, intent, block):
+            return (
+                AgentStep(
+                    "Mistral Agent",
+                    "ok",
+                    "Model draft received.",
+                    {"intent": intent, "block": block},
+                ),
+                {
+                    "gestureLabel": "palm",
+                    "commandName": "palm: Открыть Safari",
+                    "mode": "single",
+                    "actionSpec": {
+                        "action": "open_app",
+                        "platform": "macos",
+                        "app": "Safari",
+                    },
+                    "agentReply": "Готово к сохранению.",
+                },
+            )
+
+    result = BindingAgentOrchestrator(mistral_agent=InventingModel()).run(
+        "привяжи palm к открытию Safari",
+        [{"label": "hand"}, {"label": "zoom"}],
+        provider="mistral",
+    )
+    draft = result.to_legacy_draft()
+
+    assert result.can_apply is False
+    assert result.gesture_label == ""
+    assert result.missing == ["жест"]
+    assert draft["unknownGesture"] == "palm"
+    assert "palm" in result.response_text
+    assert "не найден" in result.response_text
 
 
 def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monkeypatch):
@@ -452,7 +624,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
                         {
                             "message": {
                                 "content": (
-                                    "**Вернёмся к GestureFlow**\n\n"
+                                    "**Вернёмся к GestureBind**\n\n"
                                     "Ха-ха, вопрос понял, но здесь лучше держать фокус "
                                     "на жестах и привязках.\n\n"
                                     "- могу собрать привязку;\n"
@@ -475,9 +647,9 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
         assert "Интент: unsupported_general_question" in payload["messages"][1]["content"]
         assert "Локальная задача для LLM" in payload["messages"][1]["content"]
         assert "Локальный черновик ответа" in payload["messages"][1]["content"]
-        assert "GestureFlow" in payload["messages"][1]["content"]
+        assert "GestureBind" in payload["messages"][1]["content"]
         assert "Верни только markdown-текст" in payload["messages"][0]["content"]
-        assert timeout == 25.0
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -493,7 +665,7 @@ def test_binding_agent_mistral_rewrites_unsupported_answer_with_temperature(monk
 
     assert result.ok is True
     assert result.intent_block == "unsupported_general"
-    assert result.response_text.startswith("**Вернёмся к GestureFlow**")
+    assert result.response_text.startswith("**Вернёмся к GestureBind**")
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["purpose"] == "answer_rewrite"
     assert mistral_step.data["temperature"] == 0.72
@@ -510,7 +682,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
                         {
                             "message": {
                                 "content": (
-                                    "**Про GestureFlow коротко**\n\n"
+                                    "**Про GestureBind коротко**\n\n"
                                     "Я помогу собрать привязку из обычной фразы, "
                                     "проверить hotkey и объяснить, что видно в MLflow."
                                 )
@@ -529,8 +701,8 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
         assert payload["temperature"] == 0.72
         assert "Интент: project_question" in payload["messages"][1]["content"]
         assert "Блок: project_question" in payload["messages"][1]["content"]
-        assert "Перефразируй ответ по проекту GestureFlow" in payload["messages"][1]["content"]
-        assert timeout == 25.0
+        assert "Перефразируй ответ по проекту GestureBind" in payload["messages"][1]["content"]
+        assert 0 < timeout <= 8.0
         return FakeResponse()
 
     agent = MistralBindingAgent(
@@ -546,7 +718,7 @@ def test_binding_agent_mistral_rewrites_project_question_with_intent_prompt(monk
 
     assert result.ok is True
     assert result.intent_block == "project_question"
-    assert result.response_text.startswith("**Про GestureFlow коротко**")
+    assert result.response_text.startswith("**Про GestureBind коротко**")
     mistral_step = next(step for step in result.steps if step.agent == "Mistral Agent")
     assert mistral_step.data["purpose"] == "answer_rewrite"
 
@@ -784,7 +956,12 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
     monkeypatch.setenv("DPLM_BINDING_AGENT_MLFLOW_EXPERIMENT", "AgentFlow")
     monkeypatch.setitem(sys.modules, "mlflow", FakeMlflow)
 
-    result = BindingAgentOrchestrator().run(
+    result = BindingAgentOrchestrator(
+        mlflow_logger=BindingAgentMlflowLogger(
+            enabled=True,
+            async_mode=False,
+        )
+    ).run(
         "жест palm открывает Safari",
         GESTURES,
     )
@@ -814,8 +991,11 @@ def test_binding_agent_logs_multi_agent_pipeline_to_mlflow(monkeypatch, tmp_path
         for item in calls["spans"]
     )
     assert calls["eval_data"][0]["expectations"]["expected_status"] == "ready"
+    assert calls["eval_data"][0]["expectations"]["case_id"] == "open_app_binding"
+    assert calls["eval_data"][0]["expectations"]["expected_action_spec"]["app"] == "Safari"
     assert calls["eval_outputs"]["gestureLabel"] == "palm"
     assert "binding_agent_contract_ok" in calls["eval_scorers"]
+    assert "binding_agent_action_spec_ok" in calls["eval_scorers"]
 
 
 def test_binding_agent_builds_sequence_draft():
@@ -836,7 +1016,7 @@ def test_binding_agent_builds_sequence_draft():
         "steps": [
             {"action": "open_app", "app": "Preview"},
             {"action": "wait", "seconds": 1.0},
-            {"action": "notify", "title": "GestureFlow", "message": "Готово"},
+            {"action": "notify", "title": "GestureBind", "message": "Готово"},
         ],
     }
 
@@ -909,6 +1089,63 @@ def test_binding_agent_builds_named_command_series_with_transliterated_gesture()
             {"action": "open_app", "app": "Telegram"},
         ],
     }
+
+
+def test_binding_agent_sequence_keeps_three_requested_steps_with_site_alias():
+    draft = build_agent_binding_draft(
+        (
+            "привяжи жест hand к сценарию открыть телеграм, "
+            "открыть рамблер почту и открыть сайт студента гуап"
+        ),
+        GESTURES_WITH_HAND,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "hand"
+    assert draft["commandName"] == "hand: Сценарий из 3 шагов"
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "steps": [
+            {"action": "open_app", "app": "Telegram"},
+            {"action": "open_url", "url": "https://mail.rambler.ru"},
+            {"action": "open_url", "url": "https://new.guap.ru/targets/studs"},
+        ],
+    }
+    scenario_step = next(
+        item for item in draft["agentTrace"] if item["agent"] == "Scenario Agent"
+    )
+    assert scenario_step["data"]["expected_steps_count"] == 3
+    assert scenario_step["data"]["steps_count"] == 3
+    assert draft["unresolvedSteps"] == []
+
+
+def test_binding_agent_sequence_does_not_drop_unresolved_steps():
+    draft = build_agent_binding_draft(
+        (
+            "привяжи жест hand к сценарию открыть телеграм, "
+            "открыть сайт неизвестной кафедры"
+        ),
+        GESTURES_WITH_HAND,
+        provider="local",
+    )
+
+    assert draft["ok"] is False
+    assert draft["canApply"] is False
+    assert draft["missing"] == ["шаги сценария"]
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"] == {
+        "action": "sequence",
+        "platform": "macos",
+        "steps": [{"action": "open_app", "app": "Telegram"}],
+    }
+    assert draft["unresolvedSteps"] == [
+        {"index": 2, "text": "открыть сайт неизвестной кафедры"}
+    ]
+    assert "часть шагов не" in draft["agentReply"]
 
 
 def test_mistral_draft_drops_stale_missing_when_contract_fields_exist():
@@ -1049,6 +1286,85 @@ def test_binding_agent_maps_macos_space_left_navigation():
         "platform": "macos",
         "keys": ["ctrl", "left"],
     }
+
+
+def test_binding_agent_maps_video_pause_phrase_to_media_key():
+    draft = build_agent_binding_draft(
+        "привяжи жест свайп влево к поставить на паузу видео",
+        GESTURES_WITH_SWIPE_LEFT,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["gestureLabel"] == "swipe_left"
+    assert draft["mode"] == "single"
+    assert draft["missing"] == []
+    assert draft["actionSpec"] == {
+        "action": "media_key",
+        "platform": "macos",
+        "kind": "pause",
+    }
+
+
+def test_binding_agent_media_action_aliases_cover_video_playback_phrases():
+    cases = (
+        (
+            "привяжи свайп влево к остановить видео",
+            "pause",
+        ),
+        (
+            "привяжи swipeleft к продолжить воспроизведение видео",
+            "play",
+        ),
+        (
+            "привяжи swipe left к пауза или продолжить музыку",
+            "play_pause",
+        ),
+        (
+            "привяжи жест свайп влево к следующий трек",
+            "next",
+        ),
+        (
+            "привяжи жест свайп влево к предыдущий трек",
+            "prev",
+        ),
+    )
+
+    for prompt, kind in cases:
+        draft = build_agent_binding_draft(
+            prompt,
+            GESTURES_WITH_SWIPE_LEFT,
+            provider="local",
+        )
+        assert draft["ok"] is True, prompt
+        assert draft["canApply"] is True, prompt
+        assert draft["gestureLabel"] == "swipe_left", prompt
+        assert draft["actionSpec"] == {
+            "action": "media_key",
+            "platform": "macos",
+            "kind": kind,
+        }, prompt
+
+
+def test_binding_agent_keeps_wait_when_phrase_is_duration_pause():
+    draft = build_agent_binding_draft(
+        (
+            "жест palm сценарий: открыть Safari, "
+            "пауза 2 секунды, показать уведомление Готово"
+        ),
+        GESTURES,
+        provider="local",
+    )
+
+    assert draft["ok"] is True
+    assert draft["canApply"] is True
+    assert draft["mode"] == "sequence"
+    assert draft["actionSpec"]["steps"] == [
+        {"action": "open_app", "app": "Safari"},
+        {"action": "wait", "seconds": 2.0},
+        {"action": "notify", "title": "GestureBind", "message": "Готово"},
+    ]
 
 
 def test_mistral_sequence_step_key_string_is_normalized_before_ui():
@@ -1260,7 +1576,7 @@ def test_binding_agent_continues_previous_draft_when_user_adds_gesture():
     action_step = next(
         item for item in second["agentTrace"] if item["agent"] == "Action Agent"
     )
-    assert action_step["data"]["source"] == "draft_state"
+    assert action_step["data"]["source"] == "session_memory"
 
 
 def test_binding_agent_submit_records_dialog_messages():
@@ -1364,6 +1680,96 @@ def test_binding_agent_ui_status_explains_missing_sequence_gesture():
     assert "привяжи это" in view._agent_missing_text(draft)
 
 
+def test_binding_agent_ui_refuses_external_ready_draft_with_unknown_gesture():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return [{"label": "hand"}]
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def validate_action_spec_json(self, _spec_json):
+            return ""
+
+        def validate_command_name(self, _name):
+            return ""
+
+        def save_binding(self, *_args):
+            raise AssertionError("Неизвестный жест не должен дойти до сохранения")
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    view = BindingsView(None, FakeController())
+    view._gestures = [{"label": "hand"}]
+    view._last_agent_draft = {
+        "ok": True,
+        "canApply": True,
+        "missing": [],
+        "gestureLabel": "palm",
+        "mode": "single",
+        "commandName": "palm: Открыть Safari",
+        "actionSpec": {
+            "action": "open_app",
+            "platform": "macos",
+            "app": "Safari",
+        },
+    }
+
+    view._on_agent_apply_click(None)
+
+    assert view._last_agent_draft["canApply"] is False
+    assert view._last_agent_draft["gestureLabel"] == ""
+    assert view._last_agent_draft["unknownGesture"] == "palm"
+    assert view._gesture_dd.value is None
+    assert view._agent_status.value == "Жест не найден"
+
+
+def test_binding_agent_ui_watchdog_finishes_stalled_request():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return GESTURES
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    view = BindingsView(None, FakeController())
+    view._gestures = GESTURES
+    view._agent_request_id = 4
+    view._agent_active_request_id = 4
+    view._start_agent_send_state("привяжи palm", animate=False)
+
+    view._expire_agent_request(4, "привяжи palm", timeout=10.75)
+
+    assert view._agent_active_request_id == 0
+    assert view._agent_request_id == 5
+    assert view._last_agent_draft["timedOut"] is True
+    assert view._last_agent_draft["canApply"] is False
+    assert view._agent_status.value == "Время ожидания истекло"
+    assert view._agent_dialog_messages[-1]["role"] == "agent"
+
+
 def test_binding_agent_answer_mode_renders_visible_answer_panel():
     class FakeController:
         def get_action_categories(self):
@@ -1452,7 +1858,7 @@ def test_binding_agent_answer_text_stays_in_dialog_memory_for_follow_up():
     view._on_agent_parse_click(None)
 
     assert view._agent_dialog_messages[-1]["role"] == "agent"
-    assert "GestureFlow" in view._agent_dialog_messages[-1]["text"]
+    assert "GestureBind" in view._agent_dialog_messages[-1]["text"]
 
     view._agent_input.value = "почему ты остаешься в рамках?"
     view._on_agent_parse_click(None)

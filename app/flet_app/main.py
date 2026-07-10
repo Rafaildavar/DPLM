@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Точка входа Flet-версии DPLM.
+Точка входа Flet-версии GestureBind.
 
 Запуск:
     python -m app.flet_app.main
 
-В отличие от PySide6 версии (``app/main.py``), не нужно никаких манипуляций с
-``QT_PLUGIN_PATH`` / ``QT_QPA_PLATFORM_PLUGIN_PATH`` — Flet поставляет свой
-Flutter-runtime внутри пакета ``flet_desktop`` и не требует системных плагинов.
+Flet поставляет Flutter runtime внутри ``flet_desktop``. Это единственная
+desktop-точка входа релизного приложения.
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ from app.flet_app.views.shell import build_shell
 
 
 def _configure_page(page: ft.Page) -> None:
-    page.title = "DPLM — Gesture & Voice Assistant"
+    page.title = "GestureBind — Gesture & Voice Assistant"
     page.padding = 0
     page.bgcolor = COLOR_BG_TOP
     page.theme_mode = ft.ThemeMode.DARK
@@ -46,7 +45,7 @@ def main(page: ft.Page) -> None:
     page.add(build_shell(page, controller))
     if controller.auto_start_recognition:
         page.run_thread(controller.toggle_recognition)
-    print("[✓] Flet DPLM запущен")
+    print("[✓] Flet GestureBind запущен")
 
 
 if __name__ == "__main__":

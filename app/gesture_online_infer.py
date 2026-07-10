@@ -9,18 +9,29 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter, deque
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
 
 import numpy as np
 
+from cv.dynamic_completion import (
+    build_dynamic_completion_evidence,
+    evaluate_dynamic_completion,
+)
 from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES,
+    STATIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+    FEATURE_DYNAMIC_CRAFT_STATS,
+    FEATURE_DYNAMIC_LANDMARK_IMAGE,
     FEATURE_DYNAMIC_SEQUENCE,
     FEATURE_DYNAMIC_SEQUENCE_72,
     FEATURE_DYNAMIC_STATS,
     FEATURE_HYBRID_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
     FEATURE_STATIC_MEAN,
     FEATURE_STATIC_STATS,
     build_feature_vector,
@@ -32,7 +43,11 @@ from cv.intent_gate import (
     build_intent_feature_vector,
 )
 from cv.dynamic_direction import classify_swipe_direction
-from cv.dynamic_motion import DynamicMotionSegmenter
+from cv.dynamic_motion import (
+    DynamicMotionSegmenter,
+    canonical_dynamic_sequence,
+    create_runtime_dynamic_segmenter,
+)
 from cv.dynamic_prototype import (
     load_dynamic_prototype_model,
     predict_dynamic_prototype,
@@ -48,6 +63,7 @@ from cv.gesture_pose_signature import (
     hands_non_thumb_count,
     load_signature_metadata,
 )
+from app.services.gesture_labels import resolve_registered_gesture_label
 from app.services.gesture_taxonomy import (
     GESTURE_TYPE_NEGATIVE,
     GestureTaxonomy,
@@ -60,6 +76,7 @@ DYNAMIC_GATE_MIN_DISPLACEMENT = 0.04
 DYNAMIC_GATE_DIRECTION_THRESHOLD = 0.035
 DYNAMIC_INTENT_MIN_PATH_LENGTH = 0.04
 DYNAMIC_INTENT_MIN_DISPLACEMENT = 0.025
+DYNAMIC_INTENT_CONTEXT_FRAMES = 16
 DYNAMIC_DIRECTION_DOMINANCE_RATIO = 1.15
 DYNAMIC_NEGATIVE_REJECT_THRESHOLD = 0.72
 DYNAMIC_COMPLEX_MODEL_MIN_CONFIDENCE = 0.60
@@ -70,10 +87,6 @@ DYNAMIC_COMPOUND_DIRECTION_MAX_AXIS_RATIO = 3.0
 DYNAMIC_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.68
 DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_CONFIDENCE = 0.88
 DYNAMIC_MODEL_PROTOTYPE_OVERRIDE_MIN_MARGIN = 0.18
-DYNAMIC_SEGMENT_PRE_ROLL_FRAMES = 3
-DYNAMIC_SEGMENT_ONSET_PATH = 0.015
-DYNAMIC_SEGMENT_ONSET_DISPLACEMENT = 0.012
-DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES = 3
 HAND_LOST_GRACE_ENV = "DPLM_HAND_LOST_GRACE_FRAMES"
 DEFAULT_HAND_LOST_GRACE_FRAMES = 2
 STATIC_REJECTION_NEGATIVE_CLASSES = "negative_classes"
@@ -98,6 +111,70 @@ STATIC_REJECTION_METHODS = (
     STATIC_REJECTION_METRIC_NCA_CENTROID,
     STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
 )
+
+
+def configure_estimator_for_live_inference(estimator: Any) -> int:
+    """Use one worker for low-latency single-sample prediction.
+
+    Tree ensembles often default to all CPU cores. That helps batch scoring but
+    adds thread scheduling overhead for the one sample produced by a live frame.
+    Nested sklearn ensembles and pipelines are handled recursively.
+    """
+    configured = 0
+    pending = [estimator]
+    visited: set[int] = set()
+    child_attributes = (
+        "estimators_",
+        "estimators",
+        "named_estimators_",
+        "final_estimator_",
+        "steps",
+        "transformer_list",
+    )
+
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in visited:
+            continue
+        visited.add(id(current))
+
+        if hasattr(current, "n_jobs"):
+            try:
+                current.n_jobs = 1
+                configured += 1
+            except Exception:
+                pass
+
+        for attribute in child_attributes:
+            try:
+                children = getattr(current, attribute)
+            except Exception:
+                continue
+            if isinstance(children, Mapping):
+                pending.extend(children.values())
+            elif isinstance(children, (list, tuple)):
+                for child in children:
+                    if (
+                        isinstance(child, tuple)
+                        and len(child) == 2
+                        and isinstance(child[0], str)
+                    ):
+                        pending.append(child[1])
+                    else:
+                        pending.append(child)
+            else:
+                pending.append(children)
+    return configured
+
+
+def default_gesture_rejection_path(model_path: Path) -> Path:
+    """Resolve model-specific rejection metadata with a legacy fallback."""
+    path = Path(model_path)
+    if path.stem.startswith("dynamic_"):
+        model_specific = path.with_name(f"{path.stem}_rejection.json")
+        if model_specific.exists():
+            return model_specific
+    return path.parent / "gesture_rejection.json"
 
 
 class GestureOnlineInfer:
@@ -142,7 +219,11 @@ class GestureOnlineInfer:
         self._detector_two_hands = True
         self._window: Deque[np.ndarray] = deque(maxlen=max(1, window))
         self._intent_window: Deque[np.ndarray] = deque(
-            maxlen=max(self._dynamic_sequence_target_frames(), int(window))
+            maxlen=max(
+                self._dynamic_sequence_target_frames()
+                + DYNAMIC_INTENT_CONTEXT_FRAMES,
+                int(window),
+            )
         )
         self._finger_count_window: Deque[int] = deque(maxlen=5)
         self._gesture_signatures: dict[str, dict[str, Any]] = {}
@@ -179,7 +260,7 @@ class GestureOnlineInfer:
             model_path.parent / "gesture_signatures.json"
         )
         gesture_rejection_path = gesture_rejection_path or (
-            model_path.parent / "gesture_rejection.json"
+            default_gesture_rejection_path(model_path)
         )
         static_rejection_verifier_path = static_rejection_verifier_path or (
             model_path.parent / "static_rejection_verifiers.pkl"
@@ -232,6 +313,7 @@ class GestureOnlineInfer:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", InconsistentVersionWarning)
                     self._clf = joblib.load(str(model_path))
+                configure_estimator_for_live_inference(self._clf)
                 model_feature_dim = int(getattr(self._clf, "n_features_in_", 0) or 0)
                 if model_feature_dim > 0 and model_feature_dim != self._feature_dim:
                     print(
@@ -252,8 +334,9 @@ class GestureOnlineInfer:
         target_frames = self._dynamic_sequence_target_frames()
         if self._uses_temporal_features() and int(self._window.maxlen or 0) < target_frames:
             self._window = deque(self._window, maxlen=target_frames)
-        if int(self._intent_window.maxlen or 0) < target_frames:
-            self._intent_window = deque(self._intent_window, maxlen=target_frames)
+        intent_frames = target_frames + DYNAMIC_INTENT_CONTEXT_FRAMES
+        if int(self._intent_window.maxlen or 0) < intent_frames:
+            self._intent_window = deque(self._intent_window, maxlen=intent_frames)
         self._classifier_two_hands = self._is_two_hand_feature_dim(self._raw_feature_dim)
         if self._uses_global_dynamic_motion():
             self._dynamic_segmenter = self._create_dynamic_segmenter(
@@ -324,7 +407,11 @@ class GestureOnlineInfer:
         mode = str(
             getattr(self, "_feature_mode", FEATURE_STATIC_MEAN) or FEATURE_STATIC_MEAN
         )
-        if mode == FEATURE_DYNAMIC_SEQUENCE_72:
+        if mode == FEATURE_STATIC_LANDMARK_IMAGE:
+            return STATIC_LANDMARK_IMAGE_TARGET_FRAMES
+        if mode in {FEATURE_DYNAMIC_SEQUENCE_72, FEATURE_DYNAMIC_LANDMARK_IMAGE}:
+            if mode == FEATURE_DYNAMIC_LANDMARK_IMAGE:
+                return DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES
             return DYNAMIC_SEQUENCE_LONG_TARGET_FRAMES
         return DYNAMIC_SEQUENCE_TARGET_FRAMES
 
@@ -353,12 +440,12 @@ class GestureOnlineInfer:
         )
 
     def _is_two_hand_feature_dim(self, raw_feature_dim: int) -> bool:
-        if raw_feature_dim in {84, 88}:
+        if raw_feature_dim in {84, 88, 126, 130}:
             return True
         if raw_feature_dim % 2 != 0:
             return False
         per_hand_dim = raw_feature_dim // 2
-        return per_hand_dim in {42, 44}
+        return per_hand_dim in {42, 44, 63, 65}
 
     def _hand_frame_feature(
         self,
@@ -369,6 +456,26 @@ class GestureOnlineInfer:
     ) -> np.ndarray:
         pose = normalized.reshape(-1).astype(np.float32, copy=False)
         target = int(target_dim)
+        if target in {63, 65}:
+            xyz = np.asarray(hand.landmarks_xyz or [], dtype=np.float32)
+            if xyz.shape == (21, 3):
+                z = xyz[:, 2:3]
+            else:
+                z = np.zeros((21, 1), dtype=np.float32)
+            pose_xyz = np.concatenate([normalized, z], axis=1).reshape(-1)
+            if target == 63:
+                return pose_xyz.astype(np.float32, copy=False)
+
+            pts = np.asarray(hand.landmarks, dtype=np.float32)
+            wrist = (
+                pts[0]
+                if pts.shape == (21, 2)
+                else np.zeros(2, dtype=np.float32)
+            )
+            return np.concatenate([pose_xyz, wrist], axis=0).astype(
+                np.float32,
+                copy=False,
+            )
         if target <= pose.shape[0]:
             return pose[:target]
 
@@ -420,7 +527,11 @@ class GestureOnlineInfer:
             FEATURE_DYNAMIC_SEQUENCE,
             FEATURE_DYNAMIC_SEQUENCE_72,
             FEATURE_DYNAMIC_STATS,
+            FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+            FEATURE_DYNAMIC_CRAFT_STATS,
+            FEATURE_DYNAMIC_LANDMARK_IMAGE,
             FEATURE_HYBRID_STATS,
+            FEATURE_STATIC_LANDMARK_IMAGE,
         }
 
     def _window_ready_for_prediction(self) -> bool:
@@ -430,7 +541,12 @@ class GestureOnlineInfer:
         return len(self._window) >= target
 
     def _uses_global_dynamic_motion(self) -> bool:
-        return self._uses_temporal_features() and int(self._raw_feature_dim) >= 44
+        mode = getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
+        return (
+            mode != FEATURE_STATIC_LANDMARK_IMAGE
+            and self._uses_temporal_features()
+            and int(self._raw_feature_dim) >= 44
+        )
 
     def _dynamic_motion_gate(self) -> tuple[bool, dict[str, float]]:
         if not self._uses_global_dynamic_motion():
@@ -1145,6 +1261,10 @@ class GestureOnlineInfer:
             else str(raw_class)
         )
 
+    def _registered_dynamic_label(self, label: str) -> str:
+        """Map a prediction back to the user's exact trained class name."""
+        return resolve_registered_gesture_label(label, self._classes) or ""
+
     def _best_negative_prediction(
         self,
         ranked: list[tuple[float, str]],
@@ -1652,14 +1772,7 @@ class GestureOnlineInfer:
 
     @staticmethod
     def _create_dynamic_segmenter(*, target_frames: int) -> DynamicMotionSegmenter:
-        return DynamicMotionSegmenter(
-            target_frames=max(2, int(target_frames)),
-            pre_roll_frames=DYNAMIC_SEGMENT_PRE_ROLL_FRAMES,
-            onset_path=DYNAMIC_SEGMENT_ONSET_PATH,
-            onset_displacement=DYNAMIC_SEGMENT_ONSET_DISPLACEMENT,
-            min_active_frames=DYNAMIC_SEGMENT_MIN_ACTIVE_FRAMES,
-            max_active_frames=max(60, int(target_frames)),
-        )
+        return create_runtime_dynamic_segmenter(target_frames=target_frames)
 
     def _temporal_state_from_segment_update(
         self,
@@ -1667,7 +1780,7 @@ class GestureOnlineInfer:
         *,
         motion_scale: float,
     ) -> dict[str, Any]:
-        return {
+        state: dict[str, Any] = {
             "enabled": True,
             "phase": update.phase,
             "frames": update.frames,
@@ -1679,12 +1792,22 @@ class GestureOnlineInfer:
                 getattr(self, "_hand_lost_grace_frames", DEFAULT_HAND_LOST_GRACE_FRAMES)
             ),
         }
+        completion_evidence = getattr(update, "completion_evidence", None)
+        if isinstance(completion_evidence, dict):
+            state["completion_evidence"] = {
+                str(key): float(value)
+                for key, value in completion_evidence.items()
+                if isinstance(value, (int, float, np.number))
+                and np.isfinite(float(value))
+            }
+        return state
 
     def _ensure_intent_window(self) -> Deque[np.ndarray]:
         window = getattr(self, "_intent_window", None)
         if window is None:
             maxlen = max(
-                self._dynamic_sequence_target_frames(),
+                self._dynamic_sequence_target_frames()
+                + DYNAMIC_INTENT_CONTEXT_FRAMES,
                 int(getattr(getattr(self, "_window", None), "maxlen", 0) or 0),
             )
             window = deque(maxlen=maxlen)
@@ -1709,6 +1832,23 @@ class GestureOnlineInfer:
             return []
         return [float(value) for value in feature.astype(float).tolist()]
 
+    def _dynamic_completion_assessment(
+        self,
+        label: str,
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        rejection = getattr(self, "_gesture_rejection", {}) or {}
+        profiles = (
+            rejection.get("dynamic_completion_profiles")
+            if isinstance(rejection, dict)
+            else {}
+        )
+        return evaluate_dynamic_completion(
+            profiles if isinstance(profiles, dict) else {},
+            label,
+            evidence,
+        )
+
     def _classify_completed_dynamic_update(
         self,
         update: Any,
@@ -1729,8 +1869,33 @@ class GestureOnlineInfer:
                 "intent_features": self._intent_feature_payload(),
             })
 
+        intent_window = self._ensure_intent_window()
+        raw_sequence = (
+            np.stack(tuple(intent_window), axis=0)
+            if intent_window
+            else getattr(update, "raw_sequence", None)
+        )
+        if not isinstance(raw_sequence, np.ndarray):
+            raw_sequence = np.asarray(update.completed_sequence, dtype=np.float32)
+        update_evidence = getattr(update, "completion_evidence", None)
+        completion_scale = (
+            float(update_evidence.get("motion_scale") or 0.0)
+            if isinstance(update_evidence, dict)
+            else 0.0
+        )
+        completion_evidence = build_dynamic_completion_evidence(
+            raw_sequence,
+            motion_scale=completion_scale or motion_scale,
+            target_frames=int(self._window.maxlen or raw_sequence.shape[0]),
+        )
+        temporal_state["completion_evidence"] = dict(completion_evidence)
+        candidate_sequence = canonical_dynamic_sequence(
+            raw_sequence,
+            target_frames=int(self._window.maxlen or raw_sequence.shape[0]),
+        )
+
         self._window.clear()
-        self._window.extend(update.completed_sequence)
+        self._window.extend(candidate_sequence)
         motion_ok, motion = self._dynamic_motion_gate()
         if not motion_ok or not self._classes:
             return self._with_hand_tracking({
@@ -1738,9 +1903,7 @@ class GestureOnlineInfer:
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
-                "intent_features": self._intent_feature_payload(
-                    update.completed_sequence
-                ),
+                "intent_features": self._intent_feature_payload(raw_sequence),
             })
 
         try:
@@ -1752,8 +1915,9 @@ class GestureOnlineInfer:
             label, confidence = self._dynamic_prediction(
                 model_feat,
                 motion,
-                sequence=update.completed_sequence,
+                sequence=candidate_sequence,
             )
+            label = self._registered_dynamic_label(label)
         except Exception as exc:
             print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
             self.reset_temporal_state()
@@ -1762,10 +1926,49 @@ class GestureOnlineInfer:
                 "confidence": 0.0,
                 "landmarks_json": landmarks_json,
                 "temporal": temporal_state,
-                "intent_features": self._intent_feature_payload(
-                    update.completed_sequence
-                ),
+                "intent_features": self._intent_feature_payload(raw_sequence),
             })
+
+        if label:
+            completion = self._dynamic_completion_assessment(
+                label,
+                completion_evidence,
+            )
+            temporal_state["completion"] = dict(completion)
+            decision = dict(getattr(self, "_last_dynamic_decision", {}) or {})
+            original_source = str(decision.get("source") or "")
+            decision.update(
+                {
+                    "completion_enabled": bool(completion.get("enabled")),
+                    "completion_accepted": bool(completion.get("accepted")),
+                    "completion_score": float(completion.get("score") or 0.0),
+                    "completion_threshold": float(
+                        completion.get("threshold") or 0.0
+                    ),
+                    "completion_reason": str(completion.get("reason") or ""),
+                    "completion_candidate_label": label,
+                    "completion_candidate_confidence": float(confidence),
+                }
+            )
+            if not bool(completion.get("accepted")):
+                decision["source"] = "completion_rejected"
+                decision["completion_original_source"] = original_source
+                segmenter = getattr(self, "_dynamic_segmenter", None)
+                if segmenter is not None:
+                    rejected_sequence = getattr(update, "raw_sequence", None)
+                    if not isinstance(rejected_sequence, np.ndarray):
+                        rejected_sequence = raw_sequence
+                    segmenter.reject_completed_candidate(
+                        rejected_sequence,
+                        motion_scale=float(
+                            completion_evidence.get("motion_scale")
+                            or motion_scale
+                            or 0.0
+                        ),
+                    )
+                label = ""
+                confidence = 0.0
+            self._last_dynamic_decision = decision
 
         if label:
             self._pending_dynamic_prediction = (label, confidence)
@@ -1779,7 +1982,7 @@ class GestureOnlineInfer:
                 getattr(self, "_last_dynamic_decision", {}) or {}
             ),
             "temporal": temporal_state,
-            "intent_features": self._intent_feature_payload(update.completed_sequence),
+            "intent_features": self._intent_feature_payload(raw_sequence),
         })
 
     def _process_segmented_dynamic_frame(
@@ -1815,6 +2018,10 @@ class GestureOnlineInfer:
 
         update = self._segmenter().update(feat, motion_scale=motion_scale)
         if update.completed_sequence is None:
+            if str(getattr(update, "end_reason", "") or "") == "completion_timeout":
+                self._window.clear()
+                self._ensure_intent_window().clear()
+                self._last_dynamic_decision = {}
             return self._with_hand_tracking({
                 "label": "",
                 "confidence": 0.0,
@@ -1879,7 +2086,11 @@ class GestureOnlineInfer:
     def _pose_matches_prediction(self, label: str, current_count: int | None) -> bool:
         if current_count is None or not label:
             return True
-        if self._uses_temporal_features():
+        if (
+            self._uses_temporal_features()
+            and getattr(self, "_feature_mode", FEATURE_STATIC_MEAN)
+            != FEATURE_STATIC_LANDMARK_IMAGE
+        ):
             return True
 
         signature = self._gesture_signatures.get(label) or self._gesture_signatures.get(
@@ -1957,11 +2168,11 @@ class GestureOnlineInfer:
 
     def _build_overlay_payload(self, hands: List[DetectedHand]) -> str:
         """
-        Сериализовать ключевые точки рук для QML.
+        Сериализовать ключевые точки рук для UI overlay.
 
         Формат: список рук, каждая рука — список [x, y] в нормализованных
-        кадровых координатах 0..1. QML сторона способна нарисовать произвольное
-        количество рук (см. CameraPreview.qml).
+        кадровых координатах 0..1. UI способен нарисовать произвольное
+        количество рук.
         """
         payload: List[List[List[float]]] = []
         for h in hands:
@@ -2231,6 +2442,7 @@ class GestureOnlineInfer:
                         motion,
                         sequence=np.stack(tuple(self._window), axis=0),
                     )
+                    label = self._registered_dynamic_label(label)
                 else:
                     label, confidence = self._static_prediction(model_feat)
                     static_decision = dict(

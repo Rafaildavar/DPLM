@@ -8,7 +8,20 @@ from typing import Deque
 
 import numpy as np
 
-from cv.gesture_features import sequence_to_matrix, trajectory_features
+from cv.gesture_features import (
+    global_trajectory_xy,
+    global_wrist_slices,
+    sequence_shape_change_energy,
+    sequence_to_matrix,
+    trajectory_features,
+)
+
+RUNTIME_SEGMENT_PRE_ROLL_FRAMES = 3
+RUNTIME_SEGMENT_ONSET_PATH = 0.015
+RUNTIME_SEGMENT_ONSET_DISPLACEMENT = 0.012
+RUNTIME_SEGMENT_MIN_ACTIVE_FRAMES = 3
+RUNTIME_SEGMENT_COMPLETION_GRACE_FRAMES = 5
+RUNTIME_SEGMENT_CONTINUATION_WAIT_FRAMES = 24
 
 
 @dataclass(frozen=True)
@@ -17,6 +30,8 @@ class MotionSegmentUpdate:
     frames: int
     completed_sequence: np.ndarray | None = None
     end_reason: str = ""
+    completion_evidence: dict[str, float] | None = None
+    raw_sequence: np.ndarray | None = None
 
 
 def resample_sequence(sequence: np.ndarray, target_frames: int = 36) -> np.ndarray:
@@ -78,19 +93,20 @@ def normalize_global_trajectory(
     """Remove screen position and projected motion amplitude from wrist paths."""
     seq = sequence_to_matrix(sequence).copy()
     dims = int(seq.shape[1])
-    if dims < 44 or dims % 44 != 0:
+    wrist_slices = global_wrist_slices(dims)
+    if not wrist_slices:
         return seq
 
     target = max(1e-6, float(reference_displacement))
-    for offset in range(0, dims, 44):
-        wrist = seq[:, offset + 42 : offset + 44]
+    for start, end in wrist_slices:
+        wrist = seq[:, start:end]
         if not np.any(np.abs(wrist) > 1e-6):
             continue
         delta = wrist[-1] - wrist[0]
         displacement = float(np.linalg.norm(delta))
         if displacement <= 1e-6:
             continue
-        seq[:, offset + 42 : offset + 44] = (wrist - wrist[0]) * (target / displacement)
+        seq[:, start:end] = (wrist - wrist[0]) * (target / displacement)
     return seq.astype(np.float32, copy=False)
 
 
@@ -109,6 +125,7 @@ class DynamicMotionSegmenter:
         release_frames: int = 2,
         release_step_ratio: float = 0.45,
         completion_grace_frames: int = 3,
+        continuation_wait_frames: int = 24,
         resume_step_ratio: float = 0.62,
         min_active_frames: int = 8,
         max_active_frames: int = 60,
@@ -126,6 +143,7 @@ class DynamicMotionSegmenter:
         self.release_frames = max(1, int(release_frames))
         self.release_step_ratio = max(0.05, min(0.95, float(release_step_ratio)))
         self.completion_grace_frames = max(0, int(completion_grace_frames))
+        self.continuation_wait_frames = max(1, int(continuation_wait_frames))
         self.resume_step_ratio = max(0.05, min(0.95, float(resume_step_ratio)))
         self.min_active_frames = max(3, int(min_active_frames))
         self.max_active_frames = max(self.min_active_frames, int(max_active_frames))
@@ -143,15 +161,21 @@ class DynamicMotionSegmenter:
         self._still_frames = 0
         self._release_frames = 0
         self._peak_step = 0.0
+        self._peak_shape_step = 0.0
         self._cooldown_remaining = 0
         self._pending_completion_reason = ""
         self._pending_completion_sequence: np.ndarray | None = None
         self._completion_grace_remaining = 0
+        self._awaiting_continuation = False
+        self._motion_confirmed = False
+        self._continuation_wait_remaining = 0
 
     @property
     def phase(self) -> str:
         if self._cooldown_remaining > 0:
             return "cooldown"
+        if self._awaiting_continuation:
+            return "awaiting_continuation"
         if self._active:
             return "active"
         if len(self._pre_roll) < self.pre_roll_frames:
@@ -170,10 +194,42 @@ class DynamicMotionSegmenter:
         self._still_frames = 0
         self._release_frames = 0
         self._peak_step = 0.0
+        self._peak_shape_step = 0.0
         self._cooldown_remaining = 0
         self._pending_completion_reason = ""
         self._pending_completion_sequence = None
         self._completion_grace_remaining = 0
+        self._awaiting_continuation = False
+        self._motion_confirmed = False
+        self._continuation_wait_remaining = 0
+
+    def reject_completed_candidate(
+        self,
+        sequence: np.ndarray,
+        *,
+        motion_scale: float = 0.0,
+    ) -> None:
+        """Preserve a rejected prefix and wait for deliberate continuation."""
+        raw = sequence_to_matrix(sequence).astype(np.float32, copy=False)
+        self.reset()
+        self._active = [frame.copy() for frame in raw]
+        scale = max(0.0, float(motion_scale))
+        self._active_scales = [scale] * len(self._active)
+        points = _global_points(raw)
+        steps = (
+            np.linalg.norm(np.diff(points, axis=0), axis=1)
+            if points.shape[0] > 1
+            else np.asarray([], dtype=np.float32)
+        )
+        self._peak_step = float(np.max(steps)) if steps.size else 0.0
+        shape_steps = [
+            sequence_shape_change_energy(raw[index - 1 : index + 1])
+            for index in range(1, raw.shape[0])
+        ]
+        self._peak_shape_step = max(shape_steps, default=0.0)
+        self._awaiting_continuation = True
+        self._motion_confirmed = True
+        self._continuation_wait_remaining = self.continuation_wait_frames
 
     def finish_due_to_hand_lost(self) -> MotionSegmentUpdate:
         """Complete an active swipe when the hand leaves the frame naturally."""
@@ -182,6 +238,13 @@ class DynamicMotionSegmenter:
             if self._cooldown_remaining == 0:
                 self._pre_roll.clear()
             return MotionSegmentUpdate("cooldown", 0, end_reason="hand_lost")
+        if self._awaiting_continuation:
+            self.reset()
+            return MotionSegmentUpdate(
+                "idle",
+                0,
+                end_reason="incomplete_rejected",
+            )
         if not self._active:
             self.reset()
             return MotionSegmentUpdate("idle", 0, end_reason="hand_lost")
@@ -193,9 +256,9 @@ class DynamicMotionSegmenter:
 
         sequence = np.stack(self._active, axis=0)
         enough_frames = len(self._active) >= self.min_active_frames
-        if not enough_frames or not self._motion_sufficient(
-            sequence,
-            self._active_scales,
+        if not enough_frames or not (
+            self._motion_confirmed
+            or self._motion_sufficient(sequence, self._active_scales)
         ):
             self.reset()
             return MotionSegmentUpdate("idle", 0, end_reason="hand_lost_rejected")
@@ -218,6 +281,56 @@ class DynamicMotionSegmenter:
                 self._pre_roll.clear()
             return MotionSegmentUpdate("cooldown", 0)
 
+        if self._awaiting_continuation and self._active:
+            previous = self._active[-1]
+            current_scale = max(0.0, float(motion_scale or 0.0))
+            step_points = _global_points(np.stack([previous, vector], axis=0))
+            step = float(np.linalg.norm(step_points[1] - step_points[0]))
+            shape_step = sequence_shape_change_energy(
+                np.stack([previous, vector], axis=0)
+            )
+            still_threshold = self._scale_aware_threshold(
+                current_scale,
+                ratio=self.still_step_scale_ratio,
+                fallback=self.still_step,
+                minimum=0.002,
+            )
+            resume_threshold = max(
+                still_threshold * 1.5,
+                float(self._peak_step) * self.resume_step_ratio,
+            )
+            shape_resume_threshold = self._shape_resume_threshold(
+                self._peak_shape_step
+            )
+            if (
+                step <= resume_threshold
+                and shape_step <= shape_resume_threshold
+            ):
+                self._continuation_wait_remaining -= 1
+                if self._continuation_wait_remaining <= 0:
+                    self.reset()
+                    self._pre_roll.append(vector.copy())
+                    self._pre_roll_scales.append(current_scale)
+                    return MotionSegmentUpdate(
+                        "idle",
+                        0,
+                        end_reason="completion_timeout",
+                    )
+                return MotionSegmentUpdate(
+                    "awaiting_continuation",
+                    len(self._active),
+                )
+            self._active.append(vector)
+            self._active_scales.append(current_scale)
+            self._peak_step = max(self._peak_step, step)
+            self._peak_shape_step = max(self._peak_shape_step, shape_step)
+            self._still_frames = 0
+            self._release_frames = 0
+            self._awaiting_continuation = False
+            self._motion_confirmed = True
+            self._continuation_wait_remaining = 0
+            return MotionSegmentUpdate("active", len(self._active))
+
         if not self._active:
             self._pre_roll.append(vector)
             self._pre_roll_scales.append(max(0.0, float(motion_scale or 0.0)))
@@ -230,6 +343,8 @@ class DynamicMotionSegmenter:
             self._still_frames = 0
             self._release_frames = 0
             self._peak_step = 0.0
+            self._peak_shape_step = 0.0
+            self._motion_confirmed = True
             return MotionSegmentUpdate("active", len(self._active))
 
         previous = self._active[-1]
@@ -238,19 +353,30 @@ class DynamicMotionSegmenter:
         self._active_scales.append(current_scale)
         step_points = _global_points(np.stack([previous, vector], axis=0))
         step = float(np.linalg.norm(step_points[1] - step_points[0]))
+        shape_step = sequence_shape_change_energy(
+            np.stack([previous, vector], axis=0)
+        )
         self._peak_step = max(self._peak_step, step)
+        self._peak_shape_step = max(self._peak_shape_step, shape_step)
         still_threshold = self._scale_aware_threshold(
             current_scale,
             ratio=self.still_step_scale_ratio,
             fallback=self.still_step,
             minimum=0.002,
         )
-        self._still_frames = self._still_frames + 1 if step <= still_threshold else 0
+        shape_release_threshold = self._shape_release_threshold(
+            self._peak_shape_step
+        )
+        is_still = (
+            step <= still_threshold
+            and shape_step <= shape_release_threshold
+        )
+        self._still_frames = self._still_frames + 1 if is_still else 0
         enough_frames = len(self._active) >= self.min_active_frames
         sequence = np.stack(self._active, axis=0)
-        sufficient_motion = enough_frames and self._motion_sufficient(
-            sequence,
-            self._active_scales,
+        sufficient_motion = enough_frames and (
+            self._motion_confirmed
+            or self._motion_sufficient(sequence, self._active_scales)
         )
         release_threshold = max(
             still_threshold,
@@ -260,9 +386,15 @@ class DynamicMotionSegmenter:
             still_threshold * 1.5,
             float(self._peak_step) * self.resume_step_ratio,
         )
+        shape_resume_threshold = self._shape_resume_threshold(
+            self._peak_shape_step
+        )
 
         if self._pending_completion_sequence is not None:
-            if step > resume_threshold:
+            if (
+                step > resume_threshold
+                or shape_step > shape_resume_threshold
+            ):
                 self._pending_completion_reason = ""
                 self._pending_completion_sequence = None
                 self._completion_grace_remaining = 0
@@ -277,7 +409,11 @@ class DynamicMotionSegmenter:
                     )
                 return MotionSegmentUpdate("active", len(self._active))
 
-        if sufficient_motion and step <= release_threshold:
+        if (
+            sufficient_motion
+            and step <= release_threshold
+            and shape_step <= shape_release_threshold
+        ):
             self._release_frames += 1
         else:
             self._release_frames = 0
@@ -326,8 +462,16 @@ class DynamicMotionSegmenter:
     ) -> MotionSegmentUpdate:
         if sequence is None:
             sequence = np.stack(self._active, axis=0)
+        raw_sequence = np.asarray(sequence, dtype=np.float32)
+        from cv.dynamic_completion import build_dynamic_completion_evidence
+
+        completion_evidence = build_dynamic_completion_evidence(
+            raw_sequence,
+            motion_scale=self._active_scales[: raw_sequence.shape[0]],
+            target_frames=self.target_frames,
+        )
         completed = canonical_dynamic_sequence(
-            sequence,
+            raw_sequence,
             target_frames=self.target_frames,
         )
         self._active.clear()
@@ -337,15 +481,21 @@ class DynamicMotionSegmenter:
         self._still_frames = 0
         self._release_frames = 0
         self._peak_step = 0.0
+        self._peak_shape_step = 0.0
         self._pending_completion_reason = ""
         self._pending_completion_sequence = None
         self._completion_grace_remaining = 0
+        self._awaiting_continuation = False
+        self._motion_confirmed = False
+        self._continuation_wait_remaining = 0
         self._cooldown_remaining = self.cooldown_frames
         return MotionSegmentUpdate(
             "completed",
-            int(sequence.shape[0]),
+            int(raw_sequence.shape[0]),
             completed_sequence=completed,
             end_reason=end_reason,
+            completion_evidence=completion_evidence,
+            raw_sequence=raw_sequence.copy(),
         )
 
     def _onset_detected(self) -> bool:
@@ -390,24 +540,28 @@ class DynamicMotionSegmenter:
             return fallback
         return min(fallback, max(minimum, scale * ratio))
 
+    @staticmethod
+    def _shape_release_threshold(peak_shape_step: float) -> float:
+        return max(0.004, min(0.020, float(peak_shape_step) * 0.45))
+
+    @staticmethod
+    def _shape_resume_threshold(peak_shape_step: float) -> float:
+        return max(0.008, min(0.030, float(peak_shape_step) * 0.62))
+
 
 def _global_points(sequence: np.ndarray) -> np.ndarray:
-    seq = sequence_to_matrix(sequence)
-    dims = int(seq.shape[1])
-    if dims >= 44 and dims % 44 == 0:
-        wrists: list[np.ndarray] = []
-        for offset in range(0, dims, 44):
-            wrist = seq[:, offset + 42 : offset + 44]
-            if np.any(np.abs(wrist) > 1e-6):
-                wrists.append(wrist)
-        if wrists:
-            return np.mean(np.stack(wrists, axis=0), axis=0).astype(
-                np.float32,
-                copy=False,
-            )
+    return global_trajectory_xy(sequence)
 
-    usable = (dims // 2) * 2
-    if usable >= 2:
-        points = seq[:, :usable].reshape(seq.shape[0], usable // 2, 2)
-        return points.mean(axis=1).astype(np.float32, copy=False)
-    return np.zeros((seq.shape[0], 2), dtype=np.float32)
+
+def create_runtime_dynamic_segmenter(*, target_frames: int) -> DynamicMotionSegmenter:
+    """Build the shared segmenter used by live inference and profile training."""
+    return DynamicMotionSegmenter(
+        target_frames=max(2, int(target_frames)),
+        pre_roll_frames=RUNTIME_SEGMENT_PRE_ROLL_FRAMES,
+        onset_path=RUNTIME_SEGMENT_ONSET_PATH,
+        onset_displacement=RUNTIME_SEGMENT_ONSET_DISPLACEMENT,
+        min_active_frames=RUNTIME_SEGMENT_MIN_ACTIVE_FRAMES,
+        completion_grace_frames=RUNTIME_SEGMENT_COMPLETION_GRACE_FRAMES,
+        continuation_wait_frames=RUNTIME_SEGMENT_CONTINUATION_WAIT_FRAMES,
+        max_active_frames=max(60, int(target_frames)),
+    )

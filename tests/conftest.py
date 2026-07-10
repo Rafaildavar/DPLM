@@ -6,21 +6,10 @@ import sys
 from pathlib import Path
 import pytest
 
-try:
-    from PySide6.QtWidgets import QApplication  # noqa: F401
-except ImportError:  # Flet-only test runs do not require Qt.
-    QApplication = None  # type: ignore[assignment]
-
 # Добавить корневую директорию проекта в PYTHONPATH
 # Add project root directory to PYTHONPATH
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-
-# Используем встроенную фикстуру qapp из pytest-qt
-# Use built-in qapp fixture from pytest-qt
-# (автоматически управляет QApplication lifecycle)
-# (automatically manages QApplication lifecycle)
 
 
 @pytest.fixture

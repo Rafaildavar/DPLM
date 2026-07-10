@@ -1,11 +1,14 @@
-.PHONY: ci test-unit test-unit-ci test-jmlc-profile test-jmlc-ml ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow macos-app jmlc-profile jmlc-clean-profile compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
+.PHONY: ci repo-hygiene test-unit test-unit-ci ml-smoke docker-build docker-ml-smoke docker-ci docker-mlflow compare-models threshold-report negative-samples static-rejection-verifiers rejection-benchmark external-negative-experiments dynamic-prototype-experiments ipn-convert ipn-tar-convert ipn-external-analysis mlops-dashboard mlflow-ui
 
 PYTHON ?= python
 MLFLOW_TRACKING_URI ?= sqlite:///mlflow.db
 CI_ARTIFACT_DIR ?= outputs/ci
 CI_PYTEST_TARGETS ?= tests/unit --ignore=tests/unit/test_app_controller.py
 
-ci: test-unit-ci ml-smoke
+ci: repo-hygiene test-unit-ci ml-smoke
+
+repo-hygiene:
+	$(PYTHON) -m scripts.check_repository_hygiene
 
 test-unit-ci:
 	$(PYTHON) -m pytest $(CI_PYTEST_TARGETS) --no-cov -q
@@ -13,23 +16,12 @@ test-unit-ci:
 test-unit:
 	$(PYTHON) -m pytest tests/unit -q
 
-test-jmlc-profile:
-	$(PYTHON) -m pytest tests/unit/test_jmlc_dataset_profile.py -q -o addopts=''
-
-test-jmlc-ml:
-	$(PYTHON) -m pytest \
-		tests/unit/test_jmlc_dataset_profile.py \
-		tests/unit/test_gesture_features.py \
-		tests/unit/test_compare_models.py \
-		tests/unit/test_threshold_report.py \
-		-q -o addopts=''
-
 ml-smoke:
 	LOKY_MAX_CPU_COUNT=4 $(PYTHON) -m scripts.ml_smoke \
 		--report-json $(CI_ARTIFACT_DIR)/ml_smoke_report.json
 
 docker-build:
-	docker build --platform linux/amd64 -t gestureflow-runtime:local .
+	docker build --platform linux/amd64 -t gesturebind-runtime:local .
 
 docker-ml-smoke:
 	docker compose --profile tools run --rm ml-smoke
@@ -39,17 +31,6 @@ docker-ci:
 
 docker-mlflow:
 	docker compose --profile tools up mlflow
-
-macos-app:
-	bash packaging/macos/build_app.sh
-
-jmlc-profile:
-	$(PYTHON) -m scripts.jmlc_dataset_profile
-
-jmlc-clean-profile:
-	$(PYTHON) -m scripts.jmlc_dataset_profile \
-		--json-out docs/experiments/dataset_profile.json \
-		--markdown-out docs/experiments/dataset_profile.md
 
 compare-models:
 	$(PYTHON) -m scripts.compare_models

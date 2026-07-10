@@ -39,8 +39,10 @@ REASON_INTENT_NONE = "intent_none"
 REASON_INTENT_DYNAMIC_PENDING = "intent_dynamic_pending"
 REASON_INTENT_STATIC_FALLBACK = "intent_static_fallback"
 REASON_INTENT_STATIC_NO_CANDIDATE = "intent_static_no_candidate"
-DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.60
-DEFAULT_STATIC_CONFIDENCE_THRESHOLD = 0.50
+REASON_DYNAMIC_OVERRIDES_INTENT_GATE = "dynamic_overrides_intent_gate"
+DEFAULT_DYNAMIC_CONFIDENCE_THRESHOLD = 0.90
+DEFAULT_STATIC_CONFIDENCE_THRESHOLD = 0.80
+DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD = 0.90
 
 
 @dataclass(frozen=True)
@@ -310,6 +312,24 @@ class GestureRecognitionRouter:
         intent_decision = self._intent_decision(static_out, dynamic_out)
 
         if intent_decision.get("accepted"):
+            if (
+                dynamic_assessment.accepted
+                and self._dynamic_can_override_intent_gate(
+                    dynamic_candidate,
+                    dynamic_out,
+                    intent_decision,
+                )
+            ):
+                return self._with_route(
+                    dynamic_candidate,
+                    static_out,
+                    dynamic_out,
+                    static_assessment=static_assessment,
+                    dynamic_assessment=dynamic_assessment,
+                    selected_reason=REASON_DYNAMIC_OVERRIDES_INTENT_GATE,
+                    intent_decision=intent_decision,
+                )
+
             intent_label = str(intent_decision.get("label") or "")
             if intent_label == INTENT_NONE:
                 return self._without_candidate(
@@ -531,9 +551,70 @@ class GestureRecognitionRouter:
         if self._looks_like_negative_label(clean):
             return GESTURE_TYPE_NEGATIVE
 
+        if self._label_belongs_to_dynamic_model(clean):
+            return GESTURE_TYPE_DYNAMIC
+
         if base_type == GESTURE_TYPE_STATIC:
             return GESTURE_TYPE_DYNAMIC
         return base_type
+
+    def _label_belongs_to_dynamic_model(self, label: str) -> bool:
+        clean = str(label or "").strip().lower()
+        if not clean:
+            return False
+        compact = self._compact_label(clean)
+        raw_classes = getattr(self._dynamic_infer, "_classes", None)
+        if raw_classes is None:
+            raw_classes = getattr(self._dynamic_infer, "classes", ())
+        for raw_label in raw_classes or ():
+            candidate = str(raw_label or "").strip().lower()
+            if not candidate:
+                continue
+            if candidate == clean or self._compact_label(candidate) == compact:
+                return True
+        return False
+
+    @staticmethod
+    def _compact_label(label: str) -> str:
+        return "".join(ch for ch in str(label or "").lower() if ch.isalnum())
+
+    def _dynamic_can_override_intent_gate(
+        self,
+        candidate: RecognitionCandidate,
+        dynamic_out: dict[str, Any],
+        intent_decision: dict[str, Any],
+    ) -> bool:
+        intent_label = str(intent_decision.get("label") or "")
+        if intent_label not in {INTENT_NONE, INTENT_STATIC}:
+            return False
+        override_threshold = max(
+            self._dynamic_confidence_threshold,
+            DYNAMIC_INTENT_OVERRIDE_CONFIDENCE_THRESHOLD,
+        )
+        if candidate.confidence < override_threshold:
+            return False
+
+        temporal = dynamic_out.get("temporal")
+        if not isinstance(temporal, dict) or not bool(temporal.get("enabled")):
+            return False
+        phase = str(temporal.get("phase") or "")
+        if phase not in {"completed", "cooldown"}:
+            return False
+
+        decision = dynamic_out.get("dynamic_decision")
+        if not isinstance(decision, dict):
+            return False
+        source = str(decision.get("source") or "")
+        if not source:
+            return False
+        return source not in {
+            "completion_rejected",
+            "negative_rejected",
+            "prototype_rejected",
+            "prototype_motion_conflict",
+            "rejected",
+            "motion_fallback_suppressed_for_custom_labels",
+        }
 
     def _declared_taxonomy_type(self, label: str) -> str:
         clean = str(label or "").strip().lower()
@@ -830,6 +911,24 @@ class GestureRecognitionRouter:
             ),
             "dynamic_negative_threshold": float(
                 dynamic_decision.get("negative_threshold") or 0.0
+            ),
+            "dynamic_completion_enabled": bool(
+                dynamic_decision.get("completion_enabled")
+            ),
+            "dynamic_completion_accepted": bool(
+                dynamic_decision.get("completion_accepted")
+            ),
+            "dynamic_completion_score": float(
+                dynamic_decision.get("completion_score") or 0.0
+            ),
+            "dynamic_completion_threshold": float(
+                dynamic_decision.get("completion_threshold") or 0.0
+            ),
+            "dynamic_completion_reason": str(
+                dynamic_decision.get("completion_reason") or ""
+            ),
+            "dynamic_completion_candidate_label": str(
+                dynamic_decision.get("completion_candidate_label") or ""
             ),
             "dynamic_axis": str(dynamic_decision.get("axis") or ""),
             "dynamic_direction": str(dynamic_decision.get("direction") or ""),

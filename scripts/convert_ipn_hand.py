@@ -1,4 +1,4 @@
-"""Convert a small IPN Hand subset into GestureFlow landmark samples.
+"""Convert a small IPN Hand subset into GestureBind landmark samples.
 
 The converter intentionally produces experiment data only:
 
@@ -6,7 +6,7 @@ The converter intentionally produces experiment data only:
 
 It does not touch production models. IPN labels are mapped through
 ``configs/ipn_hand_mapping.json`` so public classes do not accidentally become
-GestureFlow commands.
+GestureBind commands.
 """
 
 from __future__ import annotations
@@ -809,7 +809,7 @@ def mediapipe_cli_available(timeout_seconds: int = 60) -> tuple[bool, str]:
     ]
     env = {
         **dict(os.environ),
-        "MPLCONFIGDIR": "/private/tmp/gestureflow_mpl",
+        "MPLCONFIGDIR": "/private/tmp/gesturebind_mpl",
         "MEDIAPIPE_DISABLE_GPU": "1",
     }
     try:
@@ -907,7 +907,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-mediapipe-preflight", action="store_true")
     parser.add_argument("--json-out", type=Path, default=DEFAULT_JSON_OUT)
     parser.add_argument("--md-out", type=Path, default=DEFAULT_MD_OUT)
-    parser.add_argument("--mlflow-experiment", default="GestureFlow")
+    parser.add_argument("--mlflow-experiment", default="GestureBind")
     parser.add_argument("--mlflow-tracking-uri", default=DEFAULT_MLFLOW_URI)
     return parser.parse_args()
 

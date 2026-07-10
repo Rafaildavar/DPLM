@@ -1,1 +1,1 @@
-static_mean
+static_craft_full_stats

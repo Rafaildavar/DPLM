@@ -3,8 +3,24 @@ from pathlib import Path
 
 import numpy as np
 
-from app.gesture_online_infer import GestureOnlineInfer
-from cv.gesture_features import FEATURE_DYNAMIC_SEQUENCE, FEATURE_DYNAMIC_SEQUENCE_72
+from app.gesture_online_infer import (
+    GestureOnlineInfer,
+    configure_estimator_for_live_inference,
+    default_gesture_rejection_path,
+)
+from cv.gesture_features import (
+    DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
+    FEATURE_DYNAMIC_CRAFT_FULL_STATS,
+    FEATURE_DYNAMIC_CRAFT_STATS,
+    FEATURE_DYNAMIC_LANDMARK_IMAGE,
+    FEATURE_DYNAMIC_SEQUENCE,
+    FEATURE_DYNAMIC_SEQUENCE_72,
+    FEATURE_STATIC_CRAFT_FULL_STATS,
+    FEATURE_STATIC_LANDMARK_IMAGE,
+    build_feature_vector,
+    feature_vector_size,
+)
+from cv.hand_landmarker import DetectedHand
 
 
 class _NoHandsDetector:
@@ -24,6 +40,22 @@ class _CountingClassifier:
         return np.asarray([[1.0]])
 
 
+def test_live_runtime_uses_one_worker_for_nested_estimators() -> None:
+    class Estimator:
+        def __init__(self, *, children=None):
+            self.n_jobs = -1
+            self.estimators_ = children or []
+
+    child = Estimator()
+    parent = Estimator(children=[("child", child)])
+
+    configured = configure_estimator_for_live_inference(parent)
+
+    assert configured == 2
+    assert parent.n_jobs == 1
+    assert child.n_jobs == 1
+
+
 def test_dynamic_sequence_artifact_forces_sequence_feature_mode():
     infer = GestureOnlineInfer.__new__(GestureOnlineInfer)
     infer._feature_dim = 1584
@@ -32,6 +64,24 @@ def test_dynamic_sequence_artifact_forces_sequence_feature_mode():
     infer._ensure_dynamic_sequence_feature_mode(Path("dynamic_sequence_rocket.pkl"))
 
     assert infer._feature_mode == FEATURE_DYNAMIC_SEQUENCE
+
+
+def test_dynamic_model_prefers_model_specific_rejection_metadata(tmp_path: Path):
+    model_path = tmp_path / "dynamic_custom.pkl"
+    generic = tmp_path / "gesture_rejection.json"
+    specific = tmp_path / "dynamic_custom_rejection.json"
+    generic.write_text("{}", encoding="utf-8")
+    specific.write_text("{}", encoding="utf-8")
+
+    assert default_gesture_rejection_path(model_path) == specific
+
+
+def test_dynamic_model_falls_back_to_legacy_rejection_metadata(tmp_path: Path):
+    model_path = tmp_path / "dynamic_custom.pkl"
+    generic = tmp_path / "gesture_rejection.json"
+    generic.write_text("{}", encoding="utf-8")
+
+    assert default_gesture_rejection_path(model_path) == generic
 
 
 def test_long_dynamic_sequence_artifact_forces_long_sequence_feature_mode():
@@ -400,7 +450,7 @@ def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
     infer = object.__new__(GestureOnlineInfer)
     infer._detector = _MovingHorizontalHandDetector()
     infer._clf = _DirectionConfusedClassifier()
-    infer._classes = ["swipe_down", "swipe_left", "swipe_up"]
+    infer._classes = ["swipe_down", "SwipeLeft", "swipe_up"]
     infer._feature_dim = 271
     infer._raw_feature_dim = 44
     infer._feature_mode = "dynamic_stats"
@@ -413,10 +463,10 @@ def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
     for _ in range(60):
         out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
-    assert out["label"] == "swipe_left"
+    assert out["label"] == "SwipeLeft"
     assert out["confidence"] >= 0.80
     assert out["temporal"]["phase"] == "completed"
-    assert out["dynamic_decision"]["motion_label"] == "swipe_left"
+    assert out["dynamic_decision"]["motion_label"] == "SwipeLeft"
     assert out["dynamic_decision"]["model_label"] == "swipe_up"
     assert out["dynamic_decision"]["source"] == "motion_and_model_agree"
 
@@ -645,6 +695,10 @@ def test_acknowledge_dynamic_event_preserves_segmenter_cooldown() -> None:
 
 def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:
     infer = object.__new__(GestureOnlineInfer)
+    infer._feature_mode = FEATURE_STATIC_CRAFT_FULL_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_STATIC_CRAFT_FULL_STATS, 63)
+    assert infer._infer_raw_feature_dim() == 63
+
     infer._feature_mode = "dynamic_stats"
 
     infer._feature_dim = 271
@@ -652,6 +706,72 @@ def test_dynamic_raw_dim_inference_supports_new_and_legacy_sizes() -> None:
 
     infer._feature_dim = 264
     assert infer._infer_raw_feature_dim() == 44
+
+    infer._feature_mode = FEATURE_DYNAMIC_CRAFT_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_CRAFT_STATS, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_DYNAMIC_CRAFT_FULL_STATS
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_CRAFT_FULL_STATS, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_DYNAMIC_LANDMARK_IMAGE
+    infer._feature_dim = feature_vector_size(FEATURE_DYNAMIC_LANDMARK_IMAGE, 65)
+    assert infer._infer_raw_feature_dim() == 65
+
+    infer._feature_mode = FEATURE_STATIC_LANDMARK_IMAGE
+    infer._feature_dim = feature_vector_size(FEATURE_STATIC_LANDMARK_IMAGE, 63)
+    assert infer._infer_raw_feature_dim() == 63
+
+
+def test_hand_frame_feature_builds_65_dim_xyz_wrist_layout() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    landmarks = _open_hand_landmarks()
+    normalized = np.zeros((21, 2), dtype=np.float32)
+    xyz = [
+        (float(point[0]), float(point[1]), float(index) / 100.0)
+        for index, point in enumerate(landmarks)
+    ]
+    hand = DetectedHand(
+        landmarks=landmarks,
+        handedness="Right",
+        score=1.0,
+        landmarks_xyz=xyz,
+    )
+
+    feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
+
+    assert feature.shape == (65,)
+    assert np.allclose(feature[2:63:3], [float(index) / 100.0 for index in range(21)])
+    assert np.allclose(feature[-2:], landmarks[0])
+
+
+def test_live_xyz_feature_is_normalized_once_by_landmark_image_features() -> None:
+    infer = object.__new__(GestureOnlineInfer)
+    landmarks = _open_hand_landmarks()
+    normalized = np.zeros((21, 2), dtype=np.float32)
+    normalized[8, 1] = 0.5
+    xyz = [(float(point[0]), float(point[1]), 0.2) for point in landmarks]
+    xyz[8] = (float(landmarks[8][0]), float(landmarks[8][1]), 0.7)
+    hand = DetectedHand(
+        landmarks=landmarks,
+        handedness="Right",
+        score=1.0,
+        landmarks_xyz=xyz,
+    )
+
+    feature = infer._hand_frame_feature(hand, normalized, target_dim=65)
+    sequence = np.repeat(feature[None, :], 4, axis=0)
+    image = build_feature_vector(
+        sequence,
+        FEATURE_DYNAMIC_LANDMARK_IMAGE,
+        target_dim=65,
+    ).reshape(DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES, 22, 3)
+
+    assert np.allclose(feature[2], 0.2)
+    assert np.allclose(feature[8 * 3 + 2], 0.7)
+    assert np.allclose(image[:, 0, 2], 0.0)
+    assert np.allclose(image[:, 8, 2], 1.0)
 
 
 def test_classifier_failure_keeps_landmarks_for_overlay_and_pointer() -> None:

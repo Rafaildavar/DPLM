@@ -1,4 +1,4 @@
-"""CI smoke checks for GestureFlow ML artifacts.
+"""CI smoke checks for GestureBind ML artifacts.
 
 The script intentionally avoids camera and GUI access. It validates that the
 tracked model artifacts can be loaded, that metadata is consistent with feature
@@ -61,23 +61,13 @@ DEFAULT_PROFILES: tuple[SmokeProfile, ...] = (
         rejection="gesture_rejection.json",
     ),
     SmokeProfile(
-        name="dynamic_sequence_mlp",
-        model="dynamic_sequence_mlp.pkl",
-        classes="dynamic_sequence_mlp_classes.json",
-        feature_dim="dynamic_sequence_mlp_feature_dim.txt",
-        feature_mode="dynamic_sequence_mlp_feature_mode.txt",
-        rejection="dynamic_sequence_mlp_rejection.json",
-        prototypes="dynamic_sequence_mlp_prototypes.json",
-        required=False,
-    ),
-    SmokeProfile(
-        name="dynamic_sequence_lstm_backbone",
-        model="dynamic_sequence_lstm_backbone.pkl",
-        classes="dynamic_sequence_lstm_backbone_classes.json",
-        feature_dim="dynamic_sequence_lstm_backbone_feature_dim.txt",
-        feature_mode="dynamic_sequence_lstm_backbone_feature_mode.txt",
-        rejection="dynamic_sequence_lstm_backbone_rejection.json",
-        prototypes="dynamic_sequence_lstm_backbone_prototypes.json",
+        name="dynamic_landmark_lstm_backbone",
+        model="dynamic_landmark_lstm_backbone.pkl",
+        classes="dynamic_landmark_lstm_backbone_classes.json",
+        feature_dim="dynamic_landmark_lstm_backbone_feature_dim.txt",
+        feature_mode="dynamic_landmark_lstm_backbone_feature_mode.txt",
+        rejection="dynamic_landmark_lstm_backbone_rejection.json",
+        prototypes="dynamic_landmark_lstm_backbone_prototypes.json",
     ),
 )
 
@@ -89,7 +79,7 @@ def parse_args() -> argparse.Namespace:
         "--profile",
         action="append",
         default=[],
-        help="Profile name to check. Defaults to static, MLP dynamic and LSTM dynamic.",
+        help="Profile name to check. Defaults to static and dynamic profiles.",
     )
     parser.add_argument(
         "--report-json",

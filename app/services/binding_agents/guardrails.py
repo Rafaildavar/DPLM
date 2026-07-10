@@ -74,7 +74,12 @@ class GuardrailsAgent:
         if result.intent_block == "project_question" and result.can_apply:
             issues.append("project_answer_can_apply")
         if result.intent_block == "binding":
-            if result.can_apply and (not result.gesture_label or not result.action_spec):
+            if result.mutation:
+                operation = str(result.mutation.get("operation") or "")
+                binding_id = int(result.mutation.get("bindingId") or 0)
+                if operation != "delete_binding" or not binding_id:
+                    issues.append("binding_mutation_invalid")
+            elif result.can_apply and (not result.gesture_label or not result.action_spec):
                 issues.append("binding_contract_incomplete")
             elif not result.can_apply and result.missing:
                 clarifications.extend(str(item) for item in result.missing if str(item))

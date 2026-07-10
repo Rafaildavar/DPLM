@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Mapping from IPN Hand labels to GestureFlow external dynamic labels. Production positives remain user-recorded; IPN is used as negative/reference evidence.",
+  "description": "Mapping from IPN Hand labels to GestureBind external dynamic labels. Production positives remain user-recorded; IPN is used as negative/reference evidence.",
   "default": {
     "include": false,
     "target_label": "negative_external_ipn_dynamic",
@@ -18,13 +18,13 @@
       "include": true,
       "target_label": "negative_external_ipn_dynamic",
       "role": "pointing_hold",
-      "notes": "Pointing with one finger is not a GestureFlow dynamic command."
+      "notes": "Pointing with one finger is not a GestureBind dynamic command."
     },
     "B0B": {
       "include": true,
       "target_label": "negative_external_ipn_dynamic",
       "role": "pointing_hold",
-      "notes": "Pointing with two fingers is not a GestureFlow dynamic command."
+      "notes": "Pointing with two fingers is not a GestureBind dynamic command."
     },
     "G01": {
       "include": true,

@@ -1,7 +1,7 @@
-"""Run external public-dataset negative experiments for GestureFlow.
+"""Run external public-dataset negative experiments for GestureBind.
 
 The script keeps public datasets out of the production data folder. It expects
-external samples already converted to the GestureFlow landmark format:
+external samples already converted to the GestureBind landmark format:
 
     data/external/<source>/<original_label>/sample_*.npy
 
@@ -873,7 +873,7 @@ def run_external_negative_experiments(
     dynamic_model_types: Iterable[str] = ("knn",),
     symlink: bool = True,
     seed: int = 42,
-    mlflow_experiment: str = "GestureFlow",
+    mlflow_experiment: str = "GestureBind",
     mlflow_tracking_uri: str = "sqlite:///mlflow.db",
     train_artifacts: bool = True,
 ) -> ExternalNegativeExperimentReport:
@@ -936,7 +936,7 @@ def run_external_negative_experiments(
 
     notes.extend(
         [
-            "External datasets are treated as negative/rejection data, not as replacement for personalized GestureFlow samples.",
+            "External datasets are treated as negative/rejection data, not as replacement for personalized GestureBind samples.",
             "Live validation still decides whether an external variant is useful for the user's camera and gesture style.",
         ]
     )
@@ -969,7 +969,7 @@ def build_markdown_summary(report: ExternalNegativeExperimentReport) -> str:
         "## Goal",
         "",
         "Проверить, улучшают ли публичные датасеты качество reject-layer без",
-        "подмены персонального датасета GestureFlow. Внешние данные используются",
+        "подмены персонального датасета GestureBind. Внешние данные используются",
         "как negative / out-of-distribution evidence.",
         "",
         "## Variants",
@@ -1110,7 +1110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--json-out", type=Path, default=DEFAULT_DOC_JSON)
     parser.add_argument("--md-out", type=Path, default=DEFAULT_DOC_MD)
-    parser.add_argument("--mlflow-experiment", default="GestureFlow")
+    parser.add_argument("--mlflow-experiment", default="GestureBind")
     parser.add_argument("--mlflow-tracking-uri", default="sqlite:///mlflow.db")
     parser.add_argument("--skip-artifact-training", action="store_true")
     return parser.parse_args()

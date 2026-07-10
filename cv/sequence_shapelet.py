@@ -8,7 +8,7 @@ from typing import Iterable
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES
+from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES, global_wrist_slices
 
 
 @dataclass(frozen=True)
@@ -119,9 +119,8 @@ class ShapeletSequenceTransformer(BaseEstimator, TransformerMixin):
             temporal_energy = np.std(sequences, axis=(0, 1))
 
         global_channels: list[int] = []
-        if n_channels >= 44 and n_channels % 44 == 0:
-            for offset in range(0, n_channels, 44):
-                global_channels.extend([offset + 42, offset + 43])
+        for start, end in global_wrist_slices(n_channels):
+            global_channels.extend(range(start, end))
 
         order = list(np.argsort(-temporal_energy).astype(int))
         selected: list[int] = []

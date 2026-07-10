@@ -1,6 +1,6 @@
 # JMLC Experiments
 
-Эта директория хранит воспроизводимые артефакты ML-части GestureFlow.
+Эта директория хранит воспроизводимые артефакты ML-части GestureBind.
 
 Правило: важный ML-вывод не считается готовым, пока рядом нет команды
 воспроизведения и сохраненного отчета.
@@ -22,8 +22,16 @@
   `external_negative_dataset_experiments.md` - отдельные эксперименты с
   публичными датасетами как negative / out-of-distribution evidence.
 - `ipn_conversion_report.json` / `ipn_conversion_report.md` - конвертация IPN
-  Hand в формат GestureFlow landmarks `(frames, 44)`.
+  Hand в формат GestureBind landmarks `(frames, 44)`.
 - `latency_report.json` / `latency_report.md` - задержки ML и live-pipeline.
+- `release_readiness_2026-07-10.md` - frozen baseline, критические release
+  fixes, grouped CV, production latency и финальный протокол live-проверки.
+- `static_grouped_cv_release_2026-07-10.*` - 5-fold benchmark с изоляцией
+  оригинала и его аугментаций по source group.
+- `release_latency_benchmark_2026-07-10.json` - feature extraction и model
+  inference для текущих static ExtraTrees и dynamic LSTM.
+- `dynamic_lstm_grouped_retrain_2026-07-10.*` - grouped Optuna retrain
+  production LSTM и prototype safety metrics.
 - `live_eval.json` / `live_eval.md` - проверка в рабочем приложении: ложные
   срабатывания, успешные команды, ошибки.
 - `figures/` - confusion matrix, распределения датасета и графики метрик.
@@ -60,5 +68,5 @@ python -m scripts.compare_models
 python -m scripts.threshold_report
 python -m scripts.external_negative_dataset_experiments
 python -m scripts.convert_ipn_hand
-python -m scripts.benchmark_latency --mode ml
+python -m scripts.benchmark_latency --mode ml --profile both
 ```

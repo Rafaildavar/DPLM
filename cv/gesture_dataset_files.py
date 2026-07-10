@@ -1,6 +1,7 @@
-"""Helpers for locating real and augmented gesture sample files."""
+"""Helpers for locating and grouping gesture sample files."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -43,6 +44,23 @@ def augmented_sample_paths(label_dir: Path) -> list[Path]:
 
 def is_augmented_sample_path(path: Path) -> bool:
     return path.name.startswith(AUGMENTED_SAMPLE_PREFIX)
+
+
+def sample_group_key(path: Path) -> str:
+    """Return the original capture key shared by a sample and its augmentations."""
+    source_name = ""
+    if is_augmented_sample_path(path):
+        metadata_path = path.with_suffix(".meta.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            source_name = Path(str(metadata.get("source_sample") or "")).name
+        except (OSError, ValueError, json.JSONDecodeError):
+            source_name = ""
+        if not source_name:
+            match = _AUG_INDEX_RE.match(path.stem)
+            if match:
+                source_name = f"sample_{int(match.group('source')):04d}.npy"
+    return str(path.parent / (source_name or path.name))
 
 
 def sample_source_from_path(path: Path) -> str:

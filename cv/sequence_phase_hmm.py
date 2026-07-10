@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
 
-from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES
+from cv.gesture_features import DYNAMIC_SEQUENCE_TARGET_FRAMES, global_wrist_slices
 
 
 class PhaseHMMSequenceClassifier(ClassifierMixin, BaseEstimator):
@@ -150,9 +150,8 @@ class PhaseHMMSequenceClassifier(ClassifierMixin, BaseEstimator):
             temporal_energy = np.std(sequences, axis=(0, 1))
 
         global_channels: list[int] = []
-        if n_channels >= 44 and n_channels % 44 == 0:
-            for offset in range(0, n_channels, 44):
-                global_channels.extend([offset + 42, offset + 43])
+        for start, end in global_wrist_slices(n_channels):
+            global_channels.extend(range(start, end))
 
         order = list(np.argsort(-temporal_energy).astype(int))
         selected: list[int] = []
@@ -211,10 +210,11 @@ class PhaseHMMSequenceClassifier(ClassifierMixin, BaseEstimator):
 
 def _global_motion_features(sequences: np.ndarray) -> np.ndarray:
     n_samples, frames, channels = sequences.shape
-    if channels >= 44 and channels % 44 == 0:
+    wrist_slices = global_wrist_slices(channels)
+    if wrist_slices:
         paths: list[np.ndarray] = []
-        for offset in range(0, channels, 44):
-            wrist = sequences[:, :, offset + 42 : offset + 44]
+        for start, end in wrist_slices:
+            wrist = sequences[:, :, start:end]
             if np.any(np.abs(wrist) > 1e-6):
                 paths.append(wrist)
         if paths:

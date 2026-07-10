@@ -10,19 +10,47 @@ import difflib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
+import uuid
 import zlib
-from dataclasses import dataclass, field, replace
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from app.services.binding_agents.action_ontology import (
+    ACTION_START_PATTERN,
+    INLINE_ACTION_START_PATTERN,
+    parse_action_intent,
+)
+from app.services.binding_agents.action_semantics import compile_action_candidate
+from app.services.binding_agents.budget import PipelineBudget
+from app.services.binding_agents.contracts import (
+    ActionCandidate,
+    AgentStatus,
+    AgentStep,
+    BindingAgentContext,
+    BindingAgentResult,
+    ResultStatus,
+    RiskLevel,
+    TaskDomain,
+    TaskEvidence,
+    TaskFrame,
+    TaskOperation,
+)
 from app.services.binding_agents.skills import (
     AgentSkill,
     skill_registry_cards as _skill_registry_cards,
     step_data_with_skills as _step_data_with_skills,
 )
 from app.services.binding_agents.skill_packs import skill_pack_cards as _skill_pack_cards
+from app.services.binding_agents.privacy import (
+    contains_secret,
+    redact_payload,
+    redact_text,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -40,9 +68,11 @@ BINDING_AGENT_GENAI_TRACES_ENV = "DPLM_BINDING_AGENT_GENAI_TRACES"
 BINDING_AGENT_GENAI_EVAL_ENV = "DPLM_BINDING_AGENT_GENAI_EVAL"
 BINDING_AGENT_LOCAL_FIRST_ENV = "DPLM_BINDING_AGENT_LOCAL_FIRST"
 BINDING_AGENT_REWRITE_ANSWERS_ENV = "DPLM_BINDING_AGENT_REWRITE_ANSWERS"
+BINDING_AGENT_MLFLOW_SYNC_ENV = "DPLM_BINDING_AGENT_MLFLOW_SYNC"
 
 AGENT_ACTION_LABELS: dict[str, str] = {
     "open_app": "Открыть приложение",
+    "quit_app": "Закрыть приложение",
     "open_path": "Открыть файл или папку",
     "open_url": "Открыть сайт",
     "key_combination": "Нажать сочетание клавиш",
@@ -50,7 +80,7 @@ AGENT_ACTION_LABELS: dict[str, str] = {
     "scroll": "Прокрутка",
     "wait": "Подождать",
     "notify": "Показать уведомление",
-    "media_key": "Управлять музыкой",
+    "media_key": "Управлять медиа",
     "volume_up": "Увеличить громкость",
     "volume_down": "Уменьшить громкость",
     "mute_toggle": "Включить/выключить звук",
@@ -116,6 +146,12 @@ ABSTRACT_WORKFLOW_TARGET_MARKERS: tuple[str, ...] = (
 SITE_ALIASES: dict[str, str] = {
     "chat gpt": "https://chatgpt.com",
     "chatgpt": "https://chatgpt.com",
+    "студент гуап": "https://new.guap.ru/targets/studs",
+    "студента гуап": "https://new.guap.ru/targets/studs",
+    "студенты гуап": "https://new.guap.ru/targets/studs",
+    "студентов гуап": "https://new.guap.ru/targets/studs",
+    "обучающимся гуап": "https://new.guap.ru/targets/studs",
+    "обучающиеся гуап": "https://new.guap.ru/targets/studs",
     "почта рамблер": "https://mail.rambler.ru",
     "почту рамблер": "https://mail.rambler.ru",
     "рамблер почта": "https://mail.rambler.ru",
@@ -205,76 +241,6 @@ GESTURE_WORD_ALIASES: dict[str, str] = {
     "ок": "ok",
     "okay": "ok",
 }
-
-
-@dataclass(frozen=True)
-class BindingAgentContext:
-    prompt: str
-    gestures: list[dict[str, Any]] = field(default_factory=list)
-    current_gesture: str = ""
-    conversation_history: list[dict[str, str]] = field(default_factory=list)
-    draft_state: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class AgentStep:
-    agent: str
-    status: str
-    message: str
-    data: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class BindingAgentResult:
-    ok: bool
-    can_apply: bool
-    error: str
-    missing: list[str]
-    gesture_label: str
-    command_name: str
-    mode: str
-    action_spec: dict[str, Any]
-    summary: list[str]
-    response_text: str
-    steps: list[AgentStep]
-    intent: str = ""
-    intent_block: str = ""
-    telemetry: dict[str, Any] = field(default_factory=dict)
-    research: dict[str, Any] = field(default_factory=dict)
-
-    def to_legacy_draft(self) -> dict[str, Any]:
-        return {
-            "ok": self.ok,
-            "canApply": self.can_apply,
-            "error": self.error,
-            "missing": list(self.missing),
-            "gestureLabel": self.gesture_label,
-            "commandName": self.command_name,
-            "mode": self.mode,
-            "actionSpec": dict(self.action_spec),
-            "summary": list(self.summary),
-            "agentReply": self.response_text,
-            "intent": self.intent,
-            "intentBlock": self.intent_block,
-            "researchProposal": dict(self.research),
-            "agentSkills": _skill_registry_cards(),
-            "agentSkillPacks": _skill_pack_cards(),
-            "agentTrace": [
-                {
-                    "agent": step.agent,
-                    "status": step.status,
-                    "message": step.message,
-                    "data": _step_data_with_skills(step),
-                }
-                for step in self.steps
-            ],
-            "telemetry": dict(self.telemetry),
-            "mlflowRunId": str(self.telemetry.get("mlflow_run_id") or ""),
-            "mlflowTrackingUri": str(
-                self.telemetry.get("mlflow_tracking_uri") or ""
-            ),
-            "mlflowTraceId": str(self.telemetry.get("mlflow_trace_id") or ""),
-        }
 
 
 def _norm(value: str) -> str:
@@ -586,6 +552,10 @@ def _parse_action(text: str) -> dict[str, Any] | None:
     if keys:
         return {"action": "key_combination", "platform": "macos", "keys": keys}
 
+    ontology_action = parse_action_intent(text)
+    if ontology_action:
+        return ontology_action
+
     if any(marker in lower for marker in ("заблок", "lock screen", "lock_screen")):
         return {"action": "lock_screen", "platform": "macos"}
     if any(marker in lower for marker in ("скрин", "screenshot", "снимок экрана")):
@@ -636,7 +606,7 @@ def _parse_action(text: str) -> dict[str, Any] | None:
         return {
             "action": "notify",
             "platform": "macos",
-            "title": "GestureFlow",
+            "title": "GestureBind",
             "message": message or "Готово",
         }
 
@@ -685,6 +655,16 @@ def _split_sequence(text: str) -> list[str]:
         body,
         flags=re.IGNORECASE,
     )
+    body = re.sub(
+        (
+            r"^\s*(?:жест(?:ом|а)?|gesture)\s*[:=]?\s+"
+            r"[A-Za-zА-Яа-я0-9_.-]+\s+"
+            rf"(?={ACTION_START_PATTERN}\w*)"
+        ),
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
     series_prefix = re.match(
         r"\s*(?:сер(?:и[яию]|ии)|последовательност[ьи])\s+команд\w*",
         body,
@@ -708,6 +688,13 @@ def _split_sequence(text: str) -> list[str]:
         body = body[scenario_marker.end() :]
     else:
         body = re.sub(
+            r"^\s*(?:сделай|создай|добавь|собери|подготовь)?\s*"
+            r"сценар\w*\s+[A-Za-zА-Яа-я0-9_.-]+\s*:\s*",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(
             (
                 r"^\s*(?:сделай|создай|добавь|собери|подготовь)?\s*"
                 r"сценар\w*(?:\s+под\s+названи(?:ем|е)\s+"
@@ -717,6 +704,17 @@ def _split_sequence(text: str) -> list[str]:
             body,
             flags=re.IGNORECASE,
         )
+    body = re.sub(
+        (
+            r"^\s*(?:сделай|создай|добавь|собери|подготовь)\s+"
+            rf"(?:(?!{ACTION_START_PATTERN}\w*).){{1,80}}"
+            r"[:—-]\s*"
+            rf"(?={ACTION_START_PATTERN}\w*)"
+        ),
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
     body = re.sub(
         (
             r"\b(?:перв(?:ый|ым|ое)?(?:\s+шаг)?|1\s*[-.]?\s*шаг|"
@@ -769,19 +767,13 @@ def _split_sequence(text: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"\s+и\s+(?=откр|запуст|покаж|уведом|подожд|нажм"
-            r"|сделай|увелич|уменьш|заблок|скрин)"
-        ),
+        rf"\s+и\s+(?={ACTION_START_PATTERN})",
         ";",
         body,
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"[,]\s*(?=(?:откр|запуст|включ|покаж|уведом|подожд|нажм|"
-            r"сделай|увелич|уменьш|заблок|скрин|сайт)\w*)"
-        ),
+        rf"[,]\s*(?={ACTION_START_PATTERN}\w*)",
         ";",
         body,
         flags=re.IGNORECASE,
@@ -793,10 +785,7 @@ def _split_sequence(text: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     body = re.sub(
-        (
-            r"\s+(?=(?:откр|запуст|включ|покаж|уведом|подожд|нажм|"
-            r"сделай|увелич|уменьш|заблок|скрин)\w*)"
-        ),
+        rf"\s+(?={INLINE_ACTION_START_PATTERN}\w*)",
         ";",
         body,
         flags=re.IGNORECASE,
@@ -836,6 +825,8 @@ def _action_title(spec: dict[str, Any]) -> str:
     action = str(spec.get("action") or "")
     if action == "open_app":
         return f"Открыть {spec.get('app') or 'приложение'}"
+    if action == "quit_app":
+        return f"Закрыть {spec.get('app') or 'приложение'}"
     if action == "open_url":
         return f"Открыть {spec.get('url') or 'сайт'}"
     if action == "open_path":
@@ -846,6 +837,16 @@ def _action_title(spec: dict[str, Any]) -> str:
         return f"Нажать {spec.get('key') or 'клавишу'}"
     if action == "notify":
         return "Уведомление"
+    if action == "media_key":
+        kind = str(spec.get("kind") or "play_pause")
+        return {
+            "play_pause": "Пауза/воспроизведение медиа",
+            "play": "Запустить воспроизведение",
+            "pause": "Поставить медиа на паузу",
+            "next": "Следующий медиа-трек",
+            "prev": "Предыдущий медиа-трек",
+            "previous": "Предыдущий медиа-трек",
+        }.get(kind, "Управлять медиа")
     if action == "sequence":
         name = str(spec.get("name") or "").strip()
         if name:
@@ -995,8 +996,9 @@ def _mlflow_tracking_uri() -> str:
 def _mlflow_experiment() -> str:
     return str(
         os.getenv(BINDING_AGENT_MLFLOW_EXPERIMENT_ENV)
+        or os.getenv("GESTUREBIND_MLFLOW_EXPERIMENT")
         or os.getenv("GESTUREFLOW_MLFLOW_EXPERIMENT")
-        or "GestureFlow"
+        or "GestureBind"
     ).strip()
 
 
@@ -1120,7 +1122,7 @@ def _has_project_scope(text: str) -> bool:
         marker in lower
         for marker in (
             "dplm",
-            "gestureflow",
+            "gesturebind",
             "проект",
             "прилож",
             "система",
@@ -1236,7 +1238,7 @@ def _history_mentions_scope_redirect(history: list[dict[str, str]]) -> bool:
                 "остан",
                 "контекст",
                 "общие вопросы",
-                "gestureflow",
+                "gesturebind",
                 "рамк",
             )
         ):
@@ -1249,9 +1251,9 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
     title = _pick_variant(
         seed + "|title",
         (
-            "**Почему я держусь GestureFlow**",
-            "**Держу фокус на GestureFlow**",
-            "**Остаюсь в рабочем контуре GestureFlow**",
+            "**Почему я держусь GestureBind**",
+            "**Держу фокус на GestureBind**",
+            "**Остаюсь в рабочем контуре GestureBind**",
         ),
     )
     prefix = ""
@@ -1261,14 +1263,14 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
             (
                 "Да, вижу предыдущий ответ и держу его в памяти. ",
                 "Да, я помню прошлую реплику и продолжаю ту же линию. ",
-                "Вижу контекст выше: я всё ещё аккуратно держу рамку GestureFlow. ",
+                "Вижу контекст выше: я всё ещё аккуратно держу рамку GestureBind. ",
             ),
         )
     intro = _pick_variant(
         seed + "|intro",
         (
             "Ха-ха, понимаю желание получить ответ на всё сразу, но давай не будем уводить агента в соседние темы.",
-            "Ха-ха, соблазн уйти в общий чат понятен, но здесь лучше держать руль на GestureFlow.",
+            "Ха-ха, соблазн уйти в общий чат понятен, но здесь лучше держать руль на GestureBind.",
             "Ха-ха, можно было бы развернуться в обычный чат, но тогда агент начнёт мешать привязки с посторонними задачами.",
         ),
     )
@@ -1276,7 +1278,7 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
         seed + "|help",
         (
             "Зато здесь я могу быть очень полезным:",
-            "Внутри GestureFlow я как раз полезен вот где:",
+            "Внутри GestureBind я как раз полезен вот где:",
             "Лучше потрачу внимание на то, что реально помогает в приложении:",
         ),
     )
@@ -1290,7 +1292,7 @@ def _scope_answer_text(text: str, history: list[dict[str, str]]) -> str:
     )
     return (
         f"{title}\n\n"
-        f"{prefix}{intro} Я держусь рамок GestureFlow, чтобы не смешивать "
+        f"{prefix}{intro} Я держусь рамок GestureBind, чтобы не смешивать "
         "настройку жестов, команд и сценариев с обычным чатом.\n\n"
         f"{help_intro}\n"
         "- разобрать фразу и собрать привязку жеста;\n"
@@ -1334,7 +1336,7 @@ def _project_answer_text(
         )
     gestures = ", ".join(labels[:8]) if labels else "список жестов пока не загружен"
     return (
-        "**GestureFlow**\n\n"
+        "**GestureBind**\n\n"
         "- Основная задача: связать распознанный жест с командой macOS или сценарием.\n"
         "- Агент принимает обычную фразу, находит жест, действие и недостающие поля.\n"
         "- Ручная форма остаётся рядом, чтобы пользователь мог проверить и сохранить результат.\n"
@@ -1351,9 +1353,9 @@ def _unsupported_answer_text(
     title = _pick_variant(
         seed + "|title",
         (
-            "**Останемся в GestureFlow**",
-            "**Верну нас к GestureFlow**",
-            "**Держим фокус на GestureFlow**",
+            "**Останемся в GestureBind**",
+            "**Верну нас к GestureBind**",
+            "**Держим фокус на GestureBind**",
         ),
     )
     intro = _pick_variant(
@@ -1367,16 +1369,16 @@ def _unsupported_answer_text(
     boundary = _pick_variant(
         seed + "|boundary",
         (
-            "На общие вопросы вне GestureFlow я лучше мягко сверну разговор, чтобы не смешивать настройку привязок с посторонними темами.",
+            "На общие вопросы вне GestureBind я лучше мягко сверну разговор, чтобы не смешивать настройку привязок с посторонними темами.",
             "Я не буду разворачивать постороннюю тему, чтобы не путать диалог агента с настройкой жестов, команд и сценариев.",
-            "Так мы не потеряем контекст: агент остаётся помощником по GestureFlow, а не универсальным собеседником.",
+            "Так мы не потеряем контекст: агент остаётся помощником по GestureBind, а не универсальным собеседником.",
         ),
     )
     help_intro = _pick_variant(
         seed + "|help",
         (
             "Зато я могу помочь здесь:",
-            "А вот внутри GestureFlow я полезен:",
+            "А вот внутри GestureBind я полезен:",
             "Лучше направим это в действие по приложению:",
         ),
     )
@@ -1401,13 +1403,7 @@ def _unsupported_answer_text(
 
 
 def _contains_secret_like(text: str) -> bool:
-    raw = text or ""
-    secret_patterns = (
-        r"(?i)\b(?:api[_-]?key|token|secret|password|пароль|ключ)\s*[:=]\s*\S{6,}",
-        r"\bsk-[A-Za-z0-9_-]{12,}\b",
-        r"\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\b",
-    )
-    return any(re.search(pattern, raw) for pattern in secret_patterns)
+    return contains_secret(text)
 
 
 def _contains_prompt_injection(text: str) -> bool:
@@ -1448,11 +1444,11 @@ def _guardrail_answer_text(reason: str) -> str:
         )
     if reason == "prompt_injection":
         return (
-            "**Останемся в GestureFlow**\n\n"
+            "**Останемся в GestureBind**\n\n"
             "Ха-ха, понимаю ход, но правила агента я не переписываю из сообщения. "
             "Guardrails остановили часть запроса, где предлагается не слушать "
             "предыдущие инструкции.\n\n"
-            "Зато я спокойно помогу в рамках GestureFlow: привязки, жесты, "
+            "Зато я спокойно помогу в рамках GestureBind: привязки, жесты, "
             "команды, сценарии и наблюдаемость пайплайна."
         )
     if reason == "prompt_too_long":
@@ -1464,7 +1460,7 @@ def _guardrail_answer_text(reason: str) -> str:
     return (
         "**Ответ остановлен guardrails**\n\n"
         "Я не могу безопасно выдать этот результат. Переформулируйте запрос "
-        "в рамках GestureFlow: жест, команда, сценарий или вопрос по проекту."
+        "в рамках GestureBind: жест, команда, сценарий или вопрос по проекту."
     )
 
 
@@ -1579,6 +1575,31 @@ def _known_gesture_labels(context: BindingAgentContext) -> list[str]:
     ]
 
 
+def _canonical_known_gesture(
+    context: BindingAgentContext,
+    value: str,
+) -> str:
+    clean = str(value or "").strip().casefold()
+    if not clean:
+        return ""
+    return next(
+        (
+            label
+            for label in _known_gesture_labels(context)
+            if label.casefold() == clean
+        ),
+        "",
+    )
+
+
+def _unknown_gesture_from_steps(steps: list[AgentStep]) -> str:
+    for step in reversed(steps):
+        value = str(step.data.get("unknownGesture") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _normalize_gesture_phrase(value: str) -> str:
     raw = _norm(value)
     raw = raw.replace("_", " ").replace("-", " ")
@@ -1604,6 +1625,28 @@ def _gesture_query_from_text(text: str) -> str:
     )
     if match:
         return _clean_value(match.group("value"))
+    generic_bind_match = re.search(
+        (
+            r"(?:привяж\w*|привяз\w*|сохрани\w*|назнач\w*)\s+"
+            r"(?P<value>.+?)(?=\s+(?:к|на|для)\s+)"
+        ),
+        raw,
+        re.IGNORECASE,
+    )
+    if generic_bind_match:
+        value = _clean_value(generic_bind_match.group("value"))
+        if _normalize_gesture_phrase(value) not in {
+            "this",
+            "eto",
+            "это",
+            "этот",
+            "эту",
+            "текущий",
+            "текущии",
+            "выбранный",
+            "выбранныи",
+        }:
+            return value
     return _clean_value(raw)
 
 
@@ -1679,10 +1722,74 @@ def _match_gesture_label_in_text(text: str, labels: list[str]) -> str:
 class BindingAgentMlflowLogger:
     """Logs the binding-agent pipeline as an MLflow run when enabled."""
 
-    def __init__(self, *, enabled: bool | None = None) -> None:
+    _executor = ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="gesturebind-mlflow",
+    )
+
+    def __init__(
+        self,
+        *,
+        enabled: bool | None = None,
+        async_mode: bool | None = None,
+    ) -> None:
         self.enabled = enabled
+        self.async_mode = async_mode
+        self._futures: list[Future] = []
 
     def log(
+        self,
+        context: BindingAgentContext,
+        result: BindingAgentResult,
+        *,
+        provider: str,
+        model: str = "",
+    ) -> dict[str, Any]:
+        _load_project_dotenv()
+        enabled = (
+            _env_flag(BINDING_AGENT_MLFLOW_ENV, default=True)
+            if self.enabled is None
+            else self.enabled
+        )
+        if not enabled:
+            return {}
+        async_mode = (
+            not _env_flag(BINDING_AGENT_MLFLOW_SYNC_ENV, default=False)
+            if self.async_mode is None
+            else self.async_mode
+        )
+        if not async_mode:
+            return self._log_sync(
+                context,
+                result,
+                provider=provider,
+                model=model,
+            )
+        event_id = uuid.uuid4().hex[:12]
+        future = self._executor.submit(
+            self._log_sync,
+            context,
+            result,
+            provider=provider,
+            model=model,
+        )
+        self._futures.append(future)
+        self._futures = [item for item in self._futures if not item.done()]
+        return {
+            "mlflow_queued": True,
+            "mlflow_event_id": event_id,
+            "mlflow_tracking_uri": _mlflow_tracking_uri(),
+            "mlflow_experiment": _mlflow_experiment(),
+        }
+
+    def flush(self, timeout: float = 10.0) -> None:
+        deadline = time.monotonic() + max(0.0, timeout)
+        for future in list(self._futures):
+            remaining = max(0.0, deadline - time.monotonic())
+            future.result(timeout=remaining)
+        self._futures = [item for item in self._futures if not item.done()]
+
+    def _log_sync(
         self,
         context: BindingAgentContext,
         result: BindingAgentResult,
@@ -1735,9 +1842,10 @@ class BindingAgentMlflowLogger:
             "blocked": statuses.count("blocked"),
             "skipped": statuses.count("skipped"),
         }
-        draft = result.to_legacy_draft()
-        payload = {
-            "prompt": context.prompt,
+        draft = redact_payload(result.to_legacy_draft())
+        safe_prompt = redact_text(context.prompt)
+        payload = redact_payload({
+            "prompt": safe_prompt,
             "current_gesture": context.current_gesture,
             "conversation_history": _history_items(context.conversation_history),
             "known_gestures": [
@@ -1760,7 +1868,13 @@ class BindingAgentMlflowLogger:
                 }
                 for index, step in enumerate(result.steps, start=1)
             ],
-        }
+        })
+        step_durations = [
+            float(step.data.get("durationMs") or 0.0)
+            for step in result.steps
+            if isinstance(step.data, dict)
+        ]
+        route_margin = float(intent_data.get("routeMargin") or 0.0)
 
         try:
             mlflow.set_tracking_uri(tracking_uri)
@@ -1778,7 +1892,7 @@ class BindingAgentMlflowLogger:
                 mlflow.set_tags(
                     {
                         "run_kind": "binding_agent_pipeline",
-                        "source": "gestureflow_flet",
+                        "source": "gesturebind_flet",
                         "provider": provider,
                         "model": model,
                         "result": "ok" if result.ok else "needs_review",
@@ -1788,7 +1902,7 @@ class BindingAgentMlflowLogger:
                     {
                         "provider": provider,
                         "model": model,
-                        "prompt_preview": _short_text(context.prompt),
+                        "prompt_preview": _short_text(safe_prompt),
                         "current_gesture": context.current_gesture,
                         "gesture_label": result.gesture_label,
                         "command_name": _short_text(result.command_name, 180),
@@ -1815,6 +1929,12 @@ class BindingAgentMlflowLogger:
                         "prompt_chars": float(len(context.prompt)),
                         "reviewer_relevance": reviewer_relevance,
                         "intent_semantic_score": semantic_score,
+                        "intent_route_margin": route_margin,
+                        "latency_ms": float(result.telemetry.get("latency_ms") or 0.0),
+                        "network_stage_ms": sum(step_durations),
+                        "requires_confirmation": (
+                            1.0 if result.requires_confirmation else 0.0
+                        ),
                         **{
                             f"reviewer_{name}": value
                             for name, value in reviewer_scores.items()
@@ -1878,6 +1998,21 @@ class BindingAgentMlflowLogger:
     ) -> dict[str, Any]:
         if not _env_flag(BINDING_AGENT_GENAI_EVAL_ENV, default=False):
             return {}
+        from app.services.binding_agents.eval_cases import (
+            case_expectations,
+            find_binding_agent_eval_case,
+        )
+
+        golden_case = find_binding_agent_eval_case(
+            context.prompt,
+            current_gesture=context.current_gesture,
+        )
+        if golden_case is None:
+            return {
+                "mlflow_genai_eval": False,
+                "mlflow_genai_eval_reason": "no_golden_case",
+            }
+        expectations = case_expectations(golden_case)
         genai = getattr(mlflow, "genai", None)
         evaluate = getattr(genai, "evaluate", None)
         scorer = getattr(genai, "scorer", None)
@@ -1890,9 +2025,14 @@ class BindingAgentMlflowLogger:
             expectations=None,
             **_kwargs,
         ) -> bool:
-            if (expectations or {}).get("expected_status") == "answer":
-                return True
-            return bool(isinstance(outputs, dict) and outputs.get("gestureLabel"))
+            if not isinstance(outputs, dict):
+                return False
+            expected = expectations or {}
+            expected_gesture = str(expected.get("expected_gesture") or "")
+            actual = str(outputs.get("gestureLabel") or "")
+            if expected_gesture:
+                return actual == expected_gesture
+            return not actual
 
         @scorer
         def binding_agent_has_action(
@@ -1900,9 +2040,12 @@ class BindingAgentMlflowLogger:
             expectations=None,
             **_kwargs,
         ) -> bool:
-            if (expectations or {}).get("expected_status") == "answer":
-                return True
-            return bool(isinstance(outputs, dict) and outputs.get("actionSpec"))
+            if not isinstance(outputs, dict):
+                return False
+            expected_action = str((expectations or {}).get("expected_action") or "")
+            action_spec = outputs.get("actionSpec") or {}
+            actual_action = str(action_spec.get("action") or "") if isinstance(action_spec, dict) else ""
+            return actual_action == expected_action
 
         @scorer
         def binding_agent_contract_ok(outputs=None, expectations=None, **_kwargs) -> bool:
@@ -1919,37 +2062,53 @@ class BindingAgentMlflowLogger:
                 return bool(outputs.get("missing"))
             return not bool(outputs.get("error"))
 
-        action = str(result.action_spec.get("action") or "")
-        expected_status = (
-            "answer"
-            if result.mode == "answer"
-            else
-            "ready"
-            if result.ok
-            else "needs_clarification"
-            if result.missing
-            else "error"
-        )
-        output = result.to_legacy_draft()
+        @scorer
+        def binding_agent_intent_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            expected = expectations or {}
+            return (
+                outputs.get("intent") == expected.get("expected_intent")
+                and outputs.get("intentBlock") == expected.get("expected_block")
+            )
+
+        @scorer
+        def binding_agent_missing_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            return list(outputs.get("missing") or []) == list(
+                (expectations or {}).get("expected_missing") or []
+            )
+
+        @scorer
+        def binding_agent_action_spec_ok(outputs=None, expectations=None, **_kwargs) -> bool:
+            if not isinstance(outputs, dict):
+                return False
+            actual = outputs.get("actionSpec") or {}
+            expected = (expectations or {}).get("expected_action_spec") or {}
+            return isinstance(actual, dict) and all(
+                actual.get(key) == value for key, value in expected.items()
+            )
+
+        output = redact_payload(result.to_legacy_draft())
         data = [
             {
                 "inputs": {
-                    "prompt": context.prompt,
+                    "prompt": redact_text(context.prompt),
                     "provider": provider,
                     "model": model,
                 },
                 "outputs": output,
-                "expectations": {
-                    "expected_status": expected_status,
-                    "expected_action": action,
-                    "expected_missing": list(result.missing),
-                },
+                "expectations": expectations,
             }
         ]
         scorers = [
             binding_agent_has_gesture,
             binding_agent_has_action,
             binding_agent_contract_ok,
+            binding_agent_intent_ok,
+            binding_agent_missing_ok,
+            binding_agent_action_spec_ok,
         ]
 
         def predict_fn(prompt: str = "", **_kwargs) -> dict[str, Any]:
@@ -1971,7 +2130,10 @@ class BindingAgentMlflowLogger:
         except Exception as exc:
             print(f"[w] MLflow GenAI evaluation failed: {exc}", flush=True)
             return {}
-        return {"mlflow_genai_eval": True}
+        return {
+            "mlflow_genai_eval": True,
+            "mlflow_genai_eval_case_id": golden_case.case_id,
+        }
 
     def _log_genai_trace(
         self,
@@ -2011,12 +2173,18 @@ class BindingAgentMlflowLogger:
             self._set_span_inputs(
                 root_span,
                 {
-                    "prompt": context.prompt,
+                    "prompt": str(payload.get("prompt") or ""),
                     "current_gesture": context.current_gesture,
                     "conversation_history": payload.get("conversation_history", []),
                 },
             )
             for index, step in enumerate(result.steps, start=1):
+                safe_steps = payload.get("steps") or []
+                safe_step = (
+                    safe_steps[index - 1]
+                    if index - 1 < len(safe_steps)
+                    else {}
+                )
                 child = self._start_span(
                     mlflow,
                     step.agent,
@@ -2030,7 +2198,7 @@ class BindingAgentMlflowLogger:
                     self._set_span_inputs(
                         step_span,
                         {
-                            "prompt": context.prompt,
+                            "prompt": str(payload.get("prompt") or ""),
                             "known_gestures_count": len(context.gestures),
                         },
                     )
@@ -2038,8 +2206,8 @@ class BindingAgentMlflowLogger:
                         step_span,
                         {
                             "status": step.status,
-                            "message": step.message,
-                            "data": _step_data_with_skills(step),
+                            "message": safe_step.get("message") or "",
+                            "data": safe_step.get("data") or {},
                         },
                     )
             self._set_span_outputs(
@@ -2049,9 +2217,9 @@ class BindingAgentMlflowLogger:
                     "can_apply": result.can_apply,
                     "missing": list(result.missing),
                     "gesture_label": result.gesture_label,
-                    "command_name": result.command_name,
+                    "command_name": redact_text(result.command_name),
                     "mode": result.mode,
-                    "action_spec": dict(result.action_spec),
+                    "action_spec": redact_payload(dict(result.action_spec)),
                 },
             )
             trace_id = self._span_trace_id(root_span)
@@ -2098,10 +2266,10 @@ class BindingAgentMlflowLogger:
             },
             "metadata": {
                 "gesture_label": result.gesture_label,
-                "command_name": result.command_name,
+                "command_name": redact_text(result.command_name),
                 "mode": result.mode,
                 "action": str(result.action_spec.get("action") or ""),
-                "prompt_preview": _short_text(context.prompt),
+                "prompt_preview": _short_text(redact_text(context.prompt)),
             },
         }
         try:
@@ -2155,6 +2323,7 @@ class BindingAgentMlflowLogger:
 
 from app.services.binding_agents import (
     ActionAgent,
+    BindingCrudAgent,
     GestureAgent,
     GuardrailsAgent,
     IntentAgent,
@@ -2164,6 +2333,7 @@ from app.services.binding_agents import (
     RelevanceReviewerAgent,
     ResearchAgent,
     ScenarioAgent,
+    SessionMemoryAgent,
     ValidationAgent,
 )
 
@@ -2177,6 +2347,7 @@ class BindingAgentOrchestrator:
         mistral_agent: MistralBindingAgent | None = None,
         research_agent: ResearchAgent | None = None,
         mlflow_logger: BindingAgentMlflowLogger | None = None,
+        session_memory_agent: SessionMemoryAgent | None = None,
     ) -> None:
         self.intent_agent = IntentAgent()
         self.mistral_agent = mistral_agent or MistralBindingAgent()
@@ -2184,7 +2355,9 @@ class BindingAgentOrchestrator:
         self.mlflow_logger = mlflow_logger or BindingAgentMlflowLogger()
         self.gesture_agent = GestureAgent()
         self.action_agent = ActionAgent()
+        self.crud_agent = BindingCrudAgent()
         self.scenario_agent = ScenarioAgent()
+        self.session_memory_agent = session_memory_agent or SessionMemoryAgent()
         self.memory_agent = MemoryAgent()
         self.policy_agent = PolicyAgent()
         self.validation_agent = ValidationAgent()
@@ -2199,14 +2372,21 @@ class BindingAgentOrchestrator:
         current_gesture: str = "",
         conversation_history: list[dict[str, str]] | None = None,
         draft_state: dict[str, Any] | None = None,
+        bindings: list[dict[str, Any]] | None = None,
+        session_id: str = "",
         provider: str | None = None,
     ) -> BindingAgentResult:
+        budget = PipelineBudget.start()
         context = BindingAgentContext(
             prompt=(prompt or "").strip(),
             gestures=gestures,
             current_gesture=current_gesture,
             conversation_history=list(conversation_history or []),
             draft_state=dict(draft_state or {}),
+            bindings=[dict(item) for item in (bindings or []) if isinstance(item, dict)],
+            session_id=session_id,
+            request_started_at=budget.started_at,
+            request_deadline=budget.deadline,
         )
         steps: list[AgentStep] = []
         provider_name = _provider_name(provider)
@@ -2277,11 +2457,89 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
-        intent_step = self.intent_agent.run(context)
+        context = self.session_memory_agent.prepare(context)
+        task_frame = self.intent_agent.build_frame(context)
+        context = replace(context, task_frame=task_frame)
+        intent_step = self.intent_agent.run(context, frame=task_frame)
         steps.append(intent_step)
         intent = str(intent_step.data.get("intent") or "create_binding")
         block = str(intent_step.data.get("block") or "binding")
+        if intent == "update_binding":
+            context = self._hydrate_update_context(context)
 
+        if intent == "cancel_binding":
+            result = BindingAgentResult(
+                ok=True,
+                can_apply=False,
+                error="",
+                missing=[],
+                gesture_label="",
+                command_name="",
+                mode="answer",
+                action_spec={},
+                summary=[],
+                response_text=(
+                    "Хорошо, привязку не создаю. Текущий черновик не будет "
+                    "изменён; можно сформулировать новую команду."
+                ),
+                steps=[
+                    *steps,
+                    AgentStep(
+                        "Conversation Agent",
+                        "ok",
+                        "Подтвердил отмену без создания исполняемого действия.",
+                        {"intent": intent, "block": block},
+                    ),
+                ],
+            )
+            return self._finish_result(
+                self._review_result(context, result, intent_step),
+                context,
+                provider=provider_name,
+            )
+
+        if intent in {"inspect_binding", "delete_binding"}:
+            operation = "inspect" if intent == "inspect_binding" else "delete"
+            crud_step = self.crud_agent.run(context, operation=operation)
+            steps.append(crud_step)
+            mutation = dict(crud_step.data.get("mutation") or {})
+            binding = dict(crud_step.data.get("binding") or {})
+            gesture = str(
+                crud_step.data.get("gesture")
+                or binding.get("gestureLabel")
+                or ""
+            )
+            missing = list(crud_step.data.get("missing") or [])
+            response = str(crud_step.data.get("response") or crud_step.message)
+            can_apply = bool(mutation and crud_step.data.get("canApply"))
+            result = BindingAgentResult(
+                ok=crud_step.status in {"ok", "needs_approval"},
+                can_apply=can_apply,
+                error="",
+                missing=missing,
+                gesture_label=gesture,
+                command_name=str(binding.get("name") or ""),
+                mode="mutation" if mutation else "answer",
+                action_spec={},
+                summary=(
+                    [
+                        f"Жест: {gesture}",
+                        f"Команда: {binding.get('name') or 'не найдена'}",
+                        f"Операция: {operation}",
+                    ]
+                    if binding
+                    else []
+                ),
+                response_text=response,
+                steps=steps,
+                mutation=mutation,
+                requires_confirmation=bool(mutation),
+            )
+            return self._finish_result(
+                self._review_result(context, result, intent_step),
+                context,
+                provider=provider_name,
+            )
         if block == "project_question":
             labels = _known_gesture_labels(context)
             is_validation = intent == "validate_command"
@@ -2478,11 +2736,12 @@ class BindingAgentOrchestrator:
             model_draft,
             steps,
         )
-        model_result = self._maybe_research_result(
-            context,
-            model_result,
-            steps,
-        )
+        if not any(step.agent == "Research Agent" for step in steps):
+            model_result = self._maybe_research_result(
+                context,
+                model_result,
+                steps,
+            )
         return model_result, list(model_result.steps)
 
     def _run_local_binding_pipeline(
@@ -2495,26 +2754,44 @@ class BindingAgentOrchestrator:
         steps = list(steps)
         gesture_step = self.gesture_agent.run(context)
         steps.append(gesture_step)
-        gesture = str(gesture_step.data.get("gesture") or "")
+        requested_gesture = str(gesture_step.data.get("gesture") or "").strip()
+        gesture = _canonical_known_gesture(context, requested_gesture)
+        gesture_known = bool(gesture_step.data.get("known") and gesture)
+        if not gesture_known:
+            gesture = ""
 
-        memory_step = self.memory_agent.run(context, gesture)
+        memory_step = self.memory_agent.run(context, requested_gesture)
         steps.append(memory_step)
 
         action_spec: dict[str, Any] = {}
+        requires_confirmation = False
         if intent == "build_sequence":
             scenario_step = self.scenario_agent.run(context, enabled=True)
             steps.append(scenario_step)
             action_spec = dict(scenario_step.data.get("action_spec") or {})
+            requires_confirmation = bool(
+                scenario_step.data.get("requires_confirmation")
+            )
             if not action_spec:
                 action_step = self.action_agent.run(context)
                 steps.append(action_step)
                 action_spec = dict(action_step.data.get("action_spec") or {})
+                candidate_data = action_step.data.get("candidate")
+                requires_confirmation = bool(
+                    isinstance(candidate_data, dict)
+                    and candidate_data.get("requiresConfirmation")
+                )
         else:
             scenario_step = self.scenario_agent.run(context, enabled=False)
             steps.append(scenario_step)
             action_step = self.action_agent.run(context)
             steps.append(action_step)
             action_spec = dict(action_step.data.get("action_spec") or {})
+            candidate_data = action_step.data.get("candidate")
+            requires_confirmation = bool(
+                isinstance(candidate_data, dict)
+                and candidate_data.get("requiresConfirmation")
+            )
 
         research: dict[str, Any] = {}
         if not action_spec:
@@ -2523,9 +2800,27 @@ class BindingAgentOrchestrator:
             action_spec = dict(research_step.data.get("action_spec") or {})
             research = dict(research_step.data.get("research") or {})
 
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         missing = list(policy_step.data.get("missing") or [])
+        unresolved_steps = []
+        if intent == "build_sequence":
+            for step in reversed(steps):
+                if step.agent != "Scenario Agent":
+                    continue
+                raw_unresolved = step.data.get("unresolved_steps")
+                if isinstance(raw_unresolved, list):
+                    unresolved_steps = [
+                        item for item in raw_unresolved if isinstance(item, dict)
+                    ]
+                break
+        if unresolved_steps:
+            missing = _unique_missing([*missing, "шаги сценария"])
 
         validation_step = self.validation_agent.run(gesture, action_spec)
         steps.append(validation_step)
@@ -2564,6 +2859,7 @@ class BindingAgentOrchestrator:
             gesture=gesture,
             action_spec=action_spec,
             research=research,
+            unknown_gesture=(requested_gesture if not gesture_known else ""),
         )
         result = BindingAgentResult(
             ok=ok,
@@ -2578,8 +2874,41 @@ class BindingAgentOrchestrator:
             response_text=response,
             steps=steps,
             research=research,
+            requires_confirmation=requires_confirmation,
         )
         return result
+
+    def _hydrate_update_context(
+        self,
+        context: BindingAgentContext,
+    ) -> BindingAgentContext:
+        if context.draft_state.get("actionSpec"):
+            return context
+        selected = (context.current_gesture or "").strip().lower()
+        draft_gesture = str(context.draft_state.get("gestureLabel") or "").strip().lower()
+        binding = next(
+            (
+                item
+                for item in context.bindings
+                if str(item.get("gestureLabel") or "").strip().lower()
+                in {selected, draft_gesture}
+                and (selected or draft_gesture)
+            ),
+            None,
+        )
+        if not isinstance(binding, dict):
+            return context
+        action_spec = binding.get("actionSpec")
+        if not isinstance(action_spec, dict) or not action_spec.get("action"):
+            return context
+        state = {
+            **context.draft_state,
+            "gestureLabel": str(binding.get("gestureLabel") or ""),
+            "commandName": str(binding.get("name") or ""),
+            "actionSpec": dict(action_spec),
+            "sourceBindingId": int(binding.get("id") or 0),
+        }
+        return replace(context, draft_state=state)
 
     def _needs_mistral_fallback(self, result: BindingAgentResult) -> bool:
         if result.can_apply:
@@ -2661,12 +2990,28 @@ class BindingAgentOrchestrator:
         *,
         provider: str,
     ) -> BindingAgentResult:
-        telemetry = self.mlflow_logger.log(
+        if result.task_frame is None and context.task_frame is not None:
+            result = replace(result, task_frame=context.task_frame)
+        memory_state = self.session_memory_agent.remember(context, result)
+        budget = PipelineBudget.from_deadline(
+            started_at=context.request_started_at,
+            deadline=context.request_deadline,
+        )
+        telemetry: dict[str, Any] = {
+            "latency_ms": budget.elapsed_ms,
+            "budget_remaining_ms": round(budget.remaining * 1000.0, 1),
+        }
+        if memory_state:
+            telemetry["session_memory"] = memory_state
+        result_for_log = replace(result, telemetry=dict(telemetry))
+        logged = self.mlflow_logger.log(
             context,
-            result,
+            result_for_log,
             provider=provider,
             model=getattr(self.mistral_agent, "model", ""),
         )
+        if logged:
+            telemetry.update(logged)
         return replace(result, telemetry=telemetry) if telemetry else result
 
     def _maybe_research_result(
@@ -2730,7 +3075,15 @@ class BindingAgentOrchestrator:
         action_spec: dict[str, Any],
         research: dict[str, Any],
     ) -> BindingAgentResult:
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        requested_gesture = gesture or _unknown_gesture_from_steps(steps)
+        gesture = _canonical_known_gesture(context, gesture)
+        gesture_known = bool(gesture)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         missing = list(policy_step.data.get("missing") or [])
 
@@ -2760,6 +3113,7 @@ class BindingAgentOrchestrator:
             gesture=gesture,
             action_spec=action_spec,
             research=research,
+            unknown_gesture=(requested_gesture if not gesture_known else ""),
         )
         return BindingAgentResult(
             ok=ok,
@@ -2782,22 +3136,68 @@ class BindingAgentOrchestrator:
         draft: dict[str, Any],
         steps: list[AgentStep],
     ) -> BindingAgentResult:
-        gesture = str(draft.get("gestureLabel") or "").strip()
+        model_gesture = str(draft.get("gestureLabel") or "").strip()
+        gesture_verification = self.gesture_agent.run(context)
+        verified_gesture = str(gesture_verification.data.get("gesture") or "")
+        requested_gesture = verified_gesture or model_gesture
+        gesture = _canonical_known_gesture(context, requested_gesture)
+        gesture_known = bool(gesture)
+        gesture_overridden = bool(gesture and gesture != model_gesture)
         action_spec = dict(draft.get("actionSpec") or {})
+        if action_spec:
+            goal, semantic_candidate = compile_action_candidate(
+                context.prompt,
+                action_spec,
+                frame=context.task_frame,
+                source="model_candidate",
+            )
+            steps.append(
+                AgentStep(
+                    "Semantic Verifier",
+                    "ok" if semantic_candidate.valid else "blocked",
+                    (
+                        "Model action соответствует цели пользователя."
+                        if semantic_candidate.valid
+                        else "Model action не соответствует цели пользователя."
+                    ),
+                    {
+                        "goal": goal.to_dict(),
+                        "candidate": semantic_candidate.to_dict(),
+                        "gesture": {
+                            "model": model_gesture,
+                            "requested": requested_gesture,
+                            "verified": gesture,
+                            "known": gesture_known,
+                            "source": gesture_verification.data.get("source"),
+                            "overridden": gesture_overridden,
+                        },
+                    },
+                )
+            )
+            action_spec = (
+                dict(semantic_candidate.action_spec)
+                if semantic_candidate.valid
+                else {}
+            )
         forced_missing: list[str] = []
         if _action_conflicts_with_abstract_workflow(context.prompt, action_spec):
             action_spec = {}
             draft = {**draft, "agentReply": ""}
             forced_missing.append("действие")
-        memory_step = self.memory_agent.run(context, gesture)
+        memory_step = self.memory_agent.run(context, requested_gesture)
         steps.append(memory_step)
-        policy_step = self.policy_agent.run(gesture, action_spec)
+        policy_step = self.policy_agent.run(
+            gesture,
+            action_spec,
+            gesture_known=gesture_known,
+            requested_gesture=requested_gesture,
+        )
         steps.append(policy_step)
         model_missing = _normalize_missing(draft.get("missing"))
         missing = _unique_missing(
             model_missing + forced_missing + list(policy_step.data.get("missing") or [])
         )
-        if gesture:
+        if gesture_known:
             missing = [
                 item for item in missing if _norm(item) not in {"жест", "gesture"}
             ]
@@ -2815,8 +3215,10 @@ class BindingAgentOrchestrator:
             else ""
         )
 
-        command_name = str(draft.get("commandName") or "").strip()
-        if not command_name:
+        command_name = (
+            str(draft.get("commandName") or "").strip() if gesture_known else ""
+        )
+        if gesture_known and not command_name:
             command_name = str(validation_step.data.get("command_name") or "")
         if validation_error:
             error = validation_error
@@ -2831,8 +3233,8 @@ class BindingAgentOrchestrator:
         mode = str(draft.get("mode") or "").strip().lower()
         if mode not in {"single", "sequence"}:
             mode = "sequence" if action_spec.get("action") == "sequence" else "single"
-        summary = _normalize_summary(draft.get("summary"))
-        if not summary and action_spec:
+        summary = _normalize_summary(draft.get("summary")) if gesture_known else []
+        if (not summary or gesture_overridden) and action_spec:
             summary = [
                 f"Жест: {gesture or 'не выбран'}",
                 f"Команда: {command_name or _action_title(action_spec)}",
@@ -2840,12 +3242,16 @@ class BindingAgentOrchestrator:
             ]
         can_apply = bool(action_spec and not missing and not error)
         response = str(draft.get("agentReply") or "").strip()
-        if not response or self._external_reply_conflicts_with_contract(
-            response,
-            gesture=gesture,
-            action_spec=action_spec,
-            missing=missing,
-            error=error,
+        if (
+            not response
+            or not gesture_known
+            or self._external_reply_conflicts_with_contract(
+                response,
+                gesture=gesture,
+                action_spec=action_spec,
+                missing=missing,
+                error=error,
+            )
         ):
             response = self._response_text(
                 ok=ok,
@@ -2853,6 +3259,7 @@ class BindingAgentOrchestrator:
                 missing=missing,
                 gesture=gesture,
                 action_spec=action_spec,
+                unknown_gesture=(requested_gesture if not gesture_known else ""),
             )
         return BindingAgentResult(
             ok=ok,
@@ -2915,10 +3322,29 @@ class BindingAgentOrchestrator:
         gesture: str,
         action_spec: dict[str, Any],
         research: dict[str, Any] | None = None,
+        unknown_gesture: str = "",
     ) -> str:
         if error:
             return f"Локальный агент: не смог разобрать запрос. {error}."
+        if unknown_gesture:
+            action_note = (
+                "Действие уже распознано. "
+                if action_spec
+                else ""
+            )
+            return (
+                f"**Жест `{unknown_gesture}` не найден**\n\n"
+                f"{action_note}Выберите жест из текущего словаря "
+                "или сначала запишите и обучите новый жест. "
+                "До этого привязка не будет применена."
+            )
         if missing:
+            if "шаги сценария" in missing:
+                return (
+                    "Я собрал только понятные части сценария, но часть шагов не "
+                    "разобрал. Уточните непонятный шаг: например дайте точный URL, "
+                    "название приложения или команду."
+                )
             if "действие" in missing:
                 return (
                     "Я понял жест. Уточните, какую команду к нему привязать: "
@@ -2940,7 +3366,7 @@ class BindingAgentOrchestrator:
                 )
             return (
                 f"Я нашёл проверенный рецепт: «{action}». Источник: {source}. "
-                "Если одобришь через «Заполнить» или «Сохранить», я запомню это как skill."
+                "После успешного «Сохранить» я запомню это как skill."
             )
         if ok:
             action = AGENT_ACTION_LABELS.get(
@@ -2961,6 +3387,8 @@ def build_agent_binding_draft(
     current_gesture: str = "",
     conversation_history: list[dict[str, str]] | None = None,
     draft_state: dict[str, Any] | None = None,
+    bindings: list[dict[str, Any]] | None = None,
+    session_id: str = "",
     provider: str | None = None,
 ) -> dict[str, Any]:
     """Compatibility wrapper returning the UI-facing draft dict."""
@@ -2970,5 +3398,7 @@ def build_agent_binding_draft(
         current_gesture=current_gesture,
         conversation_history=conversation_history,
         draft_state=draft_state,
+        bindings=bindings,
+        session_id=session_id,
         provider=provider,
     ).to_legacy_draft()

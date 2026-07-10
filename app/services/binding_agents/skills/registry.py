@@ -9,6 +9,7 @@ from app.services.binding_agents.skills.binding import BINDING_SKILLS
 from app.services.binding_agents.skills.guardrails import GUARDRAILS_SKILLS
 from app.services.binding_agents.skills.intent import INTENT_SKILLS
 from app.services.binding_agents.skills.review import REVIEW_SKILLS
+from app.services.binding_agents.skills.runtime import DEFAULT_SKILL_RUNTIME
 
 
 AGENT_SKILLS: dict[str, AgentSkill] = {
@@ -19,6 +20,7 @@ AGENT_SKILLS: dict[str, AgentSkill] = {
         *ANSWER_SKILLS,
         *BINDING_SKILLS,
         *REVIEW_SKILLS,
+        *DEFAULT_SKILL_RUNTIME.manifests,
     )
 }
 
@@ -29,8 +31,10 @@ AGENT_DEFAULT_SKILLS: dict[str, list[str]] = {
     "Mistral Agent": ["action.parse", "gesture.resolve"],
     "Gesture Agent": ["gesture.resolve"],
     "Memory Agent": ["memory.dialog_lookup"],
+    "Session Memory Agent": ["memory.dialog_lookup"],
     "Scenario Agent": ["scenario.compose"],
     "Action Agent": ["action.parse"],
+    "Binding CRUD Agent": ["binding.inspect", "binding.delete"],
     "Research Agent": ["action.research", "action.remember_research"],
     "Policy Agent": ["policy.required_fields"],
     "Validation Agent": ["validation.contract"],
@@ -50,6 +54,9 @@ def skill_card(skill_id: str) -> dict[str, str]:
         "id": skill.skill_id,
         "title": skill.title,
         "description": skill.description,
+        "version": skill.version,
+        "risk": skill.risk,
+        "supportedOs": ",".join(skill.supported_os),
     }
 
 

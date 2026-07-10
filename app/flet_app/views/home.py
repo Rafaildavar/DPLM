@@ -1,10 +1,9 @@
 """
 Главный экран GestureBind: превью камеры + жесты + последняя команда.
 
-В отличие от старой версии (где главная только показывала список команд, а
-распознавание жило на отдельной вкладке/в subprocess), здесь главная — это
-полностью **встроенное распознавание**: одна большая кнопка «Старт/Стоп»
-включает камеру + MediaPipe + KNN прямо в окне.
+Главная страница показывает встроенное распознавание в пользовательском виде:
+одна основная кнопка включает камеру, MediaPipe и выбранный production-маршрут
+статической/динамической модели прямо в окне.
 
 При детекции жеста ``AppController`` автоматически вызывает
 ``execute_for_gesture(label, conf)``, что через ``GestureCommandBridge``
@@ -20,15 +19,6 @@ import flet as ft
 from app.flet_app.controller import (
     AppController,
     DYNAMIC_MODEL_PROFILE_PRODUCTION,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-    DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
     LIVE_EVAL_NO_COMMAND_LABEL,
     STATIC_REJECTION_METHODS,
 )
@@ -41,7 +31,6 @@ from app.flet_app.theme import (
     COLOR_SURFACE,
     COLOR_SURFACE_HIGH,
     COLOR_WARNING,
-    surface_card,
 )
 
 
@@ -80,13 +69,15 @@ class HomeView:
 
         self._gesture_text = ft.Text(
             "—",
-            size=24,
+            size=30,
             weight=ft.FontWeight.BOLD,
             color=COLOR_ON_SURFACE,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
         )
         self._confidence_text = ft.Text("0%", size=14, color=COLOR_MUTED)
         self._gesture_state_text = ft.Text(
-            "ожидание",
+            "Ожидаю жест",
             size=12,
             color=COLOR_MUTED,
             no_wrap=True,
@@ -291,51 +282,10 @@ class HomeView:
         self._dynamic_profile_dd = ft.Dropdown(
             label="Dynamic",
             value=controller.dynamic_model_profile,
-            width=170,
+            width=240,
             dense=True,
             visible=controller.recognition_model_mode in {"auto", "dynamic"},
-            options=[
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_PRODUCTION,
-                    text="dynamic_sequence_mlp.pkl",
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_MULTIROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SPROCKET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_SHAPELET_72,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_PHASE_HMM,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_ENSEMBLE,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_GRU_BACKBONE,
-                ),
-                ft.DropdownOption(
-                    key=DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
-                    text=DYNAMIC_MODEL_PROFILE_SEQUENCE_LSTM_BACKBONE,
-                ),
-            ],
+            options=self._dynamic_profile_options(),
             on_select=self._on_dynamic_profile_changed,
         )
         self._static_rejection_dd = ft.Dropdown(
@@ -360,7 +310,7 @@ class HomeView:
         )
         self._auto_exec_switch = ft.Switch(
             value=controller.auto_execute,
-            label="Авто",
+            label="Выполнять команды",
             active_color=COLOR_ACCENT,
             on_change=lambda e: controller.set_auto_execute(
                 bool(self._auto_exec_switch.value)
@@ -374,13 +324,13 @@ class HomeView:
         )
         self._landmarks_switch = ft.Switch(
             value=controller.show_landmark_overlay,
-            label="Точки",
+            label="Показывать точки",
             active_color=COLOR_ACCENT,
             on_change=self._on_landmarks_toggle,
         )
         self._pointer_switch = ft.Switch(
             value=controller.pointer_mode,
-            label="Курсор",
+            label="Управлять курсором",
             active_color=COLOR_ACCENT,
             on_change=self._on_pointer_toggle,
         )
@@ -389,10 +339,70 @@ class HomeView:
             controller.status, size=12, color=COLOR_MUTED, italic=True
         )
         self._pointer_state_text = ft.Text(
-            "Pointer: off",
+            "Курсор выключен",
             size=12,
             color=COLOR_MUTED,
             no_wrap=True,
+        )
+
+        release_active = self._is_running()
+        camera_active = bool(controller.is_camera_active)
+        release_color = COLOR_SUCCESS if release_active else COLOR_MUTED
+        self._release_header_dot = ft.Container(
+            width=8,
+            height=8,
+            border_radius=4,
+            bgcolor=release_color,
+        )
+        self._release_header_status = ft.Text(
+            "Активно" if release_active else "Выключено",
+            size=12,
+            color=COLOR_ON_SURFACE,
+            weight=ft.FontWeight.W_600,
+            no_wrap=True,
+        )
+        self._release_state_icon = ft.Icon(
+            ft.Icons.RADAR if release_active else ft.Icons.POWER_SETTINGS_NEW,
+            size=22,
+            color=release_color,
+        )
+        self._release_state_title = ft.Text(
+            "Распознавание включено" if release_active else "Распознавание выключено",
+            size=18,
+            weight=ft.FontWeight.W_700,
+            color=COLOR_ON_SURFACE,
+        )
+        self._release_state_caption = ft.Text(
+            "Ожидаю жест" if release_active else "Готово к запуску",
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._camera_state_dot = ft.Container(
+            width=7,
+            height=7,
+            border_radius=4,
+            bgcolor=COLOR_SUCCESS if camera_active else COLOR_MUTED,
+        )
+        self._camera_state_text = ft.Text(
+            "Камера включена" if camera_active else "Камера выключена",
+            size=12,
+            color=COLOR_ON_SURFACE,
+            no_wrap=True,
+        )
+        self._camera_empty_state = ft.Column(
+            visible=not camera_active,
+            spacing=10,
+            tight=True,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Icon(ft.Icons.VIDEOCAM_OFF_OUTLINED, size=42, color=COLOR_MUTED),
+                ft.Text(
+                    "Камера выключена",
+                    size=15,
+                    weight=ft.FontWeight.W_600,
+                    color=COLOR_ON_SURFACE,
+                ),
+            ],
         )
 
         # Подписки. Все события могут прийти из фонового потока, поэтому
@@ -423,15 +433,17 @@ class HomeView:
         # Камера сама поднимется по «Старт»; ничего не делаем при простом
         # переключении на вкладку, чтобы зря не открывать устройство.
         self._visible = True
+        self._sync_dynamic_profile_dropdown()
         self._apply_model_variant(self._controller.model_variant)
         self._refresh_eval_labels()
         self._refresh_activity()
         self._refresh_recognition_inspector()
+        self._sync_release_state()
         self._apply_live_evaluation(self._controller.current_live_evaluation())
 
     def on_hide(self) -> None:
         # При уходе с главной — НЕ останавливаем распознавание, потому что
-        # «жест → команда ОС» должно работать в фоне (как в QML с subprocess).
+        # «жест → команда ОС» должно продолжать работать в фоне.
         # Останавливать камеру/CV нужно только явной кнопкой «Стоп».
         self._visible = False
 
@@ -440,10 +452,9 @@ class HomeView:
             labels = self._controller.list_recognition_labels()
         except Exception:
             labels = []
-        fallback = ["swipe_up", "swipe_down", "swipe_left", "swipe_right"]
         out: list[str] = []
         seen: set[str] = set()
-        for label in [LIVE_EVAL_NO_COMMAND_LABEL, *labels, *fallback]:
+        for label in [LIVE_EVAL_NO_COMMAND_LABEL, *labels]:
             clean = str(label or "").strip()
             key = clean.lower()
             if clean and key not in seen:
@@ -464,6 +475,64 @@ class HomeView:
             for item in variants
             if str(item.get("key") or "").strip()
         ]
+
+    def _dynamic_profile_rows(self) -> list[dict]:
+        try:
+            profiles = self._controller.list_dynamic_model_profiles()
+        except Exception:
+            profiles = []
+        rows = [row for row in profiles if bool(row.get("quick_selectable"))]
+        if not any(
+            str(row.get("key") or "") == DYNAMIC_MODEL_PROFILE_PRODUCTION
+            for row in rows
+        ):
+            production = next(
+                (
+                    row
+                    for row in profiles
+                    if str(row.get("key") or "") == DYNAMIC_MODEL_PROFILE_PRODUCTION
+                ),
+                None,
+            )
+            if production is not None:
+                rows.insert(0, production)
+        if not rows:
+            rows = [
+                {
+                    "key": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                    "label": DYNAMIC_MODEL_PROFILE_PRODUCTION,
+                }
+            ]
+        return rows
+
+    def _dynamic_profile_options(
+        self,
+        rows: list[dict] | None = None,
+    ) -> list[ft.DropdownOption]:
+        return [
+            ft.DropdownOption(
+                key=str(item.get("key") or ""),
+                text=str(item.get("label") or item.get("key") or ""),
+            )
+            for item in (rows if rows is not None else self._dynamic_profile_rows())
+            if str(item.get("key") or "").strip()
+        ]
+
+    def _sync_dynamic_profile_dropdown(self, *, update: bool = False) -> None:
+        rows = self._dynamic_profile_rows()
+        allowed = {str(row.get("key") or "") for row in rows}
+        current = self._controller.dynamic_model_profile
+        if current not in allowed:
+            current = DYNAMIC_MODEL_PROFILE_PRODUCTION
+            self._controller.set_dynamic_model_profile(current)
+        self._dynamic_profile_dd.options = self._dynamic_profile_options(rows)
+        if self._dynamic_profile_dd.value != current:
+            self._dynamic_profile_dd.value = current
+        if update:
+            try:
+                self._dynamic_profile_dd.update()
+            except Exception:
+                pass
 
     def _refresh_eval_labels(self) -> None:
         labels = self._recognition_label_options()
@@ -491,7 +560,7 @@ class HomeView:
         )
 
     def _btn_label(self) -> str:
-        return "Стоп" if self._is_running() else "Старт"
+        return "Остановить" if self._is_running() else "Включить"
 
     def _btn_icon(self) -> str:
         return (
@@ -502,16 +571,20 @@ class HomeView:
 
     def _btn_style(self) -> ft.ButtonStyle:
         return ft.ButtonStyle(
-            bgcolor=COLOR_DANGER if self._is_running() else COLOR_SUCCESS,
+            bgcolor=COLOR_DANGER if self._is_running() else COLOR_ACCENT,
             color=ft.Colors.WHITE,
-            padding=ft.Padding.symmetric(horizontal=24, vertical=14),
+            padding=ft.Padding.symmetric(horizontal=20, vertical=14),
         )
 
     def _on_toggle(self, _e) -> None:
         # ВАЖНО: используем встроенный пайплайн (embedded), а не subprocess
         # ``realtime_infer.py``. Это требование пользователя — «камера
         # должна быть встроена в GUI».
-        self._controller.toggle_recognition()
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._controller.toggle_recognition)
+        else:
+            self._controller.toggle_recognition()
 
     def _on_landmarks_toggle(self, _e) -> None:
         self._controller.set_show_landmark_overlay(
@@ -977,11 +1050,23 @@ class HomeView:
                                 color=COLOR_ON_SURFACE,
                                 weight=ft.FontWeight.W_600,
                                 no_wrap=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
                             ),
-                            ft.Text(detail, size=11, color=COLOR_MUTED, no_wrap=True),
+                            ft.Text(
+                                detail,
+                                size=11,
+                                color=COLOR_MUTED,
+                                no_wrap=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
                         ],
                     ),
-                    ft.Text(detected_at, size=11, color=COLOR_MUTED),
+                    ft.Text(
+                        detected_at,
+                        size=11,
+                        color=COLOR_MUTED,
+                        no_wrap=True,
+                    ),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1012,7 +1097,6 @@ class HomeView:
         phase = str(data.get("phase") or "idle")
         self._gesture_state_phase = phase
         label = str(data.get("label") or "").strip()
-        reason = str(data.get("reason") or "").strip()
         confidence = max(0.0, min(1.0, float(data.get("confidence") or 0.0)))
         progress = max(0.0, min(1.0, float(data.get("progress") or 0.0)))
         frames = int(data.get("frames") or 0)
@@ -1023,21 +1107,21 @@ class HomeView:
             self._confidence_bar.value = progress
             self._confidence_bar.color = COLOR_WARNING
             self._confidence_text.value = f"{frames}/{max(1, required)} · {int(round(confidence * 100))}%"
-            self._gesture_state_text.value = "подтверждение"
+            self._gesture_state_text.value = "Распознаю"
             self._gesture_state_text.color = COLOR_WARNING
             self._safe_update_gesture_text()
         elif phase == "confirmed":
             self._confidence_bar.value = confidence
             self._confidence_bar.color = COLOR_SUCCESS
-            self._confidence_text.value = f"{int(round(confidence * 100))}% · готово"
-            self._gesture_state_text.value = "готово"
+            self._confidence_text.value = f"{int(round(confidence * 100))}%"
+            self._gesture_state_text.value = "Распознано"
             self._gesture_state_text.color = COLOR_SUCCESS
         elif phase == "rejected":
             self._gesture_text.value = label or "—"
             self._confidence_bar.value = 1.0
             self._confidence_bar.color = COLOR_DANGER
             self._confidence_text.value = f"{int(round(confidence * 100))}%"
-            self._gesture_state_text.value = reason or "отклонено"
+            self._gesture_state_text.value = "Не выполнено"
             self._gesture_state_text.color = COLOR_DANGER
             self._safe_update_gesture_text()
         elif phase == "suppressed":
@@ -1045,22 +1129,22 @@ class HomeView:
             self._confidence_bar.value = 1.0
             self._confidence_bar.color = COLOR_WARNING
             self._confidence_text.value = f"{int(round(confidence * 100))}%"
-            self._gesture_state_text.value = reason or "подавлено"
+            self._gesture_state_text.value = "Пропущено"
             self._gesture_state_text.color = COLOR_WARNING
             self._safe_update_gesture_text()
         elif phase == "cooldown":
             self._gesture_text.value = label or "—"
             self._confidence_bar.value = 1.0
             self._confidence_bar.color = COLOR_WARNING
-            self._confidence_text.value = "cooldown"
-            self._gesture_state_text.value = reason or "cooldown"
+            self._confidence_text.value = f"{int(round(confidence * 100))}%"
+            self._gesture_state_text.value = "Пауза"
             self._gesture_state_text.color = COLOR_WARNING
             self._safe_update_gesture_text()
         else:
             self._confidence_bar.value = 0.0
             self._confidence_bar.color = COLOR_ACCENT
             self._confidence_text.value = "0%"
-            self._gesture_state_text.value = "ожидание"
+            self._gesture_state_text.value = "Ожидаю жест"
             self._gesture_state_text.color = COLOR_MUTED
 
         try:
@@ -1080,6 +1164,63 @@ class HomeView:
             self._status_text.update()
         except Exception:
             pass
+        self._sync_release_state()
+
+    def _sync_release_state(self) -> None:
+        title = getattr(self, "_release_state_title", None)
+        if title is None:
+            return
+
+        active = self._is_running()
+        camera_active = bool(getattr(self._controller, "is_camera_active", False))
+        raw_status = str(getattr(self._status_text, "value", "") or "").lower()
+        has_error = any(
+            token in raw_status
+            for token in ("error", "failed", "ошиб", "недоступ", "не удалось")
+        )
+
+        if has_error:
+            color = COLOR_DANGER
+            header = "Нужна проверка"
+            state_title = "Не удалось запустить"
+            caption = "Проверь доступ приложения к камере"
+            icon = ft.Icons.ERROR_OUTLINE
+        elif active:
+            color = COLOR_SUCCESS
+            header = "Активно"
+            state_title = "Распознавание включено"
+            caption = "Ожидаю жест" if camera_active else "Подключаю камеру"
+            icon = ft.Icons.RADAR
+        else:
+            color = COLOR_MUTED
+            header = "Выключено"
+            state_title = "Распознавание выключено"
+            caption = "Готово к запуску"
+            icon = ft.Icons.POWER_SETTINGS_NEW
+
+        self._release_header_dot.bgcolor = color
+        self._release_header_status.value = header
+        self._release_state_icon.name = icon
+        self._release_state_icon.color = color
+        self._release_state_title.value = state_title
+        self._release_state_caption.value = caption
+        self._camera_state_dot.bgcolor = COLOR_SUCCESS if camera_active else COLOR_MUTED
+        self._camera_state_text.value = (
+            "Камера включена" if camera_active else "Камера выключена"
+        )
+        self._camera_empty_state.visible = not camera_active
+
+        for control in (
+            self._release_header_dot,
+            self._release_header_status,
+            self._release_state_icon,
+            self._release_state_title,
+            self._release_state_caption,
+            self._camera_state_dot,
+            self._camera_state_text,
+            self._camera_empty_state,
+        ):
+            self._safe_update_control(control)
 
     def _on_recognizing(self, value: bool) -> None:
         self._page.run_thread(self._apply_recognizing_state, value)
@@ -1096,6 +1237,9 @@ class HomeView:
         if not active:
             self._camera_image.src = _PLACEHOLDER_DATA_URL
             self._camera_image.visible = False
+        empty_state = getattr(self, "_camera_empty_state", None)
+        if empty_state is not None:
+            empty_state.visible = not active
         self._apply_button_state()
 
     def _apply_button_state(self) -> None:
@@ -1108,6 +1252,7 @@ class HomeView:
             self._toggle_btn.update()
         except Exception:
             pass
+        self._sync_release_state()
 
     def _on_two_hands(self, value: bool) -> None:
         self._page.run_thread(self._apply_two_hands, value)
@@ -1158,31 +1303,31 @@ class HomeView:
         clicked = bool(data.get("clicked"))
 
         if not enabled:
-            text = "Pointer: off"
+            text = "Курсор выключен"
             color = COLOR_MUTED
         elif error or state == "disabled":
-            text = f"Pointer: {error or 'disabled'}"
+            text = "Курсор недоступен"
             color = COLOR_DANGER
         elif tab_switched:
-            text = f"Pointer: swipe {tab_switched}"
+            text = "Переключено движение курсора"
             color = COLOR_WARNING
         elif clicked:
-            text = "Pointer: clicked"
+            text = "Нажатие выполнено"
             color = COLOR_SUCCESS
         elif state == "lost":
-            text = "Pointer: lost hand"
+            text = "Рука потеряна"
             color = COLOR_WARNING
         elif state == "click-ready":
-            text = "Pointer: click-ready"
+            text = "Готово к нажатию"
             color = COLOR_WARNING
         elif state == "swipe-tracking":
-            text = "Pointer: swipe"
+            text = "Отслеживаю движение"
             color = COLOR_WARNING
         elif state == "tracking":
-            text = "Pointer: tracking"
+            text = "Курсор активен"
             color = COLOR_SUCCESS
         else:
-            text = "Pointer: idle"
+            text = "Курсор ожидает"
             color = COLOR_MUTED
 
         self._pointer_state_text.value = text
@@ -1228,9 +1373,11 @@ class HomeView:
     def _on_dynamic_profile(self, value: str) -> None:
         self._page.run_thread(self._apply_dynamic_profile, value)
 
-    def _apply_dynamic_profile(self, value: str) -> None:
-        if self._dynamic_profile_dd.value != value:
-            self._dynamic_profile_dd.value = value
+    def _apply_dynamic_profile(self, _value: str) -> None:
+        self._sync_dynamic_profile_dropdown()
+        current = self._controller.dynamic_model_profile
+        if self._dynamic_profile_dd.value != current:
+            self._dynamic_profile_dd.value = current
         self._dynamic_profile_dd.visible = (
             self._controller.recognition_model_mode in {"auto", "dynamic"}
         )
@@ -1244,6 +1391,7 @@ class HomeView:
 
     def _apply_model_variant(self, value: str) -> None:
         self._model_variant_dd.options = self._model_variant_options()
+        self._sync_dynamic_profile_dropdown()
         if self._model_variant_dd.value != value:
             self._model_variant_dd.value = value
         try:
@@ -1428,30 +1576,29 @@ class HomeView:
         )
 
     def build(self) -> ft.Control:
-        title_group = ft.Row(
-            spacing=10,
+        brand = ft.Row(
+            spacing=12,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Container(
-                    width=36,
-                    height=36,
+                    width=42,
+                    height=42,
                     border_radius=8,
-                    bgcolor="#1A1E22",
+                    bgcolor="#172A2E",
                     alignment=ft.Alignment.CENTER,
-                    content=ft.Icon(ft.Icons.VIDEO_CAMERA_FRONT, color=COLOR_ACCENT, size=20),
+                    content=ft.Icon(ft.Icons.GESTURE, color=COLOR_ACCENT, size=24),
                 ),
                 ft.Column(
                     spacing=1,
-                    expand=True,
                     controls=[
                         ft.Text(
-                            "Live Monitor",
-                            size=19,
+                            "Управление жестами",
+                            size=23,
                             weight=ft.FontWeight.BOLD,
                             color=COLOR_ON_SURFACE,
                         ),
                         ft.Text(
-                            "камера, распознавание, команды",
+                            "Главная",
                             size=12,
                             color=COLOR_MUTED,
                         ),
@@ -1459,46 +1606,102 @@ class HomeView:
                 ),
             ],
         )
-        monitor_chips = ft.Row(
-            spacing=8,
-            wrap=True,
-            controls=[
-                self._status_chip(ft.Icons.PAN_TOOL_ALT, "жесты", COLOR_ACCENT),
-                self._status_chip(ft.Icons.TOUCH_APP, "курсор", COLOR_WARNING),
-                self._status_chip(ft.Icons.ROCKET_LAUNCH, "команды", COLOR_SUCCESS),
-            ],
+        release_status = ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=9),
+            content=ft.Row(
+                spacing=8,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[self._release_header_dot, self._release_header_status],
+            ),
         )
-        header = surface_card(
-            ft.ResponsiveRow(
-                spacing=10,
+        header = ft.Container(
+            padding=ft.Padding(2, 0, 2, 2),
+            content=ft.ResponsiveRow(
+                spacing=12,
                 run_spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Container(content=title_group, col={"xs": 12, "md": 4}),
-                    ft.Container(content=monitor_chips, col={"xs": 12, "md": 4}),
+                    ft.Container(content=brand, col={"xs": 8, "md": 8}),
                     ft.Container(
                         content=ft.Row(
-                            spacing=12,
                             alignment=ft.MainAxisAlignment.END,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            controls=[
-                                self._toggle_btn,
-                                ft.Container(
-                                    content=self._status_text,
-                                    alignment=ft.Alignment.CENTER_RIGHT,
-                                    width=210,
-                                ),
-                            ],
+                            controls=[release_status],
                         ),
-                        col={"xs": 12, "md": 4},
+                        col={"xs": 4, "md": 4},
                     ),
                 ],
             ),
-            padding=14,
-            radius=8,
         )
 
+        camera_badge = ft.Container(
+            bgcolor="#E6171A1D",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+            content=ft.Row(
+                spacing=7,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[self._camera_state_dot, self._camera_state_text],
+            ),
+        )
+        auto_badge = ft.Container(
+            bgcolor="#E6171A1D",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+            content=ft.Row(
+                spacing=7,
+                tight=True,
+                controls=[
+                    ft.Icon(ft.Icons.AUTO_MODE, size=14, color=COLOR_ACCENT),
+                    ft.Text(
+                        "Автоматический режим",
+                        size=12,
+                        color=COLOR_ON_SURFACE,
+                        no_wrap=True,
+                    ),
+                ],
+            ),
+        )
+        recognition_overlay = ft.Container(
+            left=14,
+            right=14,
+            bottom=14,
+            bgcolor="#EE111417",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=ft.Padding(14, 11, 14, 12),
+            content=ft.Column(
+                spacing=7,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    ft.Row(
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Column(
+                                spacing=1,
+                                expand=True,
+                                controls=[self._gesture_state_text, self._gesture_text],
+                            ),
+                            self._confidence_text,
+                        ],
+                    ),
+                    self._confidence_bar,
+                ],
+            ),
+        )
         camera_stage = ft.Container(
+            height=390,
+            bgcolor="#07090B",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=ft.Stack(
                 expand=True,
                 controls=[
@@ -1509,252 +1712,144 @@ class HomeView:
                         alignment=ft.Alignment.CENTER,
                     ),
                     ft.Container(
-                        content=self._eval_overlay,
-                        left=18,
-                        top=18,
+                        content=self._camera_empty_state,
+                        expand=True,
+                        alignment=ft.Alignment.CENTER,
                     ),
-                    ft.Container(
-                        left=16,
-                        bottom=16,
-                        bgcolor="#101316",
-                        border_radius=8,
-                        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
-                        content=ft.Row(
-                            spacing=8,
-                            tight=True,
-                            controls=[
-                                ft.Icon(ft.Icons.CENTER_FOCUS_STRONG, size=14, color=COLOR_MUTED),
-                                ft.Text("preview", size=12, color=COLOR_MUTED),
-                            ],
-                        ),
-                    ),
+                    ft.Container(content=camera_badge, left=14, top=14),
+                    ft.Container(content=auto_badge, right=14, top=14),
+                    recognition_overlay,
                 ],
             ),
-            bgcolor="#0B0D10",
+        )
+
+        state_panel = ft.Container(
+            bgcolor="#171A1D",
             border_radius=8,
-            padding=8,
-            height=340,
-            alignment=ft.Alignment.CENTER,
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        )
-        camera_card = surface_card(
-            ft.Column(
-                spacing=12,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=16,
+            content=ft.Column(
+                spacing=14,
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
-                    self._panel_title(ft.Icons.VIDEO_CAMERA_FRONT, "Камера"),
-                    camera_stage,
-                ],
-            ),
-            padding=14,
-            radius=8,
-        )
-        camera_card.width = float("inf")
-
-        live_panel = surface_card(
-            ft.Column(
-                spacing=5,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.RADAR,
-                        "Live Recognition",
-                        trailing=self._confidence_text,
-                    ),
-                    self._gesture_state_text,
-                    self._gesture_text,
-                    self._confidence_bar,
-                    ft.Container(
-                        bgcolor="#171A1D",
-                        border_radius=8,
-                        padding=ft.Padding.symmetric(horizontal=10, vertical=5),
-                        content=ft.Row(
-                            spacing=9,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            controls=[
-                                ft.Icon(ft.Icons.TERMINAL, size=15, color=COLOR_SUCCESS),
-                                ft.Column(
-                                    spacing=2,
-                                    expand=True,
-                                    controls=[
-                                        ft.Text("Команда", size=11, color=COLOR_MUTED),
-                                        self._command_text,
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ),
-                ],
-            ),
-            padding=8,
-            radius=8,
-        )
-        live_panel.width = float("inf")
-
-        inspector_panel = surface_card(
-            ft.Column(
-                spacing=8,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.QUERY_STATS,
-                        "Recognition Inspector",
-                        color=COLOR_ACCENT,
-                        trailing=ft.Row(
-                            spacing=0,
-                            tight=True,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            controls=[
-                                self._recognition_inspector_status_text,
-                                self._recognition_inspector_pause_btn,
-                                self._recognition_inspector_step_btn,
-                                self._recognition_inspector_clear_btn,
-                                self._recognition_inspector_export_jsonl_btn,
-                                self._recognition_inspector_export_csv_btn,
-                            ],
-                        ),
-                    ),
-                    ft.Container(
-                        content=self._recognition_inspector_list,
-                        height=162,
-                    ),
-                ],
-            ),
-            padding=10,
-            radius=8,
-        )
-        inspector_panel.width = float("inf")
-
-        command_panel = surface_card(
-            ft.Column(
-                spacing=9,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.FORMAT_LIST_BULLETED,
-                        "Recent Actions",
-                        color=COLOR_SUCCESS,
-                    ),
-                    ft.Container(content=self._activity_list, height=96),
-                ],
-            ),
-            padding=12,
-            radius=8,
-        )
-        command_panel.width = float("inf")
-
-        quick_panel = surface_card(
-            ft.Column(
-                spacing=8,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.TUNE,
-                        "Quick Settings",
-                        color=COLOR_WARNING,
-                    ),
-                    ft.Row(
-                        spacing=10,
-                        wrap=True,
-                        controls=[
-                            self._model_mode_dd,
-                            self._model_variant_dd,
-                            self._dynamic_profile_dd,
-                            self._static_rejection_dd,
-                        ],
-                    ),
-                    self._compact_switches(
-                        [
-                            self._gesture_switch,
-                            self._landmarks_switch,
-                            self._auto_exec_switch,
-                            self._pointer_switch,
-                            self._two_hands_switch,
-                        ],
-                    ),
-                    ft.Container(
-                        bgcolor="#171A1D",
-                        border_radius=8,
-                        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
-                        content=ft.Row(
-                            spacing=8,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            controls=[
-                                ft.Icon(
-                                    ft.Icons.TOUCH_APP,
-                                    size=15,
-                                    color=COLOR_WARNING,
-                                ),
-                                self._pointer_state_text,
-                            ],
-                        ),
-                    ),
-                ],
-            ),
-            padding=10,
-            radius=8,
-        )
-        quick_panel.width = float("inf")
-
-        eval_panel = surface_card(
-            ft.Column(
-                spacing=12,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[
-                    self._panel_title(
-                        ft.Icons.FACT_CHECK,
-                        "Live Evaluation",
-                        color=COLOR_ACCENT,
-                    ),
                     ft.Row(
                         spacing=12,
-                        wrap=True,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         controls=[
-                            self._eval_expected,
-                            self._eval_attempts,
-                            self._eval_timeout,
-                            self._eval_threshold,
-                            self._eval_start_btn,
-                            self._eval_stop_btn,
+                            ft.Container(
+                                width=42,
+                                height=42,
+                                border_radius=8,
+                                bgcolor="#1A1E22",
+                                alignment=ft.Alignment.CENTER,
+                                content=self._release_state_icon,
+                            ),
+                            ft.Column(
+                                spacing=2,
+                                expand=True,
+                                controls=[
+                                    self._release_state_title,
+                                    self._release_state_caption,
+                                ],
+                            ),
+                        ],
+                    ),
+                    ft.Container(content=self._toggle_btn, width=float("inf")),
+                ],
+            ),
+        )
+        last_action_panel = ft.Container(
+            bgcolor="#171A1D",
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=14,
+            content=ft.Row(
+                spacing=11,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(
+                        width=36,
+                        height=36,
+                        border_radius=8,
+                        bgcolor="#19251C",
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Icon(
+                            ft.Icons.CHECK_CIRCLE_OUTLINE,
+                            size=20,
+                            color=COLOR_SUCCESS,
+                        ),
+                    ),
+                    ft.Column(
+                        spacing=2,
+                        expand=True,
+                        controls=[
+                            ft.Text("Последнее действие", size=11, color=COLOR_MUTED),
+                            self._command_text,
                         ],
                     ),
                 ],
             ),
-            padding=14,
-            radius=8,
         )
-        eval_panel.width = float("inf")
+        control_panel = ft.Container(
+            border_radius=8,
+            border=ft.Border.all(1, COLOR_SURFACE_HIGH),
+            padding=ft.Padding(14, 12, 14, 12),
+            content=ft.Column(
+                spacing=2,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(ft.Icons.TUNE, "Управление", color=COLOR_WARNING),
+                    self._auto_exec_switch,
+                    self._landmarks_switch,
+                    self._pointer_switch,
+                    ft.Divider(height=1, color=COLOR_SURFACE_HIGH),
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.TOUCH_APP, size=15, color=COLOR_WARNING),
+                            ft.Container(content=self._pointer_state_text, expand=True),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        right_column = ft.Column(
+            spacing=12,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            controls=[state_panel, last_action_panel, control_panel],
+        )
 
         main_row = ft.ResponsiveRow(
             spacing=14,
             run_spacing=14,
+            vertical_alignment=ft.CrossAxisAlignment.START,
             controls=[
-                ft.Container(content=camera_card, col={"xs": 12, "lg": 8}),
-                ft.Container(
-                    content=ft.Column(
-                        spacing=14,
-                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                        controls=[
-                            live_panel,
-                            inspector_panel,
-                            quick_panel,
-                            command_panel,
-                        ],
-                    ),
-                    col={"xs": 12, "lg": 4},
-                ),
+                ft.Container(content=camera_stage, col={"xs": 12, "md": 7}),
+                ft.Container(content=right_column, col={"xs": 12, "md": 5}),
             ],
         )
+        recent_actions = ft.Container(
+            padding=ft.Padding(2, 2, 2, 0),
+            content=ft.Column(
+                spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    self._panel_title(
+                        ft.Icons.HISTORY,
+                        "Недавние действия",
+                        color=COLOR_SUCCESS,
+                    ),
+                    ft.Container(content=self._activity_list, height=104),
+                ],
+            ),
+        )
 
+        self._sync_release_state()
         return ft.Column(
-            spacing=14,
+            spacing=16,
             expand=True,
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            controls=[
-                header,
-                main_row,
-                eval_panel,
-            ],
+            controls=[header, main_row, recent_actions],
         )

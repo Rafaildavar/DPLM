@@ -1,301 +1,127 @@
-# GestureFlow
+# GestureBind
 
-> Персональная ML-система для управления компьютером жестами: пользователь
-> записывает свои жесты через веб-камеру, обучает модели, проверяет качество в
-> live-evaluation и привязывает распознанные жесты к командам ОС.
+> Локальная ML-система, в которой пользователь записывает собственные жесты,
+> обучает модели и привязывает надежные распознавания к командам macOS.
 
-[![CI](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ci.yml)
-[![ML Smoke](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/ml-smoke.yml)
-[![Docker Runtime](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/docker-runtime.yml)
-[![Desktop Release Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/desktop-release.yml)
-[![macOS App Bundle](https://github.com/Rafaildavar/DPLM/actions/workflows/macos-app.yml/badge.svg)](https://github.com/Rafaildavar/DPLM/actions/workflows/macos-app.yml)
+[![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml)
+[![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml)
+[![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-## Что Это
+GestureBind MVP `0.8.0` превращает обычную веб-камеру в персональный слой
+управления компьютером. Все основные данные и инференс остаются локальными.
 
-GestureFlow - desktop MVP и ML Engineering проект для распознавания
-пользовательских жестов по обычной веб-камере.
+## Что Входит В MVP
 
-Главная идея: жесты не должны быть заранее жестко прошиты в приложении.
-Пользователь может:
-
-- записать собственный статический или динамический жест;
-- переобучить модель из интерфейса;
-- проверить реальные live-метрики на камере;
-- привязать жест к действию: открыть приложение, нажать горячие клавиши,
-  выполнить сценарий из нескольких шагов, показать уведомление или запустить
-  безопасный пользовательский скрипт.
-
-Проект сделан как полноценная система, а не как notebook-классификатор:
-есть сбор данных, предобработка, модели, reject policy, online inference,
-MLOps-логирование, live-evaluation, CI/CD и продуктовый интерфейс.
-
-## Почему Это Важно
-
-Обычные горячие клавиши нужно помнить, голос не всегда уместен, а отдельные
-контроллеры требуют дополнительного устройства. GestureFlow дает более
-персональный способ управления рабочим окружением: пользователь сам задает
-жесты, проверяет их качество и связывает с нужными командами.
-
-Потенциальные сценарии:
-
-- быстрые команды для разработчиков, дизайнеров, монтажеров и стримеров;
-- accessibility-сценарии, где жест удобнее клавиатуры или мыши;
-- управление презентациями, медиа, окнами и рабочими сценариями;
-- HCI/CV-исследования с воспроизводимым ML-пайплайном.
-
-## Ключевые Возможности
-
-| Область | Что реализовано |
+| Возможность | Реализация |
 |---|---|
-| Запись данных | Запись жестов из Flet-интерфейса, сохранение `.npy` samples и metadata |
-| Статические жесты | Распознавание поз руки, negative-классы, rejection policy |
-| Динамические жесты | Sequence-модели, сегментация движения, natural end-of-gesture policy |
-| Пользовательское обучение | Обучение моделей из UI без ручного запуска CLI |
-| Live evaluation | Тесты по expected label: correct, wrong, missed, accuracy, confusion |
-| Команды ОС | Привязка жестов к действиям, hotkeys, media keys, сценариям `sequence` |
-| MLOps | MLflow runs, JSONL logs, HTML dashboard, артефакты экспериментов |
-| CI/CD | GitHub Actions: unit tests, ML smoke, release bundle |
+| Desktop UI | единый Flet-интерфейс для камеры, жестов, обучения и привязок |
+| Персональные классы | запись статических и динамических жестов из приложения |
+| Static ML | геометрические признаки кисти, tree classifier, open-set rejection |
+| Dynamic ML | `dynamic_landmark_lstm_backbone` по последовательности landmarks |
+| Обучение | train-only GISLR-style augmentation, grouped validation, Optuna |
+| Команды | typed actions, hotkeys, media, navigation, app launch и sequences |
+| Безопасность | confidence gate, adaptive completion gate, negative classes, cooldown |
+| Наблюдаемость | live evaluation, JSONL runtime logs, MLflow provenance |
+| Хранение | SQLite по умолчанию, PostgreSQL опционально |
 
-## Где Здесь ML
+В релиз не входят пользовательские датасеты, секреты, локальные БД, MLflow
+runs, не включенные в release allowlist generated reports и экспериментальные
+model artifacts.
 
-GestureFlow использует MediaPipe Hands как CV-экстрактор landmark-точек, а
-решение о жесте принимает собственный ML-пайплайн поверх этих данных.
-
-### Данные
-
-Вход модели - последовательности landmark-точек руки:
-
-- static/quasi-static: положение кисти и пальцев в окне кадров;
-- dynamic: временной ряд `frames x features`, включая форму руки и global wrist
-  motion;
-- negative: движения и состояния, которые не должны запускать команды.
-
-Основные данные лежат в:
-
-```text
-data/gestures/<label>/sample_*.npy
-data/gestures/<label>/sample_*.meta.json
-configs/gesture_taxonomy.json
-```
-
-### Модели
-
-В проекте сравниваются и используются несколько подходов:
-
-- static baseline: pose-based классификация статических жестов;
-- dynamic sequence MLP;
-- dynamic LSTM backbone для более сложных временных жестов;
-- Rocket/MultiRocket/SProcket/Shapelet/PhaseHMM эксперименты для временных
-  рядов;
-- prototype/rejection layer для open-set поведения;
-- intent gate `static / dynamic / none`, чтобы не заставлять классификатор
-  выбирать жест там, где команды быть не должно.
-
-Модель не должна просто выбирать ближайший класс. Для безопасного управления
-ОС важны:
-
-- confidence threshold;
-- top1/top2 margin;
-- distance-to-prototype;
-- negative labels;
-- live false positive rate;
-- rejected/no-command outcomes.
-
-### Метрики
-
-Offline-метрики нужны, но главный критерий качества - поведение в live:
-
-- accuracy, precision, recall, macro F1;
-- per-class recall;
-- false positive rate;
-- dynamic-as-static confusion;
-- missed rate;
-- reject rate;
-- latency и FPS;
-- command success rate.
-
-Live-тесты автоматически пишутся в JSONL и MLflow, чтобы каждую гипотезу можно
-было проверить повторно.
-
-## Архитектура
+## Пользовательский Сценарий
 
 ```mermaid
 flowchart LR
-    User["Пользователь показывает жест"] --> Camera["Camera frames"]
-    Camera --> MP["MediaPipe Hands"]
-    MP --> Features["Landmarks + motion features"]
-    Features --> Gate["Intent gate: static / dynamic / none"]
-    Gate --> Static["Static recognizer"]
-    Gate --> Dynamic["Dynamic sequence recognizer"]
-    Static --> Reject["Rejection policy"]
-    Dynamic --> Reject
-    Reject --> Router["Recognition router"]
-    Router --> UI["Flet UI"]
-    Router --> Commands["Command executor"]
-    UI --> Eval["Live evaluation"]
-    Eval --> Logs["JSONL logs"]
-    Eval --> MLflow["MLflow"]
+    A["Записать жест"] --> B["Обучить модель"]
+    B --> C["Проверить live"]
+    C --> D{"Качество достаточно?"}
+    D -- "нет" --> A
+    D -- "да" --> E["Привязать команду"]
+    E --> F["Включить распознавание"]
+    F --> G["Reject или безопасное выполнение"]
 ```
 
-Основные модули:
+1. Пользователь записывает несколько независимых дублей каждого жеста.
+2. Приложение обучает только классы из пользовательского датасета.
+3. Static и dynamic маршруты оцениваются раздельно.
+4. Низкая уверенность и неизвестное движение отклоняются.
+5. Команда выполняется только после policy и cooldown.
+
+## Production ML
+
+MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жестов используются
+полные pairwise distances, углы пальцев и временные агрегаты. Dynamic LSTM
+получает нормализованную последовательность `72 x 22 x 3` и сохраняет
+глобальную траекторию, необходимую для направленных движений.
+Release auto-router принимает static-предсказания от `0.80`, а dynamic — от
+`0.90`; порог выполнения привязанной команды остается отдельным барьером.
+
+Перед нормализацией амплитуды dynamic-пайплайн проверяет, завершен ли жест.
+Для каждого пользовательского класса verifier автоматически обучается на его
+полных записях, собственных префиксах и префиксах остальных классов. Если
+кандидат отклонен, сегментатор сохраняет уже выполненную часть и ждет
+продолжения, не испуская команду по неподвижному неполному жесту.
+
+Текущая release evidence:
+
+| Проверка | Результат |
+|---|---:|
+| Static grouped CV accuracy | `0.7767` |
+| Static grouped CV macro F1 | `0.6613` |
+| Dynamic grouped validation accuracy | `0.8571` |
+| Dynamic prototype positive recall | `0.9333` |
+| Dynamic negative false-positive rate | `0.0000` |
+| Dynamic ML latency, mean / p95 | `13.979 / 16.013 ms` |
+| Completion gate, full source recordings | `60/60 = 1.0000` |
+| Completion gate, prefix accepts before / after | `214/240 / 6/240` |
+| Online state-machine replay, full / wrong class | `59/60 / 0` |
+| Online state-machine replay, prefix false accepts | `5/240 = 0.0208` |
+| Post-gate controlled live static recall at threshold `0.80` | `20/20 = 1.0000` |
+| Post-gate controlled live dynamic recall at threshold `0.90` | `38/40 = 0.9500` |
+| Post-gate positive total / wrong class | `58/60 = 0.9667 / 0` |
+| Partial/look-alike false-command rate | `1/20 = 0.0500` |
+| Background/no-command false-command rate | `0/30 = 0.0000` |
+| Aggregate safety false-command rate | `1/50 = 0.0200` |
+
+Post-gate live breakdown при release-пороге `0.90`: `SwipeLeft 20/20`,
+`diagonal 9/10` (`1` пропуск), `zoom 9/10` (`1` пропуск). Неверных
+dynamic-классов в этом прогоне не отмечено.
+Результат относится к персональному controlled protocol: рука полностью в
+кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
+нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
+`no-command` safety run.
+Completion replay использует текущие source recordings через production
+`GestureOnlineInfer`; это regression evidence, а не независимый test set.
+Webcam positive и safety runs после gate выполнены. Partial/look-alike движения
+дали `1/20` ложную команду, а background/no-command сценарии не дали ни одной
+команды в `30` попытках. Оба показателя проходят release target `<=10%`.
+
+## Архитектура
 
 ```text
-app/flet_app/              Flet desktop UI
-app/gesture_online_infer.py online inference and routing
-app/services/              commands, config, diagnostics, binding policy
-app/models/                SQLAlchemy models
-cv/                        feature extraction, training, sequence models
-scripts/                   experiments, reports, MLOps utilities
-models/                    tracked model artifacts and metadata
-docs/contest/              JMLC-oriented ML system design
-tests/                     unit and smoke tests
-.github/workflows/         CI/CD pipelines
+app/flet_app/                 Flet UI и composition root
+app/services/                 policies, команды, конфигурация и domain services
+app/models/                   persistence и database adapter
+app/gesture_online_infer.py   online CV/ML coordinator
+cv/                           признаки, augmentation, обучение и модели
+configs/                      taxonomy и versioned contracts
+models/                       только allowlisted production bundle
+scripts/                      smoke, benchmark и maintenance commands
+tests/                        unit/integration contracts
+docs/                         curated product, ML и operations docs
 ```
 
-## Product Flow
-
-1. Пользователь открывает приложение.
-2. Включает камеру и live recognition.
-3. Записывает новый жест или использует уже существующий.
-4. Обучает модель из интерфейса.
-5. Запускает live evaluation: выбирает expected label и делает 10-20 попыток.
-6. Смотрит accuracy, wrong/missed, confusion и rejection outcomes.
-7. Привязывает жест к команде или сценарию.
-8. Система выполняет команду только после прохождения route + reject policy.
-
-## Command Binding
-
-GestureFlow поддерживает не только одиночные действия, но и сценарии:
-
-```json
-{
-  "action": "sequence",
-  "platform": "macos",
-  "steps": [
-    {"action": "open_app", "app": "Safari"},
-    {"action": "wait", "seconds": 1.0},
-    {"action": "notify", "title": "GestureFlow", "message": "Рабочее место готово"}
-  ]
-}
-```
-
-Поддерживаемые типы действий:
-
-- `open_app`, `open_url`, `open_path`;
-- `volume_up`, `volume_down`, `mute_toggle`;
-- `brightness_up`, `brightness_down`, `lock_screen`, `screenshot`;
-- `scroll`, `press`, `media_key`, `key_combination`;
-- `run_script`;
-- `wait`, `notify`, `sequence`.
-
-Опасные действия дополнительно помечаются политикой безопасности. Вложенные
-сценарии запрещены, чтобы не создавать неуправляемые цепочки.
-
-## MLOps И Наблюдаемость
-
-Проект фиксирует эксперименты и live-качество:
-
-- MLflow: параметры обучения, метрики, артефакты моделей;
-- `outputs/ci/ml_smoke_report.json`: проверка загрузки моделей в CI;
-- `~/.dplm/logs/live_evaluation.jsonl`: попытки live-тестов;
-- `~/.dplm/logs/runtime_performance.jsonl`: latency/FPS;
-- `docs/contest/ML_SYSTEM_DESIGN.md`: living-документ архитектуры ML-системы;
-- `docs/experiments/`: отчеты по гипотезам, rejection, datasets, thresholds.
-
-Запуск MLflow UI:
-
-```bash
-PYTHON=.venv/bin/python make mlflow-ui
-```
-
-После запуска UI доступен локально:
-
-```text
-http://127.0.0.1:5000
-```
-
-## CI/CD
-
-CI проверяет, что код и ML-артефакты не сломались после изменений:
-
-```bash
-PYTHON=.venv/bin/python make ci
-```
-
-В GitHub Actions:
-
-- `CI`: unit tests + ML smoke на push/PR;
-- `ML Smoke`: отдельная регулярная проверка model artifacts;
-- `Docker Runtime`: сборка headless runtime image + ML smoke внутри контейнера;
-- `macOS App Bundle`: сборка `.app/.zip` artifact на macOS runner;
-- `Desktop Release Bundle`: сборка release bundle по tag/manual run.
-
-Текущий CD-подход для desktop-приложения: не деплой на сервер, а выпуск
-воспроизводимого handoff bundle с кодом, моделями, конфигами и документацией.
-
-Подробнее: [docs/CI_CD.md](docs/CI_CD.md).
-
-## Docker
-
-Docker используется как воспроизводимый headless runtime для ML-проверок,
-MLOps и CD. Это не основной способ раздавать macOS-приложение с камерой:
-Docker Desktop на macOS плохо подходит для нативного окна Flet и доступа к
-веб-камере. Для друзей и демо нужен следующий CD-слой: macOS `.app`/`.zip`.
-
-Image собирается под `linux/amd64`, даже на Apple Silicon. Это сделано
-намеренно: нужные MediaPipe wheels для Linux доступны на x86_64, а не для
-обычной arm64-сборки Docker на Mac.
-
-Внутри Docker `torch` ставится отдельно из CPU wheel index, чтобы контейнер не
-тянул CUDA/GPU зависимости. Для нашей задачи это честнее: live-распознавание и
-ML smoke работают на CPU, а CD-проверка остается переносимой.
-
-Локальные команды:
-
-```bash
-make docker-build
-make docker-ml-smoke
-make docker-ci
-make docker-mlflow
-```
-
-Сервисы напрямую:
-
-```bash
-docker compose --profile tools run --rm ml-smoke
-docker compose --profile tools run --rm ci
-docker compose --profile tools up mlflow
-```
-
-`docker-runtime.yml` в GitHub Actions собирает image и запускает ML smoke
-внутри контейнера, чтобы проверить, что модельные артефакты и runtime не
-завязаны на локальную macOS-среду.
-
-## macOS Artifact
-
-Для передачи приложения друзьям используется отдельный CD workflow
-`macos-app.yml`. Он запускается на macOS runner, проверяет ML smoke, собирает
-`GestureFlow.app` через PyInstaller/Flet и публикует `.zip` artifact.
-
-Локально на macOS можно запустить:
-
-```bash
-make macos-app
-```
-
-Важно: текущая сборка подписывается ad-hoc и не проходит Apple notarization.
-На первом запуске macOS может потребовать открыть приложение через right click
--> Open и выдать разрешение на камеру.
+Полная схема слоев, runtime sequence, training publication и ownership данных:
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Быстрый Старт
 
-### 1. Окружение
-
-Рекомендуется Python 3.11.
+Требования: macOS, Python `3.11`, веб-камера.
 
 ```bash
-git clone https://github.com/Rafaildavar/DPLM.git
-cd DPLM
+git clone https://github.com/Rafaildavar/GestureBind.git
+cd GestureBind
 
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -303,108 +129,111 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 2. База Данных
+Для разработки и тестов:
 
 ```bash
-docker compose up -d db
-PYTHONDONTWRITEBYTECODE=1 python -B -m scripts.seed_database
+python -m pip install -r requirements-dev.txt
 ```
 
-### 3. Приложение
+TensorFlow нужен только для исторического CNN benchmark:
+
+```bash
+python -m pip install -r requirements-research.txt
+```
+
+Запуск релизного desktop-приложения:
+
+```bash
+./scripts/launch_app.sh
+```
+
+Эквивалентная команда:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
 ```
 
-### 4. Проверки
+SQLite используется автоматически и не требует Docker. Для PostgreSQL:
 
 ```bash
-PYTHON=.venv/bin/python make ci
-PYTHON=.venv/bin/python make ml-smoke
+docker compose up -d db
+export DPLM_DB_BACKEND=postgres
 ```
 
-## Как Тестировать Жесты
+При первом запуске macOS запросит доступ к камере. Для выполнения hotkeys и
+управления курсором также может понадобиться Accessibility permission.
 
-Для live-метрик:
+## Локальные Данные
 
-1. Открой приложение.
-2. Перейди в live evaluation.
-3. Выбери expected label, например `swipe_up`.
-4. Сделай 10-20 попыток естественным жестом.
-5. Зафиксируй `correct`, `wrong`, `missed`, `accuracy`.
-6. Повтори для negative/no-command сценариев.
-7. Сравни результаты в MLflow и JSONL-логах.
+| Данные | Расположение |
+|---|---|
+| Конфигурация | `~/.dplm/config.json` |
+| SQLite | `~/.dplm/dplm.sqlite` |
+| Runtime logs | `~/.dplm/logs/` |
+| Samples в source checkout | `data/gestures/` или настроенный путь |
+| MLflow | `mlflow.db`, `mlruns/` |
 
-Для динамических жестов важно показывать именно естественное движение, а не
-`движение + удержание позы`. Система должна принимать решение по завершенному
-сегменту движения, а не по финальной статической позе.
+Эти пути исключены из Git. В `models/` отслеживается только production bundle,
+нужный для первого запуска и smoke validation.
+
+## Проверки
+
+```bash
+# Чистота tracked-дерева и release contract
+PYTHON=.venv/bin/python make repo-hygiene
+
+# Unit/integration tests + ML artifact smoke
+PYTHON=.venv/bin/python make ci
+
+# Только production model smoke
+PYTHON=.venv/bin/python make ml-smoke
+
+# Full/prefix benchmark через production dynamic state machine
+python -m scripts.evaluate_dynamic_completion --log-mlflow
+
+# Локальный MLflow UI
+PYTHON=.venv/bin/python make mlflow-ui
+```
+
+MLflow открывается на [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+## Release
+
+GitHub release workflow создает source/model bundle через `git archive`.
+Поэтому архив содержит только tracked-файлы текущего commit и не может случайно
+захватить `.env`, датасет, локальную БД или experiment outputs.
+
+Статус `v0.8.0`: **ready**. Positive matrix: `58/60`, wrong class `0`;
+safety matrix: `49/50` безопасных отклонений, background false commands `0/30`.
+
+Перед публикацией:
+
+1. выполнить `make ci`;
+2. пройти live static/dynamic/no-command matrix;
+3. проверить `VERSION`, `CHANGELOG.md` и `RELEASE_NOTES.md`;
+4. создать tag `v0.8.0` после ручной проверки текущего commit.
 
 ## Документация
 
-- [JMLC overview](docs/contest/JMLC.md)
-- [ML System Design](docs/contest/ML_SYSTEM_DESIGN.md)
-- [CI/CD](docs/CI_CD.md)
+- [Architecture](ARCHITECTURE.md)
+- [Training Workflow](docs/TRAINING_WORKFLOW.md)
 - [Binding Rules](docs/BINDING_RULES.md)
-- [Current Status](docs/CURRENT_STATUS.md)
+- [Database Schema](docs/DB_SCHEMA.md)
+- [CI/CD](docs/CI_CD.md)
+- [ML System Design](docs/contest/ML_SYSTEM_DESIGN.md)
+- [Dynamic Completion Benchmark](docs/experiments/dynamic_completion_benchmark.md)
+- [Release Readiness](docs/experiments/release_readiness_2026-07-10.md)
 
-## Почему Проект Подходит Для JMLC
+## Ограничения MVP
 
-### Разработка И Инженерия
+- production UX и command execution ориентированы на macOS;
+- приложение пока не подписано Developer ID и не notarized;
+- качество новых пользовательских классов зависит от разнообразия записей;
+- публичные benchmark datasets используются как исследовательская проверка, а
+  не как замена персональному датасету;
+- `AppController` остается крупным composition root; новая domain-логика должна
+  выноситься в `app/services` или `cv`.
 
-- desktop MVP с реальным UX;
-- GitHub Actions CI/CD;
-- Docker/PostgreSQL слой;
-- тесты сервисов, роутинга, команд и ML-контрактов;
-- воспроизводимые CLI-команды;
-- release bundle workflow.
+## License
 
-### Data Science
-
-- собственный датасет жестов;
-- feature engineering для static/dynamic режимов;
-- сравнение моделей временных рядов;
-- negative examples и rejection;
-- offline + live validation;
-- MLflow и отчеты по гипотезам.
-
-### Применение ИИ
-
-- ML внутри продукта: gesture recognition, intent gate, sequence models;
-- AI-assisted разработка: анализ гипотез, тест-кейсы, документация, code review;
-- AI-агенты планируются как отдельный слой для помощи в routing, data quality и
-  experiment analysis.
-
-### Продуктовое Мышление
-
-- понятная пользовательская проблема;
-- MVP закрывает полный путь от записи жеста до команды ОС;
-- есть live feedback loop;
-- качество оценивается не только accuracy, но и безопасностью выполнения команд.
-
-## Статус
-
-Текущая рабочая ветка: `contest_version`.
-
-Стабильно:
-
-- Flet desktop app;
-- запись и обучение жестов;
-- command binding;
-- live evaluation;
-- MLflow/CI smoke;
-- статические жесты и базовый dynamic pipeline.
-
-В активной разработке:
-
-- качество сложных динамических жестов;
-- segmentation/end-of-gesture policy;
-- LSTM/sequence model experiments;
-- CD release bundle;
-- более красивая витрина метрик для демонстрации.
-
-## Автор
-
-Rafail Davar
-
-Проект развивается как конкурсная версия GestureFlow для Junior ML Contest и как
-основа для дальнейшего ML/HCI-продукта.
+MIT. See [LICENSE](LICENSE).

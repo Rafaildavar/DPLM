@@ -1,8 +1,8 @@
-"""Convert IPN Hand frame tar archives into compact GestureFlow samples.
+"""Convert IPN Hand frame tar archives into compact GestureBind samples.
 
 The IPN frame archives are too large to extract in this workspace. This script
 streams selected JPEG frames directly from ``frames*.tar`` and writes only the
-small landmark sequences used by GestureFlow experiments.
+small landmark sequences used by GestureBind experiments.
 """
 
 from __future__ import annotations
@@ -504,7 +504,7 @@ def log_mlflow(report: TarIpnConversionReport, *, tracking_uri: str, experiment:
         return False
     try:
         mlflow.set_tracking_uri(str(tracking_uri))
-        mlflow.set_experiment(str(experiment or "GestureFlow"))
+        mlflow.set_experiment(str(experiment or "GestureBind"))
         with mlflow.start_run(run_name="ipn-tar-conversion"):
             mlflow.set_tags(
                 {
@@ -555,7 +555,7 @@ def mediapipe_cli_available(timeout_seconds: int = 60) -> tuple[bool, str]:
     ]
     env = {
         **dict(os.environ),
-        "MPLCONFIGDIR": "/private/tmp/gestureflow_mpl",
+        "MPLCONFIGDIR": "/private/tmp/gesturebind_mpl",
         "MEDIAPIPE_DISABLE_GPU": "1",
     }
     try:
@@ -733,7 +733,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-mediapipe-preflight", action="store_true")
     parser.add_argument("--json-out", type=Path, default=DEFAULT_JSON_OUT)
     parser.add_argument("--md-out", type=Path, default=DEFAULT_MD_OUT)
-    parser.add_argument("--mlflow-experiment", default="GestureFlow")
+    parser.add_argument("--mlflow-experiment", default="GestureBind")
     parser.add_argument("--mlflow-tracking-uri", default=DEFAULT_MLFLOW_URI)
     return parser.parse_args()
 

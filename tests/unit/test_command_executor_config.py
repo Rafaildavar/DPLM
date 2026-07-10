@@ -69,7 +69,7 @@ def test_execute_config_notify_macos(monkeypatch):
     ok = ex.execute_config(
         {
             "action": "notify",
-            "title": "GestureFlow",
+            "title": "GestureBind",
             "message": "Рабочее место готово",
             "platform": "all",
         }
@@ -96,7 +96,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
     monkeypatch.setattr(
         ex,
         "_notify",
-        lambda message, *, title="GestureFlow": calls.append(("notify", title, message)) or True,
+        lambda message, *, title="GestureBind": calls.append(("notify", title, message)) or True,
     )
 
     ok = ex.execute_config(
@@ -106,7 +106,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
             "steps": [
                 {"action": "open_app", "app": "Preview"},
                 {"action": "wait", "seconds": 0.5},
-                {"action": "notify", "title": "GestureFlow", "message": "Готово"},
+                {"action": "notify", "title": "GestureBind", "message": "Готово"},
             ],
         }
     )
@@ -114,7 +114,7 @@ def test_execute_config_sequence_runs_steps_in_order(monkeypatch):
     assert calls == [
         ("open_app", "Preview"),
         ("wait", 0.5),
-        ("notify", "GestureFlow", "Готово"),
+        ("notify", "GestureBind", "Готово"),
     ]
 
 
@@ -125,7 +125,7 @@ def test_execute_config_sequence_stops_on_failed_step(monkeypatch):
     monkeypatch.setattr(
         ex,
         "_notify",
-        lambda message, *, title="GestureFlow": calls.append(("notify", message)) or True,
+        lambda message, *, title="GestureBind": calls.append(("notify", message)) or True,
     )
 
     ok = ex.execute_config(
@@ -158,6 +158,27 @@ def test_execute_config_mute_toggle(monkeypatch):
     ok = ex.execute_config({"action": "mute_toggle", "platform": "all"})
     assert ok is True
     assert pressed == ["volumemute"]
+
+
+def test_execute_config_mute_toggle_macos_uses_osascript(monkeypatch):
+    ex = ce.CommandExecutor()
+    monkeypatch.setattr(ce.CommandExecutor, "_host_platform_tag", lambda self: "macos")
+    monkeypatch.setattr(ex, "system", "darwin")
+
+    captured = {"args": None}
+
+    class FakeProc:
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        return FakeProc()
+
+    monkeypatch.setattr(ce.subprocess, "run", fake_run)
+    ok = ex.execute_config({"action": "mute_toggle", "platform": "macos"})
+    assert ok is True
+    assert captured["args"][0] == "osascript"
+    assert "output muted" in " ".join(captured["args"])
 
 
 def test_execute_config_brightness_up_uses_osascript(monkeypatch):

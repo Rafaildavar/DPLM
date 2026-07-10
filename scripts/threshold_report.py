@@ -1,6 +1,6 @@
 """Build a confidence-threshold report for gesture classifiers.
 
-Offline F1 is not enough for GestureFlow: a wrong high-confidence prediction can
+Offline F1 is not enough for GestureBind: a wrong high-confidence prediction can
 execute an OS command. This report evaluates the trade-off between accepted
 prediction quality and rejected predictions.
 """
@@ -380,7 +380,7 @@ def build_markdown(report: ThresholdReport) -> str:
     count_rows = "\n".join(
         f"| `{label}` | {count} |" for label, count in report.dataset.class_counts.items()
     )
-    return f"""# JMLC Threshold Report
+    return f"""# GestureBind Threshold Report
 
 ## Краткий вывод
 
@@ -443,7 +443,7 @@ def write_outputs(report: ThresholdReport, json_out: Path, markdown_out: Path) -
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build JMLC threshold report")
+    parser = argparse.ArgumentParser(description="Build GestureBind threshold report")
     parser.add_argument("--data-root", default="data/gestures", type=Path)
     parser.add_argument(
         "--candidates",
@@ -487,4 +487,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

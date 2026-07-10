@@ -1,4 +1,4 @@
-# GestureFlow MAS skill packs
+# GestureBind MAS skill packs
 
 Skill packs are filesystem instructions for the binding multi-agent system.
 They complement the Python `skills/` trace registry:

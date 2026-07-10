@@ -1,188 +1,68 @@
-"""Intent routing agent for binding MAS requests."""
+"""Intent routing agent backed by a normalized TaskFrame."""
 from __future__ import annotations
 
-from app.services.binding_agent import (
+from app.services.binding_agents.contracts import (
     AgentStep,
     BindingAgentContext,
-    _is_out_of_scope_question,
-    _is_project_question,
-    _is_validation_question,
-    _looks_like_binding_request,
-    _norm,
+    TaskFrame,
 )
-from app.services.binding_agents.semantic_router import (
-    SEMANTIC_ROUTE_THRESHOLD,
-    SEMANTIC_SEQUENCE_OVERRIDE_THRESHOLD,
-    SemanticRoute,
-    route_semantically,
-)
+from app.services.binding_agents.task_frame import TaskFrameExtractor
+
 
 class IntentAgent:
     name = "Intent Agent"
 
-    def run(self, context: BindingAgentContext) -> AgentStep:
-        lower = _norm(context.prompt)
-        if not lower:
+    def __init__(self, extractor: TaskFrameExtractor | None = None) -> None:
+        self.extractor = extractor or TaskFrameExtractor()
+
+    def build_frame(self, context: BindingAgentContext) -> TaskFrame:
+        return self.extractor.extract(context)
+
+    def run(
+        self,
+        context: BindingAgentContext,
+        *,
+        frame: TaskFrame | None = None,
+    ) -> AgentStep:
+        if not context.prompt.strip():
             return AgentStep(self.name, "need_input", "Жду текст запроса.")
-
-        semantic = route_semantically(context.prompt)
-
-        if _is_validation_question(context.prompt):
-            return AgentStep(
-                self.name,
-                "ok",
-                "Маршрут: проектный вопрос о соответствии команды действию.",
-                {
-                    "intent": "validate_command",
-                    "block": "project_question",
-                    "route": "answer",
-                    "routeMethod": "rule",
-                    "ruleConfidence": 0.96,
-                    "semanticIntent": semantic.intent,
-                    "semanticScore": round(semantic.score, 4),
-                },
-            )
-
-        if _is_project_question(context.prompt):
-            return AgentStep(
-                self.name,
-                "ok",
-                "Маршрут: общий вопрос по проекту.",
-                {
-                    "intent": "project_question",
-                    "block": "project_question",
-                    "route": "answer",
-                    "routeMethod": "rule",
-                    "ruleConfidence": 0.92,
-                    "semanticIntent": semantic.intent,
-                    "semanticScore": round(semantic.score, 4),
-                },
-            )
-
-        if _is_out_of_scope_question(context.prompt):
-            return AgentStep(
-                self.name,
-                "need_clarification",
-                "Маршрут: общий вопрос вне области агента.",
-                {
-                    "intent": "unsupported_general_question",
-                    "block": "unsupported_general",
-                    "route": "safe_redirect",
-                    "routeMethod": "rule",
-                    "ruleConfidence": 0.9,
-                    "semanticIntent": semantic.intent,
-                    "semanticScore": round(semantic.score, 4),
-                },
-            )
-
-        if (
-            semantic.intent == "build_sequence"
-            and semantic.score >= SEMANTIC_SEQUENCE_OVERRIDE_THRESHOLD
-        ):
-            return self._semantic_step(
-                semantic,
-                "Маршрут: сценарий выбран по смыслу фразы.",
-            )
-
-        if _looks_like_binding_request(context):
-            is_sequence = any(
-                marker in lower
-                for marker in (
-                    "сценар",
-                    "серия команд",
-                    "серию команд",
-                    "серии команд",
-                    "последовательность команд",
-                    "несколько команд",
-                    "нескольких команд",
-                    "последовательно",
-                    "потом",
-                    "затем",
-                    "после этого",
-                    "далее",
-                    ";",
-                )
-            )
-            is_update = any(
-                marker in lower
-                for marker in (
-                    "измени",
-                    "изменить",
-                    "поменяй",
-                    "замени",
-                    "обнови",
-                    "перепривяж",
-                    "переназнач",
-                )
-            )
-            intent = (
-                "build_sequence"
-                if is_sequence
-                else "update_binding"
-                if is_update
-                else "create_binding"
-            )
-            message = (
-                "Маршрут: изменение существующей привязки."
-                if intent == "update_binding"
-                else "Маршрут: сценарий из нескольких действий."
-                if intent == "build_sequence"
-                else "Маршрут: создание привязки."
-            )
-            return AgentStep(
-                self.name,
-                "ok",
-                message,
-                {
-                    "intent": intent,
-                    "block": "binding",
-                    "route": "binding_pipeline",
-                    "routeMethod": "rule",
-                    "ruleConfidence": 0.88,
-                    "semanticIntent": semantic.intent,
-                    "semanticScore": round(semantic.score, 4),
-                },
-            )
-
-        if semantic.score >= SEMANTIC_ROUTE_THRESHOLD:
-            return self._semantic_step(
-                semantic,
-                "Маршрут выбран по semantic-router.",
-            )
-
-        return AgentStep(
-            self.name,
-            "need_clarification",
-            "Маршрут не относится к привязкам GestureFlow.",
-            {
-                "intent": "unsupported_general_question",
-                "block": "unsupported_general",
-                "route": "safe_redirect",
-                "routeMethod": "fallback",
-                "ruleConfidence": 0.0,
-                "semanticIntent": semantic.intent,
-                "semanticScore": round(semantic.score, 4),
-                "semanticExample": semantic.matched_example,
-            },
-        )
-
-    def _semantic_step(self, semantic: SemanticRoute, message: str) -> AgentStep:
+        task = frame or context.task_frame or self.build_frame(context)
         status = (
             "need_clarification"
-            if semantic.block == "unsupported_general"
+            if task.block == "unsupported_general"
             else "ok"
         )
-        return AgentStep(
-            self.name,
-            status,
-            message,
+        message = {
+            "create_binding": "Маршрут: создание привязки.",
+            "update_binding": "Маршрут: изменение существующей привязки.",
+            "delete_binding": "Маршрут: удаление существующей привязки.",
+            "inspect_binding": "Маршрут: просмотр существующей привязки.",
+            "cancel_binding": "Маршрут: отмена создания привязки.",
+            "build_sequence": "Маршрут: сценарий из нескольких действий.",
+            "validate_command": "Маршрут: проверка команды и действия.",
+            "project_question": "Маршрут: вопрос по GestureBind.",
+            "unsupported_general_question": "Маршрут: общий вопрос вне GestureBind.",
+        }.get(task.intent, "Маршрут выбран по task-frame.")
+        data = task.to_dict()
+        data.update(
             {
-                "intent": semantic.intent,
-                "block": semantic.block,
-                "route": semantic.route,
-                "routeMethod": "semantic",
-                "semanticIntent": semantic.intent,
-                "semanticScore": round(semantic.score, 4),
-                "semanticExample": semantic.matched_example,
-            },
+                "intent": task.intent,
+                "block": task.block,
+                "route": task.route,
+                "routeMethod": task.route_method,
+                "ruleConfidence": round(task.confidence, 4),
+                "taskFrame": task.to_dict(),
+            }
         )
+        if task.alternatives:
+            data["semanticIntent"] = task.alternatives[0][0]
+            data["semanticScore"] = round(task.alternatives[0][1], 4)
+            second_score = task.alternatives[1][1] if len(task.alternatives) > 1 else 0.0
+            data["routeMargin"] = round(
+                max(0.0, task.alternatives[0][1] - second_score),
+                4,
+            )
+        return AgentStep(self.name, status, message, data)
+
+
+__all__ = ["IntentAgent"]

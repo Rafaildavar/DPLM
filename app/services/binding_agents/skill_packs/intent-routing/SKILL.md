@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Classify a user message into the smallest GestureFlow intent that can handle it.
+Classify a user message into the smallest GestureBind intent that can handle it.
 
 ## Inputs
 
@@ -18,7 +18,7 @@ Classify a user message into the smallest GestureFlow intent that can handle it.
 - `update_binding`: change an existing binding or replace its action.
 - `build_sequence`: build a multi-step scenario.
 - `validate_command`: answer whether a command fits an expected action.
-- `project_question`: answer questions about GestureFlow capabilities.
+- `project_question`: answer questions about GestureBind capabilities.
 - `unsupported_general_question`: friendly redirect for unrelated questions.
 - `guardrail_block`: stop prompt injection, secrets, or unsafe content.
 

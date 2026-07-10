@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Separate unsafe requests from ordinary clarifications in GestureFlow.
+Separate unsafe requests from ordinary clarifications in GestureBind.
 
 ## Input Guardrails
 
@@ -22,6 +22,6 @@ Missing gesture or missing action is not a refusal. It is a clarification state.
 
 ## Output Tone
 
-When blocking, explain the reason briefly and offer a safe GestureFlow-shaped
+When blocking, explain the reason briefly and offer a safe GestureBind-shaped
 rewrite.
 

@@ -1,1 +1,1 @@
-"""DPLM application package."""
+"""GestureBind application package."""

@@ -18,7 +18,11 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 
 from cv.dynamic_motion import canonical_dynamic_sequence
-from cv.gesture_features import align_sequence, sequence_to_matrix
+from cv.gesture_features import (
+    align_sequence,
+    normalize_sequence_landmark_z,
+    sequence_to_matrix,
+)
 
 METHOD_PROTOTYPE_DISTANCE = "prototype_distance"
 METHOD_PROTOTYPE_DTW = "prototype_dtw"
@@ -58,6 +62,7 @@ def normalize_dynamic_sequence(
     target_frames: int = 36,
 ) -> np.ndarray:
     seq = align_sequence(sequence_to_matrix(sequence), int(target_dim))
+    seq = normalize_sequence_landmark_z(seq)
     return canonical_dynamic_sequence(seq, target_frames=int(target_frames)).astype(
         np.float32,
         copy=False,
@@ -111,7 +116,7 @@ def fit_dynamic_prototype_model(
     method = _normalize_method(method)
     grouped: dict[str, list[DynamicSequenceRecord]] = {}
     for record in records:
-        label = str(record.label or "").strip().lower()
+        label = str(record.label or "").strip()
         if not label:
             continue
         normalized = DynamicSequenceRecord(
@@ -254,7 +259,7 @@ def predict_dynamic_prototype(
     best_distance, best = ranked[0]
     second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
     raw_label = str(best.get("label") or "").strip()
-    label = raw_label.lower()
+    label = raw_label
     prototype_type = str(best.get("type") or "")
     thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
     threshold_payload = (

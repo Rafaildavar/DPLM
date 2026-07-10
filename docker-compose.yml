@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Docker services для GestureFlow.
+# Docker services для GestureBind.
 #
 # Старт:
 #   docker compose up -d db
@@ -7,16 +7,15 @@
 #   docker compose --profile tools run --rm ci
 #   docker compose --profile tools up mlflow
 #
-# Важно: macOS Docker Desktop не является хорошим способом раздавать
-# desktop-приложение с веб-камерой. Контейнер здесь нужен для воспроизводимого
-# ML/runtime окружения, smoke-проверок и CD-артефактов. Нативное окно Flet с
-# камерой лучше распространять как macOS bundle / release archive.
+# Важно: Docker здесь нужен для воспроизводимого ML/runtime окружения,
+# smoke-проверок и CD-артефактов. Интерактивное desktop-приложение с камерой
+# лучше распространять как нативный release archive.
 #
 # Подключение из приложения берётся из переменных окружения /
 # из файла .env (см. .env.example).
 #
-# Данные — в именованном Docker-томе ``dplm_postgres_data`` (стабильнее bind-mount
-# на macOS, где часто ломаются ``pg_filenode.map`` / ``pg_logical``).
+# Данные — в именованном Docker-томе ``dplm_postgres_data``: это стабильнее,
+# чем bind-mount для внутренних файлов PostgreSQL.
 # Старый путь ``./.db_data/postgres`` больше не используется — каталог можно удалить.
 # -----------------------------------------------------------------------------
 services:
@@ -49,7 +48,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: make ml-smoke
     environment:
       PYTHON: python
@@ -65,7 +64,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: make ci
     environment:
       PYTHON: python
@@ -81,7 +80,7 @@ services:
     build:
       context: .
       target: runtime
-    image: gestureflow-runtime:local
+    image: gesturebind-runtime:local
     command: >
       python -m mlflow ui
       --backend-store-uri sqlite:////app/mlflow/mlflow.db
@@ -90,8 +89,8 @@ services:
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
     volumes:
-      - gestureflow_mlflow:/app/mlflow
+      - gesturebind_mlflow:/app/mlflow
 
 volumes:
   dplm_postgres_data:
-  gestureflow_mlflow:
+  gesturebind_mlflow:

@@ -1,5 +1,5 @@
 """
-Параметры захвата камеры OpenCV — согласованы с cv/realtime_infer.py и app/gui_main.py.
+Общие параметры захвата камеры OpenCV для desktop и headless runtime.
 """
 from __future__ import annotations
 

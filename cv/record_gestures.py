@@ -128,7 +128,7 @@ def main() -> None:
                 countdown_seconds=capture.countdown_value(now),
             )
 
-            cv2.imshow("Gesture Recording - DPLM", frame_bgr)
+            cv2.imshow("Gesture Recording - GestureBind", frame_bgr)
             key = cv2.waitKey(1) & 0xFF
             action = recording_action_for_key(key)
 

@@ -10,6 +10,7 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,9 @@ class SemanticRoute:
     route: str
     score: float
     matched_example: str
+    margin: float = 0.0
+    method: str = "hybrid_embedding"
+    alternatives: tuple[tuple[str, float, str], ...] = ()
 
 
 INTENT_ROUTE_TABLE: dict[str, tuple[str, str]] = {
@@ -61,7 +65,7 @@ INTENT_EXAMPLES: dict[str, tuple[str, ...]] = {
         "соответствует ли команда ожидаемому действию",
     ),
     "project_question": (
-        "что умеет агент привязки gestureflow",
+        "что умеет агент привязки gesturebind",
         "какие жесты и команды доступны",
         "как работает mlflow трассировка агентов",
         "как устроена система привязок",
@@ -76,8 +80,9 @@ INTENT_EXAMPLES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-SEMANTIC_ROUTE_THRESHOLD = 0.24
-SEMANTIC_SEQUENCE_OVERRIDE_THRESHOLD = 0.20
+SEMANTIC_ROUTE_THRESHOLD = 0.27
+SEMANTIC_SEQUENCE_OVERRIDE_THRESHOLD = 0.24
+SEMANTIC_MIN_MARGIN = 0.045
 
 
 def _normalize(text: str) -> str:
@@ -160,18 +165,64 @@ def _cosine(left: Counter[str], right: Counter[str]) -> float:
     return numerator / (left_norm * right_norm)
 
 
+@lru_cache(maxsize=1)
+def _embedding_index():
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+    except Exception:
+        return None
+    rows: list[tuple[str, str]] = []
+    for intent, examples in INTENT_EXAMPLES.items():
+        rows.extend((intent, example) for example in examples)
+    vectorizer = TfidfVectorizer(
+        analyzer="char_wb",
+        ngram_range=(3, 5),
+        lowercase=True,
+        sublinear_tf=True,
+    )
+    matrix = vectorizer.fit_transform([example for _intent, example in rows])
+    return vectorizer, matrix, tuple(rows)
+
+
+def _embedding_scores(text: str) -> dict[tuple[str, str], float]:
+    index = _embedding_index()
+    if index is None:
+        return {}
+    vectorizer, matrix, rows = index
+    query = vectorizer.transform([_normalize(text)])
+    similarities = (matrix @ query.T).toarray().ravel()
+    return {
+        (intent, example): float(score)
+        for (intent, example), score in zip(rows, similarities)
+    }
+
+
 def route_semantically(text: str) -> SemanticRoute:
     query = _features(text)
-    best_intent = "unsupported_general_question"
-    best_score = 0.0
-    best_example = ""
+    embedding_scores = _embedding_scores(text)
+    by_intent: dict[str, tuple[float, str]] = {}
     for intent, examples in INTENT_EXAMPLES.items():
         for example in examples:
-            score = _cosine(query, _features(example))
-            if score > best_score:
-                best_intent = intent
-                best_score = score
-                best_example = example
+            lexical = _cosine(query, _features(example))
+            embedding = embedding_scores.get((intent, example), 0.0)
+            score = (0.48 * lexical) + (0.52 * embedding)
+            current = by_intent.get(intent)
+            if current is None or score > current[0]:
+                by_intent[intent] = (score, example)
+    ranked = sorted(
+        (
+            (intent, score, example)
+            for intent, (score, example) in by_intent.items()
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    best_intent, best_score, best_example = (
+        ranked[0]
+        if ranked
+        else ("unsupported_general_question", 0.0, "")
+    )
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
     block, route = INTENT_ROUTE_TABLE[best_intent]
     return SemanticRoute(
         intent=best_intent,
@@ -179,5 +230,6 @@ def route_semantically(text: str) -> SemanticRoute:
         route=route,
         score=best_score,
         matched_example=best_example,
+        margin=max(0.0, best_score - second_score),
+        alternatives=tuple(ranked[:3]),
     )
-

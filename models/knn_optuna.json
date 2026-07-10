@@ -1,0 +1,16 @@
+{
+  "best_score": 0.700904139433551,
+  "best_params": {
+    "extra_trees_n_estimators": 320,
+    "extra_trees_max_depth": 14,
+    "extra_trees_min_samples_split": 3,
+    "extra_trees_min_samples_leaf": 2,
+    "extra_trees_max_features": 0.5,
+    "extra_trees_criterion": "entropy",
+    "extra_trees_bootstrap": true
+  },
+  "trials": 20,
+  "cv_folds": 3,
+  "used_cv": true,
+  "reason": ""
+}

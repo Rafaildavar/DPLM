@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Resolve Russian and English gesture phrases to GestureFlow class labels.
+Resolve Russian and English gesture phrases to GestureBind class labels.
 
 ## Inputs
 

@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 
 from app.gesture_online_infer import GestureOnlineInfer
@@ -6,11 +8,13 @@ from cv.dynamic_prototype import (
     METHOD_PROTOTYPE_DTW,
     DynamicSequenceRecord,
     fit_dynamic_prototype_model,
+    normalize_dynamic_sequence,
     predict_dynamic_prototype,
 )
 from scripts.dynamic_prototype_experiments import (
     _copy_base_dynamic_artifacts,
     _write_dynamic_prototype_artifact_bundle,
+    discover_records,
     evaluate_model,
     filter_conflicting_external_negatives,
 )
@@ -89,7 +93,51 @@ def test_prototype_distance_accepts_positive_and_rejects_negative():
     assert rejected["reason"] in {"nearest_negative", "far_from_prototype"}
 
 
-def test_prototype_labels_are_normalized_for_lowercase_dynamic_models():
+def test_discover_records_uses_include_labels_as_user_dynamic_scope(tmp_path):
+    data_root = tmp_path / "gestures"
+    swipe_dir = data_root / "SwipeLeft"
+    static_dir = data_root / "Palm"
+    negative_dir = data_root / "random_motion"
+    for directory in (swipe_dir, static_dir, negative_dir):
+        directory.mkdir(parents=True)
+
+    dynamic_sample = np.zeros((8, 65), dtype=np.float32)
+    static_sample = np.zeros((8, 63), dtype=np.float32)
+    np.save(swipe_dir / "sample_0000.npy", dynamic_sample)
+    np.save(static_dir / "sample_0000.npy", static_sample)
+    np.save(negative_dir / "sample_0000.npy", dynamic_sample)
+    (swipe_dir / "sample_0000.meta.json").write_text(
+        json.dumps({"include_global_motion": True}),
+        encoding="utf-8",
+    )
+
+    records = discover_records(
+        data_root=data_root,
+        external_negative_root=None,
+        target_dim=65,
+        target_frames=6,
+        include_labels=["SwipeLeft", "random_motion"],
+    )
+
+    by_label = {record.label: record for record in records}
+    assert set(by_label) == {"SwipeLeft", "random_motion"}
+    assert by_label["SwipeLeft"].is_negative is False
+    assert by_label["random_motion"].is_negative is True
+
+
+def test_normalize_dynamic_sequence_normalizes_xyz_z_channel():
+    sequence = np.zeros((4, 65), dtype=np.float32)
+    sequence[:, 8 * 3 + 1] = 0.5
+    sequence[:, 2] = 0.2
+    sequence[:, 8 * 3 + 2] = 0.7
+
+    normalized = normalize_dynamic_sequence(sequence, target_dim=65, target_frames=6)
+
+    assert np.allclose(normalized[:, 0 * 3 + 2], 0.0)
+    assert np.allclose(normalized[:, 8 * 3 + 2], 1.0)
+
+
+def test_prototype_labels_preserve_user_recorded_label_case():
     payload = fit_dynamic_prototype_model(
         [
             DynamicSequenceRecord("UpAndLeft", _left_sequence(14)),
@@ -102,9 +150,9 @@ def test_prototype_labels_are_normalized_for_lowercase_dynamic_models():
 
     decision = predict_dynamic_prototype(payload, _left_sequence(18))
 
-    assert payload["positive_labels"] == ["upandleft"]
+    assert payload["positive_labels"] == ["UpAndLeft"]
     assert decision["accepted"] is True
-    assert decision["label"] == "upandleft"
+    assert decision["label"] == "UpAndLeft"
 
 
 def test_dynamic_prototype_evaluation_compares_labels_case_insensitively():
@@ -118,15 +166,18 @@ def test_dynamic_prototype_evaluation_compares_labels_case_insensitively():
         threshold_floor=0.001,
     )
 
+    assert payload["positive_labels"] == ["UpAndLeft"]
+    assert predict_dynamic_prototype(payload, _left_sequence(18))["label"] == "UpAndLeft"
+
     metrics, attempts = evaluate_model(
         payload,
         [DynamicSequenceRecord("UpAndLeft", _left_sequence(18))],
     )
 
     assert metrics["positive_recall"] == 1.0
-    assert metrics["per_label"]["upandleft"]["correct"] == 1
-    assert attempts[0].expected == "upandleft"
-    assert attempts[0].predicted == "upandleft"
+    assert metrics["per_label"]["UpAndLeft"]["correct"] == 1
+    assert attempts[0].expected == "UpAndLeft"
+    assert attempts[0].predicted == "UpAndLeft"
 
 
 def test_prototype_dtw_tolerates_timing_variation():

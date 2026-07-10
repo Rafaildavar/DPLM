@@ -8,7 +8,7 @@ ANSWER_SKILLS: tuple[AgentSkill, ...] = (
     AgentSkill(
         "answer.project_context",
         "Project Answering",
-        "Отвечает только в рамках GestureFlow, MLflow и LLM-пайплайна.",
+        "Отвечает только в рамках GestureBind, MLflow и LLM-пайплайна.",
     ),
     AgentSkill(
         "answer.safe_redirect",

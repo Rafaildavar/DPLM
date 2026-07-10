@@ -21,6 +21,9 @@ from app.services.binding_agent import (
     _action_title,
     _norm,
 )
+from app.services.binding_agents.action_semantics import compile_action_candidate
+from app.services.binding_agents.budget import PipelineBudget
+from app.services.user_command_sync import validate_action_spec
 
 
 RESEARCH_MEMORY_ENV = "DPLM_BINDING_RESEARCH_MEMORY"
@@ -81,6 +84,8 @@ class ResearchRecipe:
     learned: bool = False
     approved: bool = False
     recipe_id: str = ""
+    status: str = "pending"
+    skill_version: str = "1.0.0"
 
     def to_proposal(self, *, approval_required: bool) -> dict[str, Any]:
         recipe_id = self.recipe_id or _recipe_id(self.query, self.action_spec)
@@ -97,6 +102,8 @@ class ResearchRecipe:
             "confidence": float(self.confidence),
             "learned": bool(self.learned),
             "approved": bool(self.approved),
+            "status": "approved" if self.approved else self.status,
+            "skillVersion": self.skill_version,
             "approvalRequired": bool(approval_required),
             "rememberOnApproval": bool(approval_required),
         }
@@ -120,6 +127,8 @@ class ResearchRecipe:
             learned=bool(data.get("learned")),
             approved=bool(data.get("approved")),
             recipe_id=str(data.get("id") or data.get("recipe_id") or ""),
+            status=str(data.get("status") or ("approved" if data.get("approved") else "pending")),
+            skill_version=str(data.get("skillVersion") or data.get("skill_version") or "1.0.0"),
         )
 
 
@@ -217,6 +226,17 @@ class ResearchRecipeValidator:
             issues.append("platform_mismatch")
         if not action_spec.get("action"):
             issues.append("action_missing")
+        schema_error = validate_action_spec(action_spec) if action_spec else None
+        if schema_error:
+            issues.append("action_schema_invalid")
+        if recipe and action_spec:
+            _goal, candidate = compile_action_candidate(
+                recipe.query or plan.query,
+                action_spec,
+                source="research_validator",
+            )
+            if not candidate.valid:
+                issues.append("action_semantic_mismatch")
         if approval_required and recipe and not (
             recipe.source_title or recipe.source_url or recipe.source_excerpt
         ):
@@ -328,6 +348,19 @@ class ResearchMemoryStore:
             }
         )
         recipe_id = recipe.recipe_id or _recipe_id(recipe.query, recipe.action_spec)
+        schema_error = validate_action_spec(recipe.action_spec)
+        if schema_error:
+            raise ValueError(f"Research actionSpec is invalid: {schema_error}")
+        _goal, candidate = compile_action_candidate(
+            recipe.query,
+            recipe.action_spec,
+            source="research_approval",
+        )
+        if not candidate.valid:
+            raise ValueError(
+                "Research actionSpec conflicts with the approved query: "
+                + ", ".join(candidate.issues)
+            )
         saved = {
             "id": recipe_id,
             "title": recipe.title or _action_title(recipe.action_spec),
@@ -340,6 +373,13 @@ class ResearchMemoryStore:
             "confidence": recipe.confidence,
             "approved": True,
             "learned": True,
+            "status": "approved",
+            "skillVersion": recipe.skill_version or "1.0.0",
+            "provenance": {
+                "sourceTitle": recipe.source_title,
+                "sourceUrl": recipe.source_url,
+                "approvedBy": "user",
+            },
             "approvedAt": datetime.now(timezone.utc).isoformat(),
         }
         current = [
@@ -447,7 +487,13 @@ class SourceBackedResearchProvider:
 class AppleWebResearchProvider:
     """Allowlisted web adapter for official Apple action recipes."""
 
-    def __init__(self, *, enabled: bool | None = None, timeout: float = 4.0) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool | None = None,
+        timeout: float = 2.0,
+        max_pages: int = 1,
+    ) -> None:
         self.enabled = (
             str(os.getenv(RESEARCH_WEB_ENV) or "").strip().lower()
             in {"1", "true", "yes", "on"}
@@ -455,6 +501,7 @@ class AppleWebResearchProvider:
             else enabled
         )
         self.timeout = timeout
+        self.max_pages = max(1, min(3, int(max_pages)))
 
     def research(self, context: BindingAgentContext) -> ResearchRecipe | None:
         if not self.enabled:
@@ -462,10 +509,16 @@ class AppleWebResearchProvider:
         query = (
             f"site:support.apple.com macOS keyboard shortcut {context.prompt}"
         )
-        for url in self._search_urls(query)[:3]:
+        search_timeout = self._remaining_timeout(context)
+        if search_timeout <= 0.0:
+            return None
+        for url in self._search_urls(query, timeout=search_timeout)[: self.max_pages]:
             if not self._is_allowed_url(url):
                 continue
-            page = self._fetch_text(url)
+            page_timeout = self._remaining_timeout(context)
+            if page_timeout <= 0.0:
+                break
+            page = self._fetch_text(url, timeout=page_timeout)
             if not page:
                 continue
             recipe = self._recipe_from_page(context, url, page)
@@ -473,11 +526,11 @@ class AppleWebResearchProvider:
                 return recipe
         return None
 
-    def _search_urls(self, query: str) -> list[str]:
+    def _search_urls(self, query: str, *, timeout: float | None = None) -> list[str]:
         search_url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode(
             {"q": query}
         )
-        text = self._fetch_text(search_url)
+        text = self._fetch_text(search_url, timeout=timeout)
         urls: list[str] = []
         for raw in re.findall(r"href=[\"']([^\"']+)[\"']", text):
             value = html.unescape(raw)
@@ -490,13 +543,16 @@ class AppleWebResearchProvider:
                 urls.append(value)
         return urls
 
-    def _fetch_text(self, url: str) -> str:
+    def _fetch_text(self, url: str, *, timeout: float | None = None) -> str:
         try:
             request = urllib.request.Request(
                 url,
-                headers={"User-Agent": "GestureFlowResearchAgent/1.0"},
+                headers={"User-Agent": "GestureBindResearchAgent/1.0"},
             )
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout if timeout is None else max(0.1, timeout),
+            ) as response:
                 raw = response.read(700_000)
         except Exception:
             return ""
@@ -510,6 +566,15 @@ class AppleWebResearchProvider:
     def _is_allowed_url(self, url: str) -> bool:
         host = urllib.parse.urlparse(url).netloc.lower()
         return host.endswith("support.apple.com") or host.endswith("developer.apple.com")
+
+    def _remaining_timeout(self, context: BindingAgentContext) -> float:
+        if context.request_deadline <= 0.0:
+            return self.timeout
+        budget = PipelineBudget.from_deadline(
+            started_at=context.request_started_at,
+            deadline=context.request_deadline,
+        )
+        return budget.timeout_for(self.timeout)
 
     def _recipe_from_page(
         self,
@@ -633,6 +698,24 @@ class ResearchAgent:
                     "durationMs": _elapsed_ms(started),
                 },
             )
+
+        if context.request_deadline > 0.0:
+            budget = PipelineBudget.from_deadline(
+                started_at=context.request_started_at,
+                deadline=context.request_deadline,
+            )
+            if budget.remaining <= 0.15:
+                return AgentStep(
+                    self.name,
+                    "skipped",
+                    "Бюджет ответа исчерпан до внешнего research.",
+                    {
+                        "action_spec": {},
+                        "source": "research_budget_exhausted",
+                        "researchPipeline": substeps,
+                        "durationMs": _elapsed_ms(started),
+                    },
+                )
 
         recipe = self.provider.research(context)
         validator_step = self.validator.run(

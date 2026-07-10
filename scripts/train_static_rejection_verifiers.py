@@ -405,7 +405,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--distance-multiplier", type=float, default=DEFAULT_REJECT_DISTANCE_MULTIPLIER)
     parser.add_argument("--contamination", type=float, default=0.10)
     parser.add_argument("--keep-label-case", action="store_true")
-    parser.add_argument("--mlflow-experiment", default="GestureFlow")
+    parser.add_argument("--mlflow-experiment", default="GestureBind")
     parser.add_argument("--mlflow-tracking-uri", default="sqlite:///mlflow.db")
     parser.add_argument("--mlflow-run-name", default="static-rejection-verifiers")
     return parser.parse_args()

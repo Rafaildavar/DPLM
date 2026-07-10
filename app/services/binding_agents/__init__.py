@@ -13,17 +13,20 @@ __all__ = [
     "ActionAgent",
     "BindingAgentE2ECase",
     "BindingAgentLlmJudge",
+    "BindingCrudAgent",
     "GestureAgent",
     "GuardrailsAgent",
     "IntentAgent",
     "MemoryAgent",
     "MistralBindingAgent",
+    "MistralJudgeCompletion",
     "PolicyAgent",
     "RelevanceReviewerAgent",
     "ResearchAgent",
     "ResearchQueryPlanner",
     "ResearchRecipeValidator",
     "ScenarioAgent",
+    "SessionMemoryAgent",
     "SkillMemoryWriterAgent",
     "ValidationAgent",
 ]
@@ -59,6 +62,10 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.guardrails import GuardrailsAgent
 
         return GuardrailsAgent
+    if name == "BindingCrudAgent":
+        from app.services.binding_agents.binding_crud import BindingCrudAgent
+
+        return BindingCrudAgent
     if name == "IntentAgent":
         from app.services.binding_agents.intent import IntentAgent
 
@@ -67,6 +74,10 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.mistral import MistralBindingAgent
 
         return MistralBindingAgent
+    if name == "SessionMemoryAgent":
+        from app.services.binding_agents.session_memory import SessionMemoryAgent
+
+        return SessionMemoryAgent
     if name == "RelevanceReviewerAgent":
         from app.services.binding_agents.reviewer import RelevanceReviewerAgent
 
@@ -90,14 +101,20 @@ def __getattr__(name: str) -> Any:
             "ResearchRecipeValidator": ResearchRecipeValidator,
             "SkillMemoryWriterAgent": SkillMemoryWriterAgent,
         }[name]
-    if name in {"BindingAgentE2ECase", "BindingAgentLlmJudge"}:
+    if name in {
+        "BindingAgentE2ECase",
+        "BindingAgentLlmJudge",
+        "MistralJudgeCompletion",
+    }:
         from app.services.binding_agents.e2e_judge import (
             BindingAgentE2ECase,
             BindingAgentLlmJudge,
+            MistralJudgeCompletion,
         )
 
         return {
             "BindingAgentE2ECase": BindingAgentE2ECase,
             "BindingAgentLlmJudge": BindingAgentLlmJudge,
+            "MistralJudgeCompletion": MistralJudgeCompletion,
         }[name]
     raise AttributeError(name)

@@ -15,6 +15,8 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
+from cv.gesture_dataset_files import gesture_sample_paths
+
 
 LANDMARKS_PER_HAND = 21
 SIGNATURE_VERSION = 1
@@ -223,7 +225,7 @@ def build_signature_metadata_from_data_root(
         label_dir = label_dirs.get(label) or label_dirs_lower.get(label.lower())
         if label_dir is None:
             continue
-        class_sample_paths[label] = sorted(label_dir.glob("sample_*.npy"))
+        class_sample_paths[label] = gesture_sample_paths(label_dir)
     return build_signature_metadata(class_sample_paths, max_hands=max_hands)
 
 

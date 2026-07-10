@@ -80,6 +80,154 @@ class _InspectorController:
         return _Path()
 
 
+class _RecognitionLabelsController:
+    def list_recognition_labels(self):
+        return ["FreshGesture"]
+
+
+class _ToggleController:
+    def __init__(self):
+        self.toggle_calls = 0
+
+    def toggle_recognition(self):
+        self.toggle_calls += 1
+
+
+class _Event:
+    def __init__(self):
+        self.callbacks = []
+
+    def connect(self, callback):
+        self.callbacks.append(callback)
+
+
+class _ReleaseController:
+    def __init__(self):
+        self.recognition_model_mode = "auto"
+        self.model_variant = "production"
+        self.dynamic_model_profile = "dynamic_landmark_lstm_backbone"
+        self.static_rejection_method = "open_set_policy"
+        self.two_hands_mode = False
+        self.auto_execute = True
+        self.gesture_mode = True
+        self.show_landmark_overlay = True
+        self.pointer_mode = False
+        self.status = "Idle"
+        self.is_camera_active = False
+        self.is_recognizing = False
+        self.live_recognition_active = False
+        for name in (
+            "camera_frame_updated",
+            "gesture_detected",
+            "command_executed",
+            "recognition_event_recorded",
+            "confidence_changed",
+            "gesture_state_changed",
+            "status_changed",
+            "recognizing_changed",
+            "camera_active_changed",
+            "two_hands_changed",
+            "gesture_mode_changed",
+            "pointer_mode_changed",
+            "pointer_state_changed",
+            "landmark_overlay_changed",
+            "recognition_model_mode_changed",
+            "dynamic_model_profile_changed",
+            "model_variant_changed",
+            "static_rejection_method_changed",
+            "live_evaluation_changed",
+        ):
+            setattr(self, name, _Event())
+
+    def list_recognition_labels(self):
+        return ["SwipeLeft", "diagonal", "zoom"]
+
+    def list_model_variants(self):
+        return [{"key": "production", "label": "production"}]
+
+    def list_dynamic_model_profiles(self):
+        return [
+            {
+                "key": "dynamic_landmark_lstm_backbone",
+                "label": "dynamic_landmark_lstm_backbone",
+                "quick_selectable": True,
+            }
+        ]
+
+
+def _visible_text(control):
+    parts = []
+    seen = set()
+
+    def visit(obj):
+        if obj is None or id(obj) in seen:
+            return
+        seen.add(id(obj))
+        for attr in ("value", "label", "text", "tooltip", "key"):
+            value = getattr(obj, attr, None)
+            if isinstance(value, (str, int, float, bool)):
+                parts.append(str(value))
+        visit(getattr(obj, "content", None))
+        for child in getattr(obj, "controls", []) or []:
+            visit(child)
+
+    visit(control)
+    return "\n".join(parts)
+
+
+def _contains_control(root, target):
+    seen = set()
+
+    def visit(obj):
+        if obj is None or id(obj) in seen:
+            return False
+        if obj is target:
+            return True
+        seen.add(id(obj))
+        if visit(getattr(obj, "content", None)):
+            return True
+        return any(visit(child) for child in getattr(obj, "controls", []) or [])
+
+    return visit(root)
+
+
+def test_home_release_layout_hides_developer_controls() -> None:
+    controller = _ReleaseController()
+    view = HomeView(_QueuedPage(), controller)
+
+    root = view.build()
+    text = _visible_text(root)
+
+    assert "Управление жестами" in text
+    assert "Главная" in text
+    assert "Распознавание выключено" in text
+    assert "Последнее действие" in text
+    assert "Недавние действия" in text
+    assert "Quick Settings" not in text
+    assert "Recognition Inspector" not in text
+    assert "Live Evaluation" not in text
+    assert not _contains_control(root, view._model_mode_dd)
+    assert not _contains_control(root, view._dynamic_profile_dd)
+
+
+def test_home_release_state_follows_recognition_and_camera() -> None:
+    controller = _ReleaseController()
+    view = HomeView(_QueuedPage(), controller)
+    view.build()
+    controller.live_recognition_active = True
+    controller.is_recognizing = True
+    controller.is_camera_active = True
+
+    view._apply_button_state()
+
+    assert view._release_header_status.value == "Активно"
+    assert view._release_state_title.value == "Распознавание включено"
+    assert view._release_state_caption.value == "Ожидаю жест"
+    assert view._camera_state_text.value == "Камера включена"
+    assert view._camera_empty_state.visible is False
+    assert view._toggle_btn.content.value == "Остановить"
+
+
 def _frame_view(view_type):
     view = object.__new__(view_type)
     view._page = _QueuedPage()
@@ -89,6 +237,31 @@ def _frame_view(view_type):
     view._frame_update_pending = False
     view._camera_image = _Image()
     return view
+
+
+def test_home_expected_label_options_do_not_add_stale_swipe_fallbacks():
+    view = object.__new__(HomeView)
+    view._controller = _RecognitionLabelsController()
+
+    labels = view._recognition_label_options()
+
+    assert labels == ["no_command", "FreshGesture"]
+    assert "swipe_down" not in labels
+    assert "swipe_left" not in labels
+
+
+def test_home_toggle_runs_recognition_change_off_ui_handler():
+    view = object.__new__(HomeView)
+    view._page = _QueuedPage()
+    view._controller = _ToggleController()
+
+    view._on_toggle(None)
+
+    assert view._controller.toggle_calls == 0
+    assert len(view._page.calls) == 1
+    callback, args = view._page.calls.pop()
+    callback(*args)
+    assert view._controller.toggle_calls == 1
 
 
 def _gesture_view():

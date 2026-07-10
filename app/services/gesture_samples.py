@@ -11,6 +11,11 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models.database import Gesture, GestureSample, RecognitionModel
+from cv.gesture_dataset_files import (
+    gesture_sample_paths,
+    sample_source_from_path,
+    stable_sample_index,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -242,11 +247,7 @@ def load_dataset_from_db(
 
 
 def sample_index_from_path(path: Path) -> int:
-    stem = path.stem
-    try:
-        return int(stem.rsplit("_", 1)[1])
-    except (IndexError, ValueError):
-        return 0
+    return stable_sample_index(path)
 
 
 def sample_shape_metadata(path: Path) -> tuple[Optional[int], Optional[int]]:
@@ -279,7 +280,7 @@ def sync_gesture_dataset_to_db(
     total = 0
     for class_idx, label in enumerate(classes):
         label_dir = data_root / label
-        sample_paths = sorted(label_dir.glob("sample_*.npy"))
+        sample_paths = gesture_sample_paths(label_dir)
         is_two_hands: Optional[bool] = None
         if sample_paths:
             _, first_hand_count = sample_shape_metadata(sample_paths[0])
@@ -302,7 +303,7 @@ def sync_gesture_dataset_to_db(
                 features_path=path,
                 frames=frames,
                 hand_count=hand_count,
-                source=source,
+                source=sample_source_from_path(path) if source == "dataset" else source,
                 samples_path=label_dir,
                 is_two_hands=is_two_hands,
                 commit=False,
