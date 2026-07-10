@@ -54,6 +54,7 @@ from cv.gesture_pose_signature import (
     hands_non_thumb_count,
     load_signature_metadata,
 )
+from app.services.gesture_labels import resolve_registered_gesture_label
 from app.services.gesture_taxonomy import (
     GESTURE_TYPE_NEGATIVE,
     GestureTaxonomy,
@@ -1184,6 +1185,10 @@ class GestureOnlineInfer:
             else str(raw_class)
         )
 
+    def _registered_dynamic_label(self, label: str) -> str:
+        """Map a prediction back to the user's exact trained class name."""
+        return resolve_registered_gesture_label(label, self._classes) or ""
+
     def _best_negative_prediction(
         self,
         ranked: list[tuple[float, str]],
@@ -1793,6 +1798,7 @@ class GestureOnlineInfer:
                 motion,
                 sequence=update.completed_sequence,
             )
+            label = self._registered_dynamic_label(label)
         except Exception as exc:
             print(f"[!] segmented dynamic prediction failed: {exc}", flush=True)
             self.reset_temporal_state()
@@ -2274,6 +2280,7 @@ class GestureOnlineInfer:
                         motion,
                         sequence=np.stack(tuple(self._window), axis=0),
                     )
+                    label = self._registered_dynamic_label(label)
                 else:
                     label, confidence = self._static_prediction(model_feat)
                     static_decision = dict(

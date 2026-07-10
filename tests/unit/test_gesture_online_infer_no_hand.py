@@ -412,7 +412,7 @@ def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
     infer = object.__new__(GestureOnlineInfer)
     infer._detector = _MovingHorizontalHandDetector()
     infer._clf = _DirectionConfusedClassifier()
-    infer._classes = ["swipe_down", "swipe_left", "swipe_up"]
+    infer._classes = ["swipe_down", "SwipeLeft", "swipe_up"]
     infer._feature_dim = 271
     infer._raw_feature_dim = 44
     infer._feature_mode = "dynamic_stats"
@@ -425,10 +425,10 @@ def test_dynamic_prediction_reranks_classes_by_dominant_motion_axis() -> None:
     for _ in range(60):
         out = infer.process_frame_rgb(np.zeros((32, 32, 3), dtype=np.uint8))
 
-    assert out["label"] == "swipe_left"
+    assert out["label"] == "SwipeLeft"
     assert out["confidence"] >= 0.80
     assert out["temporal"]["phase"] == "completed"
-    assert out["dynamic_decision"]["motion_label"] == "swipe_left"
+    assert out["dynamic_decision"]["motion_label"] == "SwipeLeft"
     assert out["dynamic_decision"]["model_label"] == "swipe_up"
     assert out["dynamic_decision"]["source"] == "motion_and_model_agree"
 

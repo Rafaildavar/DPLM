@@ -932,6 +932,27 @@ def sequence_displacement(sequence: np.ndarray) -> float:
     return float(np.linalg.norm(seq[-1] - seq[0]) / np.sqrt(seq.shape[1]))
 
 
+def sequence_shape_change_energy(sequence: np.ndarray) -> float:
+    """Mean frame-to-frame change of all pairwise hand distances.
+
+    Unlike global wrist motion, this catches in-place gestures such as zoom or
+    pinch while remaining insensitive to translation of the whole hand.
+    """
+    seq = sequence_to_matrix(sequence)
+    if seq.shape[0] <= 1:
+        return 0.0
+
+    energies: list[float] = []
+    for block in hand_feature_blocks(seq.shape[1]):
+        points_xy = _points_from_block(seq, block)[:, :, :2]
+        distances = _hand_distance_signals(
+            points_xy,
+            pairs=HAND_FULL_DISTANCE_PAIRS,
+        )
+        energies.append(float(np.mean(np.abs(np.diff(distances, axis=0)))))
+    return max(energies, default=0.0)
+
+
 def load_gesture_sequences(data_root: Path) -> list[GestureSequence]:
     records: list[GestureSequence] = []
     if not data_root.exists():

@@ -1594,11 +1594,20 @@ def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
     done_codes = []
 
     class FakeHand:
-        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
+        def __init__(self, offset: float):
+            self.landmarks = [
+                (float(i) / 20.0 + offset, float(i % 5) / 5.0)
+                for i in range(21)
+            ]
 
     class FakeDetector:
+        def __init__(self):
+            self.index = 0
+
         def detect_for_video_rgb(self, _rgb):
-            return [FakeHand()]
+            hand = FakeHand(0.2 * self.index)
+            self.index += 1
+            return [hand]
 
         def close(self):
             pass
@@ -1653,15 +1662,28 @@ def test_process_dynamic_sample_recording_frame_saves_xyz_wrist_features(
     done_codes = []
 
     class FakeHand:
-        landmarks = [(float(i) / 20.0, float(i % 5) / 5.0) for i in range(21)]
-        landmarks_xyz = [
-            (float(i) / 20.0, float(i % 5) / 5.0, float(i) / 100.0)
-            for i in range(21)
-        ]
+        def __init__(self, offset: float):
+            self.landmarks = [
+                (float(i) / 20.0 + offset, float(i % 5) / 5.0)
+                for i in range(21)
+            ]
+            self.landmarks_xyz = [
+                (
+                    float(i) / 20.0 + offset,
+                    float(i % 5) / 5.0,
+                    float(i) / 100.0,
+                )
+                for i in range(21)
+            ]
 
     class FakeDetector:
+        def __init__(self):
+            self.index = 0
+
         def detect_for_video_rgb(self, _rgb):
-            return [FakeHand()]
+            hand = FakeHand(0.2 * self.index)
+            self.index += 1
+            return [hand]
 
         def close(self):
             pass
@@ -1708,7 +1730,7 @@ def test_process_dynamic_sample_recording_frame_saves_xyz_wrist_features(
     assert done_codes == [0]
 
 
-def test_dynamic_sample_quality_report_accepts_expected_motion():
+def test_dynamic_sample_quality_report_accepts_global_motion_for_custom_label():
     controller = AppController.__new__(AppController)
     sample = np.zeros((36, 44), dtype=np.float32)
     movement = np.linspace(0.0, -0.8, sample.shape[0], dtype=np.float32)
@@ -1716,7 +1738,7 @@ def test_dynamic_sample_quality_report_accepts_expected_motion():
 
     report = controller._sample_quality_report(
         sample,
-        label="swipe_up",
+        label="my_custom_action",
         include_global_motion=True,
     )
 
@@ -1725,21 +1747,94 @@ def test_dynamic_sample_quality_report_accepts_expected_motion():
     assert report["warnings"] == []
 
 
-def test_dynamic_sample_quality_report_flags_wrong_direction():
+def test_dynamic_sample_quality_report_accepts_in_place_shape_change():
     controller = AppController.__new__(AppController)
     sample = np.zeros((36, 44), dtype=np.float32)
-    movement = np.linspace(0.0, 0.8, sample.shape[0], dtype=np.float32)
-    sample[:] = movement[:, None]
+    base = np.asarray(
+        [(float(i % 5) / 4.0, float(i // 5) / 4.0) for i in range(21)],
+        dtype=np.float32,
+    )
+    for frame, scale in enumerate(np.linspace(1.0, 1.8, sample.shape[0])):
+        sample[frame, :42] = (base * scale).reshape(-1)
+    sample[:, -2:] = (0.5, 0.5)
 
     report = controller._sample_quality_report(
         sample,
-        label="hand_left",
+        label="zoom",
+        include_global_motion=True,
+    )
+
+    assert report["ok"] is True
+    assert report["global_displacement"] == pytest.approx(0.0)
+    assert report["shape_change_energy"] >= 0.005
+
+
+def test_dynamic_sample_quality_report_rejects_inactive_duplicate():
+    controller = AppController.__new__(AppController)
+    sample = np.zeros((36, 44), dtype=np.float32)
+    sample[:, :42] = np.asarray(
+        [(float(i % 5) / 4.0, float(i // 5) / 4.0) for i in range(21)],
+        dtype=np.float32,
+    ).reshape(-1)
+
+    report = controller._sample_quality_report(
+        sample,
+        label="anything",
         include_global_motion=True,
     )
 
     assert report["ok"] is False
-    assert "expected_left" in report["warnings"]
-    assert report["dx"] > 0.05
+    assert report["warnings"] == ["low_dynamic_activity"]
+
+
+def test_dynamic_recording_does_not_save_inactive_duplicate(monkeypatch, tmp_path):
+    controller = AppController.__new__(AppController)
+    controller._sample_recording_lock = threading.Lock()
+    controller._sample_recording_detector_lock = threading.RLock()
+    label_dir = tmp_path / "gestures" / "custom_dynamic"
+    done_codes = []
+
+    class FakeHand:
+        landmarks = [
+            (0.25 + float(i % 5) / 10.0, 0.25 + float(i // 5) / 10.0)
+            for i in range(21)
+        ]
+
+    class FakeDetector:
+        def detect_for_video_rgb(self, _rgb):
+            return [FakeHand()]
+
+        def close(self):
+            pass
+
+    controller._sample_recording_detector = FakeDetector()
+    controller._sample_recording = {
+        "label": "custom_dynamic",
+        "target": 1,
+        "frames": 2,
+        "two_hands": False,
+        "include_global_motion": True,
+        "saved": 0,
+        "frames_buf": [],
+        "out_dir": label_dir,
+        "on_line": None,
+        "on_done": done_codes.append,
+        "next_allowed_at": 0.0,
+        "last_no_hand_log": 0.0,
+    }
+    controller._status = "Запись жеста: custom_dynamic"
+    controller._is_camera_active = True
+    controller.status_changed = _Event()
+    monkeypatch.setattr(controller, "sync_dataset_to_db", lambda: {})
+
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    controller._process_sample_recording_frame(frame)
+    controller._process_sample_recording_frame(frame)
+
+    assert not (label_dir / "sample_0000.npy").exists()
+    assert controller._sample_recording["saved"] == 0
+    assert controller._sample_recording["quality_rejected"] == 1
+    assert done_codes == []
 
 
 def test_delete_recorded_samples_removes_files_and_deactivates_gesture(monkeypatch, tmp_path):
@@ -2547,6 +2642,37 @@ def test_live_evaluation_counts_correct_wrong_and_missed(monkeypatch, tmp_path):
     assert rows[0]["dynamic_type"] == "dynamic"
     assert rows[0]["dynamic_end_reason"] == "hand_lost"
     assert rows[0]["dynamic_motion_scale"] == pytest.approx(0.22)
+
+
+def test_live_evaluation_matches_exact_class_across_spelling_format(
+    monkeypatch,
+    tmp_path,
+):
+    controller = _dispatch_controller()
+    controller._recognition_model_mode = "dynamic"
+    controller._ensure_embedded_recognition_for_live_controls = lambda: None
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    assert controller.start_live_evaluation(
+        "SwipeLeft",
+        attempts=1,
+        timeout_seconds=0.0,
+        min_confidence=0.6,
+    )
+    controller._live_evaluation["attempt_started_at"] = 10.0
+    controller._live_evaluation["next_ready_at"] = 10.0
+
+    controller._consume_live_evaluation_prediction(
+        "swipe_left",
+        0.9,
+        route_metadata={"route": "dynamic"},
+        now=10.0,
+    )
+
+    snapshot = controller.current_live_evaluation()
+    assert snapshot["active"] is False
+    assert snapshot["correct"] == 1
+    assert snapshot["wrong"] == 0
 
 
 def test_live_evaluation_ignores_below_threshold_without_default_timeout(

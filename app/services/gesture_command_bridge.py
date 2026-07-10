@@ -53,6 +53,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Command, Gesture, GestureHistory
 from app.services.binding_settings import BindingSettings, load_binding_settings
+from app.services.gesture_labels import resolve_registered_gesture_label
 from app.services.user_command_sync import (
     DANGEROUS_ACTIONS,
     executor_config_from_row,
@@ -327,7 +328,19 @@ def resolve_command_for_gesture(session: Session, gesture_label: str) -> Optiona
         return None
     gesture = session.query(Gesture).filter(Gesture.label == label).first()
     if gesture is None:
-        return None
+        gestures = session.query(Gesture).all()
+        registered_label = resolve_registered_gesture_label(
+            label,
+            (item.label for item in gestures),
+        )
+        if registered_label is None:
+            return None
+        gesture = next(
+            (item for item in gestures if item.label == registered_label),
+            None,
+        )
+        if gesture is None:
+            return None
     command = session.query(Command).filter(Command.gesture_id == gesture.id).first()
     if command is None:
         return None

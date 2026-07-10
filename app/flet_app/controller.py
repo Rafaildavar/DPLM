@@ -48,6 +48,7 @@ from app.services.gesture_taxonomy import (
     load_gesture_taxonomy,
     parse_gesture_type_scope,
 )
+from app.services.gesture_labels import gesture_labels_match
 from app.services.live_gesture_state import (
     LiveGestureSnapshot,
     LiveGestureState,
@@ -405,8 +406,9 @@ SAMPLE_RECORDING_COUNTDOWN_SECONDS = 0.8
 SAMPLE_RECORDING_STABILITY_THRESHOLD = 0.055
 SAMPLE_RECORDING_STATIC_AUGMENTATIONS = 1
 SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS = 2
-DYNAMIC_SAMPLE_MIN_MOTION_ENERGY = 0.015
-DYNAMIC_SAMPLE_DIRECTION_THRESHOLD = 0.05
+DYNAMIC_SAMPLE_MIN_GLOBAL_DISPLACEMENT = 0.035
+DYNAMIC_SAMPLE_MIN_GLOBAL_PATH = 0.08
+DYNAMIC_SAMPLE_MIN_SHAPE_CHANGE = 0.005
 LIVE_EVAL_DEFAULT_ATTEMPTS = 10
 LIVE_EVAL_DEFAULT_TIMEOUT_SECONDS = 0.0
 LIVE_EVAL_DEFAULT_MIN_CONFIDENCE = 0.60
@@ -3301,7 +3303,11 @@ class AppController:
                     now=monotonic_now,
                 )
                 return
-            result = "correct" if clean_label == expected else "wrong"
+            result = (
+                "correct"
+                if gesture_labels_match(clean_label, expected)
+                else "wrong"
+            )
             self._record_live_evaluation_attempt(
                 session,
                 result=result,
@@ -4177,6 +4183,7 @@ class AppController:
         from cv.gesture_features import (
             sequence_displacement,
             sequence_motion_energy,
+            sequence_shape_change_energy,
             sequence_to_matrix,
             trajectory_features,
         )
@@ -4186,6 +4193,9 @@ class AppController:
         displacement = sequence_displacement(seq)
         dx: float | None = None
         dy: float | None = None
+        global_path: float | None = None
+        global_displacement: float | None = None
+        shape_change_energy = sequence_shape_change_energy(seq)
         warnings: list[str] = []
 
         has_global_motion = bool(include_global_motion and seq.shape[1] >= 44)
@@ -4193,29 +4203,24 @@ class AppController:
             motion = trajectory_features(seq)
             dx = float(motion[0])
             dy = float(motion[1])
-            if motion_energy < DYNAMIC_SAMPLE_MIN_MOTION_ENERGY:
-                warnings.append("low_motion")
-
-            clean_label = str(label or "").strip().lower()
-            direction_specs = (
-                ("left", "dx", -1.0),
-                ("right", "dx", 1.0),
-                ("up", "dy", -1.0),
-                ("down", "dy", 1.0),
+            global_path = float(motion[4])
+            global_displacement = float(np.hypot(dx, dy))
+            has_dynamic_activity = bool(
+                global_displacement >= DYNAMIC_SAMPLE_MIN_GLOBAL_DISPLACEMENT
+                or global_path >= DYNAMIC_SAMPLE_MIN_GLOBAL_PATH
+                or shape_change_energy >= DYNAMIC_SAMPLE_MIN_SHAPE_CHANGE
             )
-            for token, axis, sign in direction_specs:
-                if token not in clean_label:
-                    continue
-                value = dx if axis == "dx" else dy
-                if value is None or (value * sign) < DYNAMIC_SAMPLE_DIRECTION_THRESHOLD:
-                    warnings.append(f"expected_{token}")
-                break
+            if not has_dynamic_activity:
+                warnings.append("low_dynamic_activity")
 
         return {
             "ok": not warnings,
             "shape": tuple(int(x) for x in seq.shape),
             "motion_energy": motion_energy,
             "displacement": displacement,
+            "global_path": global_path,
+            "global_displacement": global_displacement,
+            "shape_change_energy": shape_change_energy,
             "dx": dx,
             "dy": dy,
             "warnings": warnings,
@@ -4225,7 +4230,10 @@ class AppController:
         parts = [
             f"motion={float(report['motion_energy']):.4f}",
             f"disp={float(report['displacement']):.4f}",
+            f"shape={float(report['shape_change_energy']):.4f}",
         ]
+        if report.get("global_path") is not None:
+            parts.append(f"path={float(report['global_path']):.3f}")
         if report.get("dx") is not None and report.get("dy") is not None:
             parts.append(f"dx={float(report['dx']):+.3f}")
             parts.append(f"dy={float(report['dy']):+.3f}")
@@ -4491,11 +4499,7 @@ class AppController:
         if len(frames) < target_frames:
             return landmarks_json
 
-        label_dir = Path(session["out_dir"])
-        label_dir.mkdir(parents=True, exist_ok=True)
-        out_path = self._next_sample_path(label_dir)
         arr = np.asarray(frames[:target_frames], dtype=np.float32)
-        np.save(out_path, arr)
         projected_hand_scale: float | None = None
         if bool(session.get("include_global_motion")):
             scales = [
@@ -4512,6 +4516,29 @@ class AppController:
             include_global_motion=bool(session.get("include_global_motion")),
         )
         report["projected_hand_scale"] = projected_hand_scale
+        if bool(session.get("include_global_motion")) and not report["ok"]:
+            session["quality_rejected"] = int(session.get("quality_rejected", 0)) + 1
+            session["frames_buf"] = []
+            session["frame_scales"] = []
+            self._reset_sample_recording_ready_gate(session)
+            session["next_allowed_at"] = now + 0.45
+            message = "Дубль не засчитан: покажи движение или изменение кисти заметнее"
+            session["last_message"] = message
+            if on_line:
+                on_line(
+                    f"[w] {message} ({','.join(report['warnings'])})"
+                )
+            self._emit_sample_recording_changed(
+                session,
+                active=True,
+                message=message,
+            )
+            return landmarks_json
+
+        label_dir = Path(session["out_dir"])
+        label_dir.mkdir(parents=True, exist_ok=True)
+        out_path = self._next_sample_path(label_dir)
+        np.save(out_path, arr)
         self._write_sample_metadata(
             out_path,
             self._sample_metadata_payload(
