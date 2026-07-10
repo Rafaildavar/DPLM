@@ -28,12 +28,13 @@ them live and bind accepted gestures to safe macOS actions.
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency mean / p95 | `13.979 / 16.013 ms` |
-| Controlled live static recall at threshold `0.80` | `1.0000` |
-| Controlled live dynamic recall | `28/30 = 0.9333` |
+| Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
+| Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
 
-The controlled dynamic result predates the code-level `0.90` release threshold
-and must be repeated before tagging. The command-binding confidence policy is
-independent from the static and dynamic recognition thresholds.
+The dynamic release run produced `SwipeLeft 10/10`, `diagonal 9/10` and
+`zoom 9/10`: two misses and no reported wrong-class predictions. The
+command-binding confidence policy is independent from the static and dynamic
+recognition thresholds.
 
 ## Included
 
@@ -53,7 +54,7 @@ independent from the static and dynamic recognition thresholds.
 ## Known MVP Limits
 
 - The release is macOS-first and is not yet notarized.
-- A final live dynamic-at-`0.90` and no-command matrix is required before creating the
-  public `v0.8.0` tag.
+- A final no-command matrix is required before creating the public `v0.8.0`
+  tag.
 - New personal classes still require diverse recordings for reliable open-set
   behavior.

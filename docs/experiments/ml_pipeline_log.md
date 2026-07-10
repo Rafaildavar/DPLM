@@ -5854,7 +5854,7 @@ Live evidence от пользователя:
 
 ### H-114: Release dynamic confidence threshold `0.90`
 
-Дата: 2026-07-10. Статус: `validated-tests`, ожидает live recheck.
+Дата: 2026-07-10. Статус: `validated-live-controlled`.
 
 Проблема:
 - основной auto-router принимал dynamic prediction при confidence `>= 0.60`;
@@ -5879,6 +5879,21 @@ Live evidence от пользователя:
 - clean tracked full suite: `602 passed`.
 
 Следующий live-check:
-- повторить по `10` попыток `SwipeLeft`, `diagonal`, `zoom` на новой сборке;
-- затем выполнить `30` no-command/background попыток;
-- зафиксировать misses, wrong commands и dynamic false-positive rate.
+- выполнен positive-class run на новой сборке с release thresholds:
+  - static: `10/10 = 1.0000` при threshold `0.80`;
+  - `SwipeLeft`: `10/10 = 1.0000`;
+  - `diagonal`: `9/10 = 0.9000`, `1` пропуск;
+  - `zoom`: `9/10 = 0.9000`, `1` пропуск;
+  - dynamic total: `28/30 = 0.9333` при threshold `0.90`;
+  - общий positive total: `38/40 = 0.9500`;
+  - wrong-class predictions: `0`, misses: `2`;
+- результаты являются manual controlled user report; покадровая latency и route
+  metadata для этого прогона не заявляются;
+- MLflow evidence group: `release-positive-thresholds-2026-07-10-v1`;
+- MLflow run IDs:
+  - static: `59a671cf23d54723b047fe0321fe9e11`;
+  - `SwipeLeft`: `58b311a70d0641eb9af50f033101f710`;
+  - `diagonal`: `1914abfdc747496a8977b72d25215dc2`;
+  - `zoom`: `59c6d2e7af9d4d7da71e2c7aa79c6f86`;
+- осталось выполнить `30` no-command/background попыток и зафиксировать
+  dynamic false-positive rate.

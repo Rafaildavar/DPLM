@@ -66,16 +66,16 @@ Release auto-router принимает static-предсказания от `0.8
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
 | Dynamic ML latency, mean / p95 | `13.979 / 16.013 ms` |
-| Controlled live static recall at threshold `0.80` | `1.0000` |
-| Controlled live dynamic recall | `28/30 = 0.9333` |
+| Controlled live static recall at threshold `0.80` | `10/10 = 1.0000` |
+| Controlled live dynamic recall at threshold `0.90` | `28/30 = 0.9333` |
 
-Live dynamic breakdown до фиксации release-порога `0.90`: `SwipeLeft 10/10`,
-`diagonal 9/10`, `zoom 9/10`.
+Live dynamic breakdown при release-пороге `0.90`: `SwipeLeft 10/10`,
+`diagonal 9/10` (`1` пропуск), `zoom 9/10` (`1` пропуск). Неверных
+dynamic-классов в этом прогоне не отмечено.
 Результат относится к персональному controlled protocol: рука полностью в
 кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
 нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
-`no-command` safety run. После изменения порога dynamic live matrix нужно
-повторить при `0.90`.
+`no-command` safety run.
 
 ## Архитектура
 

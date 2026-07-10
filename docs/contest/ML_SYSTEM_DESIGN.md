@@ -11,10 +11,10 @@ Purpose: единый living-документ по ML-системе GestureBind
 
 | Area | Status | Evidence | Next check |
 |---|---|---|---|
-| Static gesture recognition | Stable | H-105/H-113: grouped CV accuracy `0.7767`; controlled live recognition `100%` at release threshold `0.80` | capture static denominator and run no-command matrix |
+| Static gesture recognition | Stable | H-105/H-114: grouped CV accuracy `0.7767`; controlled live `10/10` at release threshold `0.80` | run no-command matrix |
 | Dynamic gesture recording | Stable | H-106 rejects inactive duplicates before saving and supports translation or in-place shape change | record fresh live matrix for current classes |
 | Dynamic natural swipe segmentation | In Progress | H-036/H-038 natural end, H-053 return guard added | repeat no-command/return-motion validation |
-| Auto routing static/dynamic | Validated in tests | H-038/H-114: static threshold `0.80`, dynamic threshold and completed-event override floor `0.90` | repeat dynamic and no-gesture live runs |
+| Auto routing static/dynamic | Validated live | H-038/H-114: static threshold `0.80`, dynamic threshold and completed-event override floor `0.90`; positive matrix `38/40` | run no-gesture live matrix |
 | `swipe_left` dynamic recognition | Stable | H-038: `10/10`, `100%` recall | keep as current baseline |
 | `swipe_up/down` dynamic recognition | In Progress | H-053: up can be `10/10`, down drops to `4-5/10` via return-up phase | validate return guard and add sequence verifier |
 | Negative examples / rejection layer | Added | H-041 synthetic negatives, H-053 `no_command` live target | run no-command live validation |
@@ -28,7 +28,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
 | Dynamic sequence ensemble | Added | H-086: `sequence_ensemble` trained, prototype report positive recall `0.9565`, negative FP `0.0074` | live A/B on `upandleft` and negative motions |
-| Dynamic GISLR landmark LSTM | Validated live, threshold recheck pending | H-109/H-113/H-114: grouped validation `0.8571`, overlap `0`; pre-threshold-change controlled live `28/30` | repeat class matrix at `0.90`, then run no-command matrix |
+| Dynamic GISLR landmark LSTM | Validated live | H-109/H-114: grouped validation `0.8571`, overlap `0`; controlled live at `0.90` is `28/30`, with `2` misses and `0` wrong classes | run no-command matrix |
 | Static landmark CNN benchmark | Parked | H-092: `static_landmark_cnn` CV macro F1 `0.4599`, behind ExtraTrees; H-094 keeps roadmap vector-first | keep historical artifact only |
 | Static CV benchmark report | Added | H-092: `docs/experiments/static_cv_benchmark.md/json`, 5-fold comparison across feature modes and models | rerun after new recording sessions |
 | Static rejection-focused benchmark | Added | H-093: craft/image ExtraTrees reject negative motion with FP `0.0000` | live 20-attempt no-command matrix |
@@ -468,7 +468,7 @@ summarize and annotate; execution stays behind deterministic policies.
 |---|---|---|
 | Small personal dataset | model overfits recording conditions | augment position/scale/speed, collect controlled live tests |
 | Vertical direction confusion | `swipe_up/down` unstable | return guard, then sequence verifier with reject threshold |
-| No static/negative live validation yet | false triggers may be hidden | run 20 no-gesture/background attempts and check static rejection metrics |
+| No final negative live validation yet | false triggers may be hidden | run 30 no-command/background attempts and check rejection metrics |
 | Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
@@ -546,3 +546,4 @@ Change log:
 | `2026-07-10` | Enforced the Flet-only MVP repository and tracked release contract | H-111 |
 | `2026-07-10` | Removed a developer-specific path from binding-agent golden CI | H-112 |
 | `2026-07-10` | Set static release threshold to `0.80` and recorded controlled live results | H-113 |
+| `2026-07-10` | Validated static `10/10` and dynamic `28/30` at release thresholds | H-114 |

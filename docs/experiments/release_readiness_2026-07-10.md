@@ -81,30 +81,31 @@ but its ML stage remains below the `33.3 ms` budget for 30 FPS.
 
 - Release static confidence threshold: `0.80`.
 - Release dynamic confidence threshold: `0.90`.
-- Static recognition: user-reported `100%` at threshold `0.80`; the attempt
-  denominator was not captured in the report and must not be invented.
-- Dynamic recognition before the code-level threshold promotion: `28/30 =
-  0.9333` overall. The accepted live scores were reported in the `0.93-0.99`
-  range, but the complete matrix still needs to be repeated with the new build.
+- Static recognition: `10/10 = 1.0000` at threshold `0.80`.
+- Dynamic recognition: `28/30 = 0.9333` at threshold `0.90`.
 
-| Dynamic class | Correct | Attempts | Recall |
-|---|---:|---:|---:|
-| `SwipeLeft` | `10` | `10` | `1.0000` |
-| `diagonal` | `9` | `10` | `0.9000` |
-| `zoom` | `9` | `10` | `0.9000` |
+| Dynamic class | Correct | Missed | Wrong class | Attempts | Recall |
+|---|---:|---:|---:|---:|---:|
+| `SwipeLeft` | `10` | `0` | `0` | `10` | `1.0000` |
+| `diagonal` | `9` | `1` | `0` | `10` | `0.9000` |
+| `zoom` | `9` | `1` | `0` | `10` | `0.9000` |
 
 The result is a controlled personalized evaluation. Gesture shape, start pose,
 direction and amplitude must be close to the user's recording protocol. This is
 acceptable for the MVP, but it is not evidence of signer-independent or
-unconstrained gesture recognition.
+unconstrained gesture recognition. Across the positive-class matrix, `38/40 =
+0.9500` attempts were recognized correctly; both errors were misses rather than
+wrong-class predictions.
+
+The aggregate user-reported counts are stored in local MLflow under evidence
+group `release-positive-thresholds-2026-07-10-v1`. These runs intentionally do
+not claim frame-level latency or route metadata.
 
 ## Remaining evidence before defense
 
-1. Record the exact static attempt denominator/per-class counts if available.
-2. Repeat the dynamic matrix with the release threshold `0.90`.
-3. Run at least `30` no-command/background attempts with static `0.80` and
+1. Run at least `30` no-command/background attempts with static `0.80` and
    dynamic `0.90` release thresholds.
-4. Report wrong commands, missed events and live negative false-positive rate.
-5. Regenerate the MLflow/dashboard snapshot only after the no-command run.
-6. Do not present training accuracy as test accuracy; label it
+2. Report wrong commands and the live negative false-positive rate.
+3. Regenerate the MLflow/dashboard snapshot only after the no-command run.
+4. Do not present training accuracy as test accuracy; label it
    `resubstitution accuracy` if it is shown at all.
