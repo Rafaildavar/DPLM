@@ -32,7 +32,7 @@ git branch codex/release-rollback pre-critical-ml-pipeline-2026-07-10
 
 ## Verification
 
-- Clean tracked automated suite: `596 passed`, no skipped legacy modules.
+- Clean tracked automated suite: `597 passed`, no skipped legacy modules.
 - Repository hygiene: `265` tracked files and exactly `15` allowlisted
   production model artifacts.
 - `make ci` runs the hygiene gate before tests and ML artifact smoke.

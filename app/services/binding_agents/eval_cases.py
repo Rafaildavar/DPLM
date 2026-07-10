@@ -135,10 +135,10 @@ BINDING_AGENT_EVAL_CASES: tuple[BindingAgentEvalCase, ...] = (
     ),
     _case(
         "open_path_binding",
-        "привяжи palm к открыть папку /Users/remi/Documents",
+        "привяжи palm к открыть папку /tmp",
         gesture="palm",
         action="open_path",
-        action_spec={"action": "open_path", "platform": "macos", "path": "/Users/remi/Documents"},
+        action_spec={"action": "open_path", "platform": "macos", "path": "/tmp"},
         tags=("binding", "path"),
     ),
     _case(

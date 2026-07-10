@@ -23,7 +23,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | MLflow experiment tracking | Stable | H-108 logs dataset/model SHA-256, git state, source groups and grouped validation | use clean committed runs for final charts |
 | HTML MLOps dashboard | Stable | H-096: `docs/mlops_dashboard/index.html` includes MLflow showcase charts for training, live A/B, safety and timeline | regenerate before demo |
 | Release home experience | Validated | H-110: camera-first UI, friendly runtime state, one primary action; `205` Flet tests and desktop visual check | run final live demo matrix |
-| MVP repository contract | Validated | H-111: Flet-only runtime, `265` tracked files, `15` allowlisted model artifacts, `596` clean tracked tests | verify tag archive before publication |
+| MVP repository contract | Validated | H-111/H-112: Flet-only runtime, portable CI fixtures, `265` tracked files, `15` allowlisted model artifacts, `597` clean tracked tests | verify tag archive before publication |
 | AI/multi-agent layer | Planned | router/data/MLOps agent design exists conceptually | implement non-critical assistant workflows |
 | Dynamic sequence verifier | Added | H-054: `prototype_distance` and `prototype_dtw` compared, negative FP `0.0000` offline | live A/B against KNN |
 | Dynamic neural sequence model | Added | H-068: `sequence_mlp` trained on `dynamic_sequence`, MLflow run logged | keep as baseline against landmark-LSTM |
@@ -544,3 +544,4 @@ Change log:
 | `2026-07-10` | Retrained production dynamic LSTM with grouped Optuna and refreshed verifier | H-109 |
 | `2026-07-10` | Rebuilt the home page as a camera-first release experience | H-110 |
 | `2026-07-10` | Enforced the Flet-only MVP repository and tracked release contract | H-111 |
+| `2026-07-10` | Removed a developer-specific path from binding-agent golden CI | H-112 |

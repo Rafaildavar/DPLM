@@ -15,6 +15,7 @@ them live and bind accepted gestures to safe macOS actions.
 - Atomic model bundle activation preserves the previous model on failure.
 - MLflow training runs include dataset/model hashes, Git state and group overlap.
 - Repository architecture and an automated tracked-tree hygiene gate are part of CI.
+- Binding-agent golden cases are portable across macOS development and Linux CI.
 
 ## Reproducible Evidence
 

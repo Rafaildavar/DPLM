@@ -9,6 +9,7 @@
 - Added reproducible MLflow provenance and production latency evidence.
 - Added the root architecture contract and CI-enforced repository hygiene.
 - Switched release source bundles to tracked files only.
+- Made binding-agent path golden cases independent of a developer home directory.
 
 ## v0.7.0 - 2026-07-08
 

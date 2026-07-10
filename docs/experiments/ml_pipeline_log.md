@@ -5796,8 +5796,30 @@ Production ML latency, `200` итераций:
 Проверки:
 - future Git snapshot: `265` tracked files, `15` release model artifacts;
 - hygiene contract tests: `6 passed`;
-- clean tracked suite: `596 passed`, без legacy skips;
-- local `make ci`: `595 passed` с дополнительными локальными ignored tests;
+- clean tracked suite: `597 passed`, без legacy skips;
+- local `make ci`: `596 passed` с дополнительными локальными ignored tests;
 - ML smoke: static и `dynamic_landmark_lstm_backbone` artifacts загрузились и
   выполнили `predict/predict_proba`;
 - `git diff --check`, shell syntax и workflow YAML validation.
+
+### H-112: Platform-independent binding-agent golden path
+
+Дата: 2026-07-10. Статус: `validated-ci`.
+
+Проблема:
+- golden case `open_path_binding` содержал `/Users/remi/Documents`;
+- локально каталог существовал, поэтому `canApply=true`;
+- Linux GitHub runner корректно отклонял несуществующий путь и падал с
+  `1 failed, 590 passed`.
+
+Исправление:
+- fixture переведен на существующий POSIX path `/tmp`;
+- strict safety-правило `open_path` требует существующий абсолютный путь и не
+  ослаблялось;
+- добавлен regression test, запрещающий персональный `/Users/remi/` в golden
+  prompts и expected action specs.
+
+Проверки:
+- binding-agent suite: `57 passed`;
+- local `make ci`: `596 passed` + static/dynamic ML smoke;
+- clean tracked full suite: `597 passed`.

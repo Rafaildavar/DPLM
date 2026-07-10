@@ -150,6 +150,14 @@ def test_binding_agent_eval_cases_cover_core_scenarios():
         assert str(draft["mutation"].get("operation") or "") == case.expected_mutation
 
 
+def test_binding_agent_eval_cases_do_not_depend_on_a_developer_home_path():
+    for case in BINDING_AGENT_EVAL_CASES:
+        assert "/Users/remi/" not in case.prompt, case.case_id
+        assert not str(case.expected_action_spec.get("path") or "").startswith(
+            "/Users/remi/"
+        ), case.case_id
+
+
 def test_binding_agent_builds_open_app_draft():
     draft = build_agent_binding_draft("жест palm открывает Safari", GESTURES)
 
