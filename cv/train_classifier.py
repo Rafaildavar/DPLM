@@ -29,7 +29,12 @@ from cv.gesture_features import (
     build_feature_vector,
     feature_vector_size,
 )
-from cv.gesture_dataset_files import augmented_sample_paths, gesture_sample_paths
+from cv.gesture_dataset_files import (
+    augmented_sample_paths,
+    gesture_sample_paths,
+    sample_group_key,
+)
+from cv.gesture_validation import make_grouped_splitter, normalized_groups
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
@@ -151,7 +156,8 @@ def load_dataset(
     lowercase_labels: bool = False,
     feature_mode: str = FEATURE_STATIC_MEAN,
     include_augmented: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    return_groups: bool = False,
+) -> tuple:
     """
     Загружает реальные семплы из data_root/<label>/sample_*.npy
     Возвращает (X, y, classes), где:
@@ -162,6 +168,7 @@ def load_dataset(
     # Временно храним признаки переменной длины, затем выровняем по max/expect_dim
     feats_raw: List[np.ndarray] = []
     y_list: List[int] = []
+    group_list: List[str] = []
     classes: List[str] = []
     class_indices: dict[str, int] = {}
     max_dim: int = 0
@@ -205,6 +212,7 @@ def load_dataset(
             # Сохраняем как есть, выровняем позже
             feats_raw.append(feat.astype(np.float32, copy=False))
             y_list.append(class_idx)
+            group_list.append(sample_group_key(sf))
             if feat.shape[0] > max_dim:
                 max_dim = int(feat.shape[0])
 
@@ -243,6 +251,8 @@ def load_dataset(
 
     X = np.stack(X_aligned, axis=0)
     y = np.asarray(y_list, dtype=np.int64)
+    if return_groups:
+        return X, y, classes, np.asarray(group_list, dtype=object)
     return X, y, classes
 
 
@@ -805,7 +815,8 @@ def balance_training_set(
     boost_labels: Iterable[str] = DEFAULT_CLASS_BOOST_LABELS,
     boost_factor: float = DEFAULT_CLASS_BOOST_FACTOR,
     random_state: int = 42,
-) -> tuple[np.ndarray, np.ndarray, dict]:
+    return_indices: bool = False,
+) -> tuple:
     """Return a fit set with optional GISLR-style weak-class amplification."""
     labels = [str(label) for label in classes]
     encoded = np.asarray(y, dtype=np.int64)
@@ -842,7 +853,10 @@ def balance_training_set(
             label: int(counts[idx]) for idx, label in enumerate(labels)
         },
     }
+    original_indices = np.arange(encoded.shape[0], dtype=np.int64)
     if mode == "none" or encoded.size == 0 or class_count <= 1:
+        if return_indices:
+            return X, encoded, metadata, original_indices
         return X, encoded, metadata
 
     targets = counts.copy()
@@ -860,6 +874,8 @@ def balance_training_set(
 
     if np.array_equal(targets, counts):
         metadata["effective"] = "none"
+        if return_indices:
+            return X, encoded, metadata, original_indices
         return X, encoded, metadata
 
     rng = np.random.default_rng(int(random_state))
@@ -883,6 +899,8 @@ def balance_training_set(
     metadata["fit_class_counts"] = {
         label: int(fit_counts[idx]) for idx, label in enumerate(labels)
     }
+    if return_indices:
+        return X[shuffled], fit_y, metadata, shuffled
     return X[shuffled], fit_y, metadata
 
 
@@ -910,6 +928,7 @@ def tune_extra_trees_hyperparameters(
     class_balance: str = DEFAULT_CLASS_BALANCE,
     boost_labels: Iterable[str] = DEFAULT_CLASS_BOOST_LABELS,
     boost_factor: float = DEFAULT_CLASS_BOOST_FACTOR,
+    groups=None,
 ) -> dict[str, object]:
     """Tune ExtraTrees for static handcrafted features with macro-F1 CV."""
     try:
@@ -919,6 +938,11 @@ def tune_extra_trees_hyperparameters(
 
     matrix = np.asarray(X, dtype=np.float32)
     labels = np.asarray(y, dtype=np.int64)
+    group_values = (
+        normalized_groups(groups, labels.shape[0])
+        if groups is not None
+        else None
+    )
     unique = np.unique(labels)
     default_params = _extra_trees_default_params()
     if matrix.ndim != 2 or labels.ndim != 1 or unique.size < 2:
@@ -928,23 +952,49 @@ def tune_extra_trees_hyperparameters(
             "trials": 0,
             "cv_folds": 0,
             "used_cv": False,
+            "grouped_cv": False,
+            "group_count": int(len(set(group_values.tolist())))
+            if group_values is not None
+            else int(labels.shape[0]),
             "reason": "not_enough_classes",
         }
 
     counts = np.bincount(labels, minlength=len(classes))
     positive_counts = counts[counts > 0]
     min_class_count = int(positive_counts.min()) if positive_counts.size else 0
-    folds = min(max(2, int(cv_folds)), min_class_count)
-    used_cv = folds >= 2
-    splitter = (
-        StratifiedKFold(
-            n_splits=folds,
-            shuffle=True,
-            random_state=int(random_state),
+    grouped_cv = group_values is not None
+    if grouped_cv:
+        try:
+            splitter, folds = make_grouped_splitter(
+                labels,
+                group_values,
+                max_folds=cv_folds,
+                random_state=random_state,
+            )
+            used_cv = True
+        except ValueError:
+            return {
+                "best_score": 0.0,
+                "best_params": default_params,
+                "trials": 0,
+                "cv_folds": 0,
+                "used_cv": False,
+                "grouped_cv": False,
+                "group_count": int(len(set(group_values.tolist()))),
+                "reason": "not_enough_source_groups",
+            }
+    else:
+        folds = min(max(2, int(cv_folds)), min_class_count)
+        used_cv = folds >= 2
+        splitter = (
+            StratifiedKFold(
+                n_splits=folds,
+                shuffle=True,
+                random_state=int(random_state),
+            )
+            if used_cv
+            else None
         )
-        if used_cv
-        else None
-    )
 
     def trial_params(trial) -> dict[str, object]:
         return {
@@ -1008,9 +1058,14 @@ def tune_extra_trees_hyperparameters(
         if splitter is None:
             indices = np.arange(labels.shape[0])
             return fit_score(params, indices, indices)
+        split_rows = (
+            splitter.split(matrix, labels, groups=group_values)
+            if grouped_cv
+            else splitter.split(matrix, labels)
+        )
         scores = [
             fit_score(params, train_idx, valid_idx)
-            for train_idx, valid_idx in splitter.split(matrix, labels)
+            for train_idx, valid_idx in split_rows
         ]
         return float(np.mean(scores)) if scores else 0.0
 
@@ -1061,6 +1116,10 @@ def tune_extra_trees_hyperparameters(
         "trials": len(study.trials),
         "cv_folds": int(folds) if used_cv else 0,
         "used_cv": bool(used_cv),
+        "grouped_cv": bool(grouped_cv and used_cv),
+        "group_count": int(len(set(group_values.tolist())))
+        if group_values is not None
+        else int(labels.shape[0]),
         "reason": "",
     }
 
@@ -1619,14 +1678,16 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    X, y, classes = load_dataset(
+    X, y, classes, sample_groups = load_dataset(
         data_root,
         expect_dim=args.expect_dim,
         include_labels=args.include_label,
         lowercase_labels=bool(args.lowercase_labels),
         feature_mode=str(args.feature_mode),
         include_augmented=bool(args.include_augmented),
+        return_groups=True,
     )
+    args.sample_group_count = int(len(set(sample_groups.tolist())))
     print(
         f"[i] Загружено семплов: {len(X)}; классов: {len(classes)}; "
         f"режим признаков: {args.feature_mode}; размер признака: {X.shape[1]}; "
@@ -1694,6 +1755,7 @@ def main() -> None:
                 class_balance=str(args.class_balance),
                 boost_labels=boost_labels,
                 boost_factor=float(args.boost_factor),
+                groups=sample_groups,
             )
         except RuntimeError as exc:
             print(
@@ -1750,6 +1812,7 @@ def main() -> None:
             timeout=int(args.sequence_gru_optuna_timeout) or None,
             random_state=int(args.random_state),
             max_epochs=max(10, int(args.sequence_gru_optuna_max_epochs)),
+            groups=sample_groups,
         )
         best_params = dict(tuning.best_params)
         sequence_gru_params.update(
@@ -1809,6 +1872,7 @@ def main() -> None:
             "best_params": best_params,
             "trials": int(tuning.trials),
             "used_validation_split": bool(tuning.used_validation_split),
+            "used_group_split": bool(tuning.used_group_split),
         }
         args.sequence_gru_optuna_out = str(
             out_path.with_name(f"{out_path.stem}_optuna.json")
@@ -1855,6 +1919,7 @@ def main() -> None:
             timeout=int(args.sequence_lstm_optuna_timeout) or None,
             random_state=int(args.random_state),
             max_epochs=max(10, int(args.sequence_lstm_optuna_max_epochs)),
+            groups=sample_groups,
         )
         best_params = dict(tuning.best_params)
         sequence_lstm_params.update(
@@ -1914,6 +1979,7 @@ def main() -> None:
             "best_params": best_params,
             "trials": int(tuning.trials),
             "used_validation_split": bool(tuning.used_validation_split),
+            "used_group_split": bool(tuning.used_group_split),
         }
         args.sequence_lstm_optuna_out = str(
             out_path.with_name(f"{out_path.stem}_optuna.json")
@@ -1975,7 +2041,7 @@ def main() -> None:
         static_cnn_dropout=float(args.static_cnn_dropout),
         static_cnn_label_smoothing=float(args.static_cnn_label_smoothing),
     )
-    X_fit, y_fit, class_balance_metadata = balance_training_set(
+    X_fit, y_fit, class_balance_metadata, fit_indices = balance_training_set(
         X,
         y,
         classes,
@@ -1984,7 +2050,9 @@ def main() -> None:
         boost_labels=boost_labels,
         boost_factor=float(args.boost_factor),
         random_state=int(args.random_state),
+        return_indices=True,
     )
+    fit_groups = sample_groups[np.asarray(fit_indices, dtype=np.int64)]
     args.class_balance_effective = str(class_balance_metadata.get("effective", "none"))
     args.class_balance_original_samples = int(
         class_balance_metadata.get("original_samples", X.shape[0])
@@ -2010,7 +2078,10 @@ def main() -> None:
             f"(fit-семплов: {X_fit.shape[0]})"
         )
 
-    clf.fit(X_fit, y_fit)
+    if isinstance(clf, TorchGRUBackboneClassifier):
+        clf.fit(X_fit, y_fit, groups=fit_groups)
+    else:
+        clf.fit(X_fit, y_fit)
     train_accuracy = float(clf.score(X, y))
 
     joblib.dump(clf, out_path)
@@ -2048,6 +2119,13 @@ def main() -> None:
         distance_multiplier=float(args.reject_distance_multiplier),
     )
     rejection_metadata["training_class_balance"] = class_balance_metadata
+    rejection_metadata["training_group_count"] = int(args.sample_group_count)
+    rejection_metadata["validation_grouped"] = bool(
+        getattr(clf, "used_group_validation_", False)
+    )
+    rejection_metadata["validation_group_overlap"] = int(
+        getattr(clf, "validation_group_overlap_", 0)
+    )
     classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
     feature_dim_out.write_text(str(X.shape[1]))
     feature_mode_out.write_text(str(args.feature_mode))

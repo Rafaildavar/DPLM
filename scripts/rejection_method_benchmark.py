@@ -18,7 +18,6 @@ import numpy as np
 from sklearn.ensemble import ExtraTreesClassifier, IsolationForest, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import (
     KNeighborsClassifier,
     LocalOutlierFactor,
@@ -51,7 +50,12 @@ from cv.gesture_features import (  # noqa: E402
     GestureSequence,
     sequence_to_matrix,
 )
-from cv.gesture_dataset_files import augmented_sample_paths, gesture_sample_paths  # noqa: E402
+from cv.gesture_dataset_files import (  # noqa: E402
+    augmented_sample_paths,
+    gesture_sample_paths,
+    sample_group_key,
+)
+from cv.gesture_validation import make_grouped_splitter  # noqa: E402
 
 DEFAULT_METHODS = (
     "negative_classes",
@@ -80,6 +84,8 @@ class RejectionDatasetInfo:
     class_counts: dict[str, int]
     folds: int
     include_augmented: bool = False
+    group_count: int = 0
+    grouped_cv: bool = True
 
 
 @dataclass(frozen=True)
@@ -907,12 +913,15 @@ def benchmark_rejection_methods(
         raise RuntimeError("benchmark needs at least one negative label")
 
     filtered_counts = {label: int(np.count_nonzero(y == label)) for label in labels}
-    min_count = min(filtered_counts.values())
-    folds = max(2, min(int(max_folds), int(min_count)))
-    splitter = StratifiedKFold(
-        n_splits=folds,
-        shuffle=True,
-        random_state=int(random_state),
+    groups = np.asarray(
+        [sample_group_key(record.path) for record in records],
+        dtype=object,
+    )
+    splitter, folds = make_grouped_splitter(
+        y,
+        groups,
+        max_folds=max_folds,
+        random_state=random_state,
     )
     selected_methods = _method_list(methods)
     method_true: dict[str, list[str]] = {method: [] for method in selected_methods}
@@ -931,7 +940,7 @@ def benchmark_rejection_methods(
         "random_state": int(random_state),
     }
 
-    for train_idx, test_idx in splitter.split(X, y):
+    for train_idx, test_idx in splitter.split(X, y, groups=groups):
         X_train, X_test = X[train_idx], X[test_idx]
         y_train = y[train_idx]
         y_test = [str(label) for label in y[test_idx]]
@@ -993,6 +1002,8 @@ def benchmark_rejection_methods(
         class_counts=dict(sorted(filtered_counts.items())),
         folds=folds,
         include_augmented=bool(include_augmented),
+        group_count=int(len(set(groups.tolist()))),
+        grouped_cv=True,
     )
     return RejectionBenchmarkReport(
         generated_at=time.time(),
@@ -1018,6 +1029,7 @@ def build_markdown_report(report: RejectionBenchmarkReport) -> str:
         f"- candidate model: `{dataset.candidate_model}`",
         f"- target dim: `{dataset.target_dim}`",
         f"- augmented samples: `{'included' if dataset.include_augmented else 'excluded'}`",
+        f"- source groups: `{dataset.group_count}`; grouped CV: `{dataset.grouped_cv}`",
         f"- samples/classes/folds: `{dataset.sample_count}` / `{dataset.class_count}` / `{dataset.folds}`",
         f"- positive labels: `{', '.join(dataset.positive_labels)}`",
         f"- negative labels: `{', '.join(dataset.negative_labels)}`",

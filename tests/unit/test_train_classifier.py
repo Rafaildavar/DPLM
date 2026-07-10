@@ -211,6 +211,10 @@ def test_extra_trees_optuna_tuning_returns_effective_params():
     x[6:12] += 0.6
     x[12:] -= 0.6
     y = np.asarray([0] * 6 + [1] * 6 + [2] * 6, dtype=np.int64)
+    groups = np.asarray(
+        [f"class{class_idx}-source{sample_idx // 2}" for class_idx in range(3) for sample_idx in range(6)],
+        dtype=object,
+    )
 
     summary = tune_extra_trees_hyperparameters(
         x,
@@ -222,11 +226,14 @@ def test_extra_trees_optuna_tuning_returns_effective_params():
         random_state=7,
         class_balance="none",
         boost_labels=[],
+        groups=groups,
     )
 
     assert summary["trials"] == 2
     assert summary["used_cv"] is True
     assert summary["cv_folds"] == 3
+    assert summary["grouped_cv"] is True
+    assert summary["group_count"] == 9
     assert 0.0 <= summary["best_score"] <= 1.0
     params = summary["best_params"]
     assert params["extra_trees_n_estimators"] >= 120
@@ -619,6 +626,45 @@ def test_sequence_lstm_backbone_classifier_supports_predict_proba():
     assert isinstance(clf, TorchLSTMBackboneClassifier)
     assert proba.shape == (2, 2)
     assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-5)
+
+
+def test_sequence_lstm_group_split_fits_normalizer_on_train_only():
+    frames = 36
+    channels = 4
+    rows = []
+    labels = []
+    groups = []
+    for class_idx in range(2):
+        for group_idx in range(4):
+            value = float(class_idx * 10 + group_idx)
+            for _variant in range(2):
+                rows.append(np.full(frames * channels, value, dtype=np.float32))
+                labels.append(class_idx)
+                groups.append(f"class{class_idx}-source{group_idx}")
+    x = np.stack(rows)
+    y = np.asarray(labels, dtype=np.int64)
+    group_values = np.asarray(groups, dtype=object)
+    clf = build_classifier(
+        "sequence_lstm_backbone",
+        random_state=5,
+        sequence_lstm_backbone_dim=8,
+        sequence_lstm_hidden_dim=8,
+        sequence_lstm_max_epochs=1,
+        sequence_lstm_batch_size=4,
+        sequence_lstm_validation_fraction=0.25,
+        sequence_lstm_patience=1,
+    )
+    raw_sequences = x.reshape(len(x), frames, channels)
+    train_raw, _validation_raw, _train_y, _validation_y = (
+        clf._split_train_validation(raw_sequences, y, groups=group_values)
+    )
+    expected_mean = train_raw.mean(axis=(0, 1), keepdims=True)
+
+    clf.fit(x, y, groups=group_values)
+
+    assert clf.used_group_validation_ is True
+    assert clf.validation_group_overlap_ == 0
+    assert np.allclose(clf.sequence_mean_, expected_mean)
 
 
 def test_build_classifier_allows_sequence_mlp_validation_overrides():

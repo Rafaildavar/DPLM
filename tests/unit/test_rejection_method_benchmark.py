@@ -124,6 +124,8 @@ def test_rejection_method_benchmark_supports_extra_trees_augmented_lowercase(tmp
     assert report.dataset.sample_count == 12
     assert report.dataset.candidate_model == "extra_trees"
     assert report.dataset.include_augmented is True
+    assert report.dataset.group_count == 9
+    assert report.dataset.grouped_cv is True
     assert report.methods[0].negative_label_metrics
 
     markdown = build_markdown_report(report)

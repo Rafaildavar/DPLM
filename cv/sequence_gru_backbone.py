@@ -22,6 +22,7 @@ from cv.gesture_features import (
     DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     DYNAMIC_SEQUENCE_TARGET_FRAMES,
 )
+from cv.gesture_validation import grouped_holdout_indices, normalized_groups
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class OptunaTuningSummary:
     best_params: dict[str, Any]
     trials: int
     used_validation_split: bool
+    used_group_split: bool = False
 
 
 class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
@@ -76,7 +78,7 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         self.verbose = verbose
         self.feature_name = feature_name
 
-    def fit(self, X, y):  # noqa: D401 - sklearn API
+    def fit(self, X, y, groups=None):  # noqa: D401 - sklearn API
         torch = _require_torch()
         matrix = self._validate_X(X)
         labels = np.asarray(y)
@@ -90,8 +92,14 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         self.n_channels_ = int(self.n_features_in_ // int(self.target_frames))
 
         sequences = matrix.reshape(matrix.shape[0], int(self.target_frames), self.n_channels_)
-        sequences = self._fit_normalizer(sequences)
-        X_train, X_val, y_train, y_val = self._split_train_validation(sequences, encoded)
+        X_train, X_val, y_train, y_val = self._split_train_validation(
+            sequences,
+            encoded,
+            groups=groups,
+        )
+        X_train = self._fit_normalizer(X_train)
+        if X_val.size:
+            X_val = self._transform_normalizer(X_val)
 
         _seed_torch(torch, int(self.random_state))
         device = self._torch_device(torch)
@@ -270,8 +278,37 @@ class TorchGRUBackboneClassifier(BaseEstimator, ClassifierMixin):
         self,
         sequences: np.ndarray,
         encoded: np.ndarray,
+        *,
+        groups=None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         fraction = max(0.0, min(0.50, float(self.validation_fraction)))
+        self.used_group_validation_ = False
+        self.validation_group_overlap_ = 0
+        if groups is not None and fraction > 0.0:
+            group_values = normalized_groups(groups, encoded.shape[0])
+            split = grouped_holdout_indices(
+                encoded,
+                group_values,
+                validation_fraction=fraction,
+                random_state=int(self.random_state),
+            )
+            if split is not None:
+                train_idx, validation_idx = split
+                train_groups = set(group_values[train_idx].tolist())
+                validation_groups = set(group_values[validation_idx].tolist())
+                self.used_group_validation_ = True
+                self.validation_group_overlap_ = len(
+                    train_groups.intersection(validation_groups)
+                )
+                return (
+                    sequences[train_idx],
+                    sequences[validation_idx],
+                    encoded[train_idx].astype(np.int64),
+                    encoded[validation_idx].astype(np.int64),
+                )
+            empty_x = np.empty((0,) + sequences.shape[1:], dtype=np.float32)
+            empty_y = np.empty((0,), dtype=np.int64)
+            return sequences, empty_x, encoded.astype(np.int64), empty_y
         if fraction <= 0.0 or not _can_stratified_split(encoded, fraction):
             empty_x = np.empty((0,) + sequences.shape[1:], dtype=np.float32)
             empty_y = np.empty((0,), dtype=np.int64)
@@ -438,14 +475,35 @@ def _tune_recurrent_backbone_hyperparameters(
     timeout: int | None = None,
     random_state: int = 42,
     max_epochs: int = 70,
+    groups=None,
 ) -> OptunaTuningSummary:
     """Run a compact Optuna search over recurrent hyperparameters."""
     optuna = _require_optuna()
     matrix = np.asarray(X, dtype=np.float32)
     labels = np.asarray(y)
     trials = max(1, int(n_trials))
-    used_validation = _can_stratified_split(labels, 0.25)
-    if used_validation:
+    group_values = (
+        normalized_groups(groups, labels.shape[0])
+        if groups is not None
+        else None
+    )
+    group_split = (
+        grouped_holdout_indices(
+            labels,
+            group_values,
+            validation_fraction=0.25,
+            random_state=int(random_state),
+        )
+        if group_values is not None
+        else None
+    )
+    used_group_split = group_split is not None
+    used_validation = bool(used_group_split or _can_stratified_split(labels, 0.25))
+    if group_split is not None:
+        train_idx, validation_idx = group_split
+        train_x, val_x = matrix[train_idx], matrix[validation_idx]
+        train_y, val_y = labels[train_idx], labels[validation_idx]
+    elif used_validation and group_values is None:
         train_x, val_x, train_y, val_y = train_test_split(
             matrix,
             labels,
@@ -510,6 +568,7 @@ def _tune_recurrent_backbone_hyperparameters(
         best_params=dict(study.best_params),
         trials=len(study.trials),
         used_validation_split=bool(used_validation),
+        used_group_split=bool(used_group_split),
     )
 
 
@@ -523,6 +582,7 @@ def tune_gru_backbone_hyperparameters(
     timeout: int | None = None,
     random_state: int = 42,
     max_epochs: int = 70,
+    groups=None,
 ) -> OptunaTuningSummary:
     """Run a compact Optuna search over GRU hyperparameters."""
     return _tune_recurrent_backbone_hyperparameters(
@@ -535,6 +595,7 @@ def tune_gru_backbone_hyperparameters(
         timeout=timeout,
         random_state=random_state,
         max_epochs=max_epochs,
+        groups=groups,
     )
 
 
@@ -548,6 +609,7 @@ def tune_lstm_backbone_hyperparameters(
     timeout: int | None = None,
     random_state: int = 42,
     max_epochs: int = 70,
+    groups=None,
 ) -> OptunaTuningSummary:
     """Run a compact Optuna search over LSTM hyperparameters."""
     return _tune_recurrent_backbone_hyperparameters(
@@ -560,6 +622,7 @@ def tune_lstm_backbone_hyperparameters(
         timeout=timeout,
         random_state=random_state,
         max_epochs=max_epochs,
+        groups=groups,
     )
 
 

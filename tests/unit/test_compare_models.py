@@ -108,6 +108,8 @@ def test_compare_models_can_include_gislr_augmented_and_lowercase_labels(tmp_pat
     assert report.dataset.sample_count == 8
     assert report.dataset.include_augmented is True
     assert report.dataset.class_counts == {"close": 4, "open": 4}
+    assert report.dataset.group_count == 6
+    assert report.dataset.grouped_cv is True
 
     markdown = build_markdown_report(report)
     assert "| Augmented samples | included |" in markdown

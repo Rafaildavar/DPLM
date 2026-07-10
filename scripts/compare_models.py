@@ -26,7 +26,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -36,7 +35,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from cv.gesture_dataset_files import gesture_sample_paths  # noqa: E402
+from cv.gesture_dataset_files import gesture_sample_paths, sample_group_key  # noqa: E402
+from cv.gesture_validation import make_grouped_splitter  # noqa: E402
 from cv.gesture_features import (  # noqa: E402
     FEATURE_DYNAMIC_CRAFT_FULL_STATS,
     FEATURE_DYNAMIC_CRAFT_STATS,
@@ -77,6 +77,8 @@ class DatasetInfo:
     motion_threshold: float
     motion_profiles: list[ClassMotionProfile]
     include_augmented: bool = False
+    group_count: int = 0
+    grouped_cv: bool = True
 
 
 @dataclass(frozen=True)
@@ -341,7 +343,8 @@ def evaluate_model(
     estimator: Any,
     model_name: str,
     feature_mode: str,
-    cv: StratifiedKFold,
+    cv: Any,
+    groups: np.ndarray,
     labels: list[str],
     motion_type_by_label: dict[str, str],
     random_state: int = 42,
@@ -351,7 +354,9 @@ def evaluate_model(
     confidence_parts: list[np.ndarray] = []
     latency_values: list[float] = []
 
-    for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X, y)):
+    for fold_idx, (train_idx, test_idx) in enumerate(
+        cv.split(X, y, groups=groups)
+    ):
         fitted = clone(estimator)
         X_fit, y_fit, _balance_metadata = balance_training_set(
             X[train_idx],
@@ -550,7 +555,10 @@ def compare_models(
     if min_class_count < 2:
         raise RuntimeError("at least two samples per active class are required")
 
-    folds = max(2, min(int(max_folds), int(min_class_count)))
+    group_values = np.asarray(
+        [sample_group_key(record.path) for record in selected_records],
+        dtype=object,
+    )
     actual_target_dim = int(target_dim or infer_target_dim(record.sequence for record in selected_records))
     modes = feature_modes or [
         FEATURE_STATIC_MEAN,
@@ -584,7 +592,6 @@ def compare_models(
     )
     motion_type_by_label = {profile.label: profile.suggested_type for profile in profiles}
 
-    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=random_state)
     results: list[ModelResult] = []
     skipped_pairs: list[str] = []
     labels_for_report: list[str] = []
@@ -593,6 +600,12 @@ def compare_models(
             selected_records,
             mode=mode,
             target_dim=actual_target_dim,
+        )
+        cv, folds = make_grouped_splitter(
+            y,
+            group_values,
+            max_folds=max_folds,
+            random_state=random_state,
         )
         labels_for_report = labels
         for name in names:
@@ -607,6 +620,7 @@ def compare_models(
                     model_name=name,
                     feature_mode=mode,
                     cv=cv,
+                    groups=group_values,
                     labels=labels,
                     motion_type_by_label=motion_type_by_label,
                     random_state=random_state,
@@ -621,6 +635,8 @@ def compare_models(
     notes = [
         f"Активные классы в сравнении: {', '.join(labels_for_report)}",
         f"CV folds: {folds}; минимальный размер класса: {min_class_count}",
+        f"Grouped CV: {len(set(group_values.tolist()))} source groups; "
+        "originals and their augmentations stay in the same fold",
         "Augmented samples: " + ("included" if include_augmented else "excluded"),
     ]
     if skipped_pairs:
@@ -647,6 +663,8 @@ def compare_models(
         motion_threshold=float(motion_threshold),
         motion_profiles=profiles,
         include_augmented=bool(include_augmented),
+        group_count=int(len(set(group_values.tolist()))),
+        grouped_cv=True,
     )
     best_overall = sorted(
         results,
@@ -783,6 +801,8 @@ def build_markdown_report(report: ComparisonReport) -> str:
 | Исходные размерности | {", ".join(str(dim) for dim in report.dataset.raw_feature_dims)} |
 | Целевая размерность | {report.dataset.target_dim} |
 | CV folds | {report.dataset.cv_folds} |
+| Source groups | {report.dataset.group_count} |
+| Grouped CV | {"yes" if report.dataset.grouped_cv else "no"} |
 | Motion threshold | {report.dataset.motion_threshold:.4f} |
 | Augmented samples | {"included" if report.dataset.include_augmented else "excluded"} |
 
