@@ -4,7 +4,6 @@ import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
-import joblib
 import numpy as np
 from sklearn.ensemble import (
     ExtraTreesClassifier,
@@ -35,6 +34,7 @@ from cv.gesture_dataset_files import (
     sample_group_key,
 )
 from cv.gesture_validation import make_grouped_splitter, normalized_groups
+from cv.model_bundle import publish_model_bundle_atomic
 from cv.sequence_multirocket import RandomMultiRocketSequenceTransformer
 from cv.sequence_phase_hmm import PhaseHMMSequenceClassifier
 from cv.sequence_rocket import RandomConvolutionSequenceTransformer
@@ -2084,9 +2084,6 @@ def main() -> None:
         clf.fit(X_fit, y_fit)
     train_accuracy = float(clf.score(X, y))
 
-    joblib.dump(clf, out_path)
-    print(f"[✓] Модель сохранена: {out_path}")
-
     # Сохраним классы и размерность признака для инференса
     classes_out = Path(args.classes_out) if args.classes_out else (out_path.parent / "classes.json")
     feature_dim_out = (
@@ -2104,10 +2101,6 @@ def main() -> None:
         if args.rejection_out
         else default_rejection_metadata_path(out_path)
     )
-    classes_out.parent.mkdir(parents=True, exist_ok=True)
-    feature_dim_out.parent.mkdir(parents=True, exist_ok=True)
-    feature_mode_out.parent.mkdir(parents=True, exist_ok=True)
-    rejection_out.parent.mkdir(parents=True, exist_ok=True)
     rejection_metadata = build_rejection_metadata(
         X,
         y,
@@ -2126,13 +2119,21 @@ def main() -> None:
     rejection_metadata["validation_group_overlap"] = int(
         getattr(clf, "validation_group_overlap_", 0)
     )
-    classes_out.write_text(json.dumps(classes, ensure_ascii=False, indent=2))
-    feature_dim_out.write_text(str(X.shape[1]))
-    feature_mode_out.write_text(str(args.feature_mode))
-    rejection_out.write_text(
-        json.dumps(rejection_metadata, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    publish_model_bundle_atomic(
+        clf,
+        out_path,
+        {
+            classes_out: json.dumps(classes, ensure_ascii=False, indent=2),
+            feature_dim_out: str(X.shape[1]),
+            feature_mode_out: str(args.feature_mode),
+            rejection_out: json.dumps(
+                rejection_metadata,
+                ensure_ascii=False,
+                indent=2,
+            ),
+        },
     )
+    print(f"[✓] Модель сохранена атомарно: {out_path}")
     print(
         "[✓] Метаданные сохранены: "
         f"{classes_out}, {feature_dim_out}, {feature_mode_out}, {rejection_out}"

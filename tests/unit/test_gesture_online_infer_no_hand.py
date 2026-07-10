@@ -3,7 +3,10 @@ from pathlib import Path
 
 import numpy as np
 
-from app.gesture_online_infer import GestureOnlineInfer
+from app.gesture_online_infer import (
+    GestureOnlineInfer,
+    configure_estimator_for_live_inference,
+)
 from cv.gesture_features import (
     DYNAMIC_LANDMARK_IMAGE_TARGET_FRAMES,
     FEATURE_DYNAMIC_CRAFT_FULL_STATS,
@@ -34,6 +37,22 @@ class _CountingClassifier:
 
     def predict_proba(self, _features):
         return np.asarray([[1.0]])
+
+
+def test_live_runtime_uses_one_worker_for_nested_estimators() -> None:
+    class Estimator:
+        def __init__(self, *, children=None):
+            self.n_jobs = -1
+            self.estimators_ = children or []
+
+    child = Estimator()
+    parent = Estimator(children=[("child", child)])
+
+    configured = configure_estimator_for_live_inference(parent)
+
+    assert configured == 2
+    assert parent.n_jobs == 1
+    assert child.n_jobs == 1
 
 
 def test_dynamic_sequence_artifact_forces_sequence_feature_mode():

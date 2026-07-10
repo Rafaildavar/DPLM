@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter, deque
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
 
@@ -105,6 +106,60 @@ STATIC_REJECTION_METHODS = (
     STATIC_REJECTION_METRIC_NCA_CENTROID,
     STATIC_REJECTION_MLP_NEGATIVE_CLASSES,
 )
+
+
+def configure_estimator_for_live_inference(estimator: Any) -> int:
+    """Use one worker for low-latency single-sample prediction.
+
+    Tree ensembles often default to all CPU cores. That helps batch scoring but
+    adds thread scheduling overhead for the one sample produced by a live frame.
+    Nested sklearn ensembles and pipelines are handled recursively.
+    """
+    configured = 0
+    pending = [estimator]
+    visited: set[int] = set()
+    child_attributes = (
+        "estimators_",
+        "estimators",
+        "named_estimators_",
+        "final_estimator_",
+        "steps",
+        "transformer_list",
+    )
+
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in visited:
+            continue
+        visited.add(id(current))
+
+        if hasattr(current, "n_jobs"):
+            try:
+                current.n_jobs = 1
+                configured += 1
+            except Exception:
+                pass
+
+        for attribute in child_attributes:
+            try:
+                children = getattr(current, attribute)
+            except Exception:
+                continue
+            if isinstance(children, Mapping):
+                pending.extend(children.values())
+            elif isinstance(children, (list, tuple)):
+                for child in children:
+                    if (
+                        isinstance(child, tuple)
+                        and len(child) == 2
+                        and isinstance(child[0], str)
+                    ):
+                        pending.append(child[1])
+                    else:
+                        pending.append(child)
+            else:
+                pending.append(children)
+    return configured
 
 
 class GestureOnlineInfer:
@@ -239,6 +294,7 @@ class GestureOnlineInfer:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", InconsistentVersionWarning)
                     self._clf = joblib.load(str(model_path))
+                configure_estimator_for_live_inference(self._clf)
                 model_feature_dim = int(getattr(self._clf, "n_features_in_", 0) or 0)
                 if model_feature_dim > 0 and model_feature_dim != self._feature_dim:
                     print(
