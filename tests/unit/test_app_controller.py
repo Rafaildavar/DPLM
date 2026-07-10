@@ -6,6 +6,8 @@ Unit tests for AppController
 Tests for application controller (app/main.py)
 """
 import pytest
+pytest.importorskip("PySide6", reason="legacy Qt UI is optional in the Flet runtime")
+
 from PySide6.QtCore import QObject, Signal
 from unittest.mock import Mock, patch
 

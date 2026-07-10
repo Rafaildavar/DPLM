@@ -27,6 +27,7 @@ from cv.train_classifier import (
     default_rejection_metadata_path,
     load_dataset,
     model_uses_internal_class_balance,
+    training_dataset_provenance,
     tune_extra_trees_hyperparameters,
 )
 
@@ -56,6 +57,22 @@ def test_load_dataset_can_filter_and_normalize_labels(tmp_path):
     assert x.shape == (2, 42)
     assert y.tolist() == [0, 1]
     assert classes == ["new", "new2"]
+
+
+def test_training_dataset_provenance_tracks_selected_sample_content(tmp_path):
+    data_root = tmp_path / "gestures"
+    _write_sample(data_root, "keep", 0, value=1.0)
+    _write_sample(data_root, "ignore", 0, value=2.0)
+
+    first = training_dataset_provenance(data_root, include_labels=["keep"])
+    _write_sample(data_root, "ignore", 0, value=3.0)
+    unchanged = training_dataset_provenance(data_root, include_labels=["keep"])
+    _write_sample(data_root, "keep", 0, value=4.0)
+    changed = training_dataset_provenance(data_root, include_labels=["keep"])
+
+    assert first["sample_file_count"] == 1
+    assert first["sha256"] == unchanged["sha256"]
+    assert first["sha256"] != changed["sha256"]
 
 
 def test_load_dataset_supports_dynamic_feature_mode(tmp_path):
@@ -760,6 +777,8 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         "params": {},
         "metrics": {},
         "artifacts": [],
+        "tags": {},
+        "dicts": {},
     }
 
     class _Run:
@@ -789,6 +808,12 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         def log_artifact(self, path):
             calls["artifacts"].append(Path(path).name)
 
+        def set_tags(self, tags):
+            calls["tags"] = dict(tags)
+
+        def log_dict(self, payload, path):
+            calls["dicts"][path] = payload
+
     monkeypatch.setitem(sys.modules, "mlflow", _FakeMlflow())
     artifacts = []
     for name in (
@@ -814,6 +839,8 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
         expect_dim=None,
         lowercase_labels=True,
         include_label=["swipe_up", "no_gesture_static"],
+        include_augmented=False,
+        sample_group_count=20,
     )
 
     _log_mlflow_run(
@@ -837,7 +864,13 @@ def test_log_mlflow_run_records_training_metadata(monkeypatch, tmp_path):
     assert calls["params"]["sequence_mlp_early_stopping_effective"] is True
     assert calls["params"]["sequence_mlp_validation_fraction_effective"] == 0.20
     assert calls["params"]["sequence_mlp_alpha"] == 1e-3
+    assert len(calls["params"]["dataset_sha256"]) == 64
+    assert len(calls["params"]["model_sha256"]) == 64
     assert calls["metrics"]["train_accuracy"] == 0.95
+    assert calls["metrics"]["source_group_count"] == 20.0
+    assert calls["metrics"]["validation_group_overlap"] == 0.0
+    assert "provenance.json" in calls["dicts"]
+    assert "dplm.dataset.sha256" in calls["tags"]
     assert calls["artifacts"] == [
         "model.pkl",
         "classes.json",

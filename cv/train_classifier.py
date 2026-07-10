@@ -1,5 +1,7 @@
 import argparse
+import hashlib
 import json
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
@@ -274,6 +276,103 @@ def _gislr_augmented_sample_paths(label_dir: Path) -> list[Path]:
         if transform == "gislr_landmark_v1" or policy == "gislr_landmark_v1":
             paths.append(sample_path)
     return paths
+
+
+def training_dataset_provenance(
+    data_root: Path,
+    *,
+    include_labels: Optional[Iterable[str]] = None,
+    lowercase_labels: bool = False,
+    include_augmented: bool = False,
+) -> dict[str, object]:
+    """Fingerprint the exact sample set selected by the training CLI."""
+    root = Path(data_root)
+    raw_include = {
+        str(label).strip()
+        for label in (include_labels or [])
+        if str(label).strip()
+    }
+    canonical_include = {
+        label.lower() if lowercase_labels else label for label in raw_include
+    }
+    sample_paths: list[Path] = []
+    if root.exists():
+        for label_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            raw_label = label_dir.name
+            label = raw_label.lower() if lowercase_labels else raw_label
+            if (
+                canonical_include
+                and label not in canonical_include
+                and raw_label not in raw_include
+            ):
+                continue
+            selected = gesture_sample_paths(label_dir)
+            if include_augmented:
+                selected = [*selected, *_gislr_augmented_sample_paths(label_dir)]
+            sample_paths.extend(selected)
+
+    digest = hashlib.sha256()
+    total_bytes = 0
+    metadata_count = 0
+    for sample_path in sample_paths:
+        candidates = [sample_path]
+        metadata_path = sample_path.with_suffix(".meta.json")
+        if metadata_path.exists():
+            candidates.append(metadata_path)
+            metadata_count += 1
+        for path in candidates:
+            try:
+                relative = path.relative_to(root)
+            except ValueError:
+                relative = path
+            digest.update(str(relative).encode("utf-8", errors="surrogateescape"))
+            digest.update(b"\0")
+            with path.open("rb") as handle:
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+                    total_bytes += len(chunk)
+            digest.update(b"\0")
+
+    return {
+        "sha256": digest.hexdigest(),
+        "sample_file_count": len(sample_paths),
+        "metadata_file_count": metadata_count,
+        "total_bytes": total_bytes,
+        "include_augmented": bool(include_augmented),
+        "include_labels": sorted(raw_include),
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_provenance() -> dict[str, object]:
+    root = Path(__file__).resolve().parents[1]
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return {"commit": "unknown", "dirty": True}
+    return {"commit": revision or "unknown", "dirty": bool(status)}
 
 
 def build_classifier(
@@ -2119,6 +2218,9 @@ def main() -> None:
     rejection_metadata["validation_group_overlap"] = int(
         getattr(clf, "validation_group_overlap_", 0)
     )
+    best_eval_accuracy = getattr(clf, "best_eval_accuracy_", None)
+    if best_eval_accuracy is not None and np.isfinite(float(best_eval_accuracy)):
+        rejection_metadata["validation_best_accuracy"] = float(best_eval_accuracy)
     publish_model_bundle_atomic(
         clf,
         out_path,
@@ -2645,6 +2747,19 @@ def _log_mlflow_run(
             )
         )
         sequence_lstm_optuna_summary = getattr(args, "sequence_lstm_optuna_summary", None)
+        dataset_provenance = training_dataset_provenance(
+            Path(args.data_root),
+            include_labels=getattr(args, "include_label", None),
+            lowercase_labels=bool(getattr(args, "lowercase_labels", False)),
+            include_augmented=bool(getattr(args, "include_augmented", False)),
+        )
+        git_provenance = _git_provenance()
+        model_sha256 = _sha256_file(out_path)
+        source_group_count = int(getattr(args, "sample_group_count", sample_count))
+        validation_grouped = bool(rejection_metadata.get("validation_grouped", False))
+        validation_group_overlap = int(
+            rejection_metadata.get("validation_group_overlap", 0)
+        )
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment)
         run_name = str(getattr(args, "mlflow_run_name", "") or "").strip() or (
@@ -2770,8 +2885,22 @@ def _log_mlflow_run(
                         else ""
                     ),
                     "lowercase_labels": bool(args.lowercase_labels),
+                    "include_augmented": bool(
+                        getattr(args, "include_augmented", False)
+                    ),
                     "include_labels": ",".join(args.include_label or []),
                     "classes": ",".join(classes),
+                    "dataset_sha256": str(dataset_provenance["sha256"]),
+                    "dataset_sample_file_count": int(
+                        dataset_provenance["sample_file_count"]
+                    ),
+                    "dataset_total_bytes": int(dataset_provenance["total_bytes"]),
+                    "source_group_count": source_group_count,
+                    "git_commit": str(git_provenance["commit"]),
+                    "git_dirty": bool(git_provenance["dirty"]),
+                    "model_sha256": model_sha256,
+                    "validation_grouped": validation_grouped,
+                    "train_accuracy_kind": "resubstitution",
                     "reject_negative_confidence_threshold": (
                         reject_negative_confidence_threshold
                     ),
@@ -2787,7 +2916,17 @@ def _log_mlflow_run(
                 "feature_dim": float(feature_dim),
                 "train_accuracy": float(train_accuracy),
                 "negative_class_count": float(len(negative_labels)),
+                "source_group_count": float(source_group_count),
+                "validation_grouped": float(validation_grouped),
+                "validation_group_overlap": float(validation_group_overlap),
             }
+            validation_best_accuracy = rejection_metadata.get(
+                "validation_best_accuracy"
+            )
+            if validation_best_accuracy is not None:
+                metrics["validation_best_accuracy"] = float(
+                    validation_best_accuracy
+                )
             if isinstance(sequence_gru_optuna_summary, dict):
                 metrics["sequence_gru_optuna_best_score"] = float(
                     sequence_gru_optuna_summary.get("best_score", 0.0)
@@ -2810,6 +2949,30 @@ def _log_mlflow_run(
                     sequence_lstm_optuna_summary.get("trials", 0)
                 )
             mlflow.log_metrics(metrics)
+            if hasattr(mlflow, "set_tags"):
+                mlflow.set_tags(
+                    {
+                        "mlflow.source.git.commit": str(git_provenance["commit"]),
+                        "dplm.git.dirty": str(bool(git_provenance["dirty"])).lower(),
+                        "dplm.dataset.sha256": str(dataset_provenance["sha256"]),
+                        "dplm.model.sha256": model_sha256,
+                        "dplm.validation.grouped": str(validation_grouped).lower(),
+                    }
+                )
+            if hasattr(mlflow, "log_dict"):
+                mlflow.log_dict(
+                    {
+                        "dataset": dataset_provenance,
+                        "model_sha256": model_sha256,
+                        "git": git_provenance,
+                        "validation": {
+                            "grouped": validation_grouped,
+                            "group_overlap": validation_group_overlap,
+                            "best_accuracy": validation_best_accuracy,
+                        },
+                    },
+                    "provenance.json",
+                )
             for artifact in (
                 out_path,
                 classes_out,

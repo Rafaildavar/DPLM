@@ -41,58 +41,163 @@ def _write_or_print(payload: dict[str, Any], output: Path | None) -> None:
         output.write_text(text + "\n", encoding="utf-8")
 
 
-def _load_feature_vectors(feature_dim: int) -> list[np.ndarray]:
-    features: list[np.ndarray] = []
-    for path in sorted((ROOT / "data" / "gestures").glob("*/*.npy")):
-        arr = np.load(path)
-        arr = arr.reshape(arr.shape[0], -1) if arr.ndim == 3 else arr.reshape(1, -1)
-        feat = arr.mean(axis=0)
-        if feat.shape[0] != feature_dim:
+def _ml_profile_paths(profile: str) -> dict[str, Path]:
+    model_dir = ROOT / "models"
+    if profile == "dynamic":
+        stem = "dynamic_landmark_lstm_backbone"
+        return {
+            "model": model_dir / f"{stem}.pkl",
+            "classes": model_dir / f"{stem}_classes.json",
+            "feature_dim": model_dir / f"{stem}_feature_dim.txt",
+            "feature_mode": model_dir / f"{stem}_feature_mode.txt",
+        }
+    return {
+        "model": model_dir / "knn.pkl",
+        "classes": model_dir / "classes.json",
+        "feature_dim": model_dir / "feature_dim.txt",
+        "feature_mode": model_dir / "feature_mode.txt",
+    }
+
+
+def _load_raw_sequences(data_root: Path, classes: list[str]) -> list[np.ndarray]:
+    from app.services.gesture_labels import gesture_label_key
+    from cv.gesture_dataset_files import real_sample_paths
+    from cv.gesture_features import sequence_to_matrix
+
+    class_keys = {gesture_label_key(label) for label in classes}
+    sequences: list[np.ndarray] = []
+    for label_dir in sorted(path for path in data_root.iterdir() if path.is_dir()):
+        if gesture_label_key(label_dir.name) not in class_keys:
             continue
-        features.append(feat.astype(np.float32).reshape(1, -1))
-    return features
+        for path in real_sample_paths(label_dir):
+            try:
+                sequences.append(sequence_to_matrix(np.load(path)))
+            except (OSError, ValueError):
+                continue
+    return sequences
 
 
-def benchmark_ml(iterations: int) -> dict[str, Any]:
+def _benchmark_ml_profile(
+    profile: str,
+    *,
+    iterations: int,
+    warmup: int,
+    data_root: Path,
+) -> dict[str, Any]:
     import joblib
 
-    model_path = ROOT / "models" / "knn.pkl"
-    classes_path = ROOT / "models" / "classes.json"
-    feature_dim_path = ROOT / "models" / "feature_dim.txt"
+    from app.gesture_online_infer import configure_estimator_for_live_inference
+    from cv.gesture_features import build_feature_vector, infer_raw_dim_from_feature_size
+
+    paths = _ml_profile_paths(profile)
+    missing = [str(path) for path in paths.values() if not path.exists()]
+    if missing:
+        raise RuntimeError(f"Missing {profile} model artifacts: {', '.join(missing)}")
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        clf = joblib.load(model_path)
+        clf = joblib.load(paths["model"])
+    configured_estimators = configure_estimator_for_live_inference(clf)
 
-    classes = json.loads(classes_path.read_text(encoding="utf-8"))
-    feature_dim = int(feature_dim_path.read_text(encoding="utf-8").strip())
-    features = _load_feature_vectors(feature_dim)
-    if not features:
-        raise RuntimeError("No compatible gesture samples found")
+    classes = json.loads(paths["classes"].read_text(encoding="utf-8"))
+    feature_dim = int(paths["feature_dim"].read_text(encoding="utf-8").strip())
+    feature_mode = paths["feature_mode"].read_text(encoding="utf-8").strip()
+    raw_feature_dim = infer_raw_dim_from_feature_size(feature_mode, feature_dim)
+    raw_sequences = _load_raw_sequences(data_root, classes)
+    compatible_sequences: list[np.ndarray] = []
+    for sequence in raw_sequences:
+        try:
+            feature = build_feature_vector(
+                sequence,
+                mode=feature_mode,
+                target_dim=raw_feature_dim,
+            )
+        except ValueError:
+            continue
+        if int(feature.size) == feature_dim:
+            compatible_sequences.append(sequence)
+    if not compatible_sequences:
+        raise RuntimeError(f"No compatible gesture samples found for {profile}")
 
-    for feat in features[: min(20, len(features))]:
-        clf.predict(feat)
+    def predict(feature: np.ndarray) -> None:
+        matrix = feature.astype(np.float32, copy=False).reshape(1, -1)
+        clf.predict(matrix)
         if hasattr(clf, "predict_proba"):
-            clf.predict_proba(feat)
+            clf.predict_proba(matrix)
 
-    timings: list[float] = []
+    for index in range(max(0, int(warmup))):
+        sequence = compatible_sequences[index % len(compatible_sequences)]
+        feature = build_feature_vector(
+            sequence,
+            mode=feature_mode,
+            target_dim=raw_feature_dim,
+        )
+        predict(feature)
+
+    feature_timings: list[float] = []
+    prediction_timings: list[float] = []
+    pipeline_timings: list[float] = []
     for idx in range(iterations):
-        feat = features[idx % len(features)]
+        sequence = compatible_sequences[idx % len(compatible_sequences)]
         start = time.perf_counter_ns()
-        clf.predict(feat)
-        if hasattr(clf, "predict_proba"):
-            clf.predict_proba(feat)
+        feature = build_feature_vector(
+            sequence,
+            mode=feature_mode,
+            target_dim=raw_feature_dim,
+        )
+        after_features = time.perf_counter_ns()
+        predict(feature)
         end = time.perf_counter_ns()
-        timings.append((end - start) / 1_000_000)
+        feature_timings.append((after_features - start) / 1_000_000)
+        prediction_timings.append((end - after_features) / 1_000_000)
+        pipeline_timings.append((end - start) / 1_000_000)
+
+    pipeline_summary = _summary(pipeline_timings)
+    mean_pipeline_ms = float(pipeline_summary.get("mean_ms", 0.0))
 
     return {
-        "mode": "ml",
-        "description": "KNN predict + predict_proba on saved gesture feature vectors",
+        "profile": profile,
+        "model": str(paths["model"]),
+        "model_type": type(clf).__name__,
+        "feature_mode": feature_mode,
         "iterations": int(iterations),
-        "dataset_examples": len(features),
+        "warmup": int(warmup),
+        "dataset_examples": len(compatible_sequences),
+        "raw_feature_dim": int(raw_feature_dim),
         "feature_dim": feature_dim,
         "classes": classes,
-        "latency": _summary(timings),
+        "runtime_estimators_set_to_one_worker": int(configured_estimators),
+        "feature_extraction_latency": _summary(feature_timings),
+        "model_prediction_latency": _summary(prediction_timings),
+        "ml_pipeline_latency": pipeline_summary,
+        "capacity_fps": (
+            round(1000.0 / mean_pipeline_ms, 2) if mean_pipeline_ms > 0.0 else 0.0
+        ),
+    }
+
+
+def benchmark_ml(
+    iterations: int,
+    *,
+    warmup: int = 20,
+    profile: str = "static",
+    data_root: Path = ROOT / "data" / "gestures",
+) -> dict[str, Any]:
+    profiles = ["static", "dynamic"] if profile == "both" else [profile]
+    return {
+        "mode": "ml",
+        "description": (
+            "Feature extraction plus the same predict/predict_proba calls used live"
+        ),
+        "profiles": [
+            _benchmark_ml_profile(
+                item,
+                iterations=max(1, int(iterations)),
+                warmup=max(0, int(warmup)),
+                data_root=data_root,
+            )
+            for item in profiles
+        ],
     }
 
 
@@ -159,7 +264,7 @@ def benchmark_image(image_path: Path, iterations: int, max_width: int) -> dict[s
     infer.close()
     return {
         "mode": "image",
-        "description": "BGR2RGB + resize + MediaPipe + normalization + KNN on cached frame",
+        "description": "BGR2RGB + resize + MediaPipe + features + active classifier",
         "image": str(image_path),
         "iterations": int(iterations),
         "original_size": [int(frame_bgr.shape[1]), int(frame_bgr.shape[0])],
@@ -241,7 +346,7 @@ def benchmark_camera(
 
     return {
         "mode": "camera",
-        "description": "OpenCV camera + BGR2RGB + resize + MediaPipe + normalization + KNN",
+        "description": "OpenCV camera + BGR2RGB + resize + MediaPipe + active classifier",
         "frames": len(pipeline_ms),
         "camera_index": int(camera_index),
         "requested_camera": {"width": int(width), "height": int(height), "fps": int(fps)},
@@ -264,7 +369,7 @@ def benchmark_camera(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["ml", "image", "camera"], default="ml")
-    parser.add_argument("--iterations", type=int, default=5000)
+    parser.add_argument("--iterations", type=int, default=300)
     parser.add_argument("--frames", type=int, default=120)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--camera-index", type=int, default=0)
@@ -272,6 +377,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--max-width", type=int, default=640)
+    parser.add_argument(
+        "--profile",
+        choices=["static", "dynamic", "both"],
+        default="static",
+        help="Production model profile for --mode ml.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=ROOT / "data" / "gestures",
+    )
     parser.add_argument(
         "--image",
         type=Path,
@@ -284,7 +400,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     if args.mode == "ml":
-        payload = benchmark_ml(args.iterations)
+        payload = benchmark_ml(
+            args.iterations,
+            warmup=args.warmup,
+            profile=args.profile,
+            data_root=args.data_root,
+        )
     elif args.mode == "image":
         payload = benchmark_image(args.image, args.iterations, args.max_width)
     else:

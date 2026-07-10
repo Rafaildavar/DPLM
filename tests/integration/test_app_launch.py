@@ -6,6 +6,8 @@ Integration test for application launch
 Checks that application launches correctly and loads QML
 """
 import pytest
+pytest.importorskip("PySide6", reason="legacy Qt UI is optional in the Flet runtime")
+
 import os
 from pathlib import Path
 from PySide6.QtCore import QUrl
