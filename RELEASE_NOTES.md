@@ -1,8 +1,8 @@
-# GestureBind v0.8.0 MVP
+# GestureBind v0.8.1 MVP
 
-GestureBind v0.8.0 is the first MVP release built around one coherent
-desktop product path: record personal gestures, train local models, validate
-them live and bind accepted gestures to safe macOS actions.
+GestureBind v0.8.1 packages the validated v0.8.0 MVP as a native macOS app.
+The product path remains the same: record personal gestures, train local
+models, validate them live and bind accepted gestures to safe macOS actions.
 
 ## Highlights
 
@@ -20,6 +20,8 @@ them live and bind accepted gestures to safe macOS actions.
 - Dynamic predictions and completed-event intent overrides now require at least `0.90` confidence.
 - An adaptive per-class completion gate rejects unfinished dynamic gestures
   before amplitude normalization and can resume the same event after a pause.
+- The tag workflow now publishes both a tracked source/model archive and a ZIP
+  containing `GestureBind.app`, built and smoke-tested on macOS.
 
 ## Reproducible Evidence
 
@@ -57,6 +59,7 @@ The final safety matrix passed the release target: one false command across
 - Taxonomy/config contracts, database migrations and command policies.
 - Unit/integration tests, ML smoke checks and release automation.
 - Curated architecture, training, binding and release-readiness documents.
+- Ad-hoc signed `GestureBind.app` in `GestureBind-macos-v0.8.1.zip`.
 
 ## Not Included
 

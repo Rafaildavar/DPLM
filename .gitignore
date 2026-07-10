@@ -129,6 +129,11 @@ scripts/update_*counts_and_citations.py
 tests/unit/test_*dataset_profile.py
 tests/unit/test_*inspector_report.py
 packaging/*/
+# The macOS bundle is part of the public release contract.
+!packaging/macos/
+!packaging/macos/RUN_MACOS.md
+!packaging/macos/build_app.sh
+!packaging/macos/gesturebind_launcher.py
 .github/workflows/*app.yml
 
 # Temporary files

@@ -124,16 +124,19 @@ Purpose:
 
 Trigger:
 
+- push to `contest_version` for a pre-release artifact build;
 - tag push `v*`;
 - manual run.
 
 Output:
 
 - `gesturebind-<version>.tar.gz`;
+- `GestureBind-macos-<version>.zip` containing `GestureBind.app`;
 - GitHub Release for tag builds.
 
-The bundle is generated with `git archive` and therefore contains only source
-code, allowlisted tracked model artifacts, configs and release documentation
+The workflow produces both a `git archive` source/model bundle and a macOS ZIP
+containing `GestureBind.app`. The source archive contains only source code,
+allowlisted tracked model artifacts, configs and release documentation
 from the tagged commit. Local datasets, generated reports, virtual
 environments, MLflow state and output folders cannot enter the archive.
 
@@ -151,10 +154,11 @@ For the current release branch:
 
 ```bash
 git push origin contest_version
-git tag -a v0.8.0 -m "GestureBind v0.8.0"
-git push origin v0.8.0
+git tag -a v0.8.1 -m "GestureBind v0.8.1"
+git push origin v0.8.1
 ```
 
-The tag command must run on the exact commit that passed local CI and manual
-release QA. The tag push triggers archive creation and publication with
-`RELEASE_NOTES.md`.
+First push `contest_version` and confirm that both release jobs are green. The
+tag command must then run on that exact commit. A branch build uploads temporary
+workflow artifacts but does not create a GitHub Release; the tag build publishes
+both artifacts together with `RELEASE_NOTES.md`.

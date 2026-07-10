@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.1 - 2026-07-10
+
+- Added a tracked PyInstaller macOS application bundle with Flet, MediaPipe,
+  production model artifacts and local SQLite runtime paths.
+- Unified source and macOS packaging under one tag workflow so a release is
+  published only after both artifacts build successfully.
+- Added macOS packaging files to the repository hygiene contract.
+
 ## v0.8.0 - 2026-07-10
 
 - Rebuilt the home screen around the release camera and recognition workflow.

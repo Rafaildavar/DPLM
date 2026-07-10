@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-GestureBind MVP `0.8.0` превращает обычную веб-камеру в персональный слой
+GestureBind MVP `0.8.1` превращает обычную веб-камеру в персональный слой
 управления компьютером. Все основные данные и инференс остаются локальными.
 
 ## Что Входит В MVP
@@ -117,7 +117,14 @@ docs/                         curated product, ML и operations docs
 
 ## Быстрый Старт
 
-Требования: macOS, Python `3.11`, веб-камера.
+Для готового приложения нужны macOS и веб-камера. Python пользователю не нужен.
+
+Для обычного пользователя GitHub Release содержит
+`GestureBind-macos-v0.8.1.zip`. Распакуй архив, открой `GestureBind.app` и
+разреши доступ к камере. Пока приложение не notarized, при первом запуске может
+понадобиться правый клик по приложению и команда `Open`.
+
+Для запуска из исходного кода и разработки дополнительно нужен Python `3.11`.
 
 ```bash
 git clone https://github.com/Rafaildavar/GestureBind.git
@@ -199,11 +206,16 @@ MLflow открывается на [http://127.0.0.1:5000](http://127.0.0.1:5000
 
 ## Release
 
-GitHub release workflow создает source/model bundle через `git archive`.
-Поэтому архив содержит только tracked-файлы текущего commit и не может случайно
-захватить `.env`, датасет, локальную БД или experiment outputs.
+GitHub release workflow создает два артефакта:
 
-Статус `v0.8.0`: **ready**. Positive matrix: `58/60`, wrong class `0`;
+- `gesturebind-v0.8.1.tar.gz` с tracked source/model файлами;
+- `GestureBind-macos-v0.8.1.zip` с запускаемым `GestureBind.app`.
+
+Source bundle создается через `git archive`, поэтому он не может случайно
+захватить `.env`, датасет, локальную БД или experiment outputs. macOS bundle
+собирается на GitHub-hosted macOS runner и проходит ML smoke до упаковки.
+
+Статус `v0.8.1`: **ready**. Positive matrix: `58/60`, wrong class `0`;
 safety matrix: `49/50` безопасных отклонений, background false commands `0/30`.
 
 Перед публикацией:
@@ -211,7 +223,7 @@ safety matrix: `49/50` безопасных отклонений, background fal
 1. выполнить `make ci`;
 2. пройти live static/dynamic/no-command matrix;
 3. проверить `VERSION`, `CHANGELOG.md` и `RELEASE_NOTES.md`;
-4. создать tag `v0.8.0` после ручной проверки текущего commit.
+4. создать tag `v0.8.1` после ручной проверки текущего commit.
 
 ## Документация
 
