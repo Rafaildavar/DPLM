@@ -1,0 +1,108 @@
+{
+  "mode": "ml",
+  "description": "Feature extraction plus the same predict/predict_proba calls used live",
+  "profiles": [
+    {
+      "profile": "static",
+      "model": "/Users/remi/Developer/GUAP/DPLM/models/knn.pkl",
+      "model_type": "ExtraTreesClassifier",
+      "feature_mode": "static_craft_full_stats",
+      "iterations": 200,
+      "warmup": 20,
+      "dataset_examples": 200,
+      "raw_feature_dim": 63,
+      "feature_dim": 1377,
+      "classes": [
+        "2finger",
+        "like",
+        "onefinger",
+        "gun",
+        "hand",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "wrong_axis_motion"
+      ],
+      "runtime_estimators_set_to_one_worker": 1,
+      "feature_extraction_latency": {
+        "mean_ms": 1.251,
+        "p50_ms": 1.219,
+        "p90_ms": 1.304,
+        "p95_ms": 1.36,
+        "p99_ms": 1.454,
+        "min_ms": 1.122,
+        "max_ms": 6.598
+      },
+      "model_prediction_latency": {
+        "mean_ms": 16.225,
+        "p50_ms": 15.945,
+        "p90_ms": 16.277,
+        "p95_ms": 16.679,
+        "p99_ms": 23.209,
+        "min_ms": 15.565,
+        "max_ms": 39.449
+      },
+      "ml_pipeline_latency": {
+        "mean_ms": 17.476,
+        "p50_ms": 17.158,
+        "p90_ms": 17.592,
+        "p95_ms": 18.1,
+        "p99_ms": 27.192,
+        "min_ms": 16.695,
+        "max_ms": 40.84
+      },
+      "capacity_fps": 57.22
+    },
+    {
+      "profile": "dynamic",
+      "model": "/Users/remi/Developer/GUAP/DPLM/models/dynamic_landmark_lstm_backbone.pkl",
+      "model_type": "TorchLSTMBackboneClassifier",
+      "feature_mode": "dynamic_landmark_image",
+      "iterations": 200,
+      "warmup": 20,
+      "dataset_examples": 160,
+      "raw_feature_dim": 65,
+      "feature_dim": 4752,
+      "classes": [
+        "SwipeLeft",
+        "diagonal",
+        "no_gesture_static",
+        "partial_swipe",
+        "random_motion",
+        "return_motion",
+        "wrong_axis_motion",
+        "zoom"
+      ],
+      "runtime_estimators_set_to_one_worker": 0,
+      "feature_extraction_latency": {
+        "mean_ms": 0.264,
+        "p50_ms": 0.276,
+        "p90_ms": 0.305,
+        "p95_ms": 0.314,
+        "p99_ms": 0.392,
+        "min_ms": 0.118,
+        "max_ms": 0.417
+      },
+      "model_prediction_latency": {
+        "mean_ms": 3.583,
+        "p50_ms": 3.546,
+        "p90_ms": 3.739,
+        "p95_ms": 3.775,
+        "p99_ms": 3.898,
+        "min_ms": 3.465,
+        "max_ms": 4.106
+      },
+      "ml_pipeline_latency": {
+        "mean_ms": 3.847,
+        "p50_ms": 3.819,
+        "p90_ms": 4.022,
+        "p95_ms": 4.053,
+        "p99_ms": 4.161,
+        "min_ms": 3.617,
+        "max_ms": 4.377
+      },
+      "capacity_fps": 259.94
+    }
+  ]
+}
