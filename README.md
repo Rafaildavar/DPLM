@@ -24,6 +24,7 @@ GestureBind MVP `0.8.1` сейчас является release candidate пове
 находятся в коде; tag `v0.8.1` будет создан после финальной проверки.
 
 [Релизы](https://github.com/Rafaildavar/GestureBind/releases) ·
+[Актуальный интерфейс](#актуальный-интерфейс) ·
 [Быстрый старт](#быстрый-старт) ·
 [Архитектура](ARCHITECTURE.md) ·
 [Обучение](docs/TRAINING_WORKFLOW.md) ·
@@ -38,6 +39,7 @@ GestureBind MVP `0.8.1` сейчас является release candidate пове
 | Режим ввода | одна рука; двуручная запись и обучение временно отключены |
 | Локальное ML | static tree classifier и dynamic landmark LSTM с open-set rejection |
 | Команды macOS | hotkeys, media, navigation, запуск приложений и последовательности действий |
+| Агент привязок | разбирает обычную фразу и формирует проверяемый черновик привязки |
 | Защита от ошибок | confidence gate, completion gate, negative classes и cooldown |
 | Локальные данные | SQLite по умолчанию, PostgreSQL опционально, камера не отправляется в облако |
 | Контроль качества | live evaluation, обратная связь, JSONL, MLflow и opt-in daily telemetry |
@@ -65,6 +67,27 @@ flowchart LR
 3. Static и dynamic маршруты проверяются раздельно в live-режиме.
 4. Низкая уверенность, неизвестное движение и незавершённый жест отклоняются.
 5. Привязанная команда выполняется только после policy-проверок и cooldown.
+
+## Актуальный интерфейс
+
+### Запись персонального жеста
+
+Студия обучения записывает независимые дубли жеста одной рукой и показывает
+landmarks, текущий дубль и общий прогресс прямо в окне приложения.
+
+<p align="center">
+  <img src="docs/assets/readme/gesture-recording.webp" width="900" alt="Актуальный интерфейс GestureBind записывает персональный жест одной рукой">
+</p>
+
+### Агент привязок
+
+Пользователь описывает нужную связь обычной фразой. Мультиагентный pipeline
+разбирает жест и действие, проверяет безопасность и готовит черновик. Перенос в
+конструктор и сохранение остаются явными действиями пользователя.
+
+<p align="center">
+  <img src="docs/assets/readme/binding-agent.webp" width="900" alt="Актуальный интерфейс агента привязок GestureBind принимает запрос пользователя">
+</p>
 
 ## Быстрый старт
 
@@ -143,7 +166,12 @@ Release auto-router принимает static-предсказания от `0.8
 продолжения, не испуская команду по неподвижному неполному жесту.
 
 <details>
-<summary><strong>Показать release evidence и результаты controlled live-проверок</strong></summary>
+<summary><strong>Evidence snapshot от 10.07.2026 и результаты controlled live-проверок</strong></summary>
+
+Production-модели после этих прогонов не изменялись, поэтому offline, replay и
+model-stage latency остаются актуальны для текущего bundle. Одноручный режим
+записи и обучения был зафиксирован `11.07.2026`; отдельный controlled live-прогон
+после этого UX-изменения ещё не повторялся.
 
 Текущая release evidence:
 
@@ -262,8 +290,10 @@ Source bundle создается через `git archive`, поэтому он �
 захватить `.env`, датасет, локальную БД или experiment outputs. macOS bundle
 собирается на GitHub-hosted macOS runner и проходит ML smoke до упаковки.
 
-Статус `v0.8.1`: **ready**. Positive matrix: `58/60`, wrong class `0`;
-safety matrix: `49/50` безопасных отклонений, background false commands `0/30`.
+Статус `v0.8.1`: **release candidate**. Базовая positive matrix: `58/60`, wrong
+class `0`; safety matrix: `49/50` безопасных отклонений, background false
+commands `0/30`. После перехода на одноручный MVP требуется повторить финальный
+controlled live-прогон, не меняя frozen production-модели.
 
 Перед публикацией:
 
