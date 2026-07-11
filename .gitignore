@@ -142,6 +142,9 @@ packaging/*/
 ~$*
 tmp/
 outputs/
+build/
+dist/
+/GestureBind.spec
 node_modules/
 app/flet_app/runtime_cache/*
 !app/flet_app/runtime_cache/.gitkeep

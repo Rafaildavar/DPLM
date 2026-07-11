@@ -8,10 +8,12 @@ APP_NAME="${APP_NAME:-GestureBind}"
 VERSION="${GESTUREBIND_VERSION:-${GESTUREFLOW_VERSION:-local}}"
 ARTIFACT_DIR="outputs/release/${APP_NAME}-macos-${VERSION}"
 ZIP_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.zip"
+DMG_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.dmg"
 TELEMETRY_CONFIG_PATH="configs/release_telemetry.json"
 GENERATED_TELEMETRY_CONFIG=0
 
 cleanup() {
+  rm -f "$ARTIFACT_DIR/Applications"
   if [[ "$GENERATED_TELEMETRY_CONFIG" == "1" ]]; then
     rm -f "$TELEMETRY_CONFIG_PATH"
   fi
@@ -41,7 +43,7 @@ PY
   GENERATED_TELEMETRY_CONFIG=1
 fi
 
-python -m pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade pip "setuptools<82" wheel
 python -m pip install pyinstaller
 
 python - <<'PY'
@@ -145,8 +147,26 @@ rm -rf "$ARTIFACT_DIR"
 mkdir -p "$ARTIFACT_DIR"
 cp -R "$APP_PATH" "$ARTIFACT_DIR/"
 cp packaging/macos/RUN_MACOS.md "$ARTIFACT_DIR/"
+cp docs/USER_GUIDE.md "$ARTIFACT_DIR/USER_GUIDE.md"
 cp README.md "$ARTIFACT_DIR/README.md"
 
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$ARTIFACT_DIR" "$ZIP_PATH"
-echo "[macos-bundle] Artifact: $ZIP_PATH"
+
+if ! command -v hdiutil >/dev/null 2>&1; then
+  echo "[macos-bundle] hdiutil is required to create the DMG" >&2
+  exit 1
+fi
+
+ln -s /Applications "$ARTIFACT_DIR/Applications"
+
+rm -f "$DMG_PATH"
+hdiutil create \
+  -volname "${APP_NAME} ${VERSION}" \
+  -srcfolder "$ARTIFACT_DIR" \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH"
+
+echo "[macos-bundle] ZIP artifact: $ZIP_PATH"
+echo "[macos-bundle] DMG artifact: $DMG_PATH"

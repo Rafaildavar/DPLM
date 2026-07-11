@@ -84,6 +84,7 @@ REQUIRED_RELEASE_FILES = {
     "deploy/telemetry/env.example",
     "docker-compose.telemetry.yml",
     "docs/TELEMETRY.md",
+    "docs/USER_GUIDE.md",
     "docs/contest/ML_SYSTEM_DESIGN.md",
     "docs/experiments/release_readiness_2026-07-10.md",
     "requirements.txt",

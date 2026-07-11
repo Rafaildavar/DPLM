@@ -131,14 +131,16 @@ Trigger:
 Output:
 
 - `gesturebind-<version>.tar.gz`;
-- `GestureBind-macos-<version>.zip` containing `GestureBind.app`;
+- `GestureBind-macos-<version>.dmg` containing `GestureBind.app`, an
+  `Applications` shortcut and the user guide;
+- `GestureBind-macos-<version>.zip` as a fallback package;
 - GitHub Release for tag builds.
 
-The workflow produces both a `git archive` source/model bundle and a macOS ZIP
-containing `GestureBind.app`. The source archive contains only source code,
-allowlisted tracked model artifacts, configs and release documentation
-from the tagged commit. Local datasets, generated reports, virtual
-environments, MLflow state and output folders cannot enter the archive.
+The workflow produces a `git archive` source/model bundle and macOS DMG/ZIP
+packages containing `GestureBind.app`. The source archive contains only source
+code, allowlisted tracked model artifacts, configs and release documentation
+from the tagged commit. Local datasets, generated reports, virtual environments,
+MLflow state and output folders cannot enter the archive.
 
 The macOS job reads optional repository variables
 `GESTUREBIND_TELEMETRY_ENDPOINT` and `GESTUREBIND_TELEMETRY_PROJECT_KEY` and

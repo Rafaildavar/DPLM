@@ -7,6 +7,10 @@
 - Unified source and macOS packaging under one tag workflow so a release is
   published only after both artifacts build successfully.
 - Added macOS packaging files to the repository hygiene contract.
+- Added an install-friendly macOS DMG with an `Applications` shortcut, while
+  keeping the ZIP package as a fallback.
+- Added a Russian beta user guide covering installation, permissions, gesture
+  training, command binding, privacy and troubleshooting.
 - Added opt-in daily usage telemetry with persistent cursors, offline retry,
   idempotent reports and a self-hosted collector.
 - Added correct, incorrect and missed feedback controls for real-use quality.

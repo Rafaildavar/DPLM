@@ -62,7 +62,9 @@ The final safety matrix passed the release target: one false command across
 - Taxonomy/config contracts, database migrations and command policies.
 - Unit/integration tests, ML smoke checks and release automation.
 - Curated architecture, training, binding and release-readiness documents.
-- Ad-hoc signed `GestureBind.app` in `GestureBind-macos-v0.8.1.zip`.
+- Ad-hoc signed `GestureBind.app` in an install-friendly
+  `GestureBind-macos-v0.8.1.dmg`, with ZIP kept as a fallback.
+- Russian end-user guide included in both macOS artifacts.
 
 ## Not Included
 

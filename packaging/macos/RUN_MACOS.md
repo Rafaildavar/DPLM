@@ -1,27 +1,30 @@
-# GestureBind macOS Bundle
+# Установка GestureBind на macOS
 
-## Run
+Текущая beta-сборка предназначена для Mac с Apple Silicon (`M1` или новее) и
+macOS 14+.
 
-1. Unzip the release artifact.
-2. Open `GestureBind.app`.
-3. If macOS blocks the first launch, use right click -> Open.
-4. Allow camera access when macOS asks for permission.
+## DMG
 
-## Notes
+1. Откройте `GestureBind-macos-<version>.dmg`.
+2. Перетащите `GestureBind.app` на ярлык `Applications`.
+3. Откройте `Applications`, нажмите на GestureBind правой кнопкой и выберите
+   `Open`.
+4. Разрешите доступ к камере. Accessibility требуется только для hotkeys,
+   управления курсором и части системных команд.
 
-- The bundle is built for demo and contest validation, not notarized App Store
-  distribution.
-- The app uses a local SQLite fallback and stores runtime state under
-  `~/.dplm/`.
-- The bundle includes tracked model artifacts and configs from this repository.
-- If Flet desktop runtime is not already cached on the target machine, the
-  bundled Flet client archive is used. If that archive is missing or invalid,
-  Flet may try to download its desktop client on first launch.
+## ZIP
 
-## Troubleshooting
+Если используется резервный ZIP, распакуйте его, перенесите `GestureBind.app` в
+`Applications` и выполните шаги 3-4 выше.
 
-If the app does not see the camera, check macOS Settings -> Privacy & Security
--> Camera and allow `GestureBind`.
+Сборка пока не notarized, поэтому Gatekeeper может заблокировать обычный двойной
+клик при первом запуске. Если macOS сообщает, что приложение повреждено, не
+отключайте защиту через Terminal: скачайте артефакт повторно и сообщите об
+ошибке.
 
-If the app is blocked by Gatekeeper, open it with right click -> Open. For a
-production build, the next CD step is Developer ID signing and notarization.
+Пользовательские данные хранятся вне приложения в `~/.dplm`: база и привязки в
+`dplm.sqlite`, записи жестов в `data/gestures`, настройки в `config.json`, логи
+в `logs/`.
+
+Полный первый запуск и рабочий сценарий описаны в `USER_GUIDE.md`, который
+находится рядом с приложением.

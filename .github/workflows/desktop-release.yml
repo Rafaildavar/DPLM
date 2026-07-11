@@ -59,7 +59,7 @@ jobs:
 
       - name: Install project dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip "setuptools<82" wheel
           python -m pip install -r requirements.txt
 
       - name: Run ML smoke before packaging
@@ -67,7 +67,7 @@ jobs:
           python -m scripts.ml_smoke \
             --report-json outputs/ci/ml_smoke_report.json
 
-      - name: Build macOS app zip
+      - name: Build macOS app artifacts
         env:
           GESTUREBIND_VERSION: ${{ github.ref_name }}
           GESTUREBIND_TELEMETRY_ENDPOINT: ${{ vars.GESTUREBIND_TELEMETRY_ENDPOINT }}
@@ -78,7 +78,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gesturebind-macos-app
-          path: outputs/release/*.zip
+          path: |
+            outputs/release/*.dmg
+            outputs/release/*.zip
           if-no-files-found: error
 
       - name: Upload packaging diagnostics
