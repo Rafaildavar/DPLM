@@ -121,16 +121,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          RELEASE_FLAG="--latest"
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            RELEASE_FLAG="--prerelease"
+          fi
+
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" outputs/release/* --clobber
             gh release edit "${GITHUB_REF_NAME}" \
               --title "GestureBind ${GITHUB_REF_NAME}" \
               --notes-file RELEASE_NOTES.md \
-              --latest
+              "${RELEASE_FLAG}"
           else
             gh release create "${GITHUB_REF_NAME}" \
               outputs/release/* \
               --title "GestureBind ${GITHUB_REF_NAME}" \
               --notes-file RELEASE_NOTES.md \
-              --latest
+              "${RELEASE_FLAG}"
           fi
