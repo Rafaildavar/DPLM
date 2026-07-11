@@ -87,6 +87,31 @@ class HomeView:
             color=COLOR_ACCENT,
             bgcolor=COLOR_SURFACE_HIGH,
         )
+        self._feedback_correct_btn = ft.IconButton(
+            icon=ft.Icons.THUMB_UP_OUTLINED,
+            icon_size=18,
+            icon_color=COLOR_MUTED,
+            tooltip="Распознано верно",
+            disabled=True,
+            on_click=lambda _e: self._on_recognition_feedback("correct"),
+        )
+        self._feedback_incorrect_btn = ft.IconButton(
+            icon=ft.Icons.THUMB_DOWN_OUTLINED,
+            icon_size=18,
+            icon_color=COLOR_MUTED,
+            tooltip="Распознано неверно",
+            disabled=True,
+            on_click=lambda _e: self._on_recognition_feedback("incorrect"),
+        )
+        self._feedback_missed_btn = ft.IconButton(
+            icon=ft.Icons.VISIBILITY_OFF_OUTLINED,
+            icon_size=18,
+            icon_color=COLOR_MUTED,
+            tooltip="Жест не распознан",
+            disabled=not bool(getattr(controller, "live_recognition_active", False)),
+            on_click=lambda _e: self._on_recognition_feedback("missed"),
+        )
+        self._feedback_status = ft.Text("", size=11, color=COLOR_MUTED)
         self._command_text = ft.Text(
             "—",
             size=16,
@@ -1103,6 +1128,9 @@ class HomeView:
         required = int(data.get("requiredFrames") or 0)
 
         if phase == "pending":
+            self._feedback_correct_btn.disabled = True
+            self._feedback_incorrect_btn.disabled = True
+            self._feedback_status.value = ""
             self._gesture_text.value = label or "—"
             self._confidence_bar.value = progress
             self._confidence_bar.color = COLOR_WARNING
@@ -1111,12 +1139,17 @@ class HomeView:
             self._gesture_state_text.color = COLOR_WARNING
             self._safe_update_gesture_text()
         elif phase == "confirmed":
+            self._feedback_correct_btn.disabled = False
+            self._feedback_incorrect_btn.disabled = False
+            self._feedback_status.value = ""
             self._confidence_bar.value = confidence
             self._confidence_bar.color = COLOR_SUCCESS
             self._confidence_text.value = f"{int(round(confidence * 100))}%"
             self._gesture_state_text.value = "Распознано"
             self._gesture_state_text.color = COLOR_SUCCESS
         elif phase == "rejected":
+            self._feedback_correct_btn.disabled = True
+            self._feedback_incorrect_btn.disabled = True
             self._gesture_text.value = label or "—"
             self._confidence_bar.value = 1.0
             self._confidence_bar.color = COLOR_DANGER
@@ -1151,9 +1184,27 @@ class HomeView:
             self._confidence_bar.update()
             self._confidence_text.update()
             self._gesture_state_text.update()
+            self._feedback_correct_btn.update()
+            self._feedback_incorrect_btn.update()
+            self._feedback_status.update()
         except Exception:
             pass
         self._refresh_recognition_inspector()
+
+    def _on_recognition_feedback(self, verdict: str) -> None:
+        recorder = getattr(self._controller, "record_recognition_feedback", None)
+        recorded = bool(callable(recorder) and recorder(verdict))
+        self._feedback_status.value = "Отмечено" if recorded else "Нет события для оценки"
+        self._feedback_status.color = COLOR_SUCCESS if recorded else COLOR_MUTED
+        if recorded:
+            self._feedback_correct_btn.disabled = True
+            self._feedback_incorrect_btn.disabled = True
+        for control in (
+            self._feedback_correct_btn,
+            self._feedback_incorrect_btn,
+            self._feedback_status,
+        ):
+            self._safe_update_control(control)
 
     def _on_status(self, value: str) -> None:
         self._page.run_thread(self._apply_status, value)
@@ -1209,6 +1260,7 @@ class HomeView:
             "Камера включена" if camera_active else "Камера выключена"
         )
         self._camera_empty_state.visible = not camera_active
+        self._feedback_missed_btn.disabled = not active
 
         for control in (
             self._release_header_dot,
@@ -1219,6 +1271,7 @@ class HomeView:
             self._camera_state_dot,
             self._camera_state_text,
             self._camera_empty_state,
+            self._feedback_missed_btn,
         ):
             self._safe_update_control(control)
 
@@ -1693,6 +1746,17 @@ class HomeView:
                         ],
                     ),
                     self._confidence_bar,
+                    ft.Row(
+                        spacing=2,
+                        alignment=ft.MainAxisAlignment.END,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            self._feedback_status,
+                            self._feedback_correct_btn,
+                            self._feedback_incorrect_btn,
+                            self._feedback_missed_btn,
+                        ],
+                    ),
                 ],
             ),
         )

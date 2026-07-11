@@ -22,7 +22,7 @@ GestureBind MVP `0.8.1` превращает обычную веб-камеру 
 | Обучение | train-only GISLR-style augmentation, grouped validation, Optuna |
 | Команды | typed actions, hotkeys, media, navigation, app launch и sequences |
 | Безопасность | confidence gate, adaptive completion gate, negative classes, cooldown |
-| Наблюдаемость | live evaluation, JSONL runtime logs, MLflow provenance |
+| Наблюдаемость | live evaluation, JSONL logs, MLflow и opt-in daily telemetry |
 | Хранение | SQLite по умолчанию, PostgreSQL опционально |
 
 В релиз не входят пользовательские датасеты, секреты, локальные БД, MLflow
@@ -170,6 +170,11 @@ export DPLM_DB_BACKEND=postgres
 При первом запуске macOS запросит доступ к камере. Для выполнения hotkeys и
 управления курсором также может понадобиться Accessibility permission.
 
+Анонимная статистика качества выключена по умолчанию. После согласия в разделе
+«Приватность» приложение раз в 24 часа отправляет только агрегаты распознавания,
+обратной связи и производительности. Видео, landmarks, названия пользовательских
+жестов и команды не передаются.
+
 ## Локальные Данные
 
 | Данные | Расположение |
@@ -177,6 +182,7 @@ export DPLM_DB_BACKEND=postgres
 | Конфигурация | `~/.dplm/config.json` |
 | SQLite | `~/.dplm/dplm.sqlite` |
 | Runtime logs | `~/.dplm/logs/` |
+| Daily telemetry state | `~/.dplm/logs/telemetry_state.json` |
 | Samples в source checkout | `data/gestures/` или настроенный путь |
 | MLflow | `mlflow.db`, `mlruns/` |
 
@@ -232,6 +238,7 @@ safety matrix: `49/50` безопасных отклонений, background fal
 - [Binding Rules](docs/BINDING_RULES.md)
 - [Database Schema](docs/DB_SCHEMA.md)
 - [CI/CD](docs/CI_CD.md)
+- [Daily Usage Telemetry](docs/TELEMETRY.md)
 - [ML System Design](docs/contest/ML_SYSTEM_DESIGN.md)
 - [Dynamic Completion Benchmark](docs/experiments/dynamic_completion_benchmark.md)
 - [Release Readiness](docs/experiments/release_readiness_2026-07-10.md)

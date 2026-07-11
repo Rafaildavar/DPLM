@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import json
+import uuid
 import zlib
 from collections import Counter
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ from app.services.live_gesture_state import (
     LiveGestureSnapshot,
     LiveGestureState,
 )
+from app.services.usage_telemetry import DailyUsageTelemetry
 from cv.gesture_dataset_files import (
     augmented_sample_path,
     augmented_sample_paths,
@@ -574,6 +576,10 @@ class AppController:
         self._runtime_perf_last_flush = time.monotonic()
         self._live_usage_events: list[dict[str, Any]] = []
         self._live_usage_latest_runtime: dict[str, Any] = {}
+        self._latest_feedback_target: dict[str, Any] | None = None
+        self._feedback_source_ids: set[str] = set()
+        self._usage_telemetry: DailyUsageTelemetry | None = None
+        self._usage_telemetry_error: str = ""
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
@@ -613,6 +619,7 @@ class AppController:
         if self._is_recognition_pid_active():
             self._is_recognizing = True
             self._status = "Recognizing in background"
+        self._configure_usage_telemetry()
 
     def _active_training_process(self) -> Optional[subprocess.Popen]:
         proc = self._training_proc
@@ -635,6 +642,65 @@ class AppController:
             return self._configured_log_dir()
         except Exception:
             return None
+
+    @staticmethod
+    def _release_version() -> str:
+        value = str(os.environ.get("GESTUREBIND_VERSION") or "").strip()
+        if value:
+            return value.removeprefix("v")
+        candidates = (
+            Path.cwd() / "VERSION",
+            Path(__file__).resolve().parents[2] / "VERSION",
+        )
+        for path in candidates:
+            try:
+                value = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if value:
+                return value.removeprefix("v")
+        return "unknown"
+
+    def _configure_usage_telemetry(self) -> None:
+        previous = getattr(self, "_usage_telemetry", None)
+        if previous is not None:
+            previous.stop()
+        self._usage_telemetry = None
+        self._usage_telemetry_error = ""
+        try:
+            settings = self._config.telemetry
+            client = DailyUsageTelemetry(
+                log_dir=self._configured_log_dir(),
+                endpoint=settings.endpoint,
+                enabled=settings.enabled,
+                project_key=settings.project_key,
+                app_version=self._release_version(),
+                interval_seconds=max(1, int(settings.interval_hours)) * 3600,
+            )
+            self._usage_telemetry = client
+            client.start()
+        except Exception as exc:
+            self._usage_telemetry_error = str(exc)[:240]
+            print(f"[w] usage telemetry unavailable: {exc}", flush=True)
+
+    def get_usage_telemetry_status(self) -> dict[str, Any]:
+        client = getattr(self, "_usage_telemetry", None)
+        if client is None:
+            return {
+                "enabled": False,
+                "configured": False,
+                "interval_hours": 24.0,
+                "last_success_at": 0.0,
+                "last_attempt_at": 0.0,
+                "last_error": str(
+                    getattr(self, "_usage_telemetry_error", "") or ""
+                ),
+            }
+        return client.status()
+
+    def send_usage_telemetry_now(self) -> bool:
+        client = getattr(self, "_usage_telemetry", None)
+        return bool(client and client.upload_if_due(force=True))
 
     # ----------------------------------------------------------------------
     # Свойства / геттеры
@@ -1009,6 +1075,7 @@ class AppController:
         self._recognition_pid_file = log_dir / "gesture_infer.pid"
         self._recognition_log_file = log_dir / "gesture_infer.log"
         self.set_two_hands_mode(bool(self._config.recognition.two_hands_mode))
+        self._configure_usage_telemetry()
 
     def _reset_db_bridge(self) -> None:
         self._gesture_command_bridge = None
@@ -4837,11 +4904,15 @@ class AppController:
         route_metadata: dict[str, Any] | None = None,
         reason: str = "",
         command_info: str = "",
-    ) -> None:
+        feedback: str = "",
+        source_event_id: str = "",
+    ) -> str:
         metadata = route_metadata if isinstance(route_metadata, dict) else {}
         route_fields = self._live_evaluation_route_fields(metadata)
         now = time.time()
+        event_id = str(uuid.uuid4())
         row: dict[str, Any] = {
+            "event_id": event_id,
             "recorded_at": now,
             "event_type": str(event_type or ""),
             "label": str(label or "").strip(),
@@ -4858,6 +4929,10 @@ class AppController:
                 getattr(self, "_auto_execute_on_gesture", False)
             ),
         }
+        if feedback:
+            row["feedback"] = str(feedback)
+        if source_event_id:
+            row["source_event_id"] = str(source_event_id)
         row.update(route_fields)
         events = getattr(self, "_live_usage_events", None)
         if not isinstance(events, list):
@@ -4867,6 +4942,45 @@ class AppController:
         del events[:-LIVE_USAGE_EVENTS_LIMIT]
         self._append_jsonl_log("live_usage_events.jsonl", row)
         self._write_live_usage_summary()
+        if event_type in {"gesture_confirmed", "command_executed", "command_rejected"}:
+            self._latest_feedback_target = {
+                "event_id": event_id,
+                "label": str(label or "").strip(),
+                "confidence": float(confidence or 0.0),
+                "route_metadata": dict(metadata),
+            }
+        return event_id
+
+    def record_recognition_feedback(self, verdict: str) -> bool:
+        clean = str(verdict or "").strip().lower()
+        if clean not in {"correct", "incorrect", "missed"}:
+            return False
+        target = dict(getattr(self, "_latest_feedback_target", None) or {})
+        if clean == "missed":
+            target = {}
+        source_event_id = str(target.get("event_id") or "")
+        seen = getattr(self, "_feedback_source_ids", None)
+        if not isinstance(seen, set):
+            seen = set()
+            self._feedback_source_ids = seen
+        if clean != "missed" and not source_event_id:
+            return False
+        if source_event_id and source_event_id in seen:
+            return False
+        if source_event_id:
+            seen.add(source_event_id)
+        self._record_live_usage_event(
+            "recognition_feedback",
+            str(target.get("label") or ""),
+            float(target.get("confidence") or 0.0),
+            executed=False,
+            route_metadata=target.get("route_metadata")
+            if isinstance(target.get("route_metadata"), dict)
+            else {},
+            feedback=clean,
+            source_event_id=source_event_id,
+        )
+        return True
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
         self._update_live_evaluation_timeout()
@@ -7500,6 +7614,12 @@ class AppController:
 
     def shutdown(self) -> None:
         """Аккуратное завершение всех ресурсов."""
+        try:
+            telemetry = getattr(self, "_usage_telemetry", None)
+            if telemetry is not None:
+                telemetry.stop()
+        except Exception:
+            pass
         try:
             self.stop_embedded_recognition()
         except Exception:

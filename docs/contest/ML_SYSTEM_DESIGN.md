@@ -21,6 +21,7 @@ Purpose: единый living-документ по ML-системе GestureBind
 | Rejection method benchmark | Added | H-042: offline comparison of 9 reject strategies | compare against live runs |
 | Live rejection A/B testing | Added | H-043/H-044: Flet + MLflow track `static_rejection_method`, charts added | run 20-attempt live matrix |
 | MLflow experiment tracking | Stable | H-108 logs dataset/model SHA-256, git state, source groups and grouped validation | use clean committed runs for final charts |
+| Release usage telemetry | Added | H-118: daily sanitized aggregates, consent, retry, feedback and collector | deploy HTTPS collector for beta |
 | HTML MLOps dashboard | Stable | H-096: `docs/mlops_dashboard/index.html` includes MLflow showcase charts for training, live A/B, safety and timeline | regenerate before demo |
 | Release home experience | Validated | H-110: camera-first UI, friendly runtime state, one primary action; `205` Flet tests and desktop visual check | run final live demo matrix |
 | MVP repository contract | Release ready | H-111-H-117: Flet-only runtime, allowlisted models, positive and safety matrices passed | verify final commit archive |
@@ -507,6 +508,7 @@ summarize and annotate; execution stays behind deterministic policies.
 | Public dataset domain shift | external data may hurt personalized gestures | use as negative evidence only, require live A/B before promotion |
 | Dirty local workspace | accidental commits/noisy demo | commit scoped files only, keep branch clean before submission |
 | MLflow local-only | harder to review remotely | export screenshots/summary and keep `mlflow.db` ignored |
+| Remote usage evidence | endpoint must be operated securely | H-118 opt-in aggregate reports via HTTPS; keep admin token server-only |
 | Validation leakage from augmentations | inflated offline score | H-105 source-grouped folds and train-only normalization |
 | Interrupted model publication | model/sidecar mismatch | H-107 rollback transaction with model-last activation |
 
@@ -586,3 +588,4 @@ Change log:
 | `2026-07-10` | Added adaptive per-class dynamic completion verification | H-115 |
 | `2026-07-10` | Validated the post-gate controlled positive live matrix | H-116 |
 | `2026-07-10` | Passed the final partial and no-command safety matrix | H-117 |
+| `2026-07-11` | Added opt-in daily production telemetry and feedback | H-118 |

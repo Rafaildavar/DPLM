@@ -70,6 +70,8 @@ jobs:
       - name: Build macOS app zip
         env:
           GESTUREBIND_VERSION: ${{ github.ref_name }}
+          GESTUREBIND_TELEMETRY_ENDPOINT: ${{ vars.GESTUREBIND_TELEMETRY_ENDPOINT }}
+          GESTUREBIND_TELEMETRY_PROJECT_KEY: ${{ vars.GESTUREBIND_TELEMETRY_PROJECT_KEY }}
         run: bash packaging/macos/build_app.sh
 
       - name: Upload macOS app artifact

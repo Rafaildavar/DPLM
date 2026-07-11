@@ -40,7 +40,24 @@ class _Controller:
                 "pointer_smoothing": 0.55,
             },
             "assistant": {"voice_enabled": False},
+            "telemetry": {
+                "enabled": False,
+                "endpoint": "",
+                "project_key": "",
+                "interval_hours": 24,
+            },
         }
+
+    def get_usage_telemetry_status(self) -> dict[str, Any]:
+        return {
+            "enabled": False,
+            "configured": True,
+            "last_success_at": 0.0,
+            "last_error": "",
+        }
+
+    def send_usage_telemetry_now(self) -> bool:
+        return True
 
     def get_binding_policy(self) -> dict[str, Any]:
         return {
@@ -138,6 +155,8 @@ def test_settings_screen_contains_only_user_level_sections():
         "Состояние",
         "Камера и жесты",
         "Команды",
+        "Приватность",
+        "Отправлять анонимную статистику качества раз в день",
         "Сохранить настройки",
     ):
         assert expected in text
@@ -181,6 +200,7 @@ def test_saving_user_settings_preserves_hidden_technical_config():
         "auto_start_recognition": True,
         "pointer_smoothing": 0.55,
     }
+    assert controller.saved_config["telemetry"]["enabled"] is False
     assert controller.saved_policy == {
         "confidence_threshold": 0.72,
         "cooldown_ms": 1600,

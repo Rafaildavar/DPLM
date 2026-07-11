@@ -77,7 +77,13 @@ REQUIRED_RELEASE_FILES = {
     "RELEASE_NOTES.md",
     "VERSION",
     "app/flet_app/main.py",
+    "app/services/telemetry_collector.py",
+    "app/services/usage_telemetry.py",
     "configs/gesture_taxonomy.json",
+    "deploy/telemetry/Dockerfile",
+    "deploy/telemetry/env.example",
+    "docker-compose.telemetry.yml",
+    "docs/TELEMETRY.md",
     "docs/contest/ML_SYSTEM_DESIGN.md",
     "docs/experiments/release_readiness_2026-07-10.md",
     "requirements.txt",
@@ -86,6 +92,7 @@ REQUIRED_RELEASE_FILES = {
     "scripts/check_repository_hygiene.py",
     "scripts/launch_app.sh",
     "scripts/ml_smoke.py",
+    "scripts/telemetry_collector.py",
     *RELEASE_MODEL_FILES,
 }
 

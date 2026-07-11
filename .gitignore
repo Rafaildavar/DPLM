@@ -152,3 +152,4 @@ app/services/command_executor 2.py
 
 # Environment files
 .env
+deploy/telemetry/.env

@@ -6031,3 +6031,38 @@ MLflow:
 - release можно создавать после final CI, hygiene и проверки `git archive`;
 - метрики на защите нужно называть результатами персонального controlled
   protocol, а не signer-independent benchmark.
+
+### H-118: Opt-in daily telemetry for real-use quality
+
+Дата: 2026-07-11. Статус: `implemented-local-and-collector`.
+
+Проблема:
+- `live_usage_events.jsonl` и runtime metrics сохранялись только локально;
+- MLflow не является безопасным ingestion endpoint для desktop-клиентов;
+- confidence и факт выполнения команды не показывают, было ли распознавание
+  правильным с точки зрения пользователя.
+
+Решение:
+- добавлен `DailyUsageTelemetry`: отправка раз в 24 часа, persistent byte
+  cursors, retry после offline-ошибки и idempotent `report_id`;
+- первая позиция cursor фиксируется после согласия, поэтому старые события не
+  отправляются; при отзыве согласия anonymous installation ID удаляется;
+- payload содержит только агрегаты event type, route, confidence, runtime и
+  feedback; raw labels, command text, кадры и landmarks исключены;
+- в live UI добавлены оценки `correct`, `incorrect`, `missed`;
+- добавлен self-hosted collector с SQLite, project ingest key и отдельным
+  server-only admin token для summary endpoint;
+- macOS build получает endpoint через GitHub Actions repository variables.
+
+Ограничение:
+- для фактической beta-телеметрии collector нужно развернуть за HTTPS reverse
+  proxy и указать URL в release variables;
+- без пользовательского feedback operational metrics нельзя называть accuracy.
+
+Проверки:
+- clean staged `make ci`: `621 passed` плюс static/dynamic model smoke;
+- clean staged full discoverable suite: `626 passed`;
+- telemetry client/collector/config/settings/packaging tests: `17 passed`;
+- `docker compose ... config`: release collector compose валиден;
+- полноценный Flet web-preview локально не запускался: отсутствует
+  `flet-cli`, sandbox не имеет доступа к PyPI; control-construction tests зелёные.

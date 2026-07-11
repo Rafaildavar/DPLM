@@ -8,6 +8,38 @@ APP_NAME="${APP_NAME:-GestureBind}"
 VERSION="${GESTUREBIND_VERSION:-${GESTUREFLOW_VERSION:-local}}"
 ARTIFACT_DIR="outputs/release/${APP_NAME}-macos-${VERSION}"
 ZIP_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.zip"
+TELEMETRY_CONFIG_PATH="configs/release_telemetry.json"
+GENERATED_TELEMETRY_CONFIG=0
+
+cleanup() {
+  if [[ "$GENERATED_TELEMETRY_CONFIG" == "1" ]]; then
+    rm -f "$TELEMETRY_CONFIG_PATH"
+  fi
+}
+trap cleanup EXIT
+
+if [[ -n "${GESTUREBIND_TELEMETRY_ENDPOINT:-}" ]]; then
+  python - <<'PY'
+import json
+import os
+from pathlib import Path
+
+Path("configs/release_telemetry.json").write_text(
+    json.dumps(
+        {
+            "endpoint": os.environ["GESTUREBIND_TELEMETRY_ENDPOINT"].strip(),
+            "project_key": os.environ.get(
+                "GESTUREBIND_TELEMETRY_PROJECT_KEY", ""
+            ).strip(),
+        },
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+  GENERATED_TELEMETRY_CONFIG=1
+fi
 
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install pyinstaller
@@ -59,6 +91,7 @@ python -m PyInstaller \
   --add-data "configs:configs" \
   --add-data "alembic:alembic" \
   --add-data ".env.example:." \
+  --add-data "VERSION:." \
   packaging/macos/gesturebind_launcher.py
 
 APP_PATH="dist/${APP_NAME}.app"

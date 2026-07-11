@@ -143,6 +143,31 @@ def test_live_usage_event_writes_jsonl_and_summary(monkeypatch, tmp_path):
     assert summary["label_counts"]["zoom"] == 1
 
 
+def test_recognition_feedback_is_linked_to_latest_usage_event(monkeypatch, tmp_path):
+    controller = _dispatch_controller()
+    controller._latest_feedback_target = None
+    controller._feedback_source_ids = set()
+    monkeypatch.setattr(controller, "_configured_log_dir", lambda: tmp_path)
+
+    source_id = controller._record_live_usage_event(
+        "command_executed",
+        "zoom",
+        0.96,
+        executed=True,
+        route_metadata={"route": "dynamic"},
+    )
+
+    assert controller.record_recognition_feedback("incorrect") is True
+    assert controller.record_recognition_feedback("incorrect") is False
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "live_usage_events.jsonl").read_text().splitlines()
+    ]
+    assert rows[-1]["event_type"] == "recognition_feedback"
+    assert rows[-1]["feedback"] == "incorrect"
+    assert rows[-1]["source_event_id"] == source_id
+
+
 def test_list_commands_includes_action_category_and_config():
     controller = AppController.__new__(AppController)
 

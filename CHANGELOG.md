@@ -7,6 +7,9 @@
 - Unified source and macOS packaging under one tag workflow so a release is
   published only after both artifacts build successfully.
 - Added macOS packaging files to the repository hygiene contract.
+- Added opt-in daily usage telemetry with persistent cursors, offline retry,
+  idempotent reports and a self-hosted collector.
+- Added correct, incorrect and missed feedback controls for real-use quality.
 
 ## v0.8.0 - 2026-07-10
 

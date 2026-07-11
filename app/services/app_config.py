@@ -15,7 +15,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -68,11 +68,20 @@ class AssistantConfig:
 
 
 @dataclass
+class TelemetryConfig:
+    enabled: bool = False
+    endpoint: str = ""
+    project_key: str = ""
+    interval_hours: int = 24
+
+
+@dataclass
 class AppConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     paths: PathConfig = field(default_factory=PathConfig)
     recognition: RecognitionConfig = field(default_factory=RecognitionConfig)
     assistant: AssistantConfig = field(default_factory=AssistantConfig)
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> "AppConfig":
@@ -87,6 +96,9 @@ class AppConfig:
                 RecognitionConfig, base.recognition, raw.get("recognition")
             ),
             assistant=_merge_dataclass(AssistantConfig, base.assistant, raw.get("assistant")),
+            telemetry=_merge_dataclass(
+                TelemetryConfig, base.telemetry, raw.get("telemetry")
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -240,6 +252,24 @@ def _set_pointer_smoothing(config: AppConfig, value: str) -> None:
     )
 
 
+def _set_telemetry_enabled(config: AppConfig, value: str) -> None:
+    config.telemetry.enabled = _coerce_bool(value, config.telemetry.enabled)
+
+
+def _set_telemetry_endpoint(config: AppConfig, value: str) -> None:
+    config.telemetry.endpoint = value.strip()
+
+
+def _set_telemetry_project_key(config: AppConfig, value: str) -> None:
+    config.telemetry.project_key = value.strip()
+
+
+def _set_telemetry_interval_hours(config: AppConfig, value: str) -> None:
+    config.telemetry.interval_hours = _coerce_int(
+        value, config.telemetry.interval_hours
+    )
+
+
 ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "DATABASE_URL": ("database.url", _set_db_url),
     "DPLM_DB_BACKEND": ("database.backend", _set_db_backend),
@@ -270,6 +300,16 @@ ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "DPLM_POINTER_SHARPNESS": (
         "recognition.pointer_smoothing",
         _set_pointer_smoothing,
+    ),
+    "DPLM_TELEMETRY_ENABLED": ("telemetry.enabled", _set_telemetry_enabled),
+    "DPLM_TELEMETRY_ENDPOINT": ("telemetry.endpoint", _set_telemetry_endpoint),
+    "DPLM_TELEMETRY_PROJECT_KEY": (
+        "telemetry.project_key",
+        _set_telemetry_project_key,
+    ),
+    "DPLM_TELEMETRY_INTERVAL_HOURS": (
+        "telemetry.interval_hours",
+        _set_telemetry_interval_hours,
     ),
 }
 
@@ -342,6 +382,7 @@ class ConfigStore:
         db = config.database
         paths = config.paths
         rec = config.recognition
+        telemetry = config.telemetry
 
         backend = (db.backend or "").strip().lower()
         if db.url.strip():
@@ -382,6 +423,24 @@ class ConfigStore:
             errors.append("recognition.target_fps должен быть в диапазоне 1..120")
         if rec.pointer_smoothing < 0.05 or rec.pointer_smoothing > 0.95:
             errors.append("recognition.pointer_smoothing должен быть в диапазоне 0.05..0.95")
+
+        if telemetry.interval_hours < 1 or telemetry.interval_hours > 168:
+            errors.append("telemetry.interval_hours должен быть в диапазоне 1..168")
+        endpoint = telemetry.endpoint.strip()
+        if endpoint:
+            parsed = urlparse(endpoint)
+            endpoint_ok = parsed.scheme == "https" and bool(parsed.netloc)
+            endpoint_ok = endpoint_ok or (
+                parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            )
+            if not endpoint_ok:
+                errors.append(
+                    "telemetry.endpoint должен использовать HTTPS "
+                    "(HTTP разрешён только для localhost)"
+                )
+        elif telemetry.enabled:
+            warnings.append("Сервер анонимной статистики не настроен")
 
         model_path = resolve_config_path(paths.model_path)
         classes_path = resolve_config_path(paths.classes_path)

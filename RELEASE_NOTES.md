@@ -22,6 +22,9 @@ models, validate them live and bind accepted gestures to safe macOS actions.
   before amplitude normalization and can resume the same event after a pause.
 - The tag workflow now publishes both a tracked source/model archive and a ZIP
   containing `GestureBind.app`, built and smoke-tested on macOS.
+- Optional daily telemetry sends sanitized aggregates with offline retry and
+  explicit consent; camera data, landmarks, labels and command text stay local.
+- Correct, incorrect and missed controls provide user-confirmed quality signals.
 
 ## Reproducible Evidence
 

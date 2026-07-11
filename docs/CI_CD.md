@@ -140,6 +140,11 @@ allowlisted tracked model artifacts, configs and release documentation
 from the tagged commit. Local datasets, generated reports, virtual
 environments, MLflow state and output folders cannot enter the archive.
 
+The macOS job reads optional repository variables
+`GESTUREBIND_TELEMETRY_ENDPOINT` and `GESTUREBIND_TELEMETRY_PROJECT_KEY` and
+embeds them as the release telemetry destination. They do not enable collection
+without user consent. Deployment details are in `docs/TELEMETRY.md`.
+
 ## Release Gate
 
 Before creating a tag:

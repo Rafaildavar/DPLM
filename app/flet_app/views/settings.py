@@ -1,6 +1,7 @@
 """Экран пользовательских настроек для Flet-версии GestureBind."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import flet as ft
@@ -25,6 +26,8 @@ class SettingsView:
         db = config["database"]
         paths = config["paths"]
         recognition = config["recognition"]
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry_status = self._telemetry_status_snapshot()
 
         self._system_status = ft.Column(spacing=8)
         self._env_warning = ft.Text("", size=12, color="#ffca28", visible=False)
@@ -152,6 +155,34 @@ class SettingsView:
             on_click=self._on_save_tech,
         )
 
+        self._telemetry_switch = ft.Switch(
+            value=bool(telemetry.get("enabled", False)),
+            label="Отправлять анонимную статистику качества раз в день",
+            active_color=COLOR_ACCENT,
+            disabled=not bool(telemetry_status.get("configured")),
+            on_change=self._on_telemetry_change,
+        )
+        self._telemetry_description = ft.Text(
+            "Передаются только агрегаты распознавания и производительности. "
+            "Кадры камеры, landmarks, названия жестов и команды остаются на устройстве.",
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._telemetry_status = ft.Text(
+            self._telemetry_status_text(telemetry_status),
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._telemetry_send_btn = ft.OutlinedButton(
+            content=ft.Text("Отправить сейчас"),
+            icon=ft.Icons.CLOUD_UPLOAD_OUTLINED,
+            disabled=not (
+                bool(telemetry_status.get("configured"))
+                and bool(telemetry.get("enabled", False))
+            ),
+            on_click=self._on_send_telemetry,
+        )
+
         self._threshold_slider = ft.Slider(
             value=0.65,
             min=0.30,
@@ -256,6 +287,7 @@ class SettingsView:
         db = config["database"]
         paths = config["paths"]
         recognition = config["recognition"]
+        telemetry = dict(config.get("telemetry") or {})
 
         self._db_backend.value = str(db.get("backend") or "sqlite")
         self._db_host.value = str(db.get("host") or "")
@@ -286,6 +318,16 @@ class SettingsView:
             recognition.get("pointer_smoothing"), 0.55
         )
         self._pointer_sharpness_label.value = self._pointer_sharpness_text()
+        telemetry_status = self._telemetry_status_snapshot()
+        self._telemetry_switch.value = bool(telemetry.get("enabled", False))
+        self._telemetry_switch.disabled = not bool(
+            telemetry_status.get("configured")
+        )
+        self._telemetry_send_btn.disabled = not (
+            bool(telemetry_status.get("configured"))
+            and bool(telemetry.get("enabled", False))
+        )
+        self._telemetry_status.value = self._telemetry_status_text(telemetry_status)
 
     def _refresh_status(self, *, update: bool) -> None:
         status = self._controller.get_system_status()
@@ -368,6 +410,8 @@ class SettingsView:
         paths = dict(config.get("paths") or {})
         assistant = dict(config.get("assistant") or {})
         assistant["voice_enabled"] = bool(assistant.get("voice_enabled", False))
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry["enabled"] = bool(self._telemetry_switch.value)
         return {
             "database": database,
             "paths": paths,
@@ -382,7 +426,90 @@ class SettingsView:
                 ),
             },
             "assistant": assistant,
+            "telemetry": telemetry,
         }
+
+    def _telemetry_status_snapshot(self) -> dict[str, Any]:
+        getter = getattr(self._controller, "get_usage_telemetry_status", None)
+        if callable(getter):
+            try:
+                value = getter()
+                if isinstance(value, dict):
+                    return value
+            except Exception:
+                pass
+        return {
+            "enabled": False,
+            "configured": False,
+            "last_success_at": 0.0,
+            "last_error": "",
+        }
+
+    @staticmethod
+    def _telemetry_status_text(status: dict[str, Any]) -> str:
+        error = str(status.get("last_error") or "").strip()
+        if error:
+            return "Последняя отправка не удалась; приложение повторит её автоматически"
+        if not bool(status.get("configured")):
+            return "Сервер статистики не настроен в этой сборке"
+        last_success = float(status.get("last_success_at") or 0.0)
+        if last_success > 0.0:
+            stamp = datetime.fromtimestamp(last_success).strftime("%d.%m.%Y %H:%M")
+            return f"Последняя отправка: {stamp}"
+        if bool(status.get("enabled")):
+            return "Статистика включена; первая отправка будет выполнена автоматически"
+        return "Статистика выключена"
+
+    def _on_telemetry_change(self, _event) -> None:
+        config = self._controller.get_app_config()
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry["enabled"] = bool(self._telemetry_switch.value)
+        config["telemetry"] = telemetry
+        ok, errors, _warnings = self._controller.save_app_config(config)
+        if not ok:
+            self._telemetry_switch.value = not bool(self._telemetry_switch.value)
+            self._telemetry_status.value = "Не сохранено: " + "; ".join(errors)
+            self._telemetry_status.color = COLOR_DANGER
+        else:
+            status = self._telemetry_status_snapshot()
+            self._telemetry_status.value = self._telemetry_status_text(status)
+            self._telemetry_status.color = COLOR_MUTED
+            self._telemetry_send_btn.disabled = not (
+                bool(status.get("configured"))
+                and bool(self._telemetry_switch.value)
+            )
+        self._safe_update(self._page)
+
+    def _on_send_telemetry(self, _event) -> None:
+        self._telemetry_send_btn.disabled = True
+        self._telemetry_status.value = "Отправка…"
+        self._safe_update(self._page)
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._send_telemetry)
+        else:
+            self._send_telemetry()
+
+    def _send_telemetry(self) -> None:
+        sender = getattr(self._controller, "send_usage_telemetry_now", None)
+        sent = False
+        if callable(sender):
+            try:
+                sent = bool(sender())
+            except Exception:
+                sent = False
+        status = self._telemetry_status_snapshot()
+        self._telemetry_status.value = (
+            self._telemetry_status_text(status)
+            if sent
+            else "Не удалось отправить; приложение повторит попытку автоматически"
+        )
+        self._telemetry_status.color = COLOR_MUTED if sent else COLOR_DANGER
+        self._telemetry_send_btn.disabled = not (
+            bool(status.get("configured"))
+            and bool(self._telemetry_switch.value)
+        )
+        self._safe_update(self._page)
 
     def _to_int(self, value: Any, default: int) -> int:
         try:
@@ -609,6 +736,21 @@ class SettingsView:
             radius=16,
         )
 
+        privacy_card = surface_card(
+            ft.Column(
+                spacing=12,
+                controls=[
+                    self._section_title(ft.Icons.PRIVACY_TIP_OUTLINED, "Приватность"),
+                    self._telemetry_switch,
+                    self._telemetry_description,
+                    self._telemetry_status,
+                    ft.Row(controls=[self._telemetry_send_btn], wrap=True),
+                ],
+            ),
+            padding=20,
+            radius=16,
+        )
+
         return ft.Column(
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
@@ -618,5 +760,6 @@ class SettingsView:
                 status_card,
                 recognition_card,
                 commands_card,
+                privacy_card,
             ],
         )
