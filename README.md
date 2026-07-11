@@ -1,39 +1,57 @@
 # GestureBind
 
-> Локальная ML-система, в которой пользователь записывает собственные жесты,
-> обучает модели и привязывает надежные распознавания к командам macOS.
+> Локальное macOS-приложение, которое обучается жестам пользователя и
+> превращает их в команды для компьютера.
 
 [![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml)
 [![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml)
 [![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-GestureBind MVP `0.8.1` превращает обычную веб-камеру в персональный слой
-управления компьютером. Все основные данные и инференс остаются локальными.
+<p align="center">
+  <img src="docs/assets/readme/study-workflow.gif" width="900" alt="GestureBind переключает учебные материалы жестами без мыши">
+</p>
 
-## Что Входит В MVP
+<p align="center"><sub>Продуктовый сценарий: переключение учебных материалов жестами без мыши.</sub></p>
+
+GestureBind использует обычную веб-камеру как персональный слой управления:
+пользователь записывает собственные жесты одной рукой, обучает локальные модели,
+проверяет распознавание в реальном времени и связывает жесты с командами macOS.
+Видео, landmarks, названия жестов и команды не покидают компьютер.
+
+GestureBind MVP `0.8.1` сейчас является release candidate поверх опубликованного
+`v0.8.0`. Нативный macOS bundle, opt-in telemetry и одноручный режим уже
+находятся в коде; tag `v0.8.1` будет создан после финальной проверки.
+
+[Релизы](https://github.com/Rafaildavar/GestureBind/releases) ·
+[Быстрый старт](#быстрый-старт) ·
+[Архитектура](ARCHITECTURE.md) ·
+[Обучение](docs/TRAINING_WORKFLOW.md) ·
+[Правила привязок](docs/BINDING_RULES.md)
+
+## Что уже работает
 
 | Возможность | Реализация |
 |---|---|
-| Desktop UI | единый Flet-интерфейс для камеры, жестов, обучения и привязок |
-| Персональные классы | запись статических и динамических жестов из приложения |
-| Static ML | геометрические признаки кисти, tree classifier, open-set rejection |
-| Dynamic ML | `dynamic_landmark_lstm_backbone` по последовательности landmarks |
-| Обучение | train-only GISLR-style augmentation, grouped validation, Optuna |
-| Команды | typed actions, hotkeys, media, navigation, app launch и sequences |
-| Безопасность | confidence gate, adaptive completion gate, negative classes, cooldown |
-| Наблюдаемость | live evaluation, JSONL logs, MLflow и opt-in daily telemetry |
-| Хранение | SQLite по умолчанию, PostgreSQL опционально |
+| Полный desktop-поток | единый Flet-интерфейс для камеры, записи, обучения, проверки и привязок |
+| Персональные жесты | статические позы и динамические движения, записанные самим пользователем |
+| Режим ввода | одна рука; двуручная запись и обучение временно отключены |
+| Локальное ML | static tree classifier и dynamic landmark LSTM с open-set rejection |
+| Команды macOS | hotkeys, media, navigation, запуск приложений и последовательности действий |
+| Защита от ошибок | confidence gate, completion gate, negative classes и cooldown |
+| Локальные данные | SQLite по умолчанию, PostgreSQL опционально, камера не отправляется в облако |
+| Контроль качества | live evaluation, обратная связь, JSONL, MLflow и opt-in daily telemetry |
+| Доставка | запускаемый `GestureBind.app` и tracked source bundle через release workflow |
 
 В релиз не входят пользовательские датасеты, секреты, локальные БД, MLflow
 runs, не включенные в release allowlist generated reports и экспериментальные
 model artifacts.
 
-## Пользовательский Сценарий
+## Как это работает
 
 ```mermaid
 flowchart LR
-    A["Записать жест"] --> B["Обучить модель"]
+    A["Записать жест одной рукой"] --> B["Обучить модель"]
     B --> C["Проверить live"]
     C --> D{"Качество достаточно?"}
     D -- "нет" --> A
@@ -42,11 +60,72 @@ flowchart LR
     F --> G["Reject или безопасное выполнение"]
 ```
 
-1. Пользователь записывает несколько независимых дублей каждого жеста.
-2. Приложение обучает только классы из пользовательского датасета.
-3. Static и dynamic маршруты оцениваются раздельно.
-4. Низкая уверенность и неизвестное движение отклоняются.
-5. Команда выполняется только после policy и cooldown.
+1. Пользователь записывает несколько независимых дублей жеста одной рукой.
+2. Приложение обучает только классы из локального пользовательского датасета.
+3. Static и dynamic маршруты проверяются раздельно в live-режиме.
+4. Низкая уверенность, неизвестное движение и незавершённый жест отклоняются.
+5. Привязанная команда выполняется только после policy-проверок и cooldown.
+
+## Быстрый старт
+
+Для приложения нужны macOS и веб-камера. Текущая ветка является release
+candidate `0.8.1`, поэтому до публикации tag её следует запускать из исходного
+кода с Python `3.11`.
+
+После публикации `v0.8.1` GitHub Release будет содержать
+`GestureBind-macos-v0.8.1.zip`. Для этого варианта Python пользователю не нужен:
+достаточно распаковать архив, открыть `GestureBind.app` и разрешить доступ к
+камере. Пока приложение не notarized, при первом запуске может понадобиться
+правый клик по приложению и команда `Open`.
+
+```bash
+git clone https://github.com/Rafaildavar/GestureBind.git
+cd GestureBind
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Для разработки и тестов:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+TensorFlow нужен только для исторического CNN benchmark:
+
+```bash
+python -m pip install -r requirements-research.txt
+```
+
+Запуск desktop-приложения:
+
+```bash
+./scripts/launch_app.sh
+```
+
+Эквивалентная команда:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
+```
+
+SQLite используется автоматически и не требует Docker. Для PostgreSQL:
+
+```bash
+docker compose up -d db
+export DPLM_DB_BACKEND=postgres
+```
+
+При первом запуске macOS запросит доступ к камере. Для выполнения hotkeys и
+управления курсором также может понадобиться Accessibility permission.
+
+Анонимная статистика качества выключена по умолчанию. После согласия в разделе
+«Приватность» приложение раз в 24 часа отправляет только агрегаты распознавания,
+обратной связи и производительности. Видео, landmarks, названия пользовательских
+жестов и команды не передаются.
 
 ## Production ML
 
@@ -57,11 +136,14 @@ MediaPipe извлекает `21 x xyz` landmarks руки. Для static-жес
 Release auto-router принимает static-предсказания от `0.80`, а dynamic — от
 `0.90`; порог выполнения привязанной команды остается отдельным барьером.
 
-Перед нормализацией амплитуды dynamic-пайплайн проверяет, завершен ли жест.
+Перед нормализацией амплитуды dynamic-пайплайн проверяет, завершён ли жест.
 Для каждого пользовательского класса verifier автоматически обучается на его
 полных записях, собственных префиксах и префиксах остальных классов. Если
-кандидат отклонен, сегментатор сохраняет уже выполненную часть и ждет
+кандидат отклонён, сегментатор сохраняет уже выполненную часть и ждёт
 продолжения, не испуская команду по неподвижному неполному жесту.
+
+<details>
+<summary><strong>Показать release evidence и результаты controlled live-проверок</strong></summary>
 
 Текущая release evidence:
 
@@ -97,6 +179,8 @@ Webcam positive и safety runs после gate выполнены. Partial/look-
 дали `1/20` ложную команду, а background/no-command сценарии не дали ни одной
 команды в `30` попытках. Оба показателя проходят release target `<=10%`.
 
+</details>
+
 ## Архитектура
 
 ```text
@@ -115,67 +199,24 @@ docs/                         curated product, ML и operations docs
 Полная схема слоев, runtime sequence, training publication и ownership данных:
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Быстрый Старт
+## Эволюция интерфейса
 
-Для готового приложения нужны macOS и веб-камера. Python пользователю не нужен.
+Текущий продукт использует единый Flet-интерфейс, описанный выше. Запись ниже
+сделана `18 июня 2026 года` и показывает ранний прототип полного цикла:
+запись жеста, обучение, создание сценария и распознавание. Она сохранена как
+история развития проекта; расположение экранов и часть элементов управления
+уже не соответствуют актуальной версии.
 
-Для обычного пользователя GitHub Release содержит
-`GestureBind-macos-v0.8.1.zip`. Распакуй архив, открой `GestureBind.app` и
-разреши доступ к камере. Пока приложение не notarized, при первом запуске может
-понадобиться правый клик по приложению и команда `Open`.
+<details>
+<summary><strong>Посмотреть ранний интерфейс</strong></summary>
 
-Для запуска из исходного кода и разработки дополнительно нужен Python `3.11`.
+<p align="center">
+  <img src="docs/assets/readme/legacy-interface.gif" width="900" alt="Ранний интерфейс GestureBind: запись, обучение, привязка и распознавание жеста">
+</p>
 
-```bash
-git clone https://github.com/Rafaildavar/GestureBind.git
-cd GestureBind
+</details>
 
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-Для разработки и тестов:
-
-```bash
-python -m pip install -r requirements-dev.txt
-```
-
-TensorFlow нужен только для исторического CNN benchmark:
-
-```bash
-python -m pip install -r requirements-research.txt
-```
-
-Запуск релизного desktop-приложения:
-
-```bash
-./scripts/launch_app.sh
-```
-
-Эквивалентная команда:
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 python -B -m app.flet_app.main
-```
-
-SQLite используется автоматически и не требует Docker. Для PostgreSQL:
-
-```bash
-docker compose up -d db
-export DPLM_DB_BACKEND=postgres
-```
-
-При первом запуске macOS запросит доступ к камере. Для выполнения hotkeys и
-управления курсором также может понадобиться Accessibility permission.
-
-Анонимная статистика качества выключена по умолчанию. После согласия в разделе
-«Приватность» приложение раз в 24 часа отправляет только агрегаты распознавания,
-обратной связи и производительности. Видео, landmarks, названия пользовательских
-жестов и команды не передаются.
-
-## Локальные Данные
+## Локальные данные
 
 | Данные | Расположение |
 |---|---|
@@ -246,6 +287,8 @@ safety matrix: `49/50` безопасных отклонений, background fal
 ## Ограничения MVP
 
 - production UX и command execution ориентированы на macOS;
+- запись, обучение и пользовательский интерфейс текущего MVP работают только с
+  одной рукой; двуручные семплы временно отклоняются;
 - приложение пока не подписано Developer ID и не notarized;
 - качество новых пользовательских классов зависит от разнообразия записей;
 - публичные benchmark datasets используются как исследовательская проверка, а
