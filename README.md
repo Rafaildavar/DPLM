@@ -1,10 +1,11 @@
 # GestureBind
 
-> Локальное macOS-приложение, которое обучается жестам пользователя и
-> превращает их в команды для компьютера.
+> Локальное desktop-приложение, которое обучается жестам пользователя и
+> превращает их в команды для компьютера. Текущий стабильный релиз предназначен
+> для macOS; поддержка Windows находится в активной разработке.
 
-[![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml)
-[![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml)
+[![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg?branch=contest_version)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml?query=branch%3Acontest_version)
+[![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg?branch=contest_version)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml?query=branch%3Acontest_version)
 [![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
@@ -16,14 +17,15 @@
 
 GestureBind использует обычную веб-камеру как персональный слой управления:
 пользователь записывает собственные жесты одной рукой, обучает локальные модели,
-проверяет распознавание в реальном времени и связывает жесты с командами macOS.
-Видео, landmarks, названия жестов и команды не покидают компьютер.
+проверяет распознавание в реальном времени и связывает жесты с системными
+командами. Видео, landmarks, названия жестов и команды не покидают компьютер.
 
 GestureBind MVP `0.8.1` сейчас является release candidate поверх опубликованного
 `v0.8.0`. Нативный macOS bundle, opt-in telemetry и одноручный режим уже
 находятся в коде; tag `v0.8.1` будет создан после финальной проверки.
 
 [Релизы](https://github.com/Rafaildavar/GestureBind/releases) ·
+[Платформы](#поддержка-платформ) ·
 [Актуальный интерфейс](#актуальный-интерфейс) ·
 [Быстрый старт](#быстрый-старт) ·
 [Архитектура](ARCHITECTURE.md) ·
@@ -44,6 +46,18 @@ GestureBind MVP `0.8.1` сейчас является release candidate пове
 | Локальные данные | SQLite по умолчанию, PostgreSQL опционально, камера не отправляется в облако |
 | Контроль качества | live evaluation, обратная связь, JSONL, MLflow и opt-in daily telemetry |
 | Доставка | запускаемый `GestureBind.app` и tracked source bundle через release workflow |
+
+## Поддержка платформ
+
+| Платформа | Статус | Текущий этап |
+|---|---|---|
+| macOS | **Поддерживается** | полный пользовательский поток, системные команды и готовый `GestureBind.app` |
+| Windows | **Активная разработка** | адаптация системных действий, Windows CI и подготовка нативной сборки |
+| Linux и другие desktop-системы | **Следующий этап** | перенос начнётся после стабилизации и приёмочного тестирования Windows-версии |
+
+Архитектура UI, камеры и ML-пайплайна изначально остаётся переносимой. Каждая
+новая ОС получит статус поддерживаемой только после отдельной проверки камеры,
+обучения, распознавания, выполнения команд и сборки установочного артефакта.
 
 В релиз не входят пользовательские датасеты, секреты, локальные БД, MLflow
 runs, не включенные в release allowlist generated reports и экспериментальные
@@ -81,9 +95,10 @@ landmarks, текущий дубль и общий прогресс прямо �
 
 ## Быстрый старт
 
-Для приложения нужны macOS и веб-камера. Текущая ветка является release
-candidate `0.8.1`, поэтому до публикации tag её следует запускать из исходного
-кода с Python `3.11`.
+Для текущего официального релиза нужны macOS и веб-камера. Ветка является
+release candidate `0.8.1`, поэтому до публикации tag её следует запускать из
+исходного кода с Python `3.11`. Инструкции для Windows появятся после завершения
+активной разработки и приёмочного тестирования этой платформы.
 
 После публикации `v0.8.1` GitHub Release будет содержать
 `GestureBind-macos-v0.8.1.zip`. Для этого варианта Python пользователю не нужен:
@@ -306,7 +321,9 @@ controlled live-прогон, не меняя frozen production-модели.
 
 ## Ограничения MVP
 
-- production UX и command execution ориентированы на macOS;
+- официальный release bundle и production command execution пока подтверждены
+  только на macOS; Windows находится в активной разработке, остальные системы
+  будут рассматриваться после её платформенного тестирования;
 - запись, обучение и пользовательский интерфейс текущего MVP работают только с
   одной рукой; двуручные семплы временно отклоняются;
 - приложение пока не подписано Developer ID и не notarized;
