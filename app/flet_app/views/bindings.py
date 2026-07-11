@@ -4,7 +4,7 @@
 Реализует правила из docs/BINDING_RULES.md:
     R1 — 1:1 жест↔команда (с переспросом при перезаписи)
     R3 — фильтр жестов: только is_active=True и model_class_id IS NOT NULL
-    R6 — предупреждение для опасных действий, не привязанных к двуручному жесту
+    R6 — предупреждение для опасных действий
     R7 — валидация action_spec
     R8 — уникальность имени команды
 
@@ -896,8 +896,7 @@ class BindingsView:
 
         self._warn_two_hands = ft.Container(
             content=ft.Text(
-                "⚠ Это «опасное» действие. Рекомендуется привязать его к "
-                "двуручному жесту (правило R6).",
+                "Это опасное действие. Проверь команду перед сохранением.",
                 color="#FFB300",
                 size=12,
             ),
@@ -1793,7 +1792,7 @@ class BindingsView:
             "mute_toggle": "Дополнительные настройки не нужны.",
             "brightness_up": "Дополнительные настройки не нужны.",
             "brightness_down": "Дополнительные настройки не нужны.",
-            "lock_screen": "Опасное действие: лучше привязать к двуручному жесту.",
+            "lock_screen": "Опасное действие: проверь команду перед сохранением.",
             "screenshot": "Снимок будет сохранен на рабочий стол.",
         }.get(action_name, "Заполните поля ниже и сохраните привязку.")
 
@@ -2115,9 +2114,8 @@ class BindingsView:
         self._refresh_flow_preview()
 
     def _refresh_warn_two_hands(self) -> None:
-        g = self._selected_gesture()
         show = False
-        if g is not None and not g.get("isTwoHands"):
+        if self._selected_gesture() is not None:
             if self._is_sequence_mode():
                 show = any(
                     self._controller.is_action_dangerous(

@@ -85,9 +85,11 @@ class SettingsView:
         self._camera_index = self._field("Камера", recognition.get("camera_index"))
         self._target_fps = self._field("Частота камеры", recognition.get("target_fps"))
         self._two_hands_switch = ft.Switch(
-            value=bool(recognition.get("two_hands_mode")),
-            label="Распознавать жесты двумя руками",
+            value=False,
+            label="",
             active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
         )
         self._auto_execute_switch = ft.Switch(
             value=bool(recognition.get("auto_execute_on_gesture")),
@@ -309,7 +311,7 @@ class SettingsView:
 
         self._camera_index.value = str(recognition.get("camera_index") or 0)
         self._target_fps.value = str(recognition.get("target_fps") or 30)
-        self._two_hands_switch.value = bool(recognition.get("two_hands_mode"))
+        self._two_hands_switch.value = False
         self._auto_execute_switch.value = bool(
             recognition.get("auto_execute_on_gesture")
         )
@@ -418,7 +420,7 @@ class SettingsView:
             "recognition": {
                 "camera_index": self._to_int(self._camera_index.value, 0),
                 "target_fps": self._to_int(self._target_fps.value, 30),
-                "two_hands_mode": bool(self._two_hands_switch.value),
+                "two_hands_mode": False,
                 "auto_execute_on_gesture": bool(self._auto_execute_switch.value),
                 "auto_start_recognition": bool(self._auto_start_switch.value),
                 "pointer_smoothing": self._to_float(
@@ -706,7 +708,6 @@ class SettingsView:
                 controls=[
                     self._section_title(ft.Icons.VIDEOCAM, "Камера и жесты"),
                     self._responsive(self._camera_index, self._target_fps),
-                    self._two_hands_switch,
                     self._auto_start_switch,
                     ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     self._pointer_sharpness_label,

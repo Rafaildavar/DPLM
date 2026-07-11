@@ -213,7 +213,11 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._user_rec_two_hands = ft.Switch(
-            label="Две руки", value=False, active_color=COLOR_ACCENT
+            label="",
+            value=False,
+            active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
         )
         self._user_rec_start_btn = ft.FilledButton(
             content=ft.Text("Записать и обновить модель", weight=ft.FontWeight.BOLD),
@@ -255,7 +259,11 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._rec_two_hands = ft.Switch(
-            label="Две руки", value=False, active_color=COLOR_ACCENT
+            label="",
+            value=False,
+            active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
         )
         self._rec_start_btn = ft.FilledButton(
             content=ft.Text("Записать примеры", weight=ft.FontWeight.BOLD),
@@ -287,7 +295,11 @@ class TrainingView:
             border_color=COLOR_SURFACE_HIGH,
         )
         self._dyn_rec_two_hands = ft.Switch(
-            label="Две руки", value=False, active_color=COLOR_ACCENT
+            label="",
+            value=False,
+            active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
         )
         self._dyn_rec_start_btn = ft.FilledButton(
             content=ft.Text("Записать динамику", weight=ft.FontWeight.BOLD),
@@ -1002,7 +1014,7 @@ class TrainingView:
                     else _DEFAULT_RECORD_FRAMES,
                 ),
             )
-            two_hands = bool(self._user_rec_two_hands.value)
+            two_hands = False
             include_global_motion = kind == "dynamic"
             include_landmark_z = True
         elif mode == "dynamic":
@@ -1021,7 +1033,7 @@ class TrainingView:
                     _DEFAULT_DYNAMIC_RECORD_FRAMES,
                 ),
             )
-            two_hands = bool(self._dyn_rec_two_hands.value)
+            two_hands = False
             include_global_motion = True
             include_landmark_z = True
         else:
@@ -1034,7 +1046,7 @@ class TrainingView:
                 1,
                 self._parse_int(self._rec_frames.value, _DEFAULT_RECORD_FRAMES),
             )
-            two_hands = bool(self._rec_two_hands.value)
+            two_hands = False
             include_global_motion = False
             include_landmark_z = True
 
@@ -1044,7 +1056,6 @@ class TrainingView:
 
         self._append_log(
             f"[i] Запись «{label}»: {samples} реальных дублей, {frames} кадров"
-            + (" (две руки)" if two_hands else "")
             + (" + глобальное движение" if include_global_motion else "")
             + (" + landmark z" if include_landmark_z else "")
         )
@@ -1571,7 +1582,6 @@ class TrainingView:
                             self._user_rec_type,
                             self._user_rec_samples,
                             self._user_rec_frames,
-                            self._user_rec_two_hands,
                         ],
                     ),
                     self._user_rec_start_btn,
@@ -1615,7 +1625,6 @@ class TrainingView:
                         controls=[
                             self._rec_samples,
                             self._rec_frames,
-                            self._rec_two_hands,
                         ],
                     ),
                     self._rec_start_btn,
@@ -1669,7 +1678,6 @@ class TrainingView:
                         controls=[
                             self._dyn_rec_samples,
                             self._dyn_rec_frames,
-                            self._dyn_rec_two_hands,
                         ],
                     ),
                     ft.Row(

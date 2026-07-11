@@ -58,7 +58,11 @@ def parse_args() -> argparse.Namespace:
         help="Файл с размерностью признака (из тренировки)",
     )
     p.add_argument("--window", type=int, default=30, help="Длина окна (кадров) для усреднения")
-    p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (42×2)")
+    p.add_argument(
+        "--two-hands",
+        action="store_true",
+        help="Совместимость: live-инференс сам выбирает размерность модели",
+    )
     p.add_argument("--tts", action="store_true", help="Озвучивать распознанный жест")
     p.add_argument("--camera-index", type=int, default=0, help="Индекс камеры OpenCV")
     p.add_argument("--fps", type=int, default=30, help="Целевой FPS камеры")
@@ -84,7 +88,7 @@ def main() -> None:
 
     classifier_two_hands = feature_dim == 84
     if not args.two_hands:
-        print("[i] Auto-hand: детектор ищет до 2 рук, модель сама задаёт 42/84 признака")
+        print("[i] Auto-hand: модель сама задаёт live-формат признаков")
 
     tts_engine = None
     last_spoken_label = None

@@ -326,11 +326,13 @@ class HomeView:
             on_select=self._on_static_rejection_method_changed,
         )
         self._two_hands_switch = ft.Switch(
-            value=controller.two_hands_mode,
-            label="2 руки",
+            value=False,
+            label="",
             active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
             on_change=lambda e: controller.set_two_hands_mode(
-                bool(self._two_hands_switch.value)
+                False
             ),
         )
         self._auto_exec_switch = ft.Switch(
@@ -1311,8 +1313,8 @@ class HomeView:
         self._page.run_thread(self._apply_two_hands, value)
 
     def _apply_two_hands(self, value: bool) -> None:
-        if self._two_hands_switch.value != value:
-            self._two_hands_switch.value = value
+        if self._two_hands_switch.value:
+            self._two_hands_switch.value = False
             try:
                 self._two_hands_switch.update()
             except Exception:

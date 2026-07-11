@@ -197,7 +197,7 @@ ACTION_SPEC_SCHEMA: Dict[str, Any] = {
 }
 
 
-# Действия, для которых R6 рекомендует использовать двуручный жест.
+# Действия, для которых R6 показывает дополнительное предупреждение.
 DANGEROUS_ACTIONS: frozenset = frozenset({"lock_screen", "quit_app", "run_script"})
 
 

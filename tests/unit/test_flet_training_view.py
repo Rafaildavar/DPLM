@@ -138,7 +138,7 @@ def test_user_training_tab_uses_project_defaults():
     assert recording_call["label"] == "Wave"
     assert recording_call["num_samples"] == 7
     assert recording_call["frames"] == 33
-    assert recording_call["two_hands"] is True
+    assert recording_call["two_hands"] is False
     assert recording_call["include_global_motion"] is False
     assert recording_call["include_landmark_z"] is True
 
@@ -232,7 +232,7 @@ def test_unified_training_tab_handles_dynamic_gestures():
     assert recording_call["label"] == "swipe_right"
     assert recording_call["num_samples"] == _DEFAULT_DYNAMIC_RECORD_SAMPLES
     assert recording_call["frames"] == _DEFAULT_DYNAMIC_RECORD_FRAMES
-    assert recording_call["two_hands"] is True
+    assert recording_call["two_hands"] is False
     assert recording_call["include_global_motion"] is True
     assert recording_call["include_landmark_z"] is True
 
@@ -298,7 +298,7 @@ def test_developer_dynamic_flow_uses_long_recording_and_separate_model():
     assert recording_call["label"] == "swipe_right"
     assert recording_call["num_samples"] == _DEFAULT_DYNAMIC_RECORD_SAMPLES
     assert recording_call["frames"] == _DEFAULT_DYNAMIC_RECORD_FRAMES
-    assert recording_call["two_hands"] is True
+    assert recording_call["two_hands"] is False
     assert recording_call["include_global_motion"] is True
     assert recording_call["include_landmark_z"] is True
 

@@ -504,7 +504,7 @@ class AppController:
         self._recognition_model_mode: str = RECOGNITION_MODEL_AUTO
         self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_PRODUCTION
         self._static_rejection_method: str = STATIC_REJECTION_OPEN_SET_POLICY
-        self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
+        self._two_hands_mode: bool = False
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
         self._pointer_mode: bool = False
@@ -3654,7 +3654,7 @@ class AppController:
             "currentFrames": current_frames,
             "targetFrames": target_frames,
             "progress": progress,
-            "twoHands": bool(session.get("two_hands")),
+            "twoHands": False,
             "message": message or str(session.get("last_message") or ""),
         }
 
@@ -4149,6 +4149,8 @@ class AppController:
 
         from cv.hand_landmarker import normalize_landmarks
 
+        two_hands = False
+
         def hand_feature(hand: Any) -> Any:
             normalized = normalize_landmarks(hand.landmarks)
             pts = np.asarray(hand.landmarks, dtype=np.float32)
@@ -4218,7 +4220,7 @@ class AppController:
         from cv.hand_landmarker import HandLandmarkerVideo
 
         self._sample_recording_detector = HandLandmarkerVideo(
-            num_hands=2 if two_hands else 1,
+            num_hands=1,
             min_detection_confidence=0.6,
             min_presence_confidence=0.6,
             min_tracking_confidence=0.6,
@@ -5466,8 +5468,6 @@ class AppController:
             "--fps",
             str(int(self._config.recognition.target_fps)),
         ]
-        if self._two_hands_mode:
-            cmd.append("--two-hands")
         try:
             log_handle = self._recognition_log_file.open("a", encoding="utf-8")
             self._recognition_process = subprocess.Popen(
@@ -5534,7 +5534,7 @@ class AppController:
     # ----------------------------------------------------------------------
 
     def set_two_hands_mode(self, enabled: bool) -> None:
-        target = bool(enabled)
+        target = False
         if target == self._two_hands_mode:
             return
         self._two_hands_mode = target
@@ -7024,6 +7024,7 @@ class AppController:
         target_samples = max(1, int(num_samples))
         target_frames = max(1, int(frames))
         use_landmark_z = bool(include_landmark_z)
+        use_two_hands = False
         augment_count = (
             SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS
             if include_global_motion
@@ -7033,7 +7034,7 @@ class AppController:
             "label": clean,
             "target": target_samples,
             "frames": target_frames,
-            "two_hands": bool(two_hands),
+            "two_hands": use_two_hands,
             "include_global_motion": bool(include_global_motion),
             "include_landmark_z": use_landmark_z,
             "augment_count": augment_count,
@@ -7071,7 +7072,6 @@ class AppController:
             on_line(
                 f"[i] Встроенная запись «{clean}»: {target_samples} сэмплов, "
                 f"{target_frames} кадров"
-                + (" (две руки)" if two_hands else "")
                 + (" + глобальное движение" if include_global_motion else "")
                 + (" + landmark z" if use_landmark_z else "")
             )

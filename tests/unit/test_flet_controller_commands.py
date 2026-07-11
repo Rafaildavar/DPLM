@@ -1310,7 +1310,7 @@ def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     assert controller._sample_recording["label"] == "Wave"
     assert controller._sample_recording["target"] == 3
     assert controller._sample_recording["frames"] == 7
-    assert controller._sample_recording["two_hands"] is True
+    assert controller._sample_recording["two_hands"] is False
     assert controller._sample_recording["include_global_motion"] is False
     assert controller._sample_recording["include_landmark_z"] is False
     assert controller._sample_recording["augment_count"] == 1
@@ -1318,6 +1318,7 @@ def test_start_recording_uses_embedded_camera_session(monkeypatch, tmp_path):
     assert controller._sample_recording["out_dir"] == tmp_path / "gestures" / "Wave"
     assert controller._status == "Запись жеста: Wave"
     assert any("Встроенная запись" in line for line in lines)
+    assert not any("две руки" in line for line in lines)
 
 
 def test_completed_training_process_does_not_block_new_recording(monkeypatch, tmp_path):
