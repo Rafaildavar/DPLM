@@ -2564,16 +2564,19 @@ class BindingsView:
             if animate:
                 with self._agent_request_lock:
                     self._agent_active_request_id = request_id
-                threading.Thread(
-                    target=self._run_agent_request,
-                    args=(request_id, prompt, history, draft_state, bindings),
-                    daemon=True,
-                ).start()
-                threading.Thread(
-                    target=self._watch_agent_request_timeout,
-                    args=(request_id, prompt),
-                    daemon=True,
-                ).start()
+                self._run_agent_page_thread(
+                    self._run_agent_request,
+                    request_id,
+                    prompt,
+                    history,
+                    draft_state,
+                    bindings,
+                )
+                self._run_agent_page_thread(
+                    self._watch_agent_request_timeout,
+                    request_id,
+                    prompt,
+                )
                 return
         else:
             request_id = self._agent_request_id
@@ -2616,11 +2619,21 @@ class BindingsView:
             pass
         if animate:
             request_id = self._agent_request_id
-            threading.Thread(
-                target=self._animate_agent_pending_state,
-                args=(request_id,),
-                daemon=True,
-            ).start()
+            self._run_agent_page_thread(
+                self._animate_agent_pending_state,
+                request_id,
+            )
+
+    def _run_agent_page_thread(self, handler, *args: Any) -> None:
+        run_thread = getattr(self._page, "run_thread", None)
+        if callable(run_thread):
+            run_thread(handler, *args)
+            return
+        threading.Thread(
+            target=handler,
+            args=args,
+            daemon=True,
+        ).start()
 
     def _run_agent_request(
         self,
@@ -2647,7 +2660,11 @@ class BindingsView:
                 "error": f"Агент не смог обработать запрос: {exc}",
                 "missing": [],
             }
-        self._complete_agent_request(request_id, prompt, draft, animate=True)
+        try:
+            self._complete_agent_request(request_id, prompt, draft, animate=True)
+        except Exception as exc:
+            # Keep the request active so the watchdog can replace a failed UI commit.
+            print(f"[w] binding agent UI completion failed: {exc}", flush=True)
 
     def _complete_agent_request(
         self,
@@ -2656,15 +2673,14 @@ class BindingsView:
         draft: dict[str, Any],
         *,
         animate: bool,
-    ) -> None:
+    ) -> bool:
         if animate:
             with self._agent_request_lock:
                 if (
                     request_id != self._agent_request_id
                     or request_id != self._agent_active_request_id
                 ):
-                    return
-                self._agent_active_request_id = 0
+                    return False
         if prompt:
             is_answer = str(draft.get("mode") or "") == "answer"
             self._mark_agent_user_messages_sent()
@@ -2698,6 +2714,15 @@ class BindingsView:
             self._animate_agent_response(request_id, draft)
         else:
             self._set_agent_draft(draft)
+        committed = self._flush_agent_page()
+        if animate and committed:
+            with self._agent_request_lock:
+                if (
+                    request_id == self._agent_request_id
+                    and request_id == self._agent_active_request_id
+                ):
+                    self._agent_active_request_id = 0
+        return committed
 
     def _watch_agent_request_timeout(self, request_id: int, prompt: str) -> None:
         timeout = configured_timeout() + 0.75
@@ -2714,9 +2739,9 @@ class BindingsView:
         with self._agent_request_lock:
             if request_id != self._agent_active_request_id:
                 return
-            self._agent_active_request_id = 0
             self._agent_request_id += 1
             timeout_request_id = self._agent_request_id
+            self._agent_active_request_id = timeout_request_id
         seconds = max(1, int(round(timeout)))
         draft = {
             "ok": True,
@@ -2741,6 +2766,9 @@ class BindingsView:
             draft,
             animate=False,
         )
+        with self._agent_request_lock:
+            if self._agent_active_request_id == timeout_request_id:
+                self._agent_active_request_id = 0
 
     def _mark_agent_user_messages_sent(self) -> None:
         for message in self._agent_dialog_messages:
@@ -3618,6 +3646,16 @@ class BindingsView:
                 control.update()
             except Exception:
                 pass
+
+    def _flush_agent_page(self) -> bool:
+        if self._page is None:
+            return True
+        try:
+            self._page.update()
+            return True
+        except Exception as exc:
+            print(f"[w] binding agent page update failed: {exc}", flush=True)
+            return False
 
     def _category_id_for_action(self, action: str) -> str:
         for category in self._categories:

@@ -1770,6 +1770,129 @@ def test_binding_agent_ui_watchdog_finishes_stalled_request():
     assert view._agent_dialog_messages[-1]["role"] == "agent"
 
 
+def test_binding_agent_ui_schedules_background_work_with_flet_page():
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return GESTURES
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    class FakePage:
+        def __init__(self):
+            self.handlers = []
+
+        def run_thread(self, handler, *args):
+            self.handlers.append((handler.__name__, args))
+
+        def update(self):
+            pass
+
+    page = FakePage()
+    view = BindingsView(None, FakeController())
+    view._page = page
+    view._gestures = GESTURES
+    view._agent_input.value = "привяжи жест hand к открытию рамблер почты"
+
+    view._on_agent_parse_click(None)
+
+    names = [name for name, _args in page.handlers]
+    assert names == [
+        "_animate_agent_pending_state",
+        "_run_agent_request",
+        "_watch_agent_request_timeout",
+    ]
+    assert view._agent_active_request_id == 1
+
+
+def test_binding_agent_ui_clears_watchdog_only_after_page_commit(monkeypatch):
+    class FakeController:
+        def get_action_categories(self):
+            return []
+
+        def list_commands(self):
+            return []
+
+        def get_db_gestures(self):
+            return GESTURES
+
+        def get_actions_for_category(self, _category_id):
+            return []
+
+        def is_action_dangerous(self, _action):
+            return False
+
+        def execute_for_gesture(self, *_args, **_kwargs):
+            return False
+
+    class FakePage:
+        def __init__(self, *, fail: bool):
+            self.fail = fail
+            self.updates = 0
+
+        def update(self):
+            self.updates += 1
+            if self.fail:
+                raise RuntimeError("page update failed")
+
+    draft = {
+        "ok": True,
+        "canApply": True,
+        "missing": [],
+        "gestureLabel": "hand",
+        "mode": "single",
+        "commandName": "hand: Открыть рамблер почты",
+        "actionSpec": {
+            "action": "open_app",
+            "platform": "macos",
+            "app": "рамблер почты",
+        },
+        "agentReply": "Привязка готова.",
+    }
+
+    successful = BindingsView(None, FakeController())
+    successful._page = FakePage(fail=False)
+    successful._agent_request_id = 7
+    successful._agent_active_request_id = 7
+    successful._start_agent_send_state("запрос", animate=False)
+    monkeypatch.setattr(
+        successful,
+        "_animate_agent_response",
+        lambda _request_id, value: successful._set_agent_draft(value),
+    )
+
+    assert successful._complete_agent_request(7, "запрос", draft, animate=True)
+    assert successful._agent_active_request_id == 0
+    assert successful._page.updates == 1
+
+    failed = BindingsView(None, FakeController())
+    failed._page = FakePage(fail=True)
+    failed._agent_request_id = 8
+    failed._agent_active_request_id = 8
+    failed._start_agent_send_state("запрос", animate=False)
+    monkeypatch.setattr(
+        failed,
+        "_animate_agent_response",
+        lambda _request_id, value: failed._set_agent_draft(value),
+    )
+
+    assert not failed._complete_agent_request(8, "запрос", draft, animate=True)
+    assert failed._agent_active_request_id == 8
+    assert failed._page.updates == 1
+
+
 def test_binding_agent_answer_mode_renders_visible_answer_panel():
     class FakeController:
         def get_action_categories(self):
