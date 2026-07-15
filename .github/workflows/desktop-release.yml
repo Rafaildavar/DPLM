@@ -75,7 +75,9 @@ jobs:
           GESTUREBIND_VERSION: ${{ github.ref_name }}
           GESTUREBIND_TELEMETRY_ENDPOINT: ${{ vars.GESTUREBIND_TELEMETRY_ENDPOINT }}
           GESTUREBIND_TELEMETRY_PROJECT_KEY: ${{ vars.GESTUREBIND_TELEMETRY_PROJECT_KEY }}
-        run: bash packaging/macos/build_app.sh
+        run: |
+          mkdir -p outputs/ci
+          bash packaging/macos/build_app.sh 2>&1 | tee outputs/ci/macos_packaging.log
 
       - name: Upload macOS app artifact
         uses: actions/upload-artifact@v4

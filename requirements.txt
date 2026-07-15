@@ -20,8 +20,9 @@ vosk
 
 # GUI Framework — Flet (Flutter desktop runtime).
 # Desktop запускает приложение, web предоставляет шрифт для release-иконки.
+# Версия зафиксирована: новые Flet-клиенты сначала проходят release-проверку.
 # Точка входа: `python -m app.flet_app.main`.
-flet[desktop,web]>=0.85.3
+flet[desktop,web]==0.85.3
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)

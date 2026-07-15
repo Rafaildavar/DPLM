@@ -73,7 +73,7 @@ def test_release_bundle_does_not_embed_local_mistral_secret():
 def test_release_dependencies_include_matching_flet_runtime_extras():
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
 
-    assert "flet[desktop,web]>=0.85.3" in requirements
+    assert "flet[desktop,web]==0.85.3" in requirements
     assert "\nflet-desktop" not in requirements
 
 
