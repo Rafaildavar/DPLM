@@ -53,6 +53,10 @@ def _dispatch_controller():
     controller._gesture_mode = True
     controller._pointer_mode = False
     controller._pointer_control = None
+    controller._pointer_accessibility_settings_opened = False
+    controller._pointer_accessibility_watch_active = False
+    controller._pointer_accessibility_watch_token = 0
+    controller._embedded_infer_lock = threading.RLock()
     controller._show_landmark_overlay = True
     controller._recognition_model_mode = "static"
     controller._dynamic_model_profile = DYNAMIC_MODEL_PROFILE_PRODUCTION
@@ -967,6 +971,72 @@ def test_get_db_gestures_shows_recorded_untrained_samples(monkeypatch, tmp_path)
     assert rows[0]["sampleCount"] == 1
 
 
+def test_get_db_gestures_prefers_static_recording_over_dynamic_model_class(
+    monkeypatch,
+    tmp_path,
+):
+    import app.flet_app.controller as controller_module
+
+    label_dir = tmp_path / "gestures" / "zoom"
+    label_dir.mkdir(parents=True)
+    sample_path = label_dir / "sample_0000.npy"
+    np.save(sample_path, np.zeros((30, 21, 3), dtype=np.float32))
+    sample_path.with_suffix(".meta.json").write_text(
+        json.dumps(
+            {
+                "source": "camera",
+                "kind": "real",
+                "include_global_motion": False,
+                "sample_feature_format": "landmark_xyz",
+                "raw_feature_dim": 63,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps([]), encoding="utf-8")
+    dynamic_classes_path = tmp_path / "dynamic_classes.json"
+    dynamic_classes_path.write_text(json.dumps(["zoom"]), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    with SessionLocal() as session:
+        gesture = Gesture(
+            label="zoom",
+            samples_path=str(label_dir),
+            model_class_id=None,
+            is_active=True,
+        )
+        session.add(gesture)
+        session.flush()
+        session.add(
+            GestureSample(
+                gesture_id=gesture.id,
+                sample_index=0,
+                features_path=str(sample_path),
+                frames=30,
+                hand_count=1,
+                source="camera",
+            )
+        )
+        session.commit()
+
+    controller = AppController.__new__(AppController)
+    controller._db_initialized = True
+    monkeypatch.setattr(controller, "_configured_classes_path", lambda: classes_path)
+    monkeypatch.setattr(controller, "_dynamic_classes_path", lambda: dynamic_classes_path)
+    monkeypatch.setattr(controller, "_configured_path", lambda value: Path(value))
+    monkeypatch.setattr(controller_module, "get_db_session", SessionLocal)
+
+    rows = controller.get_db_gestures()
+
+    assert rows[0]["label"] == "zoom"
+    assert rows[0]["gestureType"] == "static"
+    assert rows[0]["standardClass"] is False
+
+
 def test_get_db_gestures_hides_auto_imported_negative_dataset_classes(
     monkeypatch,
     tmp_path,
@@ -1542,6 +1612,7 @@ def test_process_static_sample_recording_frame_saves_xyz_features(
     assert metadata["raw_feature_dim"] == 63
     assert metadata["include_landmark_z"] is True
     assert metadata["include_global_motion"] is False
+    assert metadata["gesture_type"] == "static"
     assert metadata["sample_feature_format"] == "landmark_xyz"
     assert done_codes == [0]
 
@@ -1674,6 +1745,7 @@ def test_process_dynamic_sample_recording_frame_saves_global_motion_features(
     assert np.allclose(sample[0, -2:], [0.0, 0.0])
     assert metadata["raw_feature_dim"] == 44
     assert metadata["projected_hand_scale_median"] > 0.0
+    assert metadata["gesture_type"] == "dynamic"
     assert done_codes == [0]
 
 
@@ -2044,6 +2116,30 @@ def test_toggle_recognition_starts_cv_when_only_camera_is_active():
     assert calls == ["start"]
     assert controller._is_recognizing is False
     assert controller._is_camera_active is True
+
+
+def test_toggle_recognition_stops_camera_before_closing_embedded_infer():
+    controller = AppController.__new__(AppController)
+    controller._is_recognizing = True
+    controller._embedded_active = True
+    calls = []
+
+    controller._is_recognition_pid_active = lambda: False
+    controller.cancel_live_evaluation = lambda: calls.append("evaluation")
+    controller.stop_camera = lambda: calls.append("camera")
+    controller.stop_embedded_recognition = lambda: calls.append("embedded")
+    controller.stop_recognition = lambda: calls.append("background")
+    controller._set_recognizing = lambda value: calls.append(f"recognizing:{value}")
+
+    controller.toggle_recognition()
+
+    assert calls == [
+        "evaluation",
+        "camera",
+        "embedded",
+        "background",
+        "recognizing:False",
+    ]
 
 
 def test_start_embedded_recognition_keeps_recognizing_enabled_after_background_stop():
@@ -3137,7 +3233,9 @@ def test_set_gesture_mode_clears_current_label_without_starting_cv():
     assert statuses[-1] == "Распознавание жестов включено (reject:open_set_policy)"
 
 
-def test_set_pointer_mode_does_not_start_cv_while_idle():
+def test_set_pointer_mode_does_not_start_cv_while_idle(monkeypatch):
+    import app.flet_app.controller as controller_module
+
     controller = _dispatch_controller()
     mode_events = []
     starts = []
@@ -3147,6 +3245,7 @@ def test_set_pointer_mode_does_not_start_cv_while_idle():
     controller.pointer_mode_changed.connect(mode_events.append)
     controller._ensure_embedded_recognition_for_live_controls = lambda: starts.append(True)
     controller._set_status = statuses.append
+    monkeypatch.setattr(controller_module, "macos_accessibility_trusted", lambda: True)
 
     controller.set_pointer_mode(True)
 
@@ -3154,3 +3253,97 @@ def test_set_pointer_mode_does_not_start_cv_while_idle():
     assert mode_events == [True]
     assert starts == []
     assert statuses == []
+
+
+def test_set_pointer_mode_opens_macos_settings_when_accessibility_is_missing(
+    monkeypatch,
+):
+    import app.flet_app.controller as controller_module
+
+    controller = _dispatch_controller()
+    mode_events = []
+    state_events = []
+    statuses = []
+    opened = []
+    watches = []
+    controller.pointer_mode_changed.connect(mode_events.append)
+    controller.pointer_state_changed.connect(state_events.append)
+    controller._set_status = statuses.append
+    monkeypatch.setattr(controller_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_module,
+        "macos_accessibility_trusted",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "macos_open_accessibility_settings",
+        lambda: opened.append(True),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_start_pointer_accessibility_watch",
+        lambda: watches.append(True),
+    )
+
+    controller.set_pointer_mode(True)
+
+    assert controller.pointer_mode is False
+    assert mode_events == [False]
+    assert state_events[-1]["enabled"] is False
+    assert state_events[-1]["state"] == "disabled"
+    assert "Универсальный доступ" in state_events[-1]["error"]
+    assert "Универсальный доступ" in statuses[-1]
+    assert opened == [True]
+    assert watches == [True]
+
+
+def test_set_pointer_mode_does_not_reopen_accessibility_settings(monkeypatch):
+    import app.flet_app.controller as controller_module
+
+    controller = _dispatch_controller()
+    opened = []
+    watches = []
+    statuses = []
+    controller._set_status = statuses.append
+    monkeypatch.setattr(controller_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_module,
+        "macos_accessibility_trusted",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "macos_open_accessibility_settings",
+        lambda: opened.append(True),
+    )
+
+    def start_watch():
+        if controller._pointer_accessibility_watch_active:
+            return
+        controller._pointer_accessibility_watch_active = True
+        watches.append(True)
+
+    monkeypatch.setattr(controller, "_start_pointer_accessibility_watch", start_watch)
+
+    controller.set_pointer_mode(True)
+    controller.set_pointer_mode(True)
+
+    assert opened == [True]
+    assert watches == [True]
+    assert "перезапустите GestureBind" in statuses[-1]
+
+
+def test_accessibility_grant_activates_pointer_without_another_toggle():
+    controller = _dispatch_controller()
+    mode_events = []
+    statuses = []
+    controller._embedded_active = False
+    controller.pointer_mode_changed.connect(mode_events.append)
+    controller._set_status = statuses.append
+
+    controller._activate_pointer_after_accessibility_grant()
+
+    assert controller.pointer_mode is True
+    assert mode_events == [True]
+    assert statuses == ["Указатель: разрешение получено"]

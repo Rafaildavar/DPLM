@@ -9,11 +9,14 @@ VERSION="${GESTUREBIND_VERSION:-${GESTUREFLOW_VERSION:-local}}"
 ARTIFACT_DIR="outputs/release/${APP_NAME}-macos-${VERSION}"
 ZIP_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.zip"
 DMG_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.dmg"
+DMG_BACKGROUND_PATH="outputs/release/.${APP_NAME}-dmg-background.png"
+APP_ICON_PATH="outputs/release/.${APP_NAME}.icns"
 TELEMETRY_CONFIG_PATH="configs/release_telemetry.json"
 GENERATED_TELEMETRY_CONFIG=0
 
 cleanup() {
-  rm -f "$ARTIFACT_DIR/Applications"
+  rm -f "$DMG_BACKGROUND_PATH"
+  rm -f "$APP_ICON_PATH"
   if [[ "$GENERATED_TELEMETRY_CONFIG" == "1" ]]; then
     rm -f "$TELEMETRY_CONFIG_PATH"
   fi
@@ -73,11 +76,15 @@ else:
 print(f"[macos-bundle] Client artifact: {target}")
 PY
 
+mkdir -p outputs/release
+python packaging/macos/render_app_icon.py "$APP_ICON_PATH"
+
 python -m PyInstaller \
   --noconfirm \
   --clean \
   --windowed \
   --name "$APP_NAME" \
+  --icon "$APP_ICON_PATH" \
   --osx-bundle-identifier "ai.gesturebind.desktop" \
   --collect-all flet \
   --collect-all flet_desktop \
@@ -99,6 +106,18 @@ python -m PyInstaller \
 APP_PATH="dist/${APP_NAME}.app"
 PLIST_PATH="${APP_PATH}/Contents/Info.plist"
 BUNDLE_VERSION="${VERSION#v}"
+BUNDLE_SHORT_VERSION="${BUNDLE_VERSION%%-*}"
+BUNDLE_BUILD_VERSION="$BUNDLE_SHORT_VERSION"
+FLET_VIEW_DIR="${APP_PATH}/Contents/Frameworks/gesturebind_flet"
+FLET_CLIENT_APP="${FLET_VIEW_DIR}/GestureBindUI.app"
+
+if [[ "$BUNDLE_VERSION" =~ -beta\.([0-9]+)$ ]]; then
+  BUNDLE_BUILD_VERSION="${BUNDLE_SHORT_VERSION}b${BASH_REMATCH[1]}"
+elif [[ "$BUNDLE_VERSION" =~ -alpha\.([0-9]+)$ ]]; then
+  BUNDLE_BUILD_VERSION="${BUNDLE_SHORT_VERSION}a${BASH_REMATCH[1]}"
+elif [[ "$BUNDLE_VERSION" =~ -rc\.([0-9]+)$ ]]; then
+  BUNDLE_BUILD_VERSION="${BUNDLE_SHORT_VERSION}fc${BASH_REMATCH[1]}"
+fi
 
 if [[ -f "$PLIST_PATH" ]]; then
   /usr/libexec/PlistBuddy -c \
@@ -122,51 +141,124 @@ if [[ -f "$PLIST_PATH" ]]; then
     "Set :NSAppleEventsUsageDescription GestureBind can execute user-configured macOS automation commands." \
     "$PLIST_PATH"
 
-  if [[ "$BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Add :LSUIElement bool true" \
+    "$PLIST_PATH" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c \
+    "Set :LSUIElement true" \
+    "$PLIST_PATH"
+
+  if [[ "$BUNDLE_SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     /usr/libexec/PlistBuddy -c \
-      "Add :CFBundleShortVersionString string ${BUNDLE_VERSION}" \
+      "Add :CFBundleShortVersionString string ${BUNDLE_SHORT_VERSION}" \
       "$PLIST_PATH" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c \
-      "Set :CFBundleShortVersionString ${BUNDLE_VERSION}" \
+      "Set :CFBundleShortVersionString ${BUNDLE_SHORT_VERSION}" \
       "$PLIST_PATH"
 
     /usr/libexec/PlistBuddy -c \
-      "Add :CFBundleVersion string ${BUNDLE_VERSION}" \
+      "Add :CFBundleVersion string ${BUNDLE_BUILD_VERSION}" \
       "$PLIST_PATH" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c \
-      "Set :CFBundleVersion ${BUNDLE_VERSION}" \
+      "Set :CFBundleVersion ${BUNDLE_BUILD_VERSION}" \
       "$PLIST_PATH"
   fi
 fi
 
+FLET_ARCHIVE_PATH="$(
+  find "$APP_PATH/Contents" \
+    -type f \
+    -path "*/flet_desktop/app/flet-macos.tar.gz" \
+    -print \
+    -quit
+)"
+if [[ -z "$FLET_ARCHIVE_PATH" ]]; then
+  echo "[macos-bundle] bundled Flet macOS client archive not found" >&2
+  exit 1
+fi
+
+rm -rf "$FLET_VIEW_DIR"
+mkdir -p "$FLET_VIEW_DIR"
+tar -xzf "$FLET_ARCHIVE_PATH" -C "$FLET_VIEW_DIR"
+if [[ ! -d "${FLET_VIEW_DIR}/Flet.app" ]]; then
+  echo "[macos-bundle] Flet.app not found in desktop client archive" >&2
+  exit 1
+fi
+mv "${FLET_VIEW_DIR}/Flet.app" "$FLET_CLIENT_APP"
+rm -f "$FLET_ARCHIVE_PATH"
+
+FLET_PLIST_PATH="${FLET_CLIENT_APP}/Contents/Info.plist"
+cp "$APP_ICON_PATH" "${FLET_CLIENT_APP}/Contents/Resources/GestureBind.icns"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName GestureBind" "$FLET_PLIST_PATH"
+/usr/libexec/PlistBuddy -c \
+  "Add :CFBundleDisplayName string GestureBind" \
+  "$FLET_PLIST_PATH" 2>/dev/null || \
+/usr/libexec/PlistBuddy -c \
+  "Set :CFBundleDisplayName GestureBind" \
+  "$FLET_PLIST_PATH"
+/usr/libexec/PlistBuddy -c \
+  "Set :CFBundleIdentifier ai.gesturebind.desktop.ui" \
+  "$FLET_PLIST_PATH"
+/usr/libexec/PlistBuddy -c \
+  "Set :CFBundleIconFile GestureBind.icns" \
+  "$FLET_PLIST_PATH"
+/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$FLET_PLIST_PATH" \
+  2>/dev/null || true
+if [[ "$BUNDLE_SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Set :CFBundleShortVersionString ${BUNDLE_SHORT_VERSION}" \
+    "$FLET_PLIST_PATH"
+  /usr/libexec/PlistBuddy -c \
+    "Set :CFBundleVersion ${BUNDLE_BUILD_VERSION}" \
+    "$FLET_PLIST_PATH"
+fi
+
 if command -v codesign >/dev/null 2>&1; then
+  codesign --force --deep --sign - "$FLET_CLIENT_APP"
   codesign --force --deep --sign - "$APP_PATH"
 fi
 
 rm -rf "$ARTIFACT_DIR"
 mkdir -p "$ARTIFACT_DIR"
 cp -R "$APP_PATH" "$ARTIFACT_DIR/"
-cp packaging/macos/RUN_MACOS.md "$ARTIFACT_DIR/"
+cp packaging/macos/INSTALL.txt "$ARTIFACT_DIR/INSTALL.txt"
 cp docs/USER_GUIDE.md "$ARTIFACT_DIR/USER_GUIDE.md"
 cp README.md "$ARTIFACT_DIR/README.md"
 
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$ARTIFACT_DIR" "$ZIP_PATH"
 
-if ! command -v hdiutil >/dev/null 2>&1; then
-  echo "[macos-bundle] hdiutil is required to create the DMG" >&2
+if [[ "${GESTUREBIND_LOW_DISK_BUILD:-0}" == "1" ]]; then
+  rm -rf build dist
+fi
+
+python packaging/macos/render_dmg_background.py "$DMG_BACKGROUND_PATH"
+
+if ! command -v create-dmg >/dev/null 2>&1; then
+  echo "[macos-bundle] create-dmg is required (brew install create-dmg)" >&2
   exit 1
 fi
 
-ln -s /Applications "$ARTIFACT_DIR/Applications"
-
 rm -f "$DMG_PATH"
-hdiutil create \
-  -volname "${APP_NAME} ${VERSION}" \
-  -srcfolder "$ARTIFACT_DIR" \
-  -ov \
-  -format UDZO \
-  "$DMG_PATH"
+create-dmg \
+  --volname "${APP_NAME} ${VERSION}" \
+  --volicon "$APP_ICON_PATH" \
+  --background "$DMG_BACKGROUND_PATH" \
+  --window-pos 200 120 \
+  --window-size 840 560 \
+  --text-size 13 \
+  --icon-size 112 \
+  --icon "${APP_NAME}.app" 200 226 \
+  --hide-extension "${APP_NAME}.app" \
+  --app-drop-link 640 226 \
+  --icon "INSTALL.txt" 250 430 \
+  --icon "USER_GUIDE.md" 420 430 \
+  --icon "README.md" 590 430 \
+  --format UDZO \
+  --no-internet-enable \
+  --overwrite \
+  "$DMG_PATH" \
+  "$ARTIFACT_DIR"
 
 echo "[macos-bundle] ZIP artifact: $ZIP_PATH"
 echo "[macos-bundle] DMG artifact: $DMG_PATH"

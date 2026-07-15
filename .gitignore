@@ -77,18 +77,11 @@ docs/articles/drafts/
 docs/archive/
 # Curated release evidence is tracked; generated experiment reports stay local.
 docs/contest/*
-!docs/contest/ML_SYSTEM_DESIGN.md
 docs/experiments/*
-!docs/experiments/README.md
-!docs/experiments/ml_pipeline_log.md
 !docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.json
-!docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.md
 !docs/experiments/dynamic_completion_benchmark.json
-!docs/experiments/dynamic_completion_benchmark.md
 !docs/experiments/release_latency_benchmark_2026-07-10.json
-!docs/experiments/release_readiness_2026-07-10.md
 !docs/experiments/static_grouped_cv_release_2026-07-10.json
-!docs/experiments/static_grouped_cv_release_2026-07-10.md
 docs/figures/
 docs/mlops_dashboard/
 docs/plots/
@@ -108,6 +101,7 @@ docs/UI_IMPROVEMENTS.md
 docs/VOICE_SELECTION_GUIDE.md
 docs/gesture_metrics_results.json
 docs/DEFENSE_*.md
+docs/PRESENTATION_*.md
 docs/*/drafts/
 docs/*/slides/
 docs/*DEVELOPMENT_PLAN.md
@@ -131,9 +125,12 @@ tests/unit/test_*inspector_report.py
 packaging/*/
 # The macOS bundle is part of the public release contract.
 !packaging/macos/
+!packaging/macos/INSTALL.txt
 !packaging/macos/RUN_MACOS.md
 !packaging/macos/build_app.sh
 !packaging/macos/gesturebind_launcher.py
+!packaging/macos/render_app_icon.py
+!packaging/macos/render_dmg_background.py
 .github/workflows/*app.yml
 
 # Temporary files

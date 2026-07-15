@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.8.1-beta.4 - 2026-07-12
+
+- Fixed a native MediaPipe crash when recognition was stopped while the camera
+  thread was processing a frame.
+- Bundled and branded the Flet desktop client so GestureBind has one Dock icon
+  instead of separate launcher and Flet icons.
+- Added a native installation warning when GestureBind is launched directly
+  from a mounted DMG.
+- Kept camera shutdown and model disposal ordered and thread-safe across model
+  changes as well as the main Stop action.
+
+## v0.8.1-beta.3 - 2026-07-12
+
+- Reworked the macOS DMG as a native drag-and-drop installer with a custom
+  Finder layout and a clean app-to-Applications flow.
+- Added a branded GestureBind macOS icon and placed the installation, user and
+  project guides directly in the DMG.
+- Added clear Gatekeeper and Accessibility recovery instructions for beta users.
+- Fixed cursor mode so missing macOS Accessibility permission is reported and
+  the correct System Settings page opens automatically.
+- Published the first camera frame before ML warm-up to reduce perceived startup
+  delay in the packaged app.
+- Fixed static user recordings being mislabeled as dynamic when their name also
+  exists in the production dynamic model.
+- Documented that the public beta contains no Mistral key and uses the local MAS.
+
 ## v0.8.1 - 2026-07-10
 
 - Added a tracked PyInstaller macOS application bundle with Flet, MediaPipe,

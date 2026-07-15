@@ -70,9 +70,12 @@ REQUIRED_RELEASE_FILES = {
     "CHANGELOG.md",
     "LICENSE",
     "Makefile",
+    "packaging/macos/INSTALL.txt",
     "packaging/macos/RUN_MACOS.md",
     "packaging/macos/build_app.sh",
     "packaging/macos/gesturebind_launcher.py",
+    "packaging/macos/render_app_icon.py",
+    "packaging/macos/render_dmg_background.py",
     "README.md",
     "RELEASE_NOTES.md",
     "VERSION",
@@ -85,8 +88,10 @@ REQUIRED_RELEASE_FILES = {
     "docker-compose.telemetry.yml",
     "docs/TELEMETRY.md",
     "docs/USER_GUIDE.md",
-    "docs/contest/ML_SYSTEM_DESIGN.md",
-    "docs/experiments/release_readiness_2026-07-10.md",
+    "docs/experiments/dynamic_completion_benchmark.json",
+    "docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.json",
+    "docs/experiments/release_latency_benchmark_2026-07-10.json",
+    "docs/experiments/static_grouped_cv_release_2026-07-10.json",
     "requirements.txt",
     "requirements-dev.txt",
     "requirements-research.txt",
@@ -98,16 +103,10 @@ REQUIRED_RELEASE_FILES = {
 }
 
 ALLOWED_EXPERIMENT_EVIDENCE = {
-    "docs/experiments/README.md",
     "docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.json",
-    "docs/experiments/dynamic_lstm_grouped_retrain_2026-07-10.md",
     "docs/experiments/dynamic_completion_benchmark.json",
-    "docs/experiments/dynamic_completion_benchmark.md",
-    "docs/experiments/ml_pipeline_log.md",
     "docs/experiments/release_latency_benchmark_2026-07-10.json",
-    "docs/experiments/release_readiness_2026-07-10.md",
     "docs/experiments/static_grouped_cv_release_2026-07-10.json",
-    "docs/experiments/static_grouped_cv_release_2026-07-10.md",
 }
 
 

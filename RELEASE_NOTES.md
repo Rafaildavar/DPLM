@@ -1,4 +1,4 @@
-# GestureBind v0.8.1 MVP
+# GestureBind v0.8.1 Beta
 
 GestureBind v0.8.1 packages the validated v0.8.0 MVP as a native macOS app.
 The product path remains the same: record personal gestures, train local
@@ -25,6 +25,25 @@ models, validate them live and bind accepted gestures to safe macOS actions.
 - Optional daily telemetry sends sanitized aggregates with offline retry and
   explicit consent; camera data, landmarks, labels and command text stay local.
 - Correct, incorrect and missed controls provide user-confirmed quality signals.
+- The DMG now uses a native drag-and-drop layout with GestureBind and the
+  Applications shortcut above a separate documentation area.
+- Cursor mode checks macOS Accessibility before activation, opens the correct
+  settings page and no longer reports movement when macOS blocked it.
+- The first camera frame reaches the UI before MediaPipe and model warm-up, so
+  the preview appears immediately while recognition initializes.
+- User-recorded sample metadata takes precedence over production class names,
+  preventing a static personal gesture such as `zoom` from being mislabeled.
+- The public beta contains no Mistral API key and runs the binding MAS locally.
+- The app bundle now uses the GestureBind brand mark instead of PyInstaller's
+  default Python icon in Finder, Dock and Launchpad.
+- Installation, user and project guides are visible directly inside the DMG,
+  with a contrasting Finder label area for dark macOS themes.
+- Stopping recognition now waits for an in-flight MediaPipe frame before
+  closing the model, preventing the desktop backend from crashing.
+- The packaged Flet window uses the GestureBind identity and is the only app
+  shown in the Dock.
+- Launching GestureBind directly from a mounted DMG now shows an installation
+  prompt and exits instead of creating temporary macOS permissions.
 
 ## Reproducible Evidence
 
@@ -62,9 +81,10 @@ The final safety matrix passed the release target: one false command across
 - Taxonomy/config contracts, database migrations and command policies.
 - Unit/integration tests, ML smoke checks and release automation.
 - Curated architecture, training, binding and release-readiness documents.
-- Ad-hoc signed `GestureBind.app` in an install-friendly
-  `GestureBind-macos-v0.8.1.dmg`, with ZIP kept as a fallback.
-- Russian end-user guide included in both macOS artifacts.
+- Ad-hoc signed `GestureBind.app` in an install-friendly DMG, with ZIP kept as
+  a fallback.
+- Russian end-user guide and Gatekeeper recovery steps included in both the DMG
+  and fallback ZIP.
 
 ## Not Included
 

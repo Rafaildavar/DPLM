@@ -42,6 +42,7 @@ from app.services.gesture_taxonomy import (
     DEFAULT_TAXONOMY_PATH,
     GESTURE_TYPE_DYNAMIC,
     GESTURE_TYPE_NEGATIVE,
+    GESTURE_TYPE_STATIC,
     labels_for_gesture_types,
     load_gesture_taxonomy,
     parse_gesture_type_scope,
@@ -149,14 +150,29 @@ except ImportError:
 
 
 try:
-    from app.services.pointer_control import PointerControlService, parse_landmarks_json
+    from app.services.pointer_control import (
+        ACCESSIBILITY_HINT,
+        ACCESSIBILITY_RESTART_HINT,
+        PointerControlService,
+        macos_accessibility_trusted,
+        macos_open_accessibility_settings,
+        parse_landmarks_json,
+    )
 
     POINTER_CONTROL_AVAILABLE = True
 except ImportError as e:
     print(f"[WARN] Pointer control недоступен: {e}")
     POINTER_CONTROL_AVAILABLE = False
+    ACCESSIBILITY_HINT = "Управление курсором недоступно"  # type: ignore[assignment]
+    ACCESSIBILITY_RESTART_HINT = ACCESSIBILITY_HINT  # type: ignore[assignment]
     PointerControlService = None  # type: ignore[assignment]
     parse_landmarks_json = None  # type: ignore[assignment]
+
+    def macos_accessibility_trusted() -> bool:
+        return False
+
+    def macos_open_accessibility_settings() -> None:
+        return None
 
 
 # ---- Сигналы как простые подписки -------------------------------------------
@@ -508,6 +524,9 @@ class AppController:
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
         self._pointer_mode: bool = False
+        self._pointer_accessibility_settings_opened: bool = False
+        self._pointer_accessibility_watch_active: bool = False
+        self._pointer_accessibility_watch_token: int = 0
         self._pointer_state_payload: dict[str, Any] = {
             "enabled": False,
             "state": "idle",
@@ -583,6 +602,7 @@ class AppController:
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
+        self._embedded_infer_lock = threading.RLock()
         self._pointer_control: Any | None = None
 
         # Subprocess realtime_infer (фоновое распознавание) ------------------
@@ -1236,6 +1256,23 @@ class AppController:
                 return key
         return "custom"
 
+    def _embedded_infer_guard(self) -> Any:
+        lock = getattr(self, "_embedded_infer_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._embedded_infer_lock = lock
+        return lock
+
+    def _close_embedded_infer(self) -> None:
+        with self._embedded_infer_guard():
+            infer = getattr(self, "_embedded_infer", None)
+            self._embedded_infer = None
+            if infer is not None:
+                try:
+                    infer.close()
+                except Exception:
+                    pass
+
     def _reset_embedded_infer_after_model_change(self) -> None:
         try:
             self._reset_gesture_confirmation(immediate_ui=True)
@@ -1249,13 +1286,7 @@ class AppController:
             except Exception:
                 pass
 
-        infer = getattr(self, "_embedded_infer", None)
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
         if getattr(self, "_embedded_active", False):
             self._set_status(self._live_recognition_status())
 
@@ -3927,19 +3958,23 @@ class AppController:
         with self._preview_condition:
             self._preview_condition.notify_all()
         cap = self._camera_cap
+        current_thread = threading.current_thread()
+        camera_threads = (
+            self._camera_thread,
+            self._camera_preview_thread,
+        )
+        for t in camera_threads:
+            if t is not None and t is not current_thread:
+                t.join(timeout=2.0)
         self._camera_cap = None
         if cap is not None:
             try:
                 cap.release()
             except Exception:
                 pass
-        current_thread = threading.current_thread()
-        for t in (
-            self._camera_thread,
-            self._camera_preview_thread,
-        ):
-            if t is not None and t is not current_thread:
-                t.join(timeout=2.0)
+        for t in camera_threads:
+            if t is not None and t is not current_thread and t.is_alive():
+                t.join(timeout=1.0)
         self._camera_thread = None
         self._camera_preview_thread = None
         with self._preview_condition:
@@ -3982,8 +4017,10 @@ class AppController:
                 frame_bgr=cv2.flip(frame_bgr, 1),
                 captured_at=time.monotonic(),
             )
-            self._process_camera_frame_for_ml(frame)
+            # The first ML initialization can take several seconds in a frozen app.
+            # Let the independent preview thread show the camera immediately.
             self._publish_preview_frame(frame)
+            self._process_camera_frame_for_ml(frame)
 
             after_work = time.monotonic()
             next_t += frame_interval
@@ -4016,11 +4053,6 @@ class AppController:
             return
 
         try:
-            if self._embedded_infer is None:
-                self._embedded_infer = self._create_embedded_infer()
-            if self._embedded_infer is None:
-                return
-
             camera_h, camera_w = frame_bgr.shape[:2]
             rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             rgb = _resize_frame_to_max_width(
@@ -4030,15 +4062,23 @@ class AppController:
             rgb = np.ascontiguousarray(rgb)
             inference_started_at = time.monotonic()
             timestamp_ms = int(round(float(frame.captured_at) * 1000.0))
-            try:
-                out = self._embedded_infer.process_frame_rgb(
-                    rgb,
-                    timestamp_ms=timestamp_ms,
-                )
-            except TypeError as exc:
-                if "timestamp" not in str(exc):
-                    raise
-                out = self._embedded_infer.process_frame_rgb(rgb)
+            with self._embedded_infer_guard():
+                if not self._embedded_active:
+                    return
+                if self._embedded_infer is None:
+                    self._embedded_infer = self._create_embedded_infer()
+                infer = self._embedded_infer
+                if infer is None:
+                    return
+                try:
+                    out = infer.process_frame_rgb(
+                        rgb,
+                        timestamp_ms=timestamp_ms,
+                    )
+                except TypeError as exc:
+                    if "timestamp" not in str(exc):
+                        raise
+                    out = infer.process_frame_rgb(rgb)
             if out is None:
                 return
             perf = out.get("performance")
@@ -4448,6 +4488,11 @@ class AppController:
         return {
             "schema_version": 2,
             "label": str(session.get("label") or ""),
+            "gesture_type": (
+                GESTURE_TYPE_DYNAMIC
+                if bool(session.get("include_global_motion"))
+                else GESTURE_TYPE_STATIC
+            ),
             "sample": path.name,
             "kind": kind,
             "source": "camera" if kind == "real" else "augmented",
@@ -5091,13 +5136,14 @@ class AppController:
                 route_metadata=route_metadata,
             )
             if str(route_metadata.get("route") or "") == "dynamic":
-                acknowledger = getattr(
-                    getattr(self, "_embedded_infer", None),
-                    "acknowledge_dynamic_event",
-                    None,
-                )
-                if callable(acknowledger):
-                    acknowledger()
+                with self._embedded_infer_guard():
+                    acknowledger = getattr(
+                        getattr(self, "_embedded_infer", None),
+                        "acknowledge_dynamic_event",
+                        None,
+                    )
+                    if callable(acknowledger):
+                        acknowledger()
                 self._mark_dynamic_event_accepted(label, route_metadata)
             self._last_label = label
             self.gesture_detected.emit(label)
@@ -5404,7 +5450,7 @@ class AppController:
         self.stop_recognition()
         self._set_recognizing(True)
         self._set_status("CV: загрузка MediaPipe…")
-        self._embedded_infer = None
+        self._close_embedded_infer()
         self._embedded_active = True
         self._last_label = ""
         self._reset_gesture_confirmation(immediate_ui=True)
@@ -5425,13 +5471,7 @@ class AppController:
         self._reset_pointer_control()
         self._set_confidence(0.0)
         self._set_landmarks("[]")
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
         if (
             self._status.startswith("CV:")
             or self._status.startswith("Распознавание")
@@ -5539,11 +5579,12 @@ class AppController:
             return
         self._two_hands_mode = target
         self.two_hands_changed.emit(target)
-        if self._embedded_infer is not None:
-            try:
-                self._embedded_infer.set_two_hands(target)
-            except Exception as e:
-                print(f"[!] set_two_hands: {e}")
+        with self._embedded_infer_guard():
+            if self._embedded_infer is not None:
+                try:
+                    self._embedded_infer.set_two_hands(target)
+                except Exception as e:
+                    print(f"[!] set_two_hands: {e}")
         if self._is_recognition_pid_active():
             self.stop_recognition()
             self.start_recognition()
@@ -5566,13 +5607,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "recognition_model_mode_changed", None)
         if event is not None:
@@ -5594,13 +5629,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "dynamic_model_profile_changed", None)
         if event is not None:
@@ -5622,13 +5651,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "static_rejection_method_changed", None)
         if event is not None:
@@ -5662,6 +5685,33 @@ class AppController:
 
     def set_pointer_mode(self, enabled: bool) -> None:
         target = bool(enabled)
+        if (
+            target
+            and sys.platform == "darwin"
+            and not macos_accessibility_trusted()
+        ):
+            settings_opened = bool(
+                getattr(self, "_pointer_accessibility_settings_opened", False)
+            )
+            self._pointer_mode = False
+            self._reset_pointer_control()
+            self._emit_pointer_state(
+                state="disabled",
+                error=(
+                    ACCESSIBILITY_RESTART_HINT
+                    if settings_opened
+                    else ACCESSIBILITY_HINT
+                ),
+            )
+            self.pointer_mode_changed.emit(False)
+            if not settings_opened:
+                self._pointer_accessibility_settings_opened = True
+                self._set_status(f"Указатель: {ACCESSIBILITY_HINT}")
+                macos_open_accessibility_settings()
+            else:
+                self._set_status(f"Указатель: {ACCESSIBILITY_RESTART_HINT}")
+            self._start_pointer_accessibility_watch()
+            return
         if target == self._pointer_mode:
             return
         self._pointer_mode = target
@@ -5672,6 +5722,53 @@ class AppController:
             self._set_status(self._live_recognition_status())
         elif self._status.startswith("Указатель:"):
             self._set_status("Idle")
+
+    def _start_pointer_accessibility_watch(self) -> None:
+        if sys.platform != "darwin" or bool(
+            getattr(self, "_pointer_accessibility_watch_active", False)
+        ):
+            return
+        self._pointer_accessibility_watch_active = True
+        self._pointer_accessibility_watch_token = int(
+            getattr(self, "_pointer_accessibility_watch_token", 0)
+        ) + 1
+        token = self._pointer_accessibility_watch_token
+        Thread(
+            target=self._pointer_accessibility_watch_loop,
+            args=(token,),
+            name="gesturebind-accessibility-watch",
+            daemon=True,
+        ).start()
+
+    def _pointer_accessibility_watch_loop(self, token: int) -> None:
+        try:
+            for _ in range(120):
+                time.sleep(0.5)
+                if token != int(
+                    getattr(self, "_pointer_accessibility_watch_token", 0)
+                ):
+                    return
+                if macos_accessibility_trusted():
+                    self._activate_pointer_after_accessibility_grant()
+                    return
+        finally:
+            if token == int(
+                getattr(self, "_pointer_accessibility_watch_token", 0)
+            ):
+                self._pointer_accessibility_watch_active = False
+
+    def _activate_pointer_after_accessibility_grant(self) -> None:
+        self._pointer_accessibility_settings_opened = False
+        if self._pointer_mode:
+            return
+        self._pointer_mode = True
+        self._reset_pointer_control()
+        self._emit_pointer_state(state="idle", moved=False, clicked=False)
+        self.pointer_mode_changed.emit(True)
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
+        else:
+            self._set_status("Указатель: разрешение получено")
 
     # ----------------------------------------------------------------------
     # Команды
@@ -5837,9 +5934,9 @@ class AppController:
             or self._is_recognition_pid_active()
         ):
             self.cancel_live_evaluation()
+            self.stop_camera()
             self.stop_embedded_recognition()
             self.stop_recognition()
-            self.stop_camera()
             self._set_recognizing(False)
         else:
             self.start_embedded_recognition()
@@ -6063,6 +6160,31 @@ class AppController:
                         pass
                 if visible_sample_count <= 0:
                     continue
+                user_sample_paths: list[Path] = []
+                for sample in user_samples[:8]:
+                    sample_path = self._db_sample_path(sample)
+                    if (
+                        sample_path is not None
+                        and sample_path not in user_sample_paths
+                    ):
+                        user_sample_paths.append(sample_path)
+                for sample_path in legacy_user_samples:
+                    if len(user_sample_paths) >= 8:
+                        break
+                    if sample_path not in user_sample_paths:
+                        user_sample_paths.append(sample_path)
+
+                if sample_count > 0:
+                    gesture_type = self._infer_training_gesture_type(
+                        label_value,
+                        user_sample_paths,
+                    )
+                elif label_value.lower() in dynamic_classes:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+                elif label_value.lower() in static_classes:
+                    gesture_type = GESTURE_TYPE_STATIC
+                else:
+                    gesture_type = ""
                 command = current.get(g.id)
                 action_spec: dict[str, Any] = {}
                 raw_spec = (
@@ -6089,11 +6211,7 @@ class AppController:
                         "standardClass": bool(sample_count <= 0),
                         "systemClass": False,
                         "canDelete": bool(sample_count > 0),
-                        "gestureType": (
-                            GESTURE_TYPE_DYNAMIC
-                            if label_value.lower() in dynamic_classes
-                            else ""
-                        ),
+                        "gestureType": gesture_type,
                         "isTwoHands": bool(
                             getattr(g, "is_two_hands", False) or False
                         ),
@@ -6882,7 +7000,7 @@ class AppController:
         try:
             return self._gesture_type_for_label(label)
         except Exception:
-            return "static"
+            return GESTURE_TYPE_STATIC
 
     @staticmethod
     def _infer_training_gesture_type_from_sample(sample_path: Path) -> str:
@@ -6900,8 +7018,12 @@ class AppController:
                     GESTURE_TYPE_NEGATIVE,
                 }:
                     return scope
-                if bool(meta.get("include_global_motion")):
-                    return GESTURE_TYPE_DYNAMIC
+                if "include_global_motion" in meta:
+                    return (
+                        GESTURE_TYPE_DYNAMIC
+                        if bool(meta.get("include_global_motion"))
+                        else GESTURE_TYPE_STATIC
+                    )
                 sample_format = str(meta.get("sample_feature_format") or "").lower()
                 if "wrist_xy" in sample_format:
                     return GESTURE_TYPE_DYNAMIC

@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 
 from app.flet_app.controller import (
@@ -77,3 +79,73 @@ def test_ml_path_uses_fresh_capture_loop_without_preview_throttle():
     assert dispatched[1]["performance"]["camera_frame_sequence"] == 2
     assert dispatched[0]["performance"]["inference_frame_policy"] == "fresh_capture_loop"
     assert dispatched[0]["performance"]["inference_queue_depth"] == 0
+
+
+def test_capture_loop_publishes_first_frame_before_ml_initialization():
+    events = []
+
+    class FakeCapture:
+        @staticmethod
+        def read():
+            return True, np.zeros((24, 32, 3), dtype=np.uint8)
+
+    controller = object.__new__(AppController)
+    controller._camera_stop = threading.Event()
+    controller._camera_cap = FakeCapture()
+    controller._camera_frame_seq = 0
+    controller._target_fps = 30
+    controller._publish_preview_frame = lambda _frame: events.append("preview")
+
+    def process(_frame):
+        events.append("ml")
+        controller._camera_stop.set()
+
+    controller._process_camera_frame_for_ml = process
+
+    controller._camera_capture_loop()
+
+    assert events == ["preview", "ml"]
+
+
+def test_infer_close_waits_for_inflight_mediapipe_frame():
+    processing = threading.Event()
+    finish_processing = threading.Event()
+    closed = threading.Event()
+
+    class FakeInfer:
+        @staticmethod
+        def process_frame_rgb(_rgb, *, timestamp_ms=None):
+            processing.set()
+            assert finish_processing.wait(timeout=2.0)
+            return None
+
+        @staticmethod
+        def close():
+            closed.set()
+
+    controller = object.__new__(AppController)
+    controller._sample_recording = None
+    controller._embedded_active = True
+    controller._embedded_infer = FakeInfer()
+    controller._embedded_infer_lock = threading.RLock()
+    frame = _CameraFrame(1, np.zeros((24, 32, 3), dtype=np.uint8), 1.0)
+
+    worker = threading.Thread(
+        target=controller._process_camera_frame_for_ml,
+        args=(frame,),
+    )
+    worker.start()
+    assert processing.wait(timeout=2.0)
+
+    closer = threading.Thread(target=controller._close_embedded_infer)
+    closer.start()
+    assert not closed.wait(timeout=0.1)
+
+    finish_processing.set()
+    worker.join(timeout=2.0)
+    closer.join(timeout=2.0)
+
+    assert not worker.is_alive()
+    assert not closer.is_alive()
+    assert closed.is_set()
+    assert controller._embedded_infer is None

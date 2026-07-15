@@ -1357,12 +1357,17 @@ class HomeView:
         tab_switched = str(data.get("tabSwitched") or "").strip()
         clicked = bool(data.get("clicked"))
 
-        if not enabled:
+        if error or state == "disabled":
+            if "перезапустите" in error.lower():
+                text = "Перезапустите GestureBind"
+            elif "Универсальный доступ" in error:
+                text = "Нужно разрешение macOS"
+            else:
+                text = "Курсор недоступен"
+            color = COLOR_DANGER
+        elif not enabled:
             text = "Курсор выключен"
             color = COLOR_MUTED
-        elif error or state == "disabled":
-            text = "Курсор недоступен"
-            color = COLOR_DANGER
         elif tab_switched:
             text = "Переключено движение курсора"
             color = COLOR_WARNING

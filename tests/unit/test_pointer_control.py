@@ -3,6 +3,7 @@ import json
 
 from app.services.pointer_control import (
     POINTER_STATE_CLICK_READY,
+    POINTER_STATE_DISABLED,
     POINTER_STATE_LOST,
     POINTER_STATE_TRACKING,
     PointerControlService,
@@ -75,6 +76,37 @@ def test_pointer_moves_cursor(monkeypatch):
     assert result.ok
     assert result.moved
     assert moves
+
+
+def test_pointer_reports_missing_macos_accessibility(monkeypatch):
+    moves = []
+
+    class FakePyAutoGUI:
+        @staticmethod
+        def size():
+            return (1000, 800)
+
+        @staticmethod
+        def moveTo(x, y, *args, **kwargs):
+            moves.append((x, y))
+
+    import app.services.pointer_control as pc
+
+    monkeypatch.setattr(pc, "pyautogui", FakePyAutoGUI)
+    monkeypatch.setattr(pc, "PYAUTOGUI_AVAILABLE", True)
+    monkeypatch.setattr(pc.sys, "platform", "darwin")
+    monkeypatch.setattr(pc, "macos_accessibility_trusted", lambda: False)
+
+    landmarks = [[0.5, 0.5] for _ in range(21)]
+    payload = json.dumps([{"landmarks": landmarks, "handedness": "Right"}])
+
+    result = PointerControlService().update(payload)
+
+    assert result.ok is False
+    assert result.moved is False
+    assert result.state == POINTER_STATE_DISABLED
+    assert "Универсальный доступ" in result.error
+    assert moves == []
 
 
 def test_screen_size_falls_back_when_pyautogui_reports_zero(monkeypatch):

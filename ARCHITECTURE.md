@@ -2,8 +2,8 @@
 
 This document describes the release architecture of GestureBind MVP. It is the
 source of truth for runtime boundaries, data ownership and repository scope.
-Experiment details live in `docs/experiments/`; they do not redefine the
-production path.
+Machine-readable experiment evidence lives in `docs/experiments/*.json`; it
+does not redefine the production path.
 
 ## 1. MVP Boundary
 
@@ -192,6 +192,5 @@ A release is valid when:
    files only;
 6. a short live matrix is run for static, dynamic and no-command scenarios.
 
-The detailed ML evidence and current limitations are maintained in
-`docs/contest/ML_SYSTEM_DESIGN.md` and
-`docs/experiments/release_readiness_2026-07-10.md`.
+The release summary and current limitations are maintained in `README.md`;
+reproducible ML evidence is stored as JSON under `docs/experiments/`.
