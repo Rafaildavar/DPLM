@@ -1,0 +1,17 @@
+services:
+  telemetry:
+    build:
+      context: .
+      dockerfile: deploy/telemetry/Dockerfile
+    restart: unless-stopped
+    environment:
+      TELEMETRY_PROJECT_KEY: ${TELEMETRY_PROJECT_KEY:?set TELEMETRY_PROJECT_KEY}
+      TELEMETRY_ADMIN_TOKEN: ${TELEMETRY_ADMIN_TOKEN:?set TELEMETRY_ADMIN_TOKEN}
+      TELEMETRY_RETENTION_DAYS: ${TELEMETRY_RETENTION_DAYS:-90}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - gesturebind_telemetry:/data
+
+volumes:
+  gesturebind_telemetry:

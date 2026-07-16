@@ -19,9 +19,13 @@ SpeechRecognition
 vosk
 
 # GUI Framework — Flet (Flutter desktop runtime).
+# Desktop запускает приложение, web предоставляет шрифт для release-иконки.
+# Версия зафиксирована: новые Flet-клиенты сначала проходят release-проверку.
 # Точка входа: `python -m app.flet_app.main`.
-flet>=0.85.3
-flet-desktop>=0.85.3
+flet[desktop,web]==0.85.3
+
+# Secure storage for user-supplied MAS API keys (macOS Keychain in release).
+keyring==24.3.1
 
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)

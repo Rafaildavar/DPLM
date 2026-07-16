@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import json
+import uuid
 import zlib
 from collections import Counter
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ from app.services.gesture_taxonomy import (
     DEFAULT_TAXONOMY_PATH,
     GESTURE_TYPE_DYNAMIC,
     GESTURE_TYPE_NEGATIVE,
+    GESTURE_TYPE_STATIC,
     labels_for_gesture_types,
     load_gesture_taxonomy,
     parse_gesture_type_scope,
@@ -50,6 +52,15 @@ from app.services.live_gesture_state import (
     LiveGestureSnapshot,
     LiveGestureState,
 )
+from app.services.llm_providers import (
+    get_llm_provider_preset,
+    llm_api_key_env_names,
+    llm_provider_label,
+    llm_provider_requires_api_key,
+    normalize_llm_provider,
+)
+from app.services.mas_credentials import MasCredentialError, MasCredentialStore
+from app.services.usage_telemetry import DailyUsageTelemetry
 from cv.gesture_dataset_files import (
     augmented_sample_path,
     augmented_sample_paths,
@@ -147,14 +158,29 @@ except ImportError:
 
 
 try:
-    from app.services.pointer_control import PointerControlService, parse_landmarks_json
+    from app.services.pointer_control import (
+        ACCESSIBILITY_HINT,
+        ACCESSIBILITY_RESTART_HINT,
+        PointerControlService,
+        macos_accessibility_trusted,
+        macos_open_accessibility_settings,
+        parse_landmarks_json,
+    )
 
     POINTER_CONTROL_AVAILABLE = True
 except ImportError as e:
     print(f"[WARN] Pointer control недоступен: {e}")
     POINTER_CONTROL_AVAILABLE = False
+    ACCESSIBILITY_HINT = "Управление курсором недоступно"  # type: ignore[assignment]
+    ACCESSIBILITY_RESTART_HINT = ACCESSIBILITY_HINT  # type: ignore[assignment]
     PointerControlService = None  # type: ignore[assignment]
     parse_landmarks_json = None  # type: ignore[assignment]
+
+    def macos_accessibility_trusted() -> bool:
+        return False
+
+    def macos_open_accessibility_settings() -> None:
+        return None
 
 
 # ---- Сигналы как простые подписки -------------------------------------------
@@ -502,10 +528,13 @@ class AppController:
         self._recognition_model_mode: str = RECOGNITION_MODEL_AUTO
         self._dynamic_model_profile: str = DYNAMIC_MODEL_PROFILE_PRODUCTION
         self._static_rejection_method: str = STATIC_REJECTION_OPEN_SET_POLICY
-        self._two_hands_mode: bool = bool(self._config.recognition.two_hands_mode)
+        self._two_hands_mode: bool = False
         self._gesture_mode: bool = True
         self._show_landmark_overlay: bool = True
         self._pointer_mode: bool = False
+        self._pointer_accessibility_settings_opened: bool = False
+        self._pointer_accessibility_watch_active: bool = False
+        self._pointer_accessibility_watch_token: int = 0
         self._pointer_state_payload: dict[str, Any] = {
             "enabled": False,
             "state": "idle",
@@ -574,9 +603,14 @@ class AppController:
         self._runtime_perf_last_flush = time.monotonic()
         self._live_usage_events: list[dict[str, Any]] = []
         self._live_usage_latest_runtime: dict[str, Any] = {}
+        self._latest_feedback_target: dict[str, Any] | None = None
+        self._feedback_source_ids: set[str] = set()
+        self._usage_telemetry: DailyUsageTelemetry | None = None
+        self._usage_telemetry_error: str = ""
 
         # Встроенный CV ------------------------------------------------------
         self._embedded_infer: Any | None = None
+        self._embedded_infer_lock = threading.RLock()
         self._pointer_control: Any | None = None
 
         # Subprocess realtime_infer (фоновое распознавание) ------------------
@@ -613,6 +647,7 @@ class AppController:
         if self._is_recognition_pid_active():
             self._is_recognizing = True
             self._status = "Recognizing in background"
+        self._configure_usage_telemetry()
 
     def _active_training_process(self) -> Optional[subprocess.Popen]:
         proc = self._training_proc
@@ -635,6 +670,65 @@ class AppController:
             return self._configured_log_dir()
         except Exception:
             return None
+
+    @staticmethod
+    def _release_version() -> str:
+        value = str(os.environ.get("GESTUREBIND_VERSION") or "").strip()
+        if value:
+            return value.removeprefix("v")
+        candidates = (
+            Path.cwd() / "VERSION",
+            Path(__file__).resolve().parents[2] / "VERSION",
+        )
+        for path in candidates:
+            try:
+                value = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if value:
+                return value.removeprefix("v")
+        return "unknown"
+
+    def _configure_usage_telemetry(self) -> None:
+        previous = getattr(self, "_usage_telemetry", None)
+        if previous is not None:
+            previous.stop()
+        self._usage_telemetry = None
+        self._usage_telemetry_error = ""
+        try:
+            settings = self._config.telemetry
+            client = DailyUsageTelemetry(
+                log_dir=self._configured_log_dir(),
+                endpoint=settings.endpoint,
+                enabled=settings.enabled,
+                project_key=settings.project_key,
+                app_version=self._release_version(),
+                interval_seconds=max(1, int(settings.interval_hours)) * 3600,
+            )
+            self._usage_telemetry = client
+            client.start()
+        except Exception as exc:
+            self._usage_telemetry_error = str(exc)[:240]
+            print(f"[w] usage telemetry unavailable: {exc}", flush=True)
+
+    def get_usage_telemetry_status(self) -> dict[str, Any]:
+        client = getattr(self, "_usage_telemetry", None)
+        if client is None:
+            return {
+                "enabled": False,
+                "configured": False,
+                "interval_hours": 24.0,
+                "last_success_at": 0.0,
+                "last_attempt_at": 0.0,
+                "last_error": str(
+                    getattr(self, "_usage_telemetry_error", "") or ""
+                ),
+            }
+        return client.status()
+
+    def send_usage_telemetry_now(self) -> bool:
+        client = getattr(self, "_usage_telemetry", None)
+        return bool(client and client.upload_if_due(force=True))
 
     # ----------------------------------------------------------------------
     # Свойства / геттеры
@@ -928,6 +1022,207 @@ class AppController:
             return False, [str(e)], result.warnings
         return True, [], result.warnings
 
+    def _mas_credential_store(self) -> MasCredentialStore:
+        store = getattr(self, "_mas_credentials", None)
+        if store is None:
+            store = MasCredentialStore()
+            self._mas_credentials = store
+        return store
+
+    @staticmethod
+    def _mas_env_api_key(provider: str) -> tuple[str, str]:
+        for name in llm_api_key_env_names(provider):
+            value = str(os.getenv(name) or "").strip()
+            if value:
+                return value, name
+        return "", ""
+
+    def _mas_llm_runtime(self) -> dict[str, Any]:
+        self._config = self._config_store.load(include_env=True)
+        llm = self._config.llm
+        provider = normalize_llm_provider(llm.provider)
+        explicit_provider = str(
+            os.getenv("DPLM_BINDING_AGENT_PROVIDER")
+            or os.getenv("BINDING_AGENT_PROVIDER")
+            or ""
+        ).strip()
+        legacy_mistral_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
+        if legacy_mistral_key and not explicit_provider and provider == "local":
+            provider = "mistral"
+        preset = get_llm_provider_preset(provider)
+        model = str(llm.model or (preset.default_model if preset else "")).strip()
+        api_url = str(llm.api_url or (preset.api_url if preset else "")).strip()
+        env_key, env_key_name = self._mas_env_api_key(provider)
+        stored_key = ""
+        credential_error = ""
+        if not env_key and provider != "local":
+            try:
+                stored_key = self._mas_credential_store().get_api_key(
+                    provider,
+                    api_url,
+                )
+            except MasCredentialError as exc:
+                credential_error = str(exc)
+        api_key = env_key or stored_key
+        return {
+            "provider": provider,
+            "providerLabel": llm_provider_label(provider),
+            "model": model,
+            "apiUrl": api_url,
+            "apiKey": api_key,
+            "hasApiKey": bool(api_key),
+            "keySource": "environment" if env_key else "keychain" if stored_key else "none",
+            "keyEnvironment": env_key_name,
+            "requiresApiKey": llm_provider_requires_api_key(provider),
+            "credentialError": credential_error,
+        }
+
+    def get_mas_llm_settings(self) -> dict[str, Any]:
+        runtime = self._mas_llm_runtime()
+        runtime.pop("apiKey", None)
+        return runtime
+
+    def get_binding_agent_provider_label(self) -> str:
+        settings = self.get_mas_llm_settings()
+        if settings["provider"] == "local":
+            return "Локальный агент"
+        label = str(settings.get("providerLabel") or "LLM")
+        if settings["requiresApiKey"] and not settings["hasApiKey"]:
+            return f"{label} · нужен ключ"
+        return f"{label} · {settings['model']}"
+
+    def save_mas_llm_settings(
+        self,
+        *,
+        provider: str,
+        model: str,
+        api_url: str | None = None,
+        api_key: str = "",
+    ) -> tuple[bool, list[str]]:
+        target_provider = normalize_llm_provider(provider)
+        preset = get_llm_provider_preset(target_provider)
+        target_model = str(model or "").strip()
+        previous_raw = self.get_app_config()
+        current_raw = json.loads(json.dumps(previous_raw))
+        llm = dict(current_raw.get("llm") or {})
+        previous_provider = normalize_llm_provider(llm.get("provider"))
+        if api_url is None:
+            target_api_url = str(llm.get("api_url") or "").strip()
+            if previous_provider != target_provider and preset is not None:
+                target_api_url = preset.api_url
+        else:
+            target_api_url = str(api_url or "").strip()
+        if not target_model and previous_provider != target_provider and preset is not None:
+            target_model = preset.default_model
+        llm.update(
+            {
+                "provider": target_provider,
+                "model": target_model,
+                "api_url": target_api_url,
+            }
+        )
+        current_raw["llm"] = llm
+
+        env_key, _env_key_name = self._mas_env_api_key(target_provider)
+        new_key = str(api_key or "").strip()
+        if target_provider == "local" and new_key:
+            return False, [
+                "В локальном режиме API-ключ не используется"
+            ]
+        if env_key and new_key:
+            return False, [
+                "API-ключ задан окружением и не может быть заменён здесь"
+            ]
+
+        config = AppConfig.from_dict(current_raw)
+        validation = self._config_store.validate(config)
+        if not validation.ok:
+            return False, validation.errors
+
+        ok, errors, _warnings = self.save_app_config(current_raw)
+        if not ok:
+            return False, errors
+        if new_key:
+            try:
+                self._mas_credential_store().set_api_key(
+                    target_provider,
+                    new_key,
+                    target_api_url,
+                )
+            except (MasCredentialError, ValueError) as exc:
+                self.save_app_config(previous_raw)
+                return False, [str(exc)]
+        return True, []
+
+    def delete_mas_llm_api_key(self) -> tuple[bool, str]:
+        runtime = self._mas_llm_runtime()
+        if runtime["provider"] == "local":
+            return False, "В локальном режиме API-ключ не используется"
+        if runtime["keySource"] == "environment":
+            return False, "Ключ задан окружением и удаляется вне приложения"
+        try:
+            self._mas_credential_store().delete_api_key(
+                runtime["provider"],
+                runtime["apiUrl"],
+            )
+        except MasCredentialError as exc:
+            return False, str(exc)
+        return True, "API-ключ удалён"
+
+    def test_mas_llm_connection(self) -> tuple[bool, str]:
+        runtime = self._mas_llm_runtime()
+        if runtime["provider"] == "local":
+            return False, "Сначала выберите внешний LLM или Ollama"
+        if runtime["credentialError"]:
+            return False, str(runtime["credentialError"])
+        from app.services.binding_agent import OpenAICompatibleBindingAgent
+
+        agent = OpenAICompatibleBindingAgent(
+            api_key=runtime["apiKey"],
+            model=runtime["model"],
+            api_url=runtime["apiUrl"],
+            provider_label=runtime["providerLabel"],
+            requires_api_key=runtime["requiresApiKey"],
+            api_key_env="",
+        )
+        return agent.check_connection()
+
+    def build_agent_binding_draft(
+        self,
+        prompt: str,
+        gestures: list[dict[str, Any]],
+        *,
+        current_gesture: str = "",
+        conversation_history: list[dict[str, str]] | None = None,
+        draft_state: dict[str, Any] | None = None,
+        bindings: list[dict[str, Any]] | None = None,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        from app.services.binding_agent import (
+            BindingAgentOrchestrator,
+            OpenAICompatibleBindingAgent,
+        )
+
+        runtime = self._mas_llm_runtime()
+        model_agent = OpenAICompatibleBindingAgent(
+            api_key=runtime["apiKey"],
+            model=runtime["model"],
+            api_url=runtime["apiUrl"],
+            provider_label=runtime["providerLabel"],
+            requires_api_key=runtime["requiresApiKey"],
+            api_key_env="",
+        )
+        return BindingAgentOrchestrator(model_agent=model_agent).run(
+            prompt,
+            gestures,
+            current_gesture=current_gesture,
+            conversation_history=conversation_history,
+            draft_state=draft_state,
+            bindings=bindings,
+            session_id=session_id,
+            provider=runtime["provider"],
+        ).to_legacy_draft()
+
     def get_system_status(self) -> dict[str, Any]:
         """Лёгкая сводка для экрана настроек."""
         self._config = self._config_store.load(include_env=True)
@@ -1009,6 +1304,7 @@ class AppController:
         self._recognition_pid_file = log_dir / "gesture_infer.pid"
         self._recognition_log_file = log_dir / "gesture_infer.log"
         self.set_two_hands_mode(bool(self._config.recognition.two_hands_mode))
+        self._configure_usage_telemetry()
 
     def _reset_db_bridge(self) -> None:
         self._gesture_command_bridge = None
@@ -1169,6 +1465,23 @@ class AppController:
                 return key
         return "custom"
 
+    def _embedded_infer_guard(self) -> Any:
+        lock = getattr(self, "_embedded_infer_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._embedded_infer_lock = lock
+        return lock
+
+    def _close_embedded_infer(self) -> None:
+        with self._embedded_infer_guard():
+            infer = getattr(self, "_embedded_infer", None)
+            self._embedded_infer = None
+            if infer is not None:
+                try:
+                    infer.close()
+                except Exception:
+                    pass
+
     def _reset_embedded_infer_after_model_change(self) -> None:
         try:
             self._reset_gesture_confirmation(immediate_ui=True)
@@ -1182,13 +1495,7 @@ class AppController:
             except Exception:
                 pass
 
-        infer = getattr(self, "_embedded_infer", None)
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
         if getattr(self, "_embedded_active", False):
             self._set_status(self._live_recognition_status())
 
@@ -3587,7 +3894,7 @@ class AppController:
             "currentFrames": current_frames,
             "targetFrames": target_frames,
             "progress": progress,
-            "twoHands": bool(session.get("two_hands")),
+            "twoHands": False,
             "message": message or str(session.get("last_message") or ""),
         }
 
@@ -3860,19 +4167,23 @@ class AppController:
         with self._preview_condition:
             self._preview_condition.notify_all()
         cap = self._camera_cap
+        current_thread = threading.current_thread()
+        camera_threads = (
+            self._camera_thread,
+            self._camera_preview_thread,
+        )
+        for t in camera_threads:
+            if t is not None and t is not current_thread:
+                t.join(timeout=2.0)
         self._camera_cap = None
         if cap is not None:
             try:
                 cap.release()
             except Exception:
                 pass
-        current_thread = threading.current_thread()
-        for t in (
-            self._camera_thread,
-            self._camera_preview_thread,
-        ):
-            if t is not None and t is not current_thread:
-                t.join(timeout=2.0)
+        for t in camera_threads:
+            if t is not None and t is not current_thread and t.is_alive():
+                t.join(timeout=1.0)
         self._camera_thread = None
         self._camera_preview_thread = None
         with self._preview_condition:
@@ -3915,8 +4226,10 @@ class AppController:
                 frame_bgr=cv2.flip(frame_bgr, 1),
                 captured_at=time.monotonic(),
             )
-            self._process_camera_frame_for_ml(frame)
+            # The first ML initialization can take several seconds in a frozen app.
+            # Let the independent preview thread show the camera immediately.
             self._publish_preview_frame(frame)
+            self._process_camera_frame_for_ml(frame)
 
             after_work = time.monotonic()
             next_t += frame_interval
@@ -3949,11 +4262,6 @@ class AppController:
             return
 
         try:
-            if self._embedded_infer is None:
-                self._embedded_infer = self._create_embedded_infer()
-            if self._embedded_infer is None:
-                return
-
             camera_h, camera_w = frame_bgr.shape[:2]
             rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             rgb = _resize_frame_to_max_width(
@@ -3963,15 +4271,23 @@ class AppController:
             rgb = np.ascontiguousarray(rgb)
             inference_started_at = time.monotonic()
             timestamp_ms = int(round(float(frame.captured_at) * 1000.0))
-            try:
-                out = self._embedded_infer.process_frame_rgb(
-                    rgb,
-                    timestamp_ms=timestamp_ms,
-                )
-            except TypeError as exc:
-                if "timestamp" not in str(exc):
-                    raise
-                out = self._embedded_infer.process_frame_rgb(rgb)
+            with self._embedded_infer_guard():
+                if not self._embedded_active:
+                    return
+                if self._embedded_infer is None:
+                    self._embedded_infer = self._create_embedded_infer()
+                infer = self._embedded_infer
+                if infer is None:
+                    return
+                try:
+                    out = infer.process_frame_rgb(
+                        rgb,
+                        timestamp_ms=timestamp_ms,
+                    )
+                except TypeError as exc:
+                    if "timestamp" not in str(exc):
+                        raise
+                    out = infer.process_frame_rgb(rgb)
             if out is None:
                 return
             perf = out.get("performance")
@@ -4082,6 +4398,8 @@ class AppController:
 
         from cv.hand_landmarker import normalize_landmarks
 
+        two_hands = False
+
         def hand_feature(hand: Any) -> Any:
             normalized = normalize_landmarks(hand.landmarks)
             pts = np.asarray(hand.landmarks, dtype=np.float32)
@@ -4151,7 +4469,7 @@ class AppController:
         from cv.hand_landmarker import HandLandmarkerVideo
 
         self._sample_recording_detector = HandLandmarkerVideo(
-            num_hands=2 if two_hands else 1,
+            num_hands=1,
             min_detection_confidence=0.6,
             min_presence_confidence=0.6,
             min_tracking_confidence=0.6,
@@ -4379,6 +4697,11 @@ class AppController:
         return {
             "schema_version": 2,
             "label": str(session.get("label") or ""),
+            "gesture_type": (
+                GESTURE_TYPE_DYNAMIC
+                if bool(session.get("include_global_motion"))
+                else GESTURE_TYPE_STATIC
+            ),
             "sample": path.name,
             "kind": kind,
             "source": "camera" if kind == "real" else "augmented",
@@ -4837,11 +5160,15 @@ class AppController:
         route_metadata: dict[str, Any] | None = None,
         reason: str = "",
         command_info: str = "",
-    ) -> None:
+        feedback: str = "",
+        source_event_id: str = "",
+    ) -> str:
         metadata = route_metadata if isinstance(route_metadata, dict) else {}
         route_fields = self._live_evaluation_route_fields(metadata)
         now = time.time()
+        event_id = str(uuid.uuid4())
         row: dict[str, Any] = {
+            "event_id": event_id,
             "recorded_at": now,
             "event_type": str(event_type or ""),
             "label": str(label or "").strip(),
@@ -4858,6 +5185,10 @@ class AppController:
                 getattr(self, "_auto_execute_on_gesture", False)
             ),
         }
+        if feedback:
+            row["feedback"] = str(feedback)
+        if source_event_id:
+            row["source_event_id"] = str(source_event_id)
         row.update(route_fields)
         events = getattr(self, "_live_usage_events", None)
         if not isinstance(events, list):
@@ -4867,6 +5198,45 @@ class AppController:
         del events[:-LIVE_USAGE_EVENTS_LIMIT]
         self._append_jsonl_log("live_usage_events.jsonl", row)
         self._write_live_usage_summary()
+        if event_type in {"gesture_confirmed", "command_executed", "command_rejected"}:
+            self._latest_feedback_target = {
+                "event_id": event_id,
+                "label": str(label or "").strip(),
+                "confidence": float(confidence or 0.0),
+                "route_metadata": dict(metadata),
+            }
+        return event_id
+
+    def record_recognition_feedback(self, verdict: str) -> bool:
+        clean = str(verdict or "").strip().lower()
+        if clean not in {"correct", "incorrect", "missed"}:
+            return False
+        target = dict(getattr(self, "_latest_feedback_target", None) or {})
+        if clean == "missed":
+            target = {}
+        source_event_id = str(target.get("event_id") or "")
+        seen = getattr(self, "_feedback_source_ids", None)
+        if not isinstance(seen, set):
+            seen = set()
+            self._feedback_source_ids = seen
+        if clean != "missed" and not source_event_id:
+            return False
+        if source_event_id and source_event_id in seen:
+            return False
+        if source_event_id:
+            seen.add(source_event_id)
+        self._record_live_usage_event(
+            "recognition_feedback",
+            str(target.get("label") or ""),
+            float(target.get("confidence") or 0.0),
+            executed=False,
+            route_metadata=target.get("route_metadata")
+            if isinstance(target.get("route_metadata"), dict)
+            else {},
+            feedback=clean,
+            source_event_id=source_event_id,
+        )
+        return True
 
     def _dispatch_infer_result(self, out: dict[str, Any]) -> None:
         self._update_live_evaluation_timeout()
@@ -4975,13 +5345,14 @@ class AppController:
                 route_metadata=route_metadata,
             )
             if str(route_metadata.get("route") or "") == "dynamic":
-                acknowledger = getattr(
-                    getattr(self, "_embedded_infer", None),
-                    "acknowledge_dynamic_event",
-                    None,
-                )
-                if callable(acknowledger):
-                    acknowledger()
+                with self._embedded_infer_guard():
+                    acknowledger = getattr(
+                        getattr(self, "_embedded_infer", None),
+                        "acknowledge_dynamic_event",
+                        None,
+                    )
+                    if callable(acknowledger):
+                        acknowledger()
                 self._mark_dynamic_event_accepted(label, route_metadata)
             self._last_label = label
             self.gesture_detected.emit(label)
@@ -5288,7 +5659,7 @@ class AppController:
         self.stop_recognition()
         self._set_recognizing(True)
         self._set_status("CV: загрузка MediaPipe…")
-        self._embedded_infer = None
+        self._close_embedded_infer()
         self._embedded_active = True
         self._last_label = ""
         self._reset_gesture_confirmation(immediate_ui=True)
@@ -5309,13 +5680,7 @@ class AppController:
         self._reset_pointer_control()
         self._set_confidence(0.0)
         self._set_landmarks("[]")
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
         if (
             self._status.startswith("CV:")
             or self._status.startswith("Распознавание")
@@ -5352,8 +5717,6 @@ class AppController:
             "--fps",
             str(int(self._config.recognition.target_fps)),
         ]
-        if self._two_hands_mode:
-            cmd.append("--two-hands")
         try:
             log_handle = self._recognition_log_file.open("a", encoding="utf-8")
             self._recognition_process = subprocess.Popen(
@@ -5420,16 +5783,17 @@ class AppController:
     # ----------------------------------------------------------------------
 
     def set_two_hands_mode(self, enabled: bool) -> None:
-        target = bool(enabled)
+        target = False
         if target == self._two_hands_mode:
             return
         self._two_hands_mode = target
         self.two_hands_changed.emit(target)
-        if self._embedded_infer is not None:
-            try:
-                self._embedded_infer.set_two_hands(target)
-            except Exception as e:
-                print(f"[!] set_two_hands: {e}")
+        with self._embedded_infer_guard():
+            if self._embedded_infer is not None:
+                try:
+                    self._embedded_infer.set_two_hands(target)
+                except Exception as e:
+                    print(f"[!] set_two_hands: {e}")
         if self._is_recognition_pid_active():
             self.stop_recognition()
             self.start_recognition()
@@ -5452,13 +5816,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "recognition_model_mode_changed", None)
         if event is not None:
@@ -5480,13 +5838,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "dynamic_model_profile_changed", None)
         if event is not None:
@@ -5508,13 +5860,7 @@ class AppController:
             self._last_label = ""
             self.gesture_detected.emit("")
 
-        infer = self._embedded_infer
-        self._embedded_infer = None
-        if infer is not None:
-            try:
-                infer.close()
-            except Exception:
-                pass
+        self._close_embedded_infer()
 
         event = getattr(self, "static_rejection_method_changed", None)
         if event is not None:
@@ -5548,6 +5894,33 @@ class AppController:
 
     def set_pointer_mode(self, enabled: bool) -> None:
         target = bool(enabled)
+        if (
+            target
+            and sys.platform == "darwin"
+            and not macos_accessibility_trusted()
+        ):
+            settings_opened = bool(
+                getattr(self, "_pointer_accessibility_settings_opened", False)
+            )
+            self._pointer_mode = False
+            self._reset_pointer_control()
+            self._emit_pointer_state(
+                state="disabled",
+                error=(
+                    ACCESSIBILITY_RESTART_HINT
+                    if settings_opened
+                    else ACCESSIBILITY_HINT
+                ),
+            )
+            self.pointer_mode_changed.emit(False)
+            if not settings_opened:
+                self._pointer_accessibility_settings_opened = True
+                self._set_status(f"Указатель: {ACCESSIBILITY_HINT}")
+                macos_open_accessibility_settings()
+            else:
+                self._set_status(f"Указатель: {ACCESSIBILITY_RESTART_HINT}")
+            self._start_pointer_accessibility_watch()
+            return
         if target == self._pointer_mode:
             return
         self._pointer_mode = target
@@ -5558,6 +5931,53 @@ class AppController:
             self._set_status(self._live_recognition_status())
         elif self._status.startswith("Указатель:"):
             self._set_status("Idle")
+
+    def _start_pointer_accessibility_watch(self) -> None:
+        if sys.platform != "darwin" or bool(
+            getattr(self, "_pointer_accessibility_watch_active", False)
+        ):
+            return
+        self._pointer_accessibility_watch_active = True
+        self._pointer_accessibility_watch_token = int(
+            getattr(self, "_pointer_accessibility_watch_token", 0)
+        ) + 1
+        token = self._pointer_accessibility_watch_token
+        Thread(
+            target=self._pointer_accessibility_watch_loop,
+            args=(token,),
+            name="gesturebind-accessibility-watch",
+            daemon=True,
+        ).start()
+
+    def _pointer_accessibility_watch_loop(self, token: int) -> None:
+        try:
+            for _ in range(120):
+                time.sleep(0.5)
+                if token != int(
+                    getattr(self, "_pointer_accessibility_watch_token", 0)
+                ):
+                    return
+                if macos_accessibility_trusted():
+                    self._activate_pointer_after_accessibility_grant()
+                    return
+        finally:
+            if token == int(
+                getattr(self, "_pointer_accessibility_watch_token", 0)
+            ):
+                self._pointer_accessibility_watch_active = False
+
+    def _activate_pointer_after_accessibility_grant(self) -> None:
+        self._pointer_accessibility_settings_opened = False
+        if self._pointer_mode:
+            return
+        self._pointer_mode = True
+        self._reset_pointer_control()
+        self._emit_pointer_state(state="idle", moved=False, clicked=False)
+        self.pointer_mode_changed.emit(True)
+        if self._embedded_active:
+            self._set_status(self._live_recognition_status())
+        else:
+            self._set_status("Указатель: разрешение получено")
 
     # ----------------------------------------------------------------------
     # Команды
@@ -5723,9 +6143,9 @@ class AppController:
             or self._is_recognition_pid_active()
         ):
             self.cancel_live_evaluation()
+            self.stop_camera()
             self.stop_embedded_recognition()
             self.stop_recognition()
-            self.stop_camera()
             self._set_recognizing(False)
         else:
             self.start_embedded_recognition()
@@ -5949,6 +6369,31 @@ class AppController:
                         pass
                 if visible_sample_count <= 0:
                     continue
+                user_sample_paths: list[Path] = []
+                for sample in user_samples[:8]:
+                    sample_path = self._db_sample_path(sample)
+                    if (
+                        sample_path is not None
+                        and sample_path not in user_sample_paths
+                    ):
+                        user_sample_paths.append(sample_path)
+                for sample_path in legacy_user_samples:
+                    if len(user_sample_paths) >= 8:
+                        break
+                    if sample_path not in user_sample_paths:
+                        user_sample_paths.append(sample_path)
+
+                if sample_count > 0:
+                    gesture_type = self._infer_training_gesture_type(
+                        label_value,
+                        user_sample_paths,
+                    )
+                elif label_value.lower() in dynamic_classes:
+                    gesture_type = GESTURE_TYPE_DYNAMIC
+                elif label_value.lower() in static_classes:
+                    gesture_type = GESTURE_TYPE_STATIC
+                else:
+                    gesture_type = ""
                 command = current.get(g.id)
                 action_spec: dict[str, Any] = {}
                 raw_spec = (
@@ -5975,11 +6420,7 @@ class AppController:
                         "standardClass": bool(sample_count <= 0),
                         "systemClass": False,
                         "canDelete": bool(sample_count > 0),
-                        "gestureType": (
-                            GESTURE_TYPE_DYNAMIC
-                            if label_value.lower() in dynamic_classes
-                            else ""
-                        ),
+                        "gestureType": gesture_type,
                         "isTwoHands": bool(
                             getattr(g, "is_two_hands", False) or False
                         ),
@@ -6768,7 +7209,7 @@ class AppController:
         try:
             return self._gesture_type_for_label(label)
         except Exception:
-            return "static"
+            return GESTURE_TYPE_STATIC
 
     @staticmethod
     def _infer_training_gesture_type_from_sample(sample_path: Path) -> str:
@@ -6786,8 +7227,12 @@ class AppController:
                     GESTURE_TYPE_NEGATIVE,
                 }:
                     return scope
-                if bool(meta.get("include_global_motion")):
-                    return GESTURE_TYPE_DYNAMIC
+                if "include_global_motion" in meta:
+                    return (
+                        GESTURE_TYPE_DYNAMIC
+                        if bool(meta.get("include_global_motion"))
+                        else GESTURE_TYPE_STATIC
+                    )
                 sample_format = str(meta.get("sample_feature_format") or "").lower()
                 if "wrist_xy" in sample_format:
                     return GESTURE_TYPE_DYNAMIC
@@ -6910,6 +7355,7 @@ class AppController:
         target_samples = max(1, int(num_samples))
         target_frames = max(1, int(frames))
         use_landmark_z = bool(include_landmark_z)
+        use_two_hands = False
         augment_count = (
             SAMPLE_RECORDING_DYNAMIC_AUGMENTATIONS
             if include_global_motion
@@ -6919,7 +7365,7 @@ class AppController:
             "label": clean,
             "target": target_samples,
             "frames": target_frames,
-            "two_hands": bool(two_hands),
+            "two_hands": use_two_hands,
             "include_global_motion": bool(include_global_motion),
             "include_landmark_z": use_landmark_z,
             "augment_count": augment_count,
@@ -6957,7 +7403,6 @@ class AppController:
             on_line(
                 f"[i] Встроенная запись «{clean}»: {target_samples} сэмплов, "
                 f"{target_frames} кадров"
-                + (" (две руки)" if two_hands else "")
                 + (" + глобальное движение" if include_global_motion else "")
                 + (" + landmark z" if use_landmark_z else "")
             )
@@ -7500,6 +7945,12 @@ class AppController:
 
     def shutdown(self) -> None:
         """Аккуратное завершение всех ресурсов."""
+        try:
+            telemetry = getattr(self, "_usage_telemetry", None)
+            if telemetry is not None:
+                telemetry.stop()
+        except Exception:
+            pass
         try:
             self.stop_embedded_recognition()
         except Exception:

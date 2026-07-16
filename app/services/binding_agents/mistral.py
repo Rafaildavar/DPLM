@@ -41,8 +41,10 @@ def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 1)
 
 
-class MistralBindingAgent:
-    name = "Mistral Agent"
+class OpenAICompatibleBindingAgent:
+    """Model adapter for OpenAI-compatible Chat Completions endpoints."""
+
+    name = "LLM Agent"
 
     def __init__(
         self,
@@ -50,18 +52,71 @@ class MistralBindingAgent:
         api_key: str | None = None,
         model: str | None = None,
         api_url: str | None = None,
+        provider_label: str = "LLM",
+        requires_api_key: bool = True,
+        api_key_env: str = "",
         timeout: float = 8.0,
         urlopen: Any = None,
     ) -> None:
         self._load_dotenv()
-        self.api_key = api_key if api_key is not None else os.getenv(MISTRAL_API_KEY_ENV)
-        self.model = model or os.getenv(MISTRAL_MODEL_ENV) or MISTRAL_DEFAULT_MODEL
-        self.api_url = api_url or os.getenv(MISTRAL_API_URL_ENV) or MISTRAL_DEFAULT_API_URL
+        env_key = os.getenv(api_key_env) if api_key_env else None
+        self.api_key = api_key if api_key is not None else env_key
+        self.model = str(model or "").strip()
+        self.api_url = str(api_url or "").strip()
+        self.provider_label = str(provider_label or "LLM").strip()
+        self.requires_api_key = bool(requires_api_key)
+        self.api_key_env = str(api_key_env or "").strip()
+        self.name = f"{self.provider_label} Agent"
         self.timeout = timeout
         self.urlopen = urlopen or urllib.request.urlopen
 
     def _load_dotenv(self) -> None:
         _load_project_dotenv()
+
+    def check_connection(self) -> tuple[bool, str]:
+        """Validate the configured key and model with a minimal completion."""
+        if self.requires_api_key and not (self.api_key or "").strip():
+            return False, "API-ключ не задан"
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "temperature": 0,
+            "max_tokens": 1,
+        }
+        request = urllib.request.Request(
+            self.api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=self._request_headers(),
+            method="POST",
+        )
+        try:
+            response = self.urlopen(request, timeout=self.timeout)
+            try:
+                raw = response.read()
+            finally:
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
+        except urllib.error.HTTPError as exc:
+            detail = redact_text(self._error_body(exc))
+            return (
+                False,
+                f"{self.provider_label} API вернул HTTP {exc.code}: {detail}",
+            )
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return (
+                False,
+                f"{self.provider_label} API недоступен: {redact_text(str(exc))}",
+            )
+        try:
+            self._message_content(json.loads(raw.decode("utf-8")))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return (
+                False,
+                f"{self.provider_label} вернул неожиданный ответ: {exc}",
+            )
+        return True, f"Подключение к модели {self.model} работает"
 
     def run(
         self,
@@ -71,12 +126,13 @@ class MistralBindingAgent:
         block: str = "binding",
     ) -> tuple[AgentStep, dict[str, Any] | None]:
         started = time.perf_counter()
-        if not (self.api_key or "").strip():
+        if self.requires_api_key and not (self.api_key or "").strip():
             return (
                 AgentStep(
                     self.name,
                     "need_input",
-                    f"Не найден {MISTRAL_API_KEY_ENV}; использую локальный fallback.",
+                    f"Не задан API-ключ для {self.provider_label}; "
+                    "использую локальный fallback.",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -89,7 +145,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "skipped",
-                    "Бюджет ответа исчерпан до вызова Mistral.",
+                    f"Бюджет ответа исчерпан до вызова {self.provider_label}.",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -97,11 +153,7 @@ class MistralBindingAgent:
         request = urllib.request.Request(
             self.api_url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+            headers=self._request_headers(),
             method="POST",
         )
         try:
@@ -118,7 +170,8 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API вернул HTTP {exc.code}: {redact_text(detail)}",
+                    f"{self.provider_label} API вернул HTTP {exc.code}: "
+                    f"{redact_text(detail)}",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -128,7 +181,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API недоступен: {redact_text(str(exc))}",
+                    f"{self.provider_label} API недоступен: {redact_text(str(exc))}",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -143,7 +196,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral ответил невалидным draft JSON: {exc}",
+                    f"{self.provider_label} ответил невалидным draft JSON: {exc}",
                     {"model": self.model, "durationMs": _elapsed_ms(started)},
                 ),
                 None,
@@ -179,12 +232,13 @@ class MistralBindingAgent:
         base_answer: str,
     ) -> tuple[AgentStep, str | None]:
         started = time.perf_counter()
-        if not (self.api_key or "").strip():
+        if self.requires_api_key and not (self.api_key or "").strip():
             return (
                 AgentStep(
                     self.name,
                     "need_input",
-                    f"Не найден {MISTRAL_API_KEY_ENV}; использую локальный ответ.",
+                    f"Не задан API-ключ для {self.provider_label}; "
+                    "использую локальный ответ.",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -222,11 +276,7 @@ class MistralBindingAgent:
         request = urllib.request.Request(
             self.api_url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+            headers=self._request_headers(),
             method="POST",
         )
         try:
@@ -243,7 +293,8 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API вернул HTTP {exc.code}: {redact_text(detail)}",
+                    f"{self.provider_label} API вернул HTTP {exc.code}: "
+                    f"{redact_text(detail)}",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -259,7 +310,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral API недоступен: {redact_text(str(exc))}",
+                    f"{self.provider_label} API недоступен: {redact_text(str(exc))}",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -279,7 +330,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    f"Mistral ответил невалидным текстом: {exc}",
+                    f"{self.provider_label} ответил невалидным текстом: {exc}",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -295,7 +346,7 @@ class MistralBindingAgent:
                 AgentStep(
                     self.name,
                     "blocked",
-                    "Mistral вернул пустой перефраз ответа.",
+                    f"{self.provider_label} вернул пустой перефраз ответа.",
                     {
                         "model": self.model,
                         "intent": intent,
@@ -553,9 +604,11 @@ class MistralBindingAgent:
         agent_reply = str(data.get("agentReply") or data.get("agent_reply") or "")
         if not agent_reply:
             agent_reply = (
-                f"Mistral: подготовил привязку «{gesture}»."
+                f"{self.provider_label}: подготовил привязку «{gesture}»."
                 if action_spec
-                else "Mistral: нужно уточнить жест или действие."
+                else (
+                    f"{self.provider_label}: нужно уточнить жест или действие."
+                )
             )
         return {
             "gestureLabel": gesture,
@@ -574,3 +627,41 @@ class MistralBindingAgent:
             raw = str(exc.reason)
         raw = re.sub(r"\s+", " ", raw).strip()
         return raw[:260] if raw else str(exc.reason)
+
+    def _request_headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if (self.api_key or "").strip():
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+
+class MistralBindingAgent(OpenAICompatibleBindingAgent):
+    """Backward-compatible Mistral preset used by tests and developer tooling."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        api_url: str | None = None,
+        timeout: float = 8.0,
+        urlopen: Any = None,
+    ) -> None:
+        _load_project_dotenv()
+        super().__init__(
+            api_key=api_key,
+            model=model or os.getenv(MISTRAL_MODEL_ENV) or MISTRAL_DEFAULT_MODEL,
+            api_url=(
+                api_url
+                or os.getenv(MISTRAL_API_URL_ENV)
+                or MISTRAL_DEFAULT_API_URL
+            ),
+            provider_label="Mistral",
+            requires_api_key=True,
+            api_key_env=MISTRAL_API_KEY_ENV,
+            timeout=timeout,
+            urlopen=urlopen,
+        )

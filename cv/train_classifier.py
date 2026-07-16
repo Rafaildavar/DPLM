@@ -150,6 +150,7 @@ DEFAULT_STATIC_CNN_LABEL_SMOOTHING = 0.05
 DEFAULT_CLASS_BALANCE = "auto"
 DEFAULT_CLASS_BOOST_LABELS = ("hend", "gun")
 DEFAULT_CLASS_BOOST_FACTOR = 1.5
+TWO_HAND_SAMPLE_DIMS = {84, 88, 126, 130}
 
 
 # --------------------------------------------------
@@ -216,6 +217,12 @@ def load_dataset(
             elif arr.ndim != 2:
                 print(f"[!] Неожиданная форма {sf}: {arr.shape}, пропуск")
                 continue
+            if int(arr.shape[1]) in TWO_HAND_SAMPLE_DIMS:
+                raise RuntimeError(
+                    "Двуручные семплы временно отключены в одноручном MVP: "
+                    f"{sf} имеет raw_dim={arr.shape[1]}. "
+                    "Перезапишите этот жест одной рукой или уберите старый sample."
+                )
 
             feat = build_feature_vector(arr, mode=feature_mode, target_dim=expect_dim)
             # Сохраняем как есть, выровняем позже

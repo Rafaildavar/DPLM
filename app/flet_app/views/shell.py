@@ -59,7 +59,10 @@ def build_shell(page: ft.Page, controller: AppController) -> ft.Control:
 
     def friendly_status(value: str, *, active: bool) -> str:
         clean = str(value or "").strip().lower()
-        if any(token in clean for token in ("error", "failed", "ошиб", "не удалось")):
+        if any(
+            token in clean
+            for token in ("error", "failed", "ошиб", "не удалось", "перезапуст")
+        ):
             return "Нужна проверка"
         if active:
             return "Распознавание включено"

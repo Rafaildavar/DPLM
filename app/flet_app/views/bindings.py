@@ -4,7 +4,7 @@
 Реализует правила из docs/BINDING_RULES.md:
     R1 — 1:1 жест↔команда (с переспросом при перезаписи)
     R3 — фильтр жестов: только is_active=True и model_class_id IS NOT NULL
-    R6 — предупреждение для опасных действий, не привязанных к двуручному жесту
+    R6 — предупреждение для опасных действий
     R7 — валидация action_spec
     R8 — уникальность имени команды
 
@@ -896,8 +896,7 @@ class BindingsView:
 
         self._warn_two_hands = ft.Container(
             content=ft.Text(
-                "⚠ Это «опасное» действие. Рекомендуется привязать его к "
-                "двуручному жесту (правило R6).",
+                "Это опасное действие. Проверь команду перед сохранением.",
                 color="#FFB300",
                 size=12,
             ),
@@ -1055,6 +1054,11 @@ class BindingsView:
             width=float("inf"),
         )
         self._agent_status = ft.Text("", size=12, color=COLOR_MUTED)
+        self._agent_provider_text = ft.Text(
+            self._binding_agent_provider_label(),
+            size=11,
+            color=COLOR_MUTED,
+        )
         self._style_form_controls()
         self._configure_mode_panels()
         self._render_action_form()
@@ -1103,6 +1107,11 @@ class BindingsView:
         self._refresh_categories()
         self._refresh_default_commands()
         self._refresh_gestures()
+        self._agent_provider_text.value = self._binding_agent_provider_label()
+        try:
+            self._agent_provider_text.update()
+        except Exception:
+            pass
 
     def on_hide(self) -> None:
         pass
@@ -1793,7 +1802,7 @@ class BindingsView:
             "mute_toggle": "Дополнительные настройки не нужны.",
             "brightness_up": "Дополнительные настройки не нужны.",
             "brightness_down": "Дополнительные настройки не нужны.",
-            "lock_screen": "Опасное действие: лучше привязать к двуручному жесту.",
+            "lock_screen": "Опасное действие: проверь команду перед сохранением.",
             "screenshot": "Снимок будет сохранен на рабочий стол.",
         }.get(action_name, "Заполните поля ниже и сохраните привязку.")
 
@@ -2115,9 +2124,8 @@ class BindingsView:
         self._refresh_flow_preview()
 
     def _refresh_warn_two_hands(self) -> None:
-        g = self._selected_gesture()
         show = False
-        if g is not None and not g.get("isTwoHands"):
+        if self._selected_gesture() is not None:
             if self._is_sequence_mode():
                 show = any(
                     self._controller.is_action_dangerous(
@@ -2525,6 +2533,34 @@ class BindingsView:
             return []
         return [dict(item) for item in rows if isinstance(item, dict)]
 
+    def _binding_agent_provider_label(self) -> str:
+        getter = getattr(self._controller, "get_binding_agent_provider_label", None)
+        if callable(getter):
+            try:
+                return str(getter() or "Локальный агент")
+            except Exception:
+                pass
+        return binding_agent_provider_label()
+
+    def _build_agent_binding_draft(
+        self,
+        prompt: str,
+        history: list[dict[str, str]],
+        draft_state: dict[str, Any],
+        bindings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        builder = getattr(self._controller, "build_agent_binding_draft", None)
+        kwargs = {
+            "current_gesture": self._gesture_dd.value or "",
+            "conversation_history": history,
+            "draft_state": draft_state,
+            "bindings": bindings,
+            "session_id": self._agent_session_id,
+        }
+        if callable(builder):
+            return builder(prompt, self._gestures, **kwargs)
+        return build_agent_binding_draft(prompt, self._gestures, **kwargs)
+
     def _set_agent_empty_state(self) -> None:
         self._last_agent_draft = None
         self._agent_dialog_messages = []
@@ -2566,28 +2602,28 @@ class BindingsView:
             if animate:
                 with self._agent_request_lock:
                     self._agent_active_request_id = request_id
-                threading.Thread(
-                    target=self._run_agent_request,
-                    args=(request_id, prompt, history, draft_state, bindings),
-                    daemon=True,
-                ).start()
-                threading.Thread(
-                    target=self._watch_agent_request_timeout,
-                    args=(request_id, prompt),
-                    daemon=True,
-                ).start()
+                self._run_agent_page_thread(
+                    self._run_agent_request,
+                    request_id,
+                    prompt,
+                    history,
+                    draft_state,
+                    bindings,
+                )
+                self._run_agent_page_thread(
+                    self._watch_agent_request_timeout,
+                    request_id,
+                    prompt,
+                )
                 return
         else:
             request_id = self._agent_request_id
 
-        draft = build_agent_binding_draft(
+        draft = self._build_agent_binding_draft(
             prompt,
-            self._gestures,
-            current_gesture=self._gesture_dd.value or "",
-            conversation_history=history,
-            draft_state=draft_state,
-            bindings=bindings,
-            session_id=self._agent_session_id,
+            history,
+            draft_state,
+            bindings,
         )
         self._complete_agent_request(request_id, prompt, draft, animate=False)
 
@@ -2618,11 +2654,21 @@ class BindingsView:
             pass
         if animate:
             request_id = self._agent_request_id
-            threading.Thread(
-                target=self._animate_agent_pending_state,
-                args=(request_id,),
-                daemon=True,
-            ).start()
+            self._run_agent_page_thread(
+                self._animate_agent_pending_state,
+                request_id,
+            )
+
+    def _run_agent_page_thread(self, handler, *args: Any) -> None:
+        run_thread = getattr(self._page, "run_thread", None)
+        if callable(run_thread):
+            run_thread(handler, *args)
+            return
+        threading.Thread(
+            target=handler,
+            args=args,
+            daemon=True,
+        ).start()
 
     def _run_agent_request(
         self,
@@ -2633,14 +2679,11 @@ class BindingsView:
         bindings: list[dict[str, Any]],
     ) -> None:
         try:
-            draft = build_agent_binding_draft(
+            draft = self._build_agent_binding_draft(
                 prompt,
-                self._gestures,
-                current_gesture=self._gesture_dd.value or "",
-                conversation_history=history,
-                draft_state=draft_state,
-                bindings=bindings,
-                session_id=self._agent_session_id,
+                history,
+                draft_state,
+                bindings,
             )
         except Exception as exc:
             draft = {
@@ -2649,7 +2692,11 @@ class BindingsView:
                 "error": f"Агент не смог обработать запрос: {exc}",
                 "missing": [],
             }
-        self._complete_agent_request(request_id, prompt, draft, animate=True)
+        try:
+            self._complete_agent_request(request_id, prompt, draft, animate=True)
+        except Exception as exc:
+            # Keep the request active so the watchdog can replace a failed UI commit.
+            print(f"[w] binding agent UI completion failed: {exc}", flush=True)
 
     def _complete_agent_request(
         self,
@@ -2658,15 +2705,14 @@ class BindingsView:
         draft: dict[str, Any],
         *,
         animate: bool,
-    ) -> None:
+    ) -> bool:
         if animate:
             with self._agent_request_lock:
                 if (
                     request_id != self._agent_request_id
                     or request_id != self._agent_active_request_id
                 ):
-                    return
-                self._agent_active_request_id = 0
+                    return False
         if prompt:
             is_answer = str(draft.get("mode") or "") == "answer"
             self._mark_agent_user_messages_sent()
@@ -2700,6 +2746,15 @@ class BindingsView:
             self._animate_agent_response(request_id, draft)
         else:
             self._set_agent_draft(draft)
+        committed = self._flush_agent_page()
+        if animate and committed:
+            with self._agent_request_lock:
+                if (
+                    request_id == self._agent_request_id
+                    and request_id == self._agent_active_request_id
+                ):
+                    self._agent_active_request_id = 0
+        return committed
 
     def _watch_agent_request_timeout(self, request_id: int, prompt: str) -> None:
         timeout = configured_timeout() + 0.75
@@ -2716,9 +2771,9 @@ class BindingsView:
         with self._agent_request_lock:
             if request_id != self._agent_active_request_id:
                 return
-            self._agent_active_request_id = 0
             self._agent_request_id += 1
             timeout_request_id = self._agent_request_id
+            self._agent_active_request_id = timeout_request_id
         seconds = max(1, int(round(timeout)))
         draft = {
             "ok": True,
@@ -2743,6 +2798,9 @@ class BindingsView:
             draft,
             animate=False,
         )
+        with self._agent_request_lock:
+            if self._agent_active_request_id == timeout_request_id:
+                self._agent_active_request_id = 0
 
     def _mark_agent_user_messages_sent(self) -> None:
         for message in self._agent_dialog_messages:
@@ -3621,6 +3679,16 @@ class BindingsView:
             except Exception:
                 pass
 
+    def _flush_agent_page(self) -> bool:
+        if self._page is None:
+            return True
+        try:
+            self._page.update()
+            return True
+        except Exception as exc:
+            print(f"[w] binding agent page update failed: {exc}", flush=True)
+            return False
+
     def _category_id_for_action(self, action: str) -> str:
         for category in self._categories:
             category_id = str(category.get("id") or "")
@@ -3812,11 +3880,7 @@ class BindingsView:
                     border_radius=8,
                     bgcolor="#1B1D21",
                     border=ft.Border.all(1, COLOR_SURFACE_HIGH),
-                    content=ft.Text(
-                        binding_agent_provider_label(),
-                        size=11,
-                        color=COLOR_MUTED,
-                    ),
+                    content=self._agent_provider_text,
                 ),
             ],
         )

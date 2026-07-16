@@ -106,6 +106,19 @@ def test_load_dataset_expect_dim_expands_dynamic_feature_size(tmp_path):
     assert x.shape == (2, 44 * 6 + DYNAMIC_TRAJECTORY_FEATURE_DIM)
 
 
+def test_load_dataset_rejects_two_hand_samples_in_single_hand_mvp(tmp_path):
+    data_root = tmp_path / "gestures"
+    label_dir = data_root / "wave"
+    label_dir.mkdir(parents=True, exist_ok=True)
+    np.save(
+        label_dir / "sample_0000.npy",
+        np.zeros((3, 42, 2), dtype=np.float32),
+    )
+
+    with pytest.raises(RuntimeError, match="Двуручные семплы временно отключены"):
+        load_dataset(data_root, expect_dim=42)
+
+
 def test_load_dataset_supports_static_craft_full_feature_mode(tmp_path):
     data_root = tmp_path / "gestures"
     _write_sample(data_root, "palm", 0, value=0.0)

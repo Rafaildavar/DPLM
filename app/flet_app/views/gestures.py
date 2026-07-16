@@ -136,7 +136,6 @@ class GesturesView:
                 ft.DropdownOption(key="dynamic", text="динамические"),
                 ft.DropdownOption(key="static", text="статические"),
                 ft.DropdownOption(key="one_hand", text="одна рука"),
-                ft.DropdownOption(key="two_hands", text="две руки"),
             ],
             on_select=self._on_filters_changed,
         )
@@ -232,7 +231,7 @@ class GesturesView:
         elif mode == "one_hand":
             rows = [row for row in rows if not row.get("isTwoHands")]
         elif mode == "two_hands":
-            rows = [row for row in rows if row.get("isTwoHands")]
+            rows = []
         return rows
 
     def _visible_dataset_rows(self) -> list[dict]:
@@ -1442,7 +1441,7 @@ class GesturesView:
         bound = self._bound_command(row)
         selected = self._row_id(row) == self._selected_id
         samples = self._sample_count(row)
-        hands = "две руки" if row.get("isTwoHands") else "одна рука"
+        hands = "одна рука"
         description = self._description(row)
         subtitle = description or hands
         gesture_type = self._gesture_type(row)
@@ -1719,7 +1718,7 @@ class GesturesView:
 
         label = self._label(row)
         bound = self._bound_command(row)
-        hands = "две руки" if row.get("isTwoHands") else "одна рука"
+        hands = "одна рука"
         samples = self._sample_count(row)
         gesture_type = self._gesture_type(row)
         description = self._description(row) or "Описание не задано"

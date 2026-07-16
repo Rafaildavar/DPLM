@@ -1,8 +1,8 @@
-# GestureBind v0.8.0 MVP
+# GestureBind v0.8.1 Beta
 
-GestureBind v0.8.0 is the first MVP release built around one coherent
-desktop product path: record personal gestures, train local models, validate
-them live and bind accepted gestures to safe macOS actions.
+GestureBind v0.8.1 packages the validated v0.8.0 MVP as a native macOS app.
+The product path remains the same: record personal gestures, train local
+models, validate them live and bind accepted gestures to safe macOS actions.
 
 ## Highlights
 
@@ -20,6 +20,38 @@ them live and bind accepted gestures to safe macOS actions.
 - Dynamic predictions and completed-event intent overrides now require at least `0.90` confidence.
 - An adaptive per-class completion gate rejects unfinished dynamic gestures
   before amplitude normalization and can resume the same event after a pause.
+- The tag workflow now publishes both a tracked source/model archive and a ZIP
+  containing `GestureBind.app`, built and smoke-tested on macOS.
+- Optional daily telemetry sends sanitized aggregates with offline retry and
+  explicit consent; camera data, landmarks, labels and command text stay local.
+- Correct, incorrect and missed controls provide user-confirmed quality signals.
+- The DMG now uses a native drag-and-drop layout with GestureBind and the
+  Applications shortcut above a separate documentation area.
+- GitHub release packaging falls back to macOS `hdiutil` if the styled DMG tool
+  fails, preserving the app, Applications shortcut and bundled guides instead
+  of publishing an incomplete release without a DMG.
+- Cursor mode checks macOS Accessibility before activation, opens the correct
+  settings page and no longer reports movement when macOS blocked it.
+- The first camera frame reaches the UI before MediaPipe and model warm-up, so
+  the preview appears immediately while recognition initializes.
+- User-recorded sample metadata takes precedence over production class names,
+  preventing a static personal gesture such as `zoom` from being mislabeled.
+- MAS now lets each user select OpenAI, Claude, Gemini, Mistral, OpenRouter,
+  Groq, DeepSeek, Ollama or a custom OpenAI-compatible endpoint, model and API
+  key directly in Settings.
+- The public beta contains no shared LLM credentials and runs the binding MAS
+  locally by default. User keys are stored per provider and endpoint in macOS
+  Keychain instead of the application config or release bundle.
+- The app bundle now uses the GestureBind brand mark instead of PyInstaller's
+  default Python icon in Finder, Dock and Launchpad.
+- Installation, user and project guides are visible directly inside the DMG,
+  with a contrasting Finder label area for dark macOS themes.
+- Stopping recognition now waits for an in-flight MediaPipe frame before
+  closing the model, preventing the desktop backend from crashing.
+- The packaged Flet window uses the GestureBind identity and is the only app
+  shown in the Dock.
+- Launching GestureBind directly from a mounted DMG now shows an installation
+  prompt and exits instead of creating temporary macOS permissions.
 
 ## Reproducible Evidence
 
@@ -57,6 +89,10 @@ The final safety matrix passed the release target: one false command across
 - Taxonomy/config contracts, database migrations and command policies.
 - Unit/integration tests, ML smoke checks and release automation.
 - Curated architecture, training, binding and release-readiness documents.
+- Ad-hoc signed `GestureBind.app` in an install-friendly DMG, with ZIP kept as
+  a fallback.
+- Russian end-user guide and Gatekeeper recovery steps included in both the DMG
+  and fallback ZIP.
 
 ## Not Included
 

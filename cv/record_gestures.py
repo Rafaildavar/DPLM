@@ -33,7 +33,11 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Запись жестов в NPY")
     p.add_argument("--label", required=True, help="Имя жеста (папка в data/gestures/<label>)")
     p.add_argument("--num-samples", type=int, default=20, help="Сколько семплов записать")
-    p.add_argument("--two-hands", action="store_true", help="Учитывать вторую руку (если есть)")
+    p.add_argument(
+        "--two-hands",
+        action="store_true",
+        help="Совместимость: флаг игнорируется, запись выполняется одной рукой",
+    )
     p.add_argument("--fps", type=int, default=30, help="Целевой FPS для записи")
     p.add_argument("--frames", type=int, default=30, help="Длина одного семпла (число кадров)")
     p.add_argument("--data-root", default="data/gestures", help="Корень датасета")
@@ -46,6 +50,9 @@ def main() -> None:
     label = args.label.strip()
     target_samples = max(1, args.num_samples)
     seq_len = max(1, args.frames)
+    if args.two_hands:
+        print("[i] Флаг --two-hands временно отключён: запись будет одноручной.")
+        args.two_hands = False
 
     out_dir = Path(args.data_root) / label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +66,7 @@ def main() -> None:
         sys.exit(1)
 
     detector = HandLandmarkerVideo(
-        num_hands=2 if args.two_hands else 1,
+        num_hands=1,
         min_detection_confidence=0.6,
         min_presence_confidence=0.6,
         min_tracking_confidence=0.6,

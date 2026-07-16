@@ -22,8 +22,12 @@ except Exception:
     PYAUTOGUI_AVAILABLE = False
 
 ACCESSIBILITY_HINT = (
-    "Pointer: включите «Универсальный доступ» для Python/Terminal в "
-    "Системные настройки → Конфиденциальность и безопасность → Универсальный доступ"
+    "Разрешите GestureBind управлять компьютером: Системные настройки → "
+    "Конфиденциальность и безопасность → Универсальный доступ"
+)
+ACCESSIBILITY_RESTART_HINT = (
+    "Разрешение уже запрошено; если тумблер GestureBind включён, "
+    "полностью перезапустите GestureBind"
 )
 
 INDEX_FINGER_TIP = 8
@@ -55,7 +59,7 @@ POINTER_STATE_SWIPE_TRACKING = "swipe-tracking"
 
 
 def macos_accessibility_trusted() -> bool:
-    """Проверить, разрешён ли процессу Python управление компьютером (macOS)."""
+    """Проверить, разрешено ли текущему процессу управление компьютером (macOS)."""
     if sys.platform != "darwin":
         return True
     try:
@@ -66,7 +70,8 @@ def macos_accessibility_trusted() -> bool:
         if not lib_path:
             return True
         lib = ctypes.cdll.LoadLibrary(lib_path)
-        lib.AXIsProcessTrusted.restype = bool  # type: ignore[attr-defined]
+        lib.AXIsProcessTrusted.argtypes = []  # type: ignore[attr-defined]
+        lib.AXIsProcessTrusted.restype = ctypes.c_bool  # type: ignore[attr-defined]
         return bool(lib.AXIsProcessTrusted())
     except Exception:
         return True
@@ -77,14 +82,21 @@ def macos_open_accessibility_settings() -> None:
     if sys.platform != "darwin":
         return
     urls = (
-        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
         "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?"
         "Privacy_Accessibility",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     )
     for url in urls:
         try:
-            subprocess.run(["open", url], check=False, timeout=3)
-            return
+            completed = subprocess.run(
+                ["open", url],
+                check=False,
+                timeout=3,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if completed.returncode == 0:
+                return
         except Exception:
             continue
 
@@ -955,12 +967,12 @@ class PointerControlService:
 
     def apply(self, action: PointerAction) -> None:
         if not PYAUTOGUI_AVAILABLE:
-            return
+            raise RuntimeError("pyautogui не установлен (pip install pyautogui)")
         if sys.platform == "darwin" and not macos_accessibility_trusted():
             if not self._accessibility_warned:
                 self._accessibility_warned = True
                 print(f"[!] {ACCESSIBILITY_HINT}", flush=True)
-            return
+            raise PermissionError(ACCESSIBILITY_HINT)
         pyautogui.moveTo(action.x, action.y, duration=0, _pause=False)
         if action.click:
             pyautogui.click(_pause=False)
@@ -974,5 +986,9 @@ class PointerControlService:
             try:
                 self.apply(action)
             except Exception as exc:
-                return PointerUpdateResult(ok=False, error=str(exc))
+                return PointerUpdateResult(
+                    ok=False,
+                    error=str(exc),
+                    state=POINTER_STATE_DISABLED,
+                )
         return result

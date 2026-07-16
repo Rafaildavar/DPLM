@@ -1,6 +1,7 @@
 """Экран пользовательских настроек для Flet-версии GestureBind."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import flet as ft
@@ -15,6 +16,12 @@ from app.flet_app.theme import (
     COLOR_SURFACE_HIGH,
     surface_card,
 )
+from app.services.llm_providers import (
+    LLM_PROVIDER_PRESETS,
+    get_llm_provider_preset,
+    llm_provider_label,
+)
+
 
 class SettingsView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
@@ -25,6 +32,9 @@ class SettingsView:
         db = config["database"]
         paths = config["paths"]
         recognition = config["recognition"]
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry_status = self._telemetry_status_snapshot()
+        llm_status = self._mas_llm_settings_snapshot(config)
 
         self._system_status = ft.Column(spacing=8)
         self._env_warning = ft.Text("", size=12, color="#ffca28", visible=False)
@@ -82,9 +92,11 @@ class SettingsView:
         self._camera_index = self._field("Камера", recognition.get("camera_index"))
         self._target_fps = self._field("Частота камеры", recognition.get("target_fps"))
         self._two_hands_switch = ft.Switch(
-            value=bool(recognition.get("two_hands_mode")),
-            label="Распознавать жесты двумя руками",
+            value=False,
+            label="",
             active_color=COLOR_ACCENT,
+            disabled=True,
+            visible=False,
         )
         self._auto_execute_switch = ft.Switch(
             value=bool(recognition.get("auto_execute_on_gesture")),
@@ -151,6 +163,86 @@ class SettingsView:
             ),
             on_click=self._on_save_tech,
         )
+
+        self._telemetry_switch = ft.Switch(
+            value=bool(telemetry.get("enabled", False)),
+            label="Отправлять анонимную статистику качества раз в день",
+            active_color=COLOR_ACCENT,
+            disabled=not bool(telemetry_status.get("configured")),
+            on_change=self._on_telemetry_change,
+        )
+        self._telemetry_description = ft.Text(
+            "Передаются только агрегаты распознавания и производительности. "
+            "Кадры камеры, landmarks, названия жестов и команды остаются на устройстве.",
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._telemetry_status = ft.Text(
+            self._telemetry_status_text(telemetry_status),
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._telemetry_send_btn = ft.OutlinedButton(
+            content=ft.Text("Отправить сейчас"),
+            icon=ft.Icons.CLOUD_UPLOAD_OUTLINED,
+            disabled=not (
+                bool(telemetry_status.get("configured"))
+                and bool(telemetry.get("enabled", False))
+            ),
+            on_click=self._on_send_telemetry,
+        )
+
+        self._llm_provider = ft.Dropdown(
+            label="LLM-провайдер",
+            value=str(llm_status.get("provider") or "local"),
+            border_color=COLOR_SURFACE_HIGH,
+            editable=False,
+            options=[
+                ft.DropdownOption(key=item.key, text=item.label)
+                for item in LLM_PROVIDER_PRESETS
+            ],
+            on_select=self._on_llm_provider_change,
+        )
+        self._llm_model = self._field(
+            "Модель",
+            llm_status.get("model") or "",
+        )
+        self._llm_api_url = self._field(
+            "API endpoint",
+            llm_status.get("apiUrl") or "",
+        )
+        self._llm_api_key = self._field("API-ключ", "", password=True)
+        self._llm_model.on_change = self._on_llm_fields_change
+        self._llm_api_url.on_change = self._on_llm_fields_change
+        self._llm_api_key.on_change = self._on_llm_fields_change
+        self._llm_api_key.hint_text = (
+            "Ключ уже сохранён"
+            if llm_status.get("hasApiKey")
+            else "Введите ключ провайдера"
+        )
+        self._llm_status = ft.Text(
+            self._mas_llm_status_text(llm_status),
+            size=12,
+            color=COLOR_MUTED,
+        )
+        self._llm_save_btn = ft.FilledButton(
+            content=ft.Text("Сохранить", weight=ft.FontWeight.BOLD),
+            icon=ft.Icons.SAVE,
+            style=ft.ButtonStyle(bgcolor=COLOR_ACCENT, color=ft.Colors.WHITE),
+            on_click=self._on_save_mas_llm,
+        )
+        self._llm_test_btn = ft.OutlinedButton(
+            content=ft.Text("Проверить"),
+            icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
+            on_click=self._on_test_mas_llm,
+        )
+        self._llm_delete_btn = ft.IconButton(
+            icon=ft.Icons.DELETE_OUTLINE,
+            icon_color=COLOR_DANGER,
+            tooltip="Удалить API-ключ",
+            on_click=self._on_delete_mas_llm_key,
+        )
+        self._update_llm_controls(llm_status)
 
         self._threshold_slider = ft.Slider(
             value=0.65,
@@ -256,6 +348,8 @@ class SettingsView:
         db = config["database"]
         paths = config["paths"]
         recognition = config["recognition"]
+        telemetry = dict(config.get("telemetry") or {})
+        llm_status = self._mas_llm_settings_snapshot(config)
 
         self._db_backend.value = str(db.get("backend") or "sqlite")
         self._db_host.value = str(db.get("host") or "")
@@ -277,7 +371,7 @@ class SettingsView:
 
         self._camera_index.value = str(recognition.get("camera_index") or 0)
         self._target_fps.value = str(recognition.get("target_fps") or 30)
-        self._two_hands_switch.value = bool(recognition.get("two_hands_mode"))
+        self._two_hands_switch.value = False
         self._auto_execute_switch.value = bool(
             recognition.get("auto_execute_on_gesture")
         )
@@ -286,6 +380,30 @@ class SettingsView:
             recognition.get("pointer_smoothing"), 0.55
         )
         self._pointer_sharpness_label.value = self._pointer_sharpness_text()
+        telemetry_status = self._telemetry_status_snapshot()
+        self._telemetry_switch.value = bool(telemetry.get("enabled", False))
+        self._telemetry_switch.disabled = not bool(
+            telemetry_status.get("configured")
+        )
+        self._telemetry_send_btn.disabled = not (
+            bool(telemetry_status.get("configured"))
+            and bool(telemetry.get("enabled", False))
+        )
+        self._telemetry_status.value = self._telemetry_status_text(telemetry_status)
+        self._llm_provider.value = str(llm_status.get("provider") or "local")
+        self._llm_model.value = str(
+            llm_status.get("model") or ""
+        )
+        self._llm_api_url.value = str(llm_status.get("apiUrl") or "")
+        self._llm_api_key.value = ""
+        self._llm_api_key.hint_text = (
+            "Ключ уже сохранён"
+            if llm_status.get("hasApiKey")
+            else "Введите ключ провайдера"
+        )
+        self._llm_status.value = self._mas_llm_status_text(llm_status)
+        self._llm_status.color = COLOR_MUTED
+        self._update_llm_controls(llm_status)
 
     def _refresh_status(self, *, update: bool) -> None:
         status = self._controller.get_system_status()
@@ -368,13 +486,16 @@ class SettingsView:
         paths = dict(config.get("paths") or {})
         assistant = dict(config.get("assistant") or {})
         assistant["voice_enabled"] = bool(assistant.get("voice_enabled", False))
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry["enabled"] = bool(self._telemetry_switch.value)
+        llm = dict(config.get("llm") or {})
         return {
             "database": database,
             "paths": paths,
             "recognition": {
                 "camera_index": self._to_int(self._camera_index.value, 0),
                 "target_fps": self._to_int(self._target_fps.value, 30),
-                "two_hands_mode": bool(self._two_hands_switch.value),
+                "two_hands_mode": False,
                 "auto_execute_on_gesture": bool(self._auto_execute_switch.value),
                 "auto_start_recognition": bool(self._auto_start_switch.value),
                 "pointer_smoothing": self._to_float(
@@ -382,7 +503,239 @@ class SettingsView:
                 ),
             },
             "assistant": assistant,
+            "telemetry": telemetry,
+            "llm": llm,
         }
+
+    def _mas_llm_settings_snapshot(
+        self, config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        getter = getattr(self._controller, "get_mas_llm_settings", None)
+        if callable(getter):
+            try:
+                value = getter()
+                if isinstance(value, dict):
+                    return value
+            except Exception:
+                pass
+        raw = config or self._controller.get_app_config()
+        llm = dict(raw.get("llm") or {})
+        provider = str(llm.get("provider") or "local")
+        preset = get_llm_provider_preset(provider)
+        return {
+            "provider": provider,
+            "model": str(llm.get("model") or ""),
+            "apiUrl": str(llm.get("api_url") or ""),
+            "providerLabel": llm_provider_label(llm.get("provider")),
+            "hasApiKey": False,
+            "keySource": "none",
+            "keyEnvironment": "",
+            "requiresApiKey": bool(preset and preset.requires_api_key),
+            "credentialError": "",
+        }
+
+    @staticmethod
+    def _mas_llm_status_text(status: dict[str, Any]) -> str:
+        provider = str(status.get("provider") or "local")
+        if provider == "local":
+            return "Локальная обработка включена"
+        label = str(status.get("providerLabel") or llm_provider_label(provider))
+        error = str(status.get("credentialError") or "").strip()
+        if error:
+            return error
+        if status.get("keySource") == "environment":
+            env_name = str(status.get("keyEnvironment") or "окружение")
+            return f"{label}: ключ задан через {env_name}"
+        if status.get("hasApiKey"):
+            return "API-ключ хранится в системном Keychain"
+        if not status.get("requiresApiKey"):
+            return "API-ключ необязателен для выбранного endpoint"
+        return f"Для {label} нужен личный API-ключ"
+
+    def _update_llm_controls(self, status: dict[str, Any] | None = None) -> None:
+        current = status or self._mas_llm_settings_snapshot()
+        external = str(self._llm_provider.value or "local") != "local"
+        env_key = current.get("keySource") == "environment"
+        has_key = bool(current.get("hasApiKey"))
+        requires_key = bool(current.get("requiresApiKey"))
+        self._llm_model.disabled = not external
+        self._llm_api_url.disabled = not external
+        self._llm_api_key.disabled = not external or env_key
+        self._llm_test_btn.disabled = not external or (requires_key and not has_key)
+        self._llm_delete_btn.disabled = not external or not has_key or env_key
+
+    def _on_llm_provider_change(self, _event) -> None:
+        provider = str(self._llm_provider.value or "local")
+        preset = get_llm_provider_preset(provider)
+        if preset is not None and provider != "local":
+            self._llm_model.value = preset.default_model
+            self._llm_api_url.value = preset.api_url
+        self._llm_api_key.value = ""
+        status = {
+            "provider": provider,
+            "providerLabel": llm_provider_label(provider),
+            "hasApiKey": False,
+            "keySource": "none",
+            "requiresApiKey": bool(preset and preset.requires_api_key),
+            "credentialError": "",
+        }
+        self._llm_status.value = self._mas_llm_status_text(status)
+        self._llm_status.color = COLOR_MUTED
+        self._update_llm_controls(status)
+        self._llm_test_btn.disabled = True
+        self._safe_update(self._page)
+
+    def _on_llm_fields_change(self, _event) -> None:
+        if str(self._llm_provider.value or "local") != "local":
+            self._llm_test_btn.disabled = True
+            self._llm_status.value = "Сохраните изменения перед проверкой"
+            self._llm_status.color = COLOR_MUTED
+            self._safe_update(self._page)
+
+    def _on_save_mas_llm(self, _event) -> None:
+        saver = getattr(self._controller, "save_mas_llm_settings", None)
+        if not callable(saver):
+            self._llm_status.value = "Настройка LLM недоступна"
+            self._llm_status.color = COLOR_DANGER
+            self._safe_update(self._page)
+            return
+        ok, errors = saver(
+            provider=str(self._llm_provider.value or "local"),
+            model=str(self._llm_model.value or "").strip(),
+            api_url=str(self._llm_api_url.value or "").strip(),
+            api_key=str(self._llm_api_key.value or "").strip(),
+        )
+        self._llm_api_key.value = ""
+        if ok:
+            status = self._mas_llm_settings_snapshot()
+            self._llm_status.value = self._mas_llm_status_text(status)
+            self._llm_status.color = COLOR_SUCCESS
+            self._llm_api_key.hint_text = (
+                "Ключ уже сохранён"
+                if status.get("hasApiKey")
+                else "Введите ключ провайдера"
+            )
+            self._update_llm_controls(status)
+        else:
+            self._llm_status.value = "Не сохранено: " + "; ".join(errors)
+            self._llm_status.color = COLOR_DANGER
+        self._safe_update(self._page)
+
+    def _on_test_mas_llm(self, _event) -> None:
+        self._llm_test_btn.disabled = True
+        self._llm_status.value = "Проверяю подключение…"
+        self._llm_status.color = COLOR_MUTED
+        self._safe_update(self._page)
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._test_mas_llm)
+        else:
+            self._test_mas_llm()
+
+    def _test_mas_llm(self) -> None:
+        tester = getattr(self._controller, "test_mas_llm_connection", None)
+        ok, message = (
+            tester() if callable(tester) else (False, "Проверка LLM недоступна")
+        )
+        self._llm_status.value = str(message)
+        self._llm_status.color = COLOR_SUCCESS if ok else COLOR_DANGER
+        self._update_llm_controls(self._mas_llm_settings_snapshot())
+        self._safe_update(self._page)
+
+    def _on_delete_mas_llm_key(self, _event) -> None:
+        deleter = getattr(self._controller, "delete_mas_llm_api_key", None)
+        ok, message = (
+            deleter() if callable(deleter) else (False, "Удаление ключа недоступно")
+        )
+        status = self._mas_llm_settings_snapshot()
+        self._llm_api_key.value = ""
+        self._llm_api_key.hint_text = "Введите ключ провайдера"
+        self._llm_status.value = str(message)
+        self._llm_status.color = COLOR_SUCCESS if ok else COLOR_DANGER
+        self._update_llm_controls(status)
+        self._safe_update(self._page)
+
+    def _telemetry_status_snapshot(self) -> dict[str, Any]:
+        getter = getattr(self._controller, "get_usage_telemetry_status", None)
+        if callable(getter):
+            try:
+                value = getter()
+                if isinstance(value, dict):
+                    return value
+            except Exception:
+                pass
+        return {
+            "enabled": False,
+            "configured": False,
+            "last_success_at": 0.0,
+            "last_error": "",
+        }
+
+    @staticmethod
+    def _telemetry_status_text(status: dict[str, Any]) -> str:
+        error = str(status.get("last_error") or "").strip()
+        if error:
+            return "Последняя отправка не удалась; приложение повторит её автоматически"
+        if not bool(status.get("configured")):
+            return "Сервер статистики не настроен в этой сборке"
+        last_success = float(status.get("last_success_at") or 0.0)
+        if last_success > 0.0:
+            stamp = datetime.fromtimestamp(last_success).strftime("%d.%m.%Y %H:%M")
+            return f"Последняя отправка: {stamp}"
+        if bool(status.get("enabled")):
+            return "Статистика включена; первая отправка будет выполнена автоматически"
+        return "Статистика выключена"
+
+    def _on_telemetry_change(self, _event) -> None:
+        config = self._controller.get_app_config()
+        telemetry = dict(config.get("telemetry") or {})
+        telemetry["enabled"] = bool(self._telemetry_switch.value)
+        config["telemetry"] = telemetry
+        ok, errors, _warnings = self._controller.save_app_config(config)
+        if not ok:
+            self._telemetry_switch.value = not bool(self._telemetry_switch.value)
+            self._telemetry_status.value = "Не сохранено: " + "; ".join(errors)
+            self._telemetry_status.color = COLOR_DANGER
+        else:
+            status = self._telemetry_status_snapshot()
+            self._telemetry_status.value = self._telemetry_status_text(status)
+            self._telemetry_status.color = COLOR_MUTED
+            self._telemetry_send_btn.disabled = not (
+                bool(status.get("configured"))
+                and bool(self._telemetry_switch.value)
+            )
+        self._safe_update(self._page)
+
+    def _on_send_telemetry(self, _event) -> None:
+        self._telemetry_send_btn.disabled = True
+        self._telemetry_status.value = "Отправка…"
+        self._safe_update(self._page)
+        runner = getattr(self._page, "run_thread", None)
+        if callable(runner):
+            runner(self._send_telemetry)
+        else:
+            self._send_telemetry()
+
+    def _send_telemetry(self) -> None:
+        sender = getattr(self._controller, "send_usage_telemetry_now", None)
+        sent = False
+        if callable(sender):
+            try:
+                sent = bool(sender())
+            except Exception:
+                sent = False
+        status = self._telemetry_status_snapshot()
+        self._telemetry_status.value = (
+            self._telemetry_status_text(status)
+            if sent
+            else "Не удалось отправить; приложение повторит попытку автоматически"
+        )
+        self._telemetry_status.color = COLOR_MUTED if sent else COLOR_DANGER
+        self._telemetry_send_btn.disabled = not (
+            bool(status.get("configured"))
+            and bool(self._telemetry_switch.value)
+        )
+        self._safe_update(self._page)
 
     def _to_int(self, value: Any, default: int) -> int:
         try:
@@ -579,7 +932,6 @@ class SettingsView:
                 controls=[
                     self._section_title(ft.Icons.VIDEOCAM, "Камера и жесты"),
                     self._responsive(self._camera_index, self._target_fps),
-                    self._two_hands_switch,
                     self._auto_start_switch,
                     ft.Divider(color=COLOR_SURFACE_HIGH, thickness=1),
                     self._pointer_sharpness_label,
@@ -609,6 +961,45 @@ class SettingsView:
             radius=16,
         )
 
+        llm_card = surface_card(
+            ft.Column(
+                spacing=14,
+                controls=[
+                    self._section_title(ft.Icons.PSYCHOLOGY, "MAS и LLM"),
+                    self._llm_provider,
+                    self._responsive(self._llm_model, self._llm_api_key),
+                    self._llm_api_url,
+                    ft.Row(
+                        controls=[
+                            self._llm_save_btn,
+                            self._llm_test_btn,
+                            self._llm_delete_btn,
+                        ],
+                        spacing=10,
+                        wrap=True,
+                    ),
+                    self._llm_status,
+                ],
+            ),
+            padding=20,
+            radius=16,
+        )
+
+        privacy_card = surface_card(
+            ft.Column(
+                spacing=12,
+                controls=[
+                    self._section_title(ft.Icons.PRIVACY_TIP_OUTLINED, "Приватность"),
+                    self._telemetry_switch,
+                    self._telemetry_description,
+                    self._telemetry_status,
+                    ft.Row(controls=[self._telemetry_send_btn], wrap=True),
+                ],
+            ),
+            padding=20,
+            radius=16,
+        )
+
         return ft.Column(
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
@@ -618,5 +1009,7 @@ class SettingsView:
                 status_card,
                 recognition_card,
                 commands_card,
+                llm_card,
+                privacy_card,
             ],
         )
