@@ -31,7 +31,9 @@ def test_mas_key_is_stored_and_deleted_through_keyring():
     store.set_mistral_api_key("  user-secret  ")
 
     assert store.get_mistral_api_key() == "user-secret"
-    assert backend.values[(MAS_KEYRING_SERVICE, MISTRAL_KEYRING_ACCOUNT)] == "user-secret"
+    assert (
+        backend.values[(MAS_KEYRING_SERVICE, MISTRAL_KEYRING_ACCOUNT)] == "user-secret"
+    )
 
     store.delete_mistral_api_key()
     assert store.get_mistral_api_key() == ""
@@ -48,3 +50,29 @@ def test_mas_keyring_errors_do_not_include_secret():
         MasCredentialStore(_BrokenKeyring()).set_mistral_api_key(secret)
 
     assert secret not in str(exc_info.value)
+
+
+def test_provider_keys_use_separate_keyring_accounts():
+    backend = _MemoryKeyring()
+    store = MasCredentialStore(backend)
+
+    store.set_api_key("openai", "openai-secret")
+    store.set_api_key("anthropic", "anthropic-secret")
+
+    assert store.get_api_key("openai") == "openai-secret"
+    assert store.get_api_key("anthropic") == "anthropic-secret"
+    store.delete_api_key("openai")
+    assert store.get_api_key("openai") == ""
+    assert store.get_api_key("anthropic") == "anthropic-secret"
+
+
+def test_custom_endpoint_keys_are_scoped_by_origin():
+    backend = _MemoryKeyring()
+    store = MasCredentialStore(backend)
+    first_url = "https://one.example.test/v1/chat/completions"
+    second_url = "https://two.example.test/v1/chat/completions"
+
+    store.set_api_key("custom", "first-secret", first_url)
+
+    assert store.get_api_key("custom", first_url) == "first-secret"
+    assert store.get_api_key("custom", second_url) == ""

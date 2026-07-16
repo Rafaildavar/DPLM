@@ -52,6 +52,13 @@ from app.services.live_gesture_state import (
     LiveGestureSnapshot,
     LiveGestureState,
 )
+from app.services.llm_providers import (
+    get_llm_provider_preset,
+    llm_api_key_env_names,
+    llm_provider_label,
+    llm_provider_requires_api_key,
+    normalize_llm_provider,
+)
 from app.services.mas_credentials import MasCredentialError, MasCredentialStore
 from app.services.usage_telemetry import DailyUsageTelemetry
 from cv.gesture_dataset_files import (
@@ -1022,33 +1029,51 @@ class AppController:
             self._mas_credentials = store
         return store
 
+    @staticmethod
+    def _mas_env_api_key(provider: str) -> tuple[str, str]:
+        for name in llm_api_key_env_names(provider):
+            value = str(os.getenv(name) or "").strip()
+            if value:
+                return value, name
+        return "", ""
+
     def _mas_llm_runtime(self) -> dict[str, Any]:
         self._config = self._config_store.load(include_env=True)
         llm = self._config.llm
-        env_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
-        provider = str(llm.provider or "local").strip().lower()
+        provider = normalize_llm_provider(llm.provider)
         explicit_provider = str(
             os.getenv("DPLM_BINDING_AGENT_PROVIDER")
             or os.getenv("BINDING_AGENT_PROVIDER")
             or ""
         ).strip()
-        if env_key and not explicit_provider and provider == "local":
+        legacy_mistral_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
+        if legacy_mistral_key and not explicit_provider and provider == "local":
             provider = "mistral"
+        preset = get_llm_provider_preset(provider)
+        model = str(llm.model or (preset.default_model if preset else "")).strip()
+        api_url = str(llm.api_url or (preset.api_url if preset else "")).strip()
+        env_key, env_key_name = self._mas_env_api_key(provider)
         stored_key = ""
         credential_error = ""
-        if not env_key:
+        if not env_key and provider != "local":
             try:
-                stored_key = self._mas_credential_store().get_mistral_api_key()
+                stored_key = self._mas_credential_store().get_api_key(
+                    provider,
+                    api_url,
+                )
             except MasCredentialError as exc:
                 credential_error = str(exc)
         api_key = env_key or stored_key
         return {
             "provider": provider,
-            "model": str(llm.model or "mistral-small-latest").strip(),
-            "apiUrl": str(llm.api_url or "").strip(),
+            "providerLabel": llm_provider_label(provider),
+            "model": model,
+            "apiUrl": api_url,
             "apiKey": api_key,
             "hasApiKey": bool(api_key),
             "keySource": "environment" if env_key else "keychain" if stored_key else "none",
+            "keyEnvironment": env_key_name,
+            "requiresApiKey": llm_provider_requires_api_key(provider),
             "credentialError": credential_error,
         }
 
@@ -1059,31 +1084,55 @@ class AppController:
 
     def get_binding_agent_provider_label(self) -> str:
         settings = self.get_mas_llm_settings()
-        if settings["provider"] != "mistral":
+        if settings["provider"] == "local":
             return "Локальный агент"
-        if not settings["hasApiKey"]:
-            return "Mistral · нужен ключ"
-        return f"Mistral · {settings['model']}"
+        label = str(settings.get("providerLabel") or "LLM")
+        if settings["requiresApiKey"] and not settings["hasApiKey"]:
+            return f"{label} · нужен ключ"
+        return f"{label} · {settings['model']}"
 
     def save_mas_llm_settings(
         self,
         *,
         provider: str,
         model: str,
+        api_url: str | None = None,
         api_key: str = "",
     ) -> tuple[bool, list[str]]:
-        target_provider = str(provider or "local").strip().lower()
+        target_provider = normalize_llm_provider(provider)
+        preset = get_llm_provider_preset(target_provider)
         target_model = str(model or "").strip()
         previous_raw = self.get_app_config()
         current_raw = json.loads(json.dumps(previous_raw))
         llm = dict(current_raw.get("llm") or {})
-        llm.update({"provider": target_provider, "model": target_model})
+        previous_provider = normalize_llm_provider(llm.get("provider"))
+        if api_url is None:
+            target_api_url = str(llm.get("api_url") or "").strip()
+            if previous_provider != target_provider and preset is not None:
+                target_api_url = preset.api_url
+        else:
+            target_api_url = str(api_url or "").strip()
+        if not target_model and previous_provider != target_provider and preset is not None:
+            target_model = preset.default_model
+        llm.update(
+            {
+                "provider": target_provider,
+                "model": target_model,
+                "api_url": target_api_url,
+            }
+        )
         current_raw["llm"] = llm
 
-        env_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
+        env_key, _env_key_name = self._mas_env_api_key(target_provider)
         new_key = str(api_key or "").strip()
+        if target_provider == "local" and new_key:
+            return False, [
+                "В локальном режиме API-ключ не используется"
+            ]
         if env_key and new_key:
-            return False, ["API-ключ задан окружением и не может быть заменён здесь"]
+            return False, [
+                "API-ключ задан окружением и не может быть заменён здесь"
+            ]
 
         config = AppConfig.from_dict(current_raw)
         validation = self._config_store.validate(config)
@@ -1095,33 +1144,46 @@ class AppController:
             return False, errors
         if new_key:
             try:
-                self._mas_credential_store().set_mistral_api_key(new_key)
+                self._mas_credential_store().set_api_key(
+                    target_provider,
+                    new_key,
+                    target_api_url,
+                )
             except (MasCredentialError, ValueError) as exc:
                 self.save_app_config(previous_raw)
                 return False, [str(exc)]
         return True, []
 
     def delete_mas_llm_api_key(self) -> tuple[bool, str]:
-        if str(os.getenv("MISTRAL_API_KEY") or "").strip():
+        runtime = self._mas_llm_runtime()
+        if runtime["provider"] == "local":
+            return False, "В локальном режиме API-ключ не используется"
+        if runtime["keySource"] == "environment":
             return False, "Ключ задан окружением и удаляется вне приложения"
         try:
-            self._mas_credential_store().delete_mistral_api_key()
+            self._mas_credential_store().delete_api_key(
+                runtime["provider"],
+                runtime["apiUrl"],
+            )
         except MasCredentialError as exc:
             return False, str(exc)
         return True, "API-ключ удалён"
 
     def test_mas_llm_connection(self) -> tuple[bool, str]:
         runtime = self._mas_llm_runtime()
-        if runtime["provider"] != "mistral":
-            return False, "Сначала выберите Mistral API"
+        if runtime["provider"] == "local":
+            return False, "Сначала выберите внешний LLM или Ollama"
         if runtime["credentialError"]:
             return False, str(runtime["credentialError"])
-        from app.services.binding_agent import MistralBindingAgent
+        from app.services.binding_agent import OpenAICompatibleBindingAgent
 
-        agent = MistralBindingAgent(
+        agent = OpenAICompatibleBindingAgent(
             api_key=runtime["apiKey"],
             model=runtime["model"],
             api_url=runtime["apiUrl"],
+            provider_label=runtime["providerLabel"],
+            requires_api_key=runtime["requiresApiKey"],
+            api_key_env="",
         )
         return agent.check_connection()
 
@@ -1136,15 +1198,21 @@ class AppController:
         bindings: list[dict[str, Any]] | None = None,
         session_id: str = "",
     ) -> dict[str, Any]:
-        from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
+        from app.services.binding_agent import (
+            BindingAgentOrchestrator,
+            OpenAICompatibleBindingAgent,
+        )
 
         runtime = self._mas_llm_runtime()
-        model_agent = MistralBindingAgent(
+        model_agent = OpenAICompatibleBindingAgent(
             api_key=runtime["apiKey"],
             model=runtime["model"],
             api_url=runtime["apiUrl"],
+            provider_label=runtime["providerLabel"],
+            requires_api_key=runtime["requiresApiKey"],
+            api_key_env="",
         )
-        return BindingAgentOrchestrator(mistral_agent=model_agent).run(
+        return BindingAgentOrchestrator(model_agent=model_agent).run(
             prompt,
             gestures,
             current_gesture=current_gesture,

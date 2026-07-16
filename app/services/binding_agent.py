@@ -1,8 +1,8 @@
 """Multi-agent draft builder for gesture bindings.
 
-The local parser pipeline stays deterministic by default. A Mistral provider can
-be enabled through environment variables to test real model parsing while
-keeping the same prompt -> agent trace -> draft binding contract.
+The local parser pipeline stays deterministic by default. An optional
+OpenAI-compatible provider can enrich model parsing while keeping the same
+prompt -> agent trace -> draft binding contract.
 """
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ from app.services.binding_agents.privacy import (
     redact_payload,
     redact_text,
 )
+from app.services.llm_providers import llm_provider_label
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -868,8 +869,8 @@ def _provider_name(provider: str | None) -> str:
     return _norm(str(raw)).replace("_", "-")
 
 
-def _wants_mistral(provider: str | None) -> bool:
-    return _provider_name(provider) in {"mistral", "mistral-api", "llm"}
+def _wants_model(provider: str | None) -> bool:
+    return _provider_name(provider) not in {"", "local", "none", "offline"}
 
 
 def _local_first_enabled() -> bool:
@@ -877,7 +878,7 @@ def _local_first_enabled() -> bool:
 
 
 def _answer_rewrite_enabled(provider: str | None) -> bool:
-    return _wants_mistral(provider) and _env_flag(
+    return _wants_model(provider) and _env_flag(
         BINDING_AGENT_REWRITE_ANSWERS_ENV,
         default=False,
     )
@@ -885,8 +886,8 @@ def _answer_rewrite_enabled(provider: str | None) -> bool:
 
 def binding_agent_provider_label(provider: str | None = None) -> str:
     _load_project_dotenv()
-    if _wants_mistral(provider):
-        return "Mistral" if os.getenv(MISTRAL_API_KEY_ENV) else "Локальный fallback"
+    if _wants_model(provider):
+        return llm_provider_label(_provider_name(provider))
     return "Локальный агент"
 
 
@@ -1327,9 +1328,10 @@ def _project_answer_text(
     if "mistral" in lower or "llm" in lower or "модель" in lower:
         return (
             "**LLM-режим агента**\n\n"
-            "- Без ключа работает локальный deterministic-пайплайн.\n"
-            "- Если в `.env` есть `MISTRAL_API_KEY`, агент может использовать Mistral "
-            "для разбора фразы.\n"
+            "- По умолчанию работает локальный deterministic-пайплайн.\n"
+            "- В настройках можно выбрать LLM-провайдера, модель и свой "
+            "OpenAI-совместимый endpoint.\n"
+            "- Личный ключ хранится в системном Keychain.\n"
             "- После ответа модельный draft всё равно проходит локальные проверки: "
             "жест, действие, политика и reviewer.\n\n"
             "Так мы можем тестировать LLM, но не отдавать UI сырой ответ модели."
@@ -2329,6 +2331,7 @@ from app.services.binding_agents import (
     IntentAgent,
     MemoryAgent,
     MistralBindingAgent,
+    OpenAICompatibleBindingAgent,
     PolicyAgent,
     RelevanceReviewerAgent,
     ResearchAgent,
@@ -2344,13 +2347,15 @@ class BindingAgentOrchestrator:
     def __init__(
         self,
         *,
+        model_agent: OpenAICompatibleBindingAgent | None = None,
         mistral_agent: MistralBindingAgent | None = None,
         research_agent: ResearchAgent | None = None,
         mlflow_logger: BindingAgentMlflowLogger | None = None,
         session_memory_agent: SessionMemoryAgent | None = None,
     ) -> None:
         self.intent_agent = IntentAgent()
-        self.mistral_agent = mistral_agent or MistralBindingAgent()
+        self.model_agent = model_agent or mistral_agent or MistralBindingAgent()
+        self.mistral_agent = self.model_agent
         self.research_agent = research_agent or ResearchAgent()
         self.mlflow_logger = mlflow_logger or BindingAgentMlflowLogger()
         self.gesture_agent = GestureAgent()
@@ -2554,7 +2559,7 @@ class BindingAgentOrchestrator:
             )
             answer_steps = list(steps)
             if _answer_rewrite_enabled(provider):
-                rewrite_step, rewritten = self.mistral_agent.rewrite_answer(
+                rewrite_step, rewritten = self.model_agent.rewrite_answer(
                     context,
                     intent=intent,
                     block=block,
@@ -2605,7 +2610,7 @@ class BindingAgentOrchestrator:
             )
             answer_steps = list(steps)
             if _answer_rewrite_enabled(provider):
-                rewrite_step, rewritten = self.mistral_agent.rewrite_answer(
+                rewrite_step, rewritten = self.model_agent.rewrite_answer(
                     context,
                     intent=intent,
                     block=block,
@@ -2641,11 +2646,11 @@ class BindingAgentOrchestrator:
                 provider=provider_name,
             )
 
-        wants_model = _wants_mistral(provider)
+        wants_model = _wants_model(provider)
         local_first = _local_first_enabled()
 
         if wants_model and not local_first:
-            model_result, steps = self._mistral_binding_result(
+            model_result, steps = self._model_binding_result(
                 context,
                 intent=intent,
                 block=block,
@@ -2664,14 +2669,14 @@ class BindingAgentOrchestrator:
             steps=steps,
         )
 
-        if wants_model and local_first and self._needs_mistral_fallback(local_result):
-            reason = self._mistral_fallback_reason(local_result)
+        if wants_model and local_first and self._needs_model_fallback(local_result):
+            reason = self._model_fallback_reason(local_result)
             fallback_steps = [
                 *local_result.steps,
                 AgentStep(
                     "Orchestrator",
                     "fallback",
-                    "Локальный контракт неполный; пробую Mistral как fallback.",
+                    "Локальный контракт неполный; пробую внешний LLM как fallback.",
                     {
                         "reason": reason,
                         "localFirst": True,
@@ -2680,7 +2685,7 @@ class BindingAgentOrchestrator:
                     },
                 ),
             ]
-            model_result, fallback_steps = self._mistral_binding_result(
+            model_result, fallback_steps = self._model_binding_result(
                 context,
                 intent=intent,
                 block=block,
@@ -2702,7 +2707,7 @@ class BindingAgentOrchestrator:
                     AgentStep(
                         "Orchestrator",
                         "skipped",
-                        "Mistral fallback не улучшил локальный контракт.",
+                        "LLM fallback не улучшил локальный контракт.",
                         {"reason": reason},
                     ),
                 ],
@@ -2714,7 +2719,7 @@ class BindingAgentOrchestrator:
             provider=provider_name,
         )
 
-    def _mistral_binding_result(
+    def _model_binding_result(
         self,
         context: BindingAgentContext,
         *,
@@ -2723,7 +2728,7 @@ class BindingAgentOrchestrator:
         base_steps: list[AgentStep],
     ) -> tuple[BindingAgentResult | None, list[AgentStep]]:
         steps = list(base_steps)
-        model_step, model_draft = self.mistral_agent.run(
+        model_step, model_draft = self.model_agent.run(
             context,
             intent=intent,
             block=block,
@@ -2910,7 +2915,7 @@ class BindingAgentOrchestrator:
         }
         return replace(context, draft_state=state)
 
-    def _needs_mistral_fallback(self, result: BindingAgentResult) -> bool:
+    def _needs_model_fallback(self, result: BindingAgentResult) -> bool:
         if result.can_apply:
             return False
         normalized_missing = {_norm(item) for item in result.missing}
@@ -2920,7 +2925,7 @@ class BindingAgentOrchestrator:
             return True
         return bool(result.gesture_label and not result.action_spec)
 
-    def _mistral_fallback_reason(self, result: BindingAgentResult) -> str:
+    def _model_fallback_reason(self, result: BindingAgentResult) -> str:
         if result.error:
             return "local_error"
         normalized_missing = {_norm(item) for item in result.missing}
@@ -3008,7 +3013,7 @@ class BindingAgentOrchestrator:
             context,
             result_for_log,
             provider=provider,
-            model=getattr(self.mistral_agent, "model", ""),
+            model=getattr(self.model_agent, "model", ""),
         )
         if logged:
             telemetry.update(logged)

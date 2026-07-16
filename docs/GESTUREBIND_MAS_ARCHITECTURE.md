@@ -32,7 +32,7 @@ flowchart TD
     GA --> AA["Action or Scenario Agent"]
     AA --> SK["Executable Skill Runtime"]
     SK -->|unknown action| RA["Research Agent"]
-    RA -->|local draft incomplete| MA["Optional Mistral fallback"]
+    RA -->|local draft incomplete| MA["Optional external LLM fallback"]
     MA --> SV["Semantic verifier"]
     SK --> PA["Policy + schema validation"]
     RA --> PA
@@ -140,7 +140,7 @@ Each turn is classified as `new_task`, `continuation` or `correction`. Only an
 explicit continuation, a correction, or a response that fills a known missing
 slot inherits values. Raw chat history is retained for tone/answer continuity,
 but is not scanned for executable gesture/action parameters. Binding prompts
-sent to Mistral contain the sanitized `sessionState`, not the full dialog.
+sent to an external LLM contain the sanitized `sessionState`, not the full dialog.
 
 ## Executable skills
 
@@ -166,7 +166,7 @@ Unknown actions use this order:
 1. approved research memory;
 2. built-in source-backed recipes;
 3. optional allowlisted Apple web research;
-4. Mistral fallback if the local contract is still incomplete.
+4. selected OpenAI-compatible LLM fallback if the local contract is incomplete.
 
 The same request can enter research only once. A discovered recipe must pass
 platform, source, schema and semantic validation. It remains `pending` until a
@@ -210,7 +210,7 @@ One request shares a default 12-second budget:
 
 - deterministic local stages run first;
 - Apple research uses short bounded requests and at most one result page;
-- Mistral receives only the remaining budget, capped at 8 seconds;
+- the selected external LLM receives only the remaining budget, capped at 8 seconds;
 - MLflow logging runs on a single background worker.
 
 Secrets are redacted recursively before external LLM prompts, MLflow params,
@@ -260,7 +260,7 @@ the deterministic rubric.
 | `skills/runtime.py` | Executable skills and schema validation |
 | `binding_crud.py` | Inspect/list/delete planning |
 | `research.py` | Source-backed research and approved memory |
-| `mistral.py` | Optional structured parser/answer rewriter |
+| `mistral.py` | OpenAI-compatible parser/rewriter and legacy Mistral adapter |
 | `guardrails.py` | Input/output policy |
 | `reviewer.py` | Relevance and contract review |
 | `eval_cases.py` | Independent golden expectations |

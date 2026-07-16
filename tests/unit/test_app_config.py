@@ -30,7 +30,7 @@ def test_config_defaults_load_without_file(tmp_path):
     assert config.telemetry.enabled is False
     assert config.telemetry.interval_hours == 24
     assert config.llm.provider == "local"
-    assert config.llm.model == "mistral-small-latest"
+    assert config.llm.model == ""
 
 
 def test_config_save_and_load_round_trip(tmp_path):
@@ -46,6 +46,7 @@ def test_config_save_and_load_round_trip(tmp_path):
     config.telemetry.endpoint = "https://telemetry.example.test/v1/telemetry/daily"
     config.llm.provider = "mistral"
     config.llm.model = "mistral-medium-latest"
+    config.llm.api_url = "https://api.mistral.ai/v1/chat/completions"
 
     store.save(config)
     loaded = store.load(include_env=False, load_dotenv=False)
@@ -90,6 +91,29 @@ def test_env_overrides_config_values(tmp_path, monkeypatch):
     assert loaded.llm.provider == "mistral"
     assert loaded.llm.model == "mistral-large-latest"
     assert store.env_overrides(load_dotenv=False)["DPLM_DB_HOST"] == "database.host"
+
+
+def test_legacy_mistral_model_does_not_override_another_provider(
+    tmp_path,
+    monkeypatch,
+):
+    store = ConfigStore(tmp_path / "config.json")
+    config = AppConfig()
+    config.llm.provider = "openai"
+    config.llm.model = "gpt-5-mini"
+    config.llm.api_url = "https://api.openai.com/v1/chat/completions"
+    store.save(config)
+    monkeypatch.setenv("MISTRAL_MODEL", "mistral-large-latest")
+    monkeypatch.setenv(
+        "MISTRAL_API_URL",
+        "https://api.mistral.ai/v1/chat/completions",
+    )
+
+    loaded = store.load(include_env=True, load_dotenv=False)
+
+    assert loaded.llm.provider == "openai"
+    assert loaded.llm.model == "gpt-5-mini"
+    assert loaded.llm.api_url == "https://api.openai.com/v1/chat/completions"
 
 
 def test_validation_rejects_invalid_database_and_camera_fields(tmp_path):
@@ -158,8 +182,41 @@ def test_llm_validation_rejects_unknown_provider_and_insecure_url():
     assert any("llm.api_url" in item for item in result.errors)
 
     config.llm.provider = "mistral"
+    config.llm.model = "mistral-small-latest"
     config.llm.api_url = "http://127.0.0.1:11434/v1/chat/completions"
     assert store.validate(config).ok
+
+
+def test_llm_validation_accepts_custom_openai_compatible_endpoint():
+    store = ConfigStore("unused.json")
+    config = AppConfig()
+    config.llm.provider = "custom"
+    config.llm.model = "vendor/model-name"
+    config.llm.api_url = "https://llm.example.test/v1/chat/completions"
+
+    assert store.validate(config).ok
+
+
+def test_llm_validation_rejects_credentials_inside_endpoint_url():
+    store = ConfigStore("unused.json")
+    config = AppConfig()
+    config.llm.provider = "custom"
+    config.llm.model = "vendor/model-name"
+    config.llm.api_url = (
+        "https://user:password@llm.example.test/v1/chat/completions"
+    )
+
+    result = store.validate(config)
+
+    assert not result.ok
+    assert any("логин или пароль" in item for item in result.errors)
+
+    config.llm.api_url = (
+        "https://llm.example.test/v1/chat/completions?api_key=secret"
+    )
+    result = store.validate(config)
+    assert not result.ok
+    assert any("защищённое поле" in item for item in result.errors)
 
 
 def test_database_resolver_uses_config_when_env_absent(monkeypatch, tmp_path):

@@ -15,7 +15,12 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import parse_qsl, quote_plus, urlparse
+
+from app.services.llm_providers import (
+    get_llm_provider_preset,
+    normalize_llm_provider,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -78,8 +83,8 @@ class TelemetryConfig:
 @dataclass
 class LlmConfig:
     provider: str = "local"
-    model: str = "mistral-small-latest"
-    api_url: str = "https://api.mistral.ai/v1/chat/completions"
+    model: str = ""
+    api_url: str = ""
 
 
 @dataclass
@@ -280,7 +285,7 @@ def _set_telemetry_interval_hours(config: AppConfig, value: str) -> None:
 
 
 def _set_llm_provider(config: AppConfig, value: str) -> None:
-    config.llm.provider = value.strip().lower()
+    config.llm.provider = normalize_llm_provider(value)
 
 
 def _set_llm_model(config: AppConfig, value: str) -> None:
@@ -336,6 +341,10 @@ ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "BINDING_AGENT_PROVIDER": ("llm.provider", _set_llm_provider),
     "MISTRAL_MODEL": ("llm.model", _set_llm_model),
     "MISTRAL_API_URL": ("llm.api_url", _set_llm_api_url),
+    "DPLM_LLM_MODEL": ("llm.model", _set_llm_model),
+    "LLM_MODEL": ("llm.model", _set_llm_model),
+    "DPLM_LLM_API_URL": ("llm.api_url", _set_llm_api_url),
+    "LLM_API_URL": ("llm.api_url", _set_llm_api_url),
 }
 
 
@@ -468,11 +477,15 @@ class ConfigStore:
         elif telemetry.enabled:
             warnings.append("Сервер анонимной статистики не настроен")
 
-        llm_provider = llm.provider.strip().lower()
-        if llm_provider not in {"local", "mistral"}:
-            errors.append("llm.provider должен быть local или mistral")
-        if llm_provider == "mistral" and not llm.model.strip():
-            errors.append("llm.model не может быть пустым для Mistral")
+        llm_provider = normalize_llm_provider(llm.provider)
+        if get_llm_provider_preset(llm_provider) is None:
+            errors.append(
+                "llm.provider содержит неизвестного LLM-провайдера"
+            )
+        if llm_provider != "local" and not llm.model.strip():
+            errors.append(
+                "llm.model не может быть пустым для внешнего LLM"
+            )
         llm_url = llm.api_url.strip()
         if llm_url:
             parsed = urlparse(llm_url)
@@ -486,8 +499,29 @@ class ConfigStore:
                     "llm.api_url должен использовать HTTPS "
                     "(HTTP разрешён только для localhost)"
                 )
-        elif llm_provider == "mistral":
-            errors.append("llm.api_url не может быть пустым для Mistral")
+            if parsed.username or parsed.password:
+                errors.append(
+                    "llm.api_url не должен содержать логин или пароль"
+                )
+            secret_query_names = {
+                "access_token",
+                "api-key",
+                "api_key",
+                "apikey",
+                "key",
+                "token",
+            }
+            if any(
+                name.strip().lower() in secret_query_names
+                for name, _value in parse_qsl(parsed.query, keep_blank_values=True)
+            ):
+                errors.append(
+                    "API-ключ нужно вводить в защищённое поле, а не в URL"
+                )
+        elif llm_provider != "local":
+            errors.append(
+                "llm.api_url не может быть пустым для внешнего LLM"
+            )
 
         model_path = resolve_config_path(paths.model_path)
         classes_path = resolve_config_path(paths.classes_path)
@@ -501,17 +535,42 @@ class ConfigStore:
     def env_overrides(self, *, load_dotenv: bool = True) -> dict[str, str]:
         if load_dotenv:
             load_project_dotenv()
+        config = self.load(include_env=False, load_dotenv=False)
         out: dict[str, str] = {}
         for key, (field_name, _) in ENV_OVERRIDES.items():
+            if key in {"MISTRAL_MODEL", "MISTRAL_API_URL"} and not (
+                self._mistral_env_applies(config)
+            ):
+                continue
             if os.environ.get(key, "").strip():
                 out[key] = field_name
         return out
 
     def _apply_env_overrides(self, config: AppConfig) -> None:
         for key, (_, setter) in ENV_OVERRIDES.items():
+            if key in {"MISTRAL_MODEL", "MISTRAL_API_URL"} and not (
+                self._mistral_env_applies(config)
+            ):
+                continue
             value = os.environ.get(key)
             if value is not None and value.strip():
                 setter(config, value)
+
+    @staticmethod
+    def _mistral_env_applies(config: AppConfig) -> bool:
+        provider = normalize_llm_provider(config.llm.provider)
+        if provider == "mistral":
+            return True
+        explicit_provider = str(
+            os.environ.get("DPLM_BINDING_AGENT_PROVIDER")
+            or os.environ.get("BINDING_AGENT_PROVIDER")
+            or ""
+        ).strip()
+        if explicit_provider:
+            return normalize_llm_provider(explicit_provider) == "mistral"
+        return provider == "local" and bool(
+            str(os.environ.get("MISTRAL_API_KEY") or "").strip()
+        )
 
 
 def resolve_config_path(value: str | Path, *, base_dir: Path = PROJECT_ROOT) -> Path:

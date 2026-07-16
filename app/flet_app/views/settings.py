@@ -16,6 +16,12 @@ from app.flet_app.theme import (
     COLOR_SURFACE_HIGH,
     surface_card,
 )
+from app.services.llm_providers import (
+    LLM_PROVIDER_PRESETS,
+    get_llm_provider_preset,
+    llm_provider_label,
+)
+
 
 class SettingsView:
     def __init__(self, page: ft.Page, controller: AppController) -> None:
@@ -187,23 +193,32 @@ class SettingsView:
         )
 
         self._llm_provider = ft.Dropdown(
-            label="Режим агента",
+            label="LLM-провайдер",
             value=str(llm_status.get("provider") or "local"),
             border_color=COLOR_SURFACE_HIGH,
             editable=False,
             options=[
-                ft.DropdownOption(key="local", text="Локальный"),
-                ft.DropdownOption(key="mistral", text="Mistral API"),
+                ft.DropdownOption(key=item.key, text=item.label)
+                for item in LLM_PROVIDER_PRESETS
             ],
             on_select=self._on_llm_provider_change,
         )
         self._llm_model = self._field(
             "Модель",
-            llm_status.get("model") or "mistral-small-latest",
+            llm_status.get("model") or "",
+        )
+        self._llm_api_url = self._field(
+            "API endpoint",
+            llm_status.get("apiUrl") or "",
         )
         self._llm_api_key = self._field("API-ключ", "", password=True)
+        self._llm_model.on_change = self._on_llm_fields_change
+        self._llm_api_url.on_change = self._on_llm_fields_change
+        self._llm_api_key.on_change = self._on_llm_fields_change
         self._llm_api_key.hint_text = (
-            "Ключ уже сохранён" if llm_status.get("hasApiKey") else "Введите ключ Mistral"
+            "Ключ уже сохранён"
+            if llm_status.get("hasApiKey")
+            else "Введите ключ провайдера"
         )
         self._llm_status = ft.Text(
             self._mas_llm_status_text(llm_status),
@@ -377,11 +392,14 @@ class SettingsView:
         self._telemetry_status.value = self._telemetry_status_text(telemetry_status)
         self._llm_provider.value = str(llm_status.get("provider") or "local")
         self._llm_model.value = str(
-            llm_status.get("model") or "mistral-small-latest"
+            llm_status.get("model") or ""
         )
+        self._llm_api_url.value = str(llm_status.get("apiUrl") or "")
         self._llm_api_key.value = ""
         self._llm_api_key.hint_text = (
-            "Ключ уже сохранён" if llm_status.get("hasApiKey") else "Введите ключ Mistral"
+            "Ключ уже сохранён"
+            if llm_status.get("hasApiKey")
+            else "Введите ключ провайдера"
         )
         self._llm_status.value = self._mas_llm_status_text(llm_status)
         self._llm_status.color = COLOR_MUTED
@@ -502,40 +520,77 @@ class SettingsView:
                 pass
         raw = config or self._controller.get_app_config()
         llm = dict(raw.get("llm") or {})
+        provider = str(llm.get("provider") or "local")
+        preset = get_llm_provider_preset(provider)
         return {
-            "provider": str(llm.get("provider") or "local"),
-            "model": str(llm.get("model") or "mistral-small-latest"),
+            "provider": provider,
+            "model": str(llm.get("model") or ""),
+            "apiUrl": str(llm.get("api_url") or ""),
+            "providerLabel": llm_provider_label(llm.get("provider")),
             "hasApiKey": False,
             "keySource": "none",
+            "keyEnvironment": "",
+            "requiresApiKey": bool(preset and preset.requires_api_key),
             "credentialError": "",
         }
 
     @staticmethod
     def _mas_llm_status_text(status: dict[str, Any]) -> str:
-        if str(status.get("provider") or "local") != "mistral":
+        provider = str(status.get("provider") or "local")
+        if provider == "local":
             return "Локальная обработка включена"
+        label = str(status.get("providerLabel") or llm_provider_label(provider))
         error = str(status.get("credentialError") or "").strip()
         if error:
             return error
         if status.get("keySource") == "environment":
-            return "Mistral настроен окружением"
+            env_name = str(status.get("keyEnvironment") or "окружение")
+            return f"{label}: ключ задан через {env_name}"
         if status.get("hasApiKey"):
             return "API-ключ хранится в системном Keychain"
-        return "Для Mistral нужен личный API-ключ"
+        if not status.get("requiresApiKey"):
+            return "API-ключ необязателен для выбранного endpoint"
+        return f"Для {label} нужен личный API-ключ"
 
     def _update_llm_controls(self, status: dict[str, Any] | None = None) -> None:
         current = status or self._mas_llm_settings_snapshot()
-        mistral = str(self._llm_provider.value or "local") == "mistral"
+        external = str(self._llm_provider.value or "local") != "local"
         env_key = current.get("keySource") == "environment"
         has_key = bool(current.get("hasApiKey"))
-        self._llm_model.disabled = not mistral
-        self._llm_api_key.disabled = not mistral or env_key
-        self._llm_test_btn.disabled = not mistral or not has_key
-        self._llm_delete_btn.disabled = not mistral or not has_key or env_key
+        requires_key = bool(current.get("requiresApiKey"))
+        self._llm_model.disabled = not external
+        self._llm_api_url.disabled = not external
+        self._llm_api_key.disabled = not external or env_key
+        self._llm_test_btn.disabled = not external or (requires_key and not has_key)
+        self._llm_delete_btn.disabled = not external or not has_key or env_key
 
     def _on_llm_provider_change(self, _event) -> None:
-        self._update_llm_controls()
+        provider = str(self._llm_provider.value or "local")
+        preset = get_llm_provider_preset(provider)
+        if preset is not None and provider != "local":
+            self._llm_model.value = preset.default_model
+            self._llm_api_url.value = preset.api_url
+        self._llm_api_key.value = ""
+        status = {
+            "provider": provider,
+            "providerLabel": llm_provider_label(provider),
+            "hasApiKey": False,
+            "keySource": "none",
+            "requiresApiKey": bool(preset and preset.requires_api_key),
+            "credentialError": "",
+        }
+        self._llm_status.value = self._mas_llm_status_text(status)
+        self._llm_status.color = COLOR_MUTED
+        self._update_llm_controls(status)
+        self._llm_test_btn.disabled = True
         self._safe_update(self._page)
+
+    def _on_llm_fields_change(self, _event) -> None:
+        if str(self._llm_provider.value or "local") != "local":
+            self._llm_test_btn.disabled = True
+            self._llm_status.value = "Сохраните изменения перед проверкой"
+            self._llm_status.color = COLOR_MUTED
+            self._safe_update(self._page)
 
     def _on_save_mas_llm(self, _event) -> None:
         saver = getattr(self._controller, "save_mas_llm_settings", None)
@@ -547,6 +602,7 @@ class SettingsView:
         ok, errors = saver(
             provider=str(self._llm_provider.value or "local"),
             model=str(self._llm_model.value or "").strip(),
+            api_url=str(self._llm_api_url.value or "").strip(),
             api_key=str(self._llm_api_key.value or "").strip(),
         )
         self._llm_api_key.value = ""
@@ -555,7 +611,9 @@ class SettingsView:
             self._llm_status.value = self._mas_llm_status_text(status)
             self._llm_status.color = COLOR_SUCCESS
             self._llm_api_key.hint_text = (
-                "Ключ уже сохранён" if status.get("hasApiKey") else "Введите ключ Mistral"
+                "Ключ уже сохранён"
+                if status.get("hasApiKey")
+                else "Введите ключ провайдера"
             )
             self._update_llm_controls(status)
         else:
@@ -591,7 +649,7 @@ class SettingsView:
         )
         status = self._mas_llm_settings_snapshot()
         self._llm_api_key.value = ""
-        self._llm_api_key.hint_text = "Введите ключ Mistral"
+        self._llm_api_key.hint_text = "Введите ключ провайдера"
         self._llm_status.value = str(message)
         self._llm_status.color = COLOR_SUCCESS if ok else COLOR_DANGER
         self._update_llm_controls(status)
@@ -910,6 +968,7 @@ class SettingsView:
                     self._section_title(ft.Icons.PSYCHOLOGY, "MAS и LLM"),
                     self._llm_provider,
                     self._responsive(self._llm_model, self._llm_api_key),
+                    self._llm_api_url,
                     ft.Row(
                         controls=[
                             self._llm_save_btn,

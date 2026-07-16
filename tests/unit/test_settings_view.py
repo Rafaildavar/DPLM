@@ -18,7 +18,8 @@ class _Controller:
         self.is_recognizing = False
         self._mas_key = False
         self._mas_provider = "local"
-        self._mas_model = "mistral-small-latest"
+        self._mas_model = ""
+        self._mas_api_url = ""
 
     def get_app_config(self) -> dict[str, Any]:
         return {
@@ -53,7 +54,7 @@ class _Controller:
             "llm": {
                 "provider": self._mas_provider,
                 "model": self._mas_model,
-                "api_url": "https://api.mistral.ai/v1/chat/completions",
+                "api_url": self._mas_api_url,
             },
         }
 
@@ -61,16 +62,33 @@ class _Controller:
         return {
             "provider": self._mas_provider,
             "model": self._mas_model,
+            "apiUrl": self._mas_api_url,
+            "providerLabel": "Mistral" if self._mas_provider == "mistral" else "Локальный агент",
             "hasApiKey": self._mas_key,
             "keySource": "keychain" if self._mas_key else "none",
+            "keyEnvironment": "",
+            "requiresApiKey": self._mas_provider not in {"local", "ollama", "custom"},
             "credentialError": "",
         }
 
-    def save_mas_llm_settings(self, *, provider: str, model: str, api_key: str):
+    def save_mas_llm_settings(
+        self,
+        *,
+        provider: str,
+        model: str,
+        api_url: str,
+        api_key: str,
+    ):
         self._mas_provider = provider
         self._mas_model = model
+        self._mas_api_url = api_url
         self._mas_key = self._mas_key or bool(api_key)
-        self.saved_mas = {"provider": provider, "model": model, "api_key": api_key}
+        self.saved_mas = {
+            "provider": provider,
+            "model": model,
+            "api_url": api_url,
+            "api_key": api_key,
+        }
         return True, []
 
     def delete_mas_llm_api_key(self):
@@ -188,8 +206,14 @@ def test_settings_screen_contains_only_user_level_sections():
         "Камера и жесты",
         "Команды",
         "MAS и LLM",
-        "Режим агента",
-        "Mistral API",
+        "LLM-провайдер",
+        "OpenAI",
+        "Anthropic Claude",
+        "Google Gemini",
+        "Mistral",
+        "OpenRouter",
+        "Свой OpenAI-совместимый API",
+        "API endpoint",
         "API-ключ",
         "Приватность",
         "Отправлять анонимную статистику качества раз в день",
@@ -250,6 +274,7 @@ def test_user_can_save_mistral_model_and_hidden_api_key():
     view = SettingsView(object(), controller)
     view._llm_provider.value = "mistral"
     view._llm_model.value = "mistral-medium-latest"
+    view._llm_api_url.value = "https://api.mistral.ai/v1/chat/completions"
     view._llm_api_key.value = "user-secret"
 
     view._on_save_mas_llm(None)
@@ -257,8 +282,24 @@ def test_user_can_save_mistral_model_and_hidden_api_key():
     assert controller.saved_mas == {
         "provider": "mistral",
         "model": "mistral-medium-latest",
+        "api_url": "https://api.mistral.ai/v1/chat/completions",
         "api_key": "user-secret",
     }
     assert view._llm_api_key.value == ""
     assert view._llm_api_key.password is True
     assert view._llm_test_btn.disabled is False
+
+
+def test_provider_selection_applies_openai_compatible_preset():
+    view = SettingsView(object(), _Controller())
+
+    view._llm_provider.value = "gemini"
+    view._on_llm_provider_change(None)
+
+    assert view._llm_model.value == "gemini-3.5-flash"
+    assert view._llm_api_url.value == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
+    assert view._llm_model.disabled is False
+    assert view._llm_api_url.disabled is False
+    assert view._llm_test_btn.disabled is True

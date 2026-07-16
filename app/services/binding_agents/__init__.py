@@ -19,6 +19,7 @@ __all__ = [
     "IntentAgent",
     "MemoryAgent",
     "MistralBindingAgent",
+    "OpenAICompatibleBindingAgent",
     "MistralJudgeCompletion",
     "PolicyAgent",
     "RelevanceReviewerAgent",
@@ -70,10 +71,16 @@ def __getattr__(name: str) -> Any:
         from app.services.binding_agents.intent import IntentAgent
 
         return IntentAgent
-    if name == "MistralBindingAgent":
-        from app.services.binding_agents.mistral import MistralBindingAgent
+    if name in {"MistralBindingAgent", "OpenAICompatibleBindingAgent"}:
+        from app.services.binding_agents.mistral import (
+            MistralBindingAgent,
+            OpenAICompatibleBindingAgent,
+        )
 
-        return MistralBindingAgent
+        return {
+            "MistralBindingAgent": MistralBindingAgent,
+            "OpenAICompatibleBindingAgent": OpenAICompatibleBindingAgent,
+        }[name]
     if name == "SessionMemoryAgent":
         from app.services.binding_agents.session_memory import SessionMemoryAgent
 
