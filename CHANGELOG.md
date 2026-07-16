@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.1-beta.7 - 2026-07-16
+
+- Added a native `hdiutil` fallback when the styled `create-dmg` step is not
+  available, fails or completes without producing an artifact on GitHub Actions.
+- Kept the drag-to-Applications flow and bundled guides in fallback DMGs while
+  continuing to require both DMG and ZIP assets before publishing a release.
+- Includes the configurable MAS LLM providers and Keychain-backed user API keys
+  introduced in beta.5.
+
 ## v0.8.1-beta.6 - 2026-07-16
 
 - Fixed the macOS release workflow so a failed DMG build can no longer be

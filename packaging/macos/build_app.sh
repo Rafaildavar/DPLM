@@ -10,6 +10,7 @@ ARTIFACT_DIR="outputs/release/${APP_NAME}-macos-${VERSION}"
 ZIP_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.zip"
 DMG_PATH="outputs/release/${APP_NAME}-macos-${VERSION}.dmg"
 DMG_BACKGROUND_PATH="outputs/release/.${APP_NAME}-dmg-background.png"
+DMG_FALLBACK_DIR="outputs/release/.${APP_NAME}-dmg-staging-${VERSION}"
 APP_ICON_PATH="outputs/release/.${APP_NAME}.icns"
 TELEMETRY_CONFIG_PATH="configs/release_telemetry.json"
 GENERATED_TELEMETRY_CONFIG=0
@@ -17,11 +18,32 @@ GENERATED_TELEMETRY_CONFIG=0
 cleanup() {
   rm -f "$DMG_BACKGROUND_PATH"
   rm -f "$APP_ICON_PATH"
+  rm -rf "$DMG_FALLBACK_DIR"
   if [[ "$GENERATED_TELEMETRY_CONFIG" == "1" ]]; then
     rm -f "$TELEMETRY_CONFIG_PATH"
   fi
 }
 trap cleanup EXIT
+
+create_hdiutil_dmg() {
+  if ! command -v hdiutil >/dev/null 2>&1; then
+    echo "[macos-bundle] hdiutil is required to build the fallback DMG" >&2
+    return 1
+  fi
+
+  echo "[macos-bundle] Falling back to native hdiutil DMG packaging"
+  hdiutil detach "/Volumes/${APP_NAME} ${VERSION}" -force \
+    >/dev/null 2>&1 || true
+  rm -rf "$DMG_FALLBACK_DIR"
+  ditto "$ARTIFACT_DIR" "$DMG_FALLBACK_DIR"
+  ln -s /Applications "$DMG_FALLBACK_DIR/Applications"
+  hdiutil create \
+    -volname "${APP_NAME} ${VERSION}" \
+    -srcfolder "$DMG_FALLBACK_DIR" \
+    -ov \
+    -format UDZO \
+    "$DMG_PATH"
+}
 
 if [[ -n "${GESTUREBIND_TELEMETRY_ENDPOINT:-}" ]]; then
   python - <<'PY'
@@ -235,31 +257,49 @@ fi
 
 python packaging/macos/render_dmg_background.py "$DMG_BACKGROUND_PATH"
 
-if ! command -v create-dmg >/dev/null 2>&1; then
-  echo "[macos-bundle] create-dmg is required (brew install create-dmg)" >&2
-  exit 1
+rm -f "$DMG_PATH"
+STYLED_DMG_CREATED=0
+if command -v create-dmg >/dev/null 2>&1; then
+  if create-dmg \
+    --volname "${APP_NAME} ${VERSION}" \
+    --volicon "$APP_ICON_PATH" \
+    --background "$DMG_BACKGROUND_PATH" \
+    --window-pos 200 120 \
+    --window-size 840 560 \
+    --text-size 13 \
+    --icon-size 112 \
+    --icon "${APP_NAME}.app" 200 226 \
+    --hide-extension "${APP_NAME}.app" \
+    --app-drop-link 640 226 \
+    --icon "INSTALL.txt" 250 430 \
+    --icon "USER_GUIDE.md" 420 430 \
+    --icon "README.md" 590 430 \
+    --format UDZO \
+    --no-internet-enable \
+    --overwrite \
+    "$DMG_PATH" \
+    "$ARTIFACT_DIR"; then
+    if [[ -s "$DMG_PATH" ]]; then
+      STYLED_DMG_CREATED=1
+    else
+      echo "[macos-bundle] create-dmg completed without a DMG artifact" >&2
+    fi
+  else
+    echo "[macos-bundle] create-dmg failed; using native fallback" >&2
+  fi
+else
+  echo "[macos-bundle] create-dmg is unavailable; using native fallback" >&2
 fi
 
-rm -f "$DMG_PATH"
-create-dmg \
-  --volname "${APP_NAME} ${VERSION}" \
-  --volicon "$APP_ICON_PATH" \
-  --background "$DMG_BACKGROUND_PATH" \
-  --window-pos 200 120 \
-  --window-size 840 560 \
-  --text-size 13 \
-  --icon-size 112 \
-  --icon "${APP_NAME}.app" 200 226 \
-  --hide-extension "${APP_NAME}.app" \
-  --app-drop-link 640 226 \
-  --icon "INSTALL.txt" 250 430 \
-  --icon "USER_GUIDE.md" 420 430 \
-  --icon "README.md" 590 430 \
-  --format UDZO \
-  --no-internet-enable \
-  --overwrite \
-  "$DMG_PATH" \
-  "$ARTIFACT_DIR"
+if [[ "$STYLED_DMG_CREATED" != "1" ]]; then
+  rm -f "$DMG_PATH"
+  create_hdiutil_dmg
+fi
+
+if [[ ! -s "$DMG_PATH" ]]; then
+  echo "[macos-bundle] DMG artifact was not created: $DMG_PATH" >&2
+  exit 1
+fi
 
 echo "[macos-bundle] ZIP artifact: $ZIP_PATH"
 echo "[macos-bundle] DMG artifact: $DMG_PATH"

@@ -27,6 +27,9 @@ models, validate them live and bind accepted gestures to safe macOS actions.
 - Correct, incorrect and missed controls provide user-confirmed quality signals.
 - The DMG now uses a native drag-and-drop layout with GestureBind and the
   Applications shortcut above a separate documentation area.
+- GitHub release packaging falls back to macOS `hdiutil` if the styled DMG tool
+  fails, preserving the app, Applications shortcut and bundled guides instead
+  of publishing an incomplete release without a DMG.
 - Cursor mode checks macOS Accessibility before activation, opens the correct
   settings page and no longer reports movement when macOS blocked it.
 - The first camera frame reaches the UI before MediaPipe and model warm-up, so

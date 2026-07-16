@@ -100,6 +100,17 @@ def test_release_build_uses_drag_and_drop_dmg_layout():
     assert 'rm -f "$FLET_ARCHIVE_PATH"' in build_script
 
 
+def test_release_build_falls_back_to_native_hdiutil_dmg():
+    build_script = Path("packaging/macos/build_app.sh").read_text(encoding="utf-8")
+
+    assert "create_hdiutil_dmg()" in build_script
+    assert 'ln -s /Applications "$DMG_FALLBACK_DIR/Applications"' in build_script
+    assert "hdiutil create" in build_script
+    assert '-srcfolder "$DMG_FALLBACK_DIR"' in build_script
+    assert 'if [[ "$STYLED_DMG_CREATED" != "1" ]]' in build_script
+    assert 'if [[ ! -s "$DMG_PATH" ]]' in build_script
+
+
 def test_release_build_maps_beta_version_to_macos_bundle_metadata():
     build_script = Path("packaging/macos/build_app.sh").read_text(encoding="utf-8")
 
