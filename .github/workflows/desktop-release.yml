@@ -73,11 +73,15 @@ jobs:
       - name: Build macOS app artifacts
         env:
           GESTUREBIND_VERSION: ${{ github.ref_name }}
+          GESTUREBIND_LOW_DISK_BUILD: "1"
           GESTUREBIND_TELEMETRY_ENDPOINT: ${{ vars.GESTUREBIND_TELEMETRY_ENDPOINT }}
           GESTUREBIND_TELEMETRY_PROJECT_KEY: ${{ vars.GESTUREBIND_TELEMETRY_PROJECT_KEY }}
         run: |
+          set -o pipefail
           mkdir -p outputs/ci
           bash packaging/macos/build_app.sh 2>&1 | tee outputs/ci/macos_packaging.log
+          test -s "outputs/release/GestureBind-macos-${GITHUB_REF_NAME}.dmg"
+          test -s "outputs/release/GestureBind-macos-${GITHUB_REF_NAME}.zip"
 
       - name: Upload macOS app artifact
         uses: actions/upload-artifact@v4

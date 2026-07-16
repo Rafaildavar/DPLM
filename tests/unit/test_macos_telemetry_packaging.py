@@ -111,6 +111,23 @@ def test_release_build_maps_beta_version_to_macos_bundle_metadata():
     assert "Set :CFBundleVersion ${BUNDLE_BUILD_VERSION}" in build_script
 
 
+def test_release_workflow_requires_dmg_and_zip_artifacts():
+    workflow = Path(".github/workflows/desktop-release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'GESTUREBIND_LOW_DISK_BUILD: "1"' in workflow
+    assert "set -o pipefail" in workflow
+    assert (
+        'test -s "outputs/release/GestureBind-macos-${GITHUB_REF_NAME}.dmg"'
+        in workflow
+    )
+    assert (
+        'test -s "outputs/release/GestureBind-macos-${GITHUB_REF_NAME}.zip"'
+        in workflow
+    )
+
+
 def test_app_icon_renderer_outputs_valid_icns(tmp_path):
     path = Path("packaging/macos/render_app_icon.py").resolve()
     spec = importlib.util.spec_from_file_location("render_app_icon_test", path)

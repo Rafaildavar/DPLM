@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.1-beta.6 - 2026-07-16
+
+- Fixed the macOS release workflow so a failed DMG build can no longer be
+  hidden by the packaging log pipeline.
+- Released temporary PyInstaller directories before DMG creation to preserve
+  runner disk space and made both the DMG and ZIP mandatory release assets.
+- Includes the user-selectable LLM provider, model, endpoint and Keychain-backed
+  API key settings introduced in beta.5.
+
 ## v0.8.1-beta.5 - 2026-07-16
 
 - Added user-selectable LLM providers for the MAS binding assistant: OpenAI,
