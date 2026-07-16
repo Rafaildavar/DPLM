@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.1-beta.5 - 2026-07-16
+
+- Added user-selectable LLM providers for the MAS binding assistant: OpenAI,
+  Claude, Gemini, Mistral, OpenRouter, Groq, DeepSeek, Ollama and custom
+  OpenAI-compatible endpoints.
+- Added editable model and API endpoint settings with connection testing, while
+  keeping the local MAS mode as the default.
+- Stored API keys separately for each provider and endpoint in macOS Keychain;
+  credentials are never written to the application config or release bundle.
+- Added provider-specific environment overrides and retained compatibility with
+  existing Mistral settings.
+
 ## v0.8.1-beta.4 - 2026-07-12
 
 - Fixed a native MediaPipe crash when recognition was stopped while the camera

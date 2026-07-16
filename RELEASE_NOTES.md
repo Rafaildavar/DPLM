@@ -33,7 +33,12 @@ models, validate them live and bind accepted gestures to safe macOS actions.
   the preview appears immediately while recognition initializes.
 - User-recorded sample metadata takes precedence over production class names,
   preventing a static personal gesture such as `zoom` from being mislabeled.
-- The public beta contains no Mistral API key and runs the binding MAS locally.
+- MAS now lets each user select OpenAI, Claude, Gemini, Mistral, OpenRouter,
+  Groq, DeepSeek, Ollama or a custom OpenAI-compatible endpoint, model and API
+  key directly in Settings.
+- The public beta contains no shared LLM credentials and runs the binding MAS
+  locally by default. User keys are stored per provider and endpoint in macOS
+  Keychain instead of the application config or release bundle.
 - The app bundle now uses the GestureBind brand mark instead of PyInstaller's
   default Python icon in Finder, Dock and Launchpad.
 - Installation, user and project guides are visible directly inside the DMG,
