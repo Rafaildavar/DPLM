@@ -498,6 +498,36 @@ def test_binding_agent_orchestrator_returns_multi_agent_trace():
     assert result.intent == "create_binding"
 
 
+def test_mistral_connection_check_uses_saved_model_and_minimal_completion():
+    class FakeResponse:
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": "OK"}}]}
+            ).encode("utf-8")
+
+        def close(self):
+            pass
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        assert payload["model"] == "test-mistral"
+        assert payload["max_tokens"] == 1
+        assert request.get_header("Authorization") == "Bearer test-key"
+        assert timeout == 8.0
+        return FakeResponse()
+
+    agent = MistralBindingAgent(
+        api_key="test-key",
+        model="test-mistral",
+        urlopen=fake_urlopen,
+    )
+
+    ok, message = agent.check_connection()
+
+    assert ok is True
+    assert "test-mistral" in message
+
+
 def test_binding_agent_mistral_provider_uses_model_response(monkeypatch):
     monkeypatch.setenv("DPLM_BINDING_AGENT_LOCAL_FIRST", "0")
 

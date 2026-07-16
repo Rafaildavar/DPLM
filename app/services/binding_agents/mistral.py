@@ -63,6 +63,46 @@ class MistralBindingAgent:
     def _load_dotenv(self) -> None:
         _load_project_dotenv()
 
+    def check_connection(self) -> tuple[bool, str]:
+        """Validate the configured key and model with a minimal completion."""
+        if not (self.api_key or "").strip():
+            return False, "API-ключ не задан"
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "temperature": 0,
+            "max_tokens": 1,
+        }
+        request = urllib.request.Request(
+            self.api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            response = self.urlopen(request, timeout=self.timeout)
+            try:
+                raw = response.read()
+            finally:
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
+        except urllib.error.HTTPError as exc:
+            detail = redact_text(self._error_body(exc))
+            return False, f"Mistral API вернул HTTP {exc.code}: {detail}"
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return False, f"Mistral API недоступен: {redact_text(str(exc))}"
+        try:
+            self._message_content(json.loads(raw.decode("utf-8")))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return False, f"Mistral вернул неожиданный ответ: {exc}"
+        return True, f"Подключение к модели {self.model} работает"
+
     def run(
         self,
         context: BindingAgentContext,

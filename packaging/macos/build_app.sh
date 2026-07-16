@@ -88,6 +88,7 @@ python -m PyInstaller \
   --osx-bundle-identifier "ai.gesturebind.desktop" \
   --collect-all flet \
   --collect-all flet_desktop \
+  --collect-all keyring \
   --collect-all mediapipe \
   --collect-all cv2 \
   --collect-submodules sklearn \

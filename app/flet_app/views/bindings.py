@@ -1054,6 +1054,11 @@ class BindingsView:
             width=float("inf"),
         )
         self._agent_status = ft.Text("", size=12, color=COLOR_MUTED)
+        self._agent_provider_text = ft.Text(
+            self._binding_agent_provider_label(),
+            size=11,
+            color=COLOR_MUTED,
+        )
         self._style_form_controls()
         self._configure_mode_panels()
         self._render_action_form()
@@ -1102,6 +1107,11 @@ class BindingsView:
         self._refresh_categories()
         self._refresh_default_commands()
         self._refresh_gestures()
+        self._agent_provider_text.value = self._binding_agent_provider_label()
+        try:
+            self._agent_provider_text.update()
+        except Exception:
+            pass
 
     def on_hide(self) -> None:
         pass
@@ -2523,6 +2533,34 @@ class BindingsView:
             return []
         return [dict(item) for item in rows if isinstance(item, dict)]
 
+    def _binding_agent_provider_label(self) -> str:
+        getter = getattr(self._controller, "get_binding_agent_provider_label", None)
+        if callable(getter):
+            try:
+                return str(getter() or "Локальный агент")
+            except Exception:
+                pass
+        return binding_agent_provider_label()
+
+    def _build_agent_binding_draft(
+        self,
+        prompt: str,
+        history: list[dict[str, str]],
+        draft_state: dict[str, Any],
+        bindings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        builder = getattr(self._controller, "build_agent_binding_draft", None)
+        kwargs = {
+            "current_gesture": self._gesture_dd.value or "",
+            "conversation_history": history,
+            "draft_state": draft_state,
+            "bindings": bindings,
+            "session_id": self._agent_session_id,
+        }
+        if callable(builder):
+            return builder(prompt, self._gestures, **kwargs)
+        return build_agent_binding_draft(prompt, self._gestures, **kwargs)
+
     def _set_agent_empty_state(self) -> None:
         self._last_agent_draft = None
         self._agent_dialog_messages = []
@@ -2581,14 +2619,11 @@ class BindingsView:
         else:
             request_id = self._agent_request_id
 
-        draft = build_agent_binding_draft(
+        draft = self._build_agent_binding_draft(
             prompt,
-            self._gestures,
-            current_gesture=self._gesture_dd.value or "",
-            conversation_history=history,
-            draft_state=draft_state,
-            bindings=bindings,
-            session_id=self._agent_session_id,
+            history,
+            draft_state,
+            bindings,
         )
         self._complete_agent_request(request_id, prompt, draft, animate=False)
 
@@ -2644,14 +2679,11 @@ class BindingsView:
         bindings: list[dict[str, Any]],
     ) -> None:
         try:
-            draft = build_agent_binding_draft(
+            draft = self._build_agent_binding_draft(
                 prompt,
-                self._gestures,
-                current_gesture=self._gesture_dd.value or "",
-                conversation_history=history,
-                draft_state=draft_state,
-                bindings=bindings,
-                session_id=self._agent_session_id,
+                history,
+                draft_state,
+                bindings,
             )
         except Exception as exc:
             draft = {
@@ -3848,11 +3880,7 @@ class BindingsView:
                     border_radius=8,
                     bgcolor="#1B1D21",
                     border=ft.Border.all(1, COLOR_SURFACE_HIGH),
-                    content=ft.Text(
-                        binding_agent_provider_label(),
-                        size=11,
-                        color=COLOR_MUTED,
-                    ),
+                    content=self._agent_provider_text,
                 ),
             ],
         )

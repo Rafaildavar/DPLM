@@ -37,6 +37,7 @@ quarantine-атрибут через Terminal: скачайте артефакт
 `dplm.sqlite`, записи жестов в `data/gestures`, настройки в `config.json`, логи
 в `logs/`.
 
-Публичная beta не содержит `MISTRAL_API_KEY`: MAS работает локально. Полный
+Публичная beta не содержит общего `MISTRAL_API_KEY`: MAS работает локально,
+пока пользователь сам не подключит Mistral в настройках. Полный
 первый запуск и рабочий сценарий описаны в `USER_GUIDE.md` внутри DMG и ZIP, а
 также в `docs/USER_GUIDE.md` репозитория.

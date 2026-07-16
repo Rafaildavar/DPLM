@@ -34,5 +34,6 @@ System Preferences -> Security & Privacy -> General.
 Используйте только DMG со страницы GitHub Releases проекта.
 
 Пользовательские данные хранятся локально в ~/.dplm/. Публичная beta не
-содержит MISTRAL_API_KEY: MAS работает локально и не отправляет запросы в
-Mistral. Полная инструкция находится в docs/USER_GUIDE.md репозитория.
+содержит общего MISTRAL_API_KEY: MAS работает локально, пока пользователь сам не
+подключит Mistral в Настройки -> MAS и LLM. Личный ключ хранится в системном
+Keychain. Полная инструкция находится в USER_GUIDE.md внутри этого DMG.

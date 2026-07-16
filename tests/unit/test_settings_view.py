@@ -14,7 +14,11 @@ class _Controller:
     def __init__(self) -> None:
         self.saved_config: dict[str, Any] | None = None
         self.saved_policy: dict[str, Any] | None = None
+        self.saved_mas: dict[str, str] | None = None
         self.is_recognizing = False
+        self._mas_key = False
+        self._mas_provider = "local"
+        self._mas_model = "mistral-small-latest"
 
     def get_app_config(self) -> dict[str, Any]:
         return {
@@ -46,7 +50,35 @@ class _Controller:
                 "project_key": "",
                 "interval_hours": 24,
             },
+            "llm": {
+                "provider": self._mas_provider,
+                "model": self._mas_model,
+                "api_url": "https://api.mistral.ai/v1/chat/completions",
+            },
         }
+
+    def get_mas_llm_settings(self) -> dict[str, Any]:
+        return {
+            "provider": self._mas_provider,
+            "model": self._mas_model,
+            "hasApiKey": self._mas_key,
+            "keySource": "keychain" if self._mas_key else "none",
+            "credentialError": "",
+        }
+
+    def save_mas_llm_settings(self, *, provider: str, model: str, api_key: str):
+        self._mas_provider = provider
+        self._mas_model = model
+        self._mas_key = self._mas_key or bool(api_key)
+        self.saved_mas = {"provider": provider, "model": model, "api_key": api_key}
+        return True, []
+
+    def delete_mas_llm_api_key(self):
+        self._mas_key = False
+        return True, "API-ключ удалён"
+
+    def test_mas_llm_connection(self):
+        return True, "Подключение работает"
 
     def get_usage_telemetry_status(self) -> dict[str, Any]:
         return {
@@ -155,6 +187,10 @@ def test_settings_screen_contains_only_user_level_sections():
         "Состояние",
         "Камера и жесты",
         "Команды",
+        "MAS и LLM",
+        "Режим агента",
+        "Mistral API",
+        "API-ключ",
         "Приватность",
         "Отправлять анонимную статистику качества раз в день",
         "Сохранить настройки",
@@ -201,8 +237,28 @@ def test_saving_user_settings_preserves_hidden_technical_config():
         "pointer_smoothing": 0.55,
     }
     assert controller.saved_config["telemetry"]["enabled"] is False
+    assert controller.saved_config["llm"]["provider"] == "local"
     assert controller.saved_policy == {
         "confidence_threshold": 0.72,
         "cooldown_ms": 1600,
         "warn_two_hands": False,
     }
+
+
+def test_user_can_save_mistral_model_and_hidden_api_key():
+    controller = _Controller()
+    view = SettingsView(object(), controller)
+    view._llm_provider.value = "mistral"
+    view._llm_model.value = "mistral-medium-latest"
+    view._llm_api_key.value = "user-secret"
+
+    view._on_save_mas_llm(None)
+
+    assert controller.saved_mas == {
+        "provider": "mistral",
+        "model": "mistral-medium-latest",
+        "api_key": "user-secret",
+    }
+    assert view._llm_api_key.value == ""
+    assert view._llm_api_key.password is True
+    assert view._llm_test_btn.disabled is False

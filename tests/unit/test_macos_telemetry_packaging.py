@@ -72,9 +72,12 @@ def test_release_bundle_does_not_embed_local_mistral_secret():
 
 def test_release_dependencies_include_matching_flet_runtime_extras():
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    build_script = Path("packaging/macos/build_app.sh").read_text(encoding="utf-8")
 
     assert "flet[desktop,web]==0.85.3" in requirements
     assert "\nflet-desktop" not in requirements
+    assert "keyring==24.3.1" in requirements
+    assert "--collect-all keyring" in build_script
 
 
 def test_release_build_uses_drag_and_drop_dmg_layout():

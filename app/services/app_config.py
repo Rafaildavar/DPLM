@@ -76,12 +76,20 @@ class TelemetryConfig:
 
 
 @dataclass
+class LlmConfig:
+    provider: str = "local"
+    model: str = "mistral-small-latest"
+    api_url: str = "https://api.mistral.ai/v1/chat/completions"
+
+
+@dataclass
 class AppConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     paths: PathConfig = field(default_factory=PathConfig)
     recognition: RecognitionConfig = field(default_factory=RecognitionConfig)
     assistant: AssistantConfig = field(default_factory=AssistantConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
+    llm: LlmConfig = field(default_factory=LlmConfig)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> "AppConfig":
@@ -99,6 +107,7 @@ class AppConfig:
             telemetry=_merge_dataclass(
                 TelemetryConfig, base.telemetry, raw.get("telemetry")
             ),
+            llm=_merge_dataclass(LlmConfig, base.llm, raw.get("llm")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -270,6 +279,18 @@ def _set_telemetry_interval_hours(config: AppConfig, value: str) -> None:
     )
 
 
+def _set_llm_provider(config: AppConfig, value: str) -> None:
+    config.llm.provider = value.strip().lower()
+
+
+def _set_llm_model(config: AppConfig, value: str) -> None:
+    config.llm.model = value.strip()
+
+
+def _set_llm_api_url(config: AppConfig, value: str) -> None:
+    config.llm.api_url = value.strip()
+
+
 ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
     "DATABASE_URL": ("database.url", _set_db_url),
     "DPLM_DB_BACKEND": ("database.backend", _set_db_backend),
@@ -311,6 +332,10 @@ ENV_OVERRIDES: dict[str, tuple[str, EnvSetter]] = {
         "telemetry.interval_hours",
         _set_telemetry_interval_hours,
     ),
+    "DPLM_BINDING_AGENT_PROVIDER": ("llm.provider", _set_llm_provider),
+    "BINDING_AGENT_PROVIDER": ("llm.provider", _set_llm_provider),
+    "MISTRAL_MODEL": ("llm.model", _set_llm_model),
+    "MISTRAL_API_URL": ("llm.api_url", _set_llm_api_url),
 }
 
 
@@ -383,6 +408,7 @@ class ConfigStore:
         paths = config.paths
         rec = config.recognition
         telemetry = config.telemetry
+        llm = config.llm
 
         backend = (db.backend or "").strip().lower()
         if db.url.strip():
@@ -441,6 +467,27 @@ class ConfigStore:
                 )
         elif telemetry.enabled:
             warnings.append("Сервер анонимной статистики не настроен")
+
+        llm_provider = llm.provider.strip().lower()
+        if llm_provider not in {"local", "mistral"}:
+            errors.append("llm.provider должен быть local или mistral")
+        if llm_provider == "mistral" and not llm.model.strip():
+            errors.append("llm.model не может быть пустым для Mistral")
+        llm_url = llm.api_url.strip()
+        if llm_url:
+            parsed = urlparse(llm_url)
+            llm_url_ok = parsed.scheme == "https" and bool(parsed.netloc)
+            llm_url_ok = llm_url_ok or (
+                parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            )
+            if not llm_url_ok:
+                errors.append(
+                    "llm.api_url должен использовать HTTPS "
+                    "(HTTP разрешён только для localhost)"
+                )
+        elif llm_provider == "mistral":
+            errors.append("llm.api_url не может быть пустым для Mistral")
 
         model_path = resolve_config_path(paths.model_path)
         classes_path = resolve_config_path(paths.classes_path)

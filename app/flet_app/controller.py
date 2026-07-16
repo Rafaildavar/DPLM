@@ -52,6 +52,7 @@ from app.services.live_gesture_state import (
     LiveGestureSnapshot,
     LiveGestureState,
 )
+from app.services.mas_credentials import MasCredentialError, MasCredentialStore
 from app.services.usage_telemetry import DailyUsageTelemetry
 from cv.gesture_dataset_files import (
     augmented_sample_path,
@@ -1013,6 +1014,146 @@ class AppController:
         except Exception as e:
             return False, [str(e)], result.warnings
         return True, [], result.warnings
+
+    def _mas_credential_store(self) -> MasCredentialStore:
+        store = getattr(self, "_mas_credentials", None)
+        if store is None:
+            store = MasCredentialStore()
+            self._mas_credentials = store
+        return store
+
+    def _mas_llm_runtime(self) -> dict[str, Any]:
+        self._config = self._config_store.load(include_env=True)
+        llm = self._config.llm
+        env_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
+        provider = str(llm.provider or "local").strip().lower()
+        explicit_provider = str(
+            os.getenv("DPLM_BINDING_AGENT_PROVIDER")
+            or os.getenv("BINDING_AGENT_PROVIDER")
+            or ""
+        ).strip()
+        if env_key and not explicit_provider and provider == "local":
+            provider = "mistral"
+        stored_key = ""
+        credential_error = ""
+        if not env_key:
+            try:
+                stored_key = self._mas_credential_store().get_mistral_api_key()
+            except MasCredentialError as exc:
+                credential_error = str(exc)
+        api_key = env_key or stored_key
+        return {
+            "provider": provider,
+            "model": str(llm.model or "mistral-small-latest").strip(),
+            "apiUrl": str(llm.api_url or "").strip(),
+            "apiKey": api_key,
+            "hasApiKey": bool(api_key),
+            "keySource": "environment" if env_key else "keychain" if stored_key else "none",
+            "credentialError": credential_error,
+        }
+
+    def get_mas_llm_settings(self) -> dict[str, Any]:
+        runtime = self._mas_llm_runtime()
+        runtime.pop("apiKey", None)
+        return runtime
+
+    def get_binding_agent_provider_label(self) -> str:
+        settings = self.get_mas_llm_settings()
+        if settings["provider"] != "mistral":
+            return "Локальный агент"
+        if not settings["hasApiKey"]:
+            return "Mistral · нужен ключ"
+        return f"Mistral · {settings['model']}"
+
+    def save_mas_llm_settings(
+        self,
+        *,
+        provider: str,
+        model: str,
+        api_key: str = "",
+    ) -> tuple[bool, list[str]]:
+        target_provider = str(provider or "local").strip().lower()
+        target_model = str(model or "").strip()
+        previous_raw = self.get_app_config()
+        current_raw = json.loads(json.dumps(previous_raw))
+        llm = dict(current_raw.get("llm") or {})
+        llm.update({"provider": target_provider, "model": target_model})
+        current_raw["llm"] = llm
+
+        env_key = str(os.getenv("MISTRAL_API_KEY") or "").strip()
+        new_key = str(api_key or "").strip()
+        if env_key and new_key:
+            return False, ["API-ключ задан окружением и не может быть заменён здесь"]
+
+        config = AppConfig.from_dict(current_raw)
+        validation = self._config_store.validate(config)
+        if not validation.ok:
+            return False, validation.errors
+
+        ok, errors, _warnings = self.save_app_config(current_raw)
+        if not ok:
+            return False, errors
+        if new_key:
+            try:
+                self._mas_credential_store().set_mistral_api_key(new_key)
+            except (MasCredentialError, ValueError) as exc:
+                self.save_app_config(previous_raw)
+                return False, [str(exc)]
+        return True, []
+
+    def delete_mas_llm_api_key(self) -> tuple[bool, str]:
+        if str(os.getenv("MISTRAL_API_KEY") or "").strip():
+            return False, "Ключ задан окружением и удаляется вне приложения"
+        try:
+            self._mas_credential_store().delete_mistral_api_key()
+        except MasCredentialError as exc:
+            return False, str(exc)
+        return True, "API-ключ удалён"
+
+    def test_mas_llm_connection(self) -> tuple[bool, str]:
+        runtime = self._mas_llm_runtime()
+        if runtime["provider"] != "mistral":
+            return False, "Сначала выберите Mistral API"
+        if runtime["credentialError"]:
+            return False, str(runtime["credentialError"])
+        from app.services.binding_agent import MistralBindingAgent
+
+        agent = MistralBindingAgent(
+            api_key=runtime["apiKey"],
+            model=runtime["model"],
+            api_url=runtime["apiUrl"],
+        )
+        return agent.check_connection()
+
+    def build_agent_binding_draft(
+        self,
+        prompt: str,
+        gestures: list[dict[str, Any]],
+        *,
+        current_gesture: str = "",
+        conversation_history: list[dict[str, str]] | None = None,
+        draft_state: dict[str, Any] | None = None,
+        bindings: list[dict[str, Any]] | None = None,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        from app.services.binding_agent import BindingAgentOrchestrator, MistralBindingAgent
+
+        runtime = self._mas_llm_runtime()
+        model_agent = MistralBindingAgent(
+            api_key=runtime["apiKey"],
+            model=runtime["model"],
+            api_url=runtime["apiUrl"],
+        )
+        return BindingAgentOrchestrator(mistral_agent=model_agent).run(
+            prompt,
+            gestures,
+            current_gesture=current_gesture,
+            conversation_history=conversation_history,
+            draft_state=draft_state,
+            bindings=bindings,
+            session_id=session_id,
+            provider=runtime["provider"],
+        ).to_legacy_draft()
 
     def get_system_status(self) -> dict[str, Any]:
         """Лёгкая сводка для экрана настроек."""

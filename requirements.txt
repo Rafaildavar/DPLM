@@ -24,6 +24,9 @@ vosk
 # Точка входа: `python -m app.flet_app.main`.
 flet[desktop,web]==0.85.3
 
+# Secure storage for user-supplied MAS API keys (macOS Keychain in release).
+keyring==24.3.1
+
 # Database
 # pg_embed — пакет отсутствует на PyPI; приложение использует SQLite fallback (см. app/models/database.py)
 psycopg2-binary
