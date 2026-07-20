@@ -33,9 +33,7 @@ GestureBind MVP `0.8.1` сейчас является release candidate пове
 [Актуальный интерфейс](#актуальный-интерфейс) ·
 [Быстрый старт](#быстрый-старт) ·
 [Инструкция пользователя](docs/USER_GUIDE.md) ·
-[Архитектура](ARCHITECTURE.md) ·
-[Обучение](docs/TRAINING_WORKFLOW.md) ·
-[Правила привязок](docs/BINDING_RULES.md)
+[Для программистов](#для-программистов)
 
 ## Что уже работает
 
@@ -122,16 +120,9 @@ confidence/policy-проверок и при включённом переклю
 
 ## Как это работает
 
-```mermaid
-flowchart LR
-    A["Записать жест одной рукой"] --> B["Обучить модель"]
-    B --> C["Проверить live"]
-    C --> D{"Качество достаточно?"}
-    D -- "нет" --> A
-    D -- "да" --> E["Привязать команду"]
-    E --> F["Включить распознавание"]
-    F --> G["Reject или безопасное выполнение"]
-```
+<p align="center">
+  <img src="docs/assets/readme/runtime-flow.png" width="520" alt="Схема работы GestureBind от жеста пользователя до действия ОС">
+</p>
 
 1. Пользователь записывает несколько независимых дублей жеста одной рукой.
 2. Приложение обучает только классы из локального пользовательского датасета.
@@ -271,17 +262,19 @@ Release auto-router принимает static-предсказания от `0.8
 <details>
 <summary><strong>Evidence snapshot от 10.07.2026 и результаты controlled live-проверок</strong></summary>
 
-Production-модели после этих прогонов не изменялись, поэтому offline, replay и
-model-stage latency остаются актуальны для текущего bundle. Одноручный режим
-записи и обучения был зафиксирован `11.07.2026`; отдельный controlled live-прогон
-после этого UX-изменения ещё не повторялся.
+Static benchmark, production dynamic-модель, replay и model-stage latency
+зафиксированы для текущего bundle. Static CV показывает качество последнего
+сравнения кандидатов на source-grouped split, а controlled live-протокол
+показывает поведение приложения с веб-камерой. Одноручный режим записи и
+обучения был зафиксирован `11.07.2026`; отдельный controlled live-прогон после
+этого UX-изменения ещё не повторялся.
 
 Текущая release evidence:
 
 | Проверка | Результат |
 |---|---:|
-| Static grouped CV accuracy | `0.7767` |
-| Static grouped CV macro F1 | `0.6613` |
+| Static grouped CV benchmark accuracy (ExtraTrees, 13 классов) | `0.8708` |
+| Static grouped CV benchmark macro F1 (ExtraTrees, 13 классов) | `0.7600` |
 | Dynamic grouped validation accuracy | `0.8571` |
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
@@ -300,7 +293,9 @@ model-stage latency остаются актуальны для текущего 
 Post-gate live breakdown при release-пороге `0.90`: `SwipeLeft 20/20`,
 `diagonal 9/10` (`1` пропуск), `zoom 9/10` (`1` пропуск). Неверных
 dynamic-классов в этом прогоне не отмечено.
-Результат относится к персональному controlled protocol: рука полностью в
+Static benchmark построен на `480` записях из `260` независимых source groups;
+он нужен для сравнения static-пайплайнов, а не заменяет webcam live-проверку.
+Результат controlled live относится к персональному протоколу: рука полностью в
 кадре, а форма и траектория соответствуют записанному жесту. Offline-метрики
 нужны для сравнения моделей, но не заменяют webcam-проверку и отдельный
 `no-command` safety run.
@@ -344,7 +339,12 @@ docs/                         curated product, ML и operations docs
 Эти пути исключены из Git. В `models/` отслеживается только production bundle,
 нужный для первого запуска и smoke validation.
 
-## Проверки
+## Для программистов
+
+Технические команды, release contract, внутренние документы и ограничения MVP
+собраны здесь, чтобы пользовательская часть README оставалась короткой.
+
+### Проверки
 
 ```bash
 # Чистота tracked-дерева и release contract
@@ -365,7 +365,7 @@ PYTHON=.venv/bin/python make mlflow-ui
 
 MLflow открывается на [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
-## Release
+### Release
 
 GitHub release workflow создает три артефакта:
 
@@ -390,7 +390,7 @@ controlled live-прогон, не меняя frozen production-модели.
 3. проверить `VERSION`, `CHANGELOG.md` и `RELEASE_NOTES.md`;
 4. создать tag `v0.8.1` после ручной проверки текущего commit.
 
-## Документация
+### Документация
 
 - [Инструкция пользователя](docs/USER_GUIDE.md)
 - [Architecture](ARCHITECTURE.md)
@@ -400,7 +400,7 @@ controlled live-прогон, не меняя frozen production-модели.
 - [CI/CD](docs/CI_CD.md)
 - [Daily Usage Telemetry](docs/TELEMETRY.md)
 
-## Ограничения MVP
+### Ограничения MVP
 
 - официальный release bundle и production command execution пока подтверждены
   только на macOS; Windows находится в активной разработке, остальные системы
