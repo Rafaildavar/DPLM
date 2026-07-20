@@ -57,7 +57,7 @@ models, validate them live and bind accepted gestures to safe macOS actions.
 
 | Metric | Value |
 |---|---:|
-| Static grouped CV accuracy / macro F1 | `0.7767 / 0.6613` |
+| Static grouped CV accuracy / macro F1 (ExtraTrees, 13 classes) | `0.8708 / 0.7600` |
 | Dynamic grouped validation accuracy | `0.8571` |
 | Dynamic prototype positive recall | `0.9333` |
 | Dynamic negative false-positive rate | `0.0000` |
@@ -72,7 +72,9 @@ models, validate them live and bind accepted gestures to safe macOS actions.
 | Background/no-command false-command rate | `0/30 = 0.0000` |
 | Aggregate safety false-command rate | `1/50 = 0.0200` |
 
-The post-completion dynamic release run produced `SwipeLeft 20/20`,
+The static result is a five-fold, source-grouped candidate comparison over 480
+recordings from 260 independent source groups. The post-completion dynamic
+release run produced `SwipeLeft 20/20`,
 `diagonal 9/10` and
 `zoom 9/10`: two misses and no reported wrong-class predictions. The
 command-binding confidence policy is independent from the static and dynamic

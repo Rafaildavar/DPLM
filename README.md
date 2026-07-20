@@ -4,8 +4,8 @@
 > превращает их в команды для компьютера. Текущий стабильный релиз предназначен
 > для macOS; поддержка Windows находится в активной разработке.
 
-[![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg?branch=contest_version)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml?query=branch%3Acontest_version)
-[![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg?branch=contest_version)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml?query=branch%3Acontest_version)
+[![CI](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ci.yml?query=branch%3Amain)
+[![ML Smoke](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml/badge.svg?branch=main)](https://github.com/Rafaildavar/GestureBind/actions/workflows/ml-smoke.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/Rafaildavar/GestureBind?sort=semver&display_name=tag)](https://github.com/Rafaildavar/GestureBind/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
@@ -341,8 +341,8 @@ docs/                         curated product, ML и operations docs
 
 ## Для программистов
 
-Технические команды, release contract, внутренние документы и ограничения MVP
-собраны здесь, чтобы пользовательская часть README оставалась короткой.
+Технические команды, release contract и внутренние документы собраны здесь,
+чтобы пользовательская часть README оставалась короткой.
 
 ### Проверки
 
@@ -399,20 +399,6 @@ controlled live-прогон, не меняя frozen production-модели.
 - [Database Schema](docs/DB_SCHEMA.md)
 - [CI/CD](docs/CI_CD.md)
 - [Daily Usage Telemetry](docs/TELEMETRY.md)
-
-### Ограничения MVP
-
-- официальный release bundle и production command execution пока подтверждены
-  только на macOS; Windows находится в активной разработке, остальные системы
-  будут рассматриваться после её платформенного тестирования;
-- запись, обучение и пользовательский интерфейс текущего MVP работают только с
-  одной рукой; двуручные семплы временно отклоняются;
-- приложение пока не подписано Developer ID и не notarized;
-- качество новых пользовательских классов зависит от разнообразия записей;
-- публичные benchmark datasets используются как исследовательская проверка, а
-  не как замена персональному датасету;
-- `AppController` остается крупным composition root; новая domain-логика должна
-  выноситься в `app/services` или `cv`.
 
 ## License
 
